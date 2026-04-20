@@ -2,3 +2,4 @@
 node_modules/
 vendor/
 .claude/settings.local.json
+storage/logs/laravel.log

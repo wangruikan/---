@@ -1,0 +1,187 @@
+🎯 工资表审批功能 - 立即部署指南
+=====================================
+
+## 📋 部署步骤（按顺序执行）
+
+### 步骤1：执行数据库SQL
+------------------------
+打开数据库管理工具（如Navicat、phpMyAdmin），执行以下SQL文件：
+
+文件：create_salary_approvals_table.sql
+
+或直接复制以下SQL执行：
+
+```sql
+-- 创建工资表审批表
+CREATE TABLE `salary_approvals` (
+  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `account_set_id` bigint(20) UNSIGNED NOT NULL COMMENT '账套ID',
+  `project_id` bigint(20) UNSIGNED NOT NULL COMMENT '项目ID',
+  `month` varchar(7) NOT NULL COMMENT '工资期间（YYYY-MM）',
+  `approval_type` enum('online', 'offline') NOT NULL DEFAULT 'online' COMMENT '审批方式：线上/线下',
+  `status` enum('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending' COMMENT '审批状态',
+  `submitted_by` bigint(20) UNSIGNED DEFAULT NULL COMMENT '提交人ID',
+  `submitted_at` datetime DEFAULT NULL COMMENT '提交时间',
+  `approved_by` bigint(20) UNSIGNED DEFAULT NULL COMMENT '审批人ID',
+  `approved_at` datetime DEFAULT NULL COMMENT '审批时间',
+  `rejection_reason` text DEFAULT NULL COMMENT '拒绝原因',
+  `remarks` text DEFAULT NULL COMMENT '备注',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_account_set_id` (`account_set_id`),
+  KEY `idx_project_id` (`project_id`),
+  KEY `idx_month` (`month`),
+  KEY `idx_status` (`status`),
+  UNIQUE KEY `unique_project_month` (`project_id`, `month`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工资表审批记录';
+
+-- 为工资表（salaries）添加审批实例ID字段
+ALTER TABLE `salaries` 
+ADD COLUMN `salary_approval_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT '工资表审批ID' AFTER `insurance_import_setting`,
+ADD KEY `idx_salary_approval_id` (`salary_approval_id`);
+```
+
+**⚠️ 注意**：如果 payment_requests 表已存在，则执行以下SQL：
+
+```sql
+ALTER TABLE `payment_requests` 
+ADD COLUMN `payment_type` enum('salary', 'insurance') NOT NULL DEFAULT 'insurance' COMMENT '付款类型：工资/保险' AFTER `id`,
+ADD COLUMN `salary_approval_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT '工资表审批ID（当payment_type=salary时使用）' AFTER `insurance_summary_id`;
+```
+
+如果 payment_requests 表不存在，则暂时跳过，后续再创建。
+
+
+### 步骤2：清除后端缓存
+------------------------
+已执行 ✅
+
+
+### 步骤3：刷新前端浏览器
+------------------------
+按 Ctrl + F5 强制刷新浏览器页面
+
+
+### 步骤4：测试功能
+------------------------
+1. 进入工资管理页面
+2. 生成一个测试工资表
+3. 点击"提交审批"按钮
+4. 查看是否弹出审批方式选择对话框
+5. 提交审批，查看是否成功
+
+
+## ✨ 新增功能说明
+
+### 1. 工资表提交审批
+-----------------------
+- 在工资表列表中，点击"提交审批"
+- 弹出对话框，选择审批方式：
+  * 线上审批：系统内审批流程
+  * 线下审批（盖章）：需要打印盖章后再上传
+- 填写备注（可选）
+- 提交后，工资表状态变为"待审批"
+
+
+### 2. 审批处理
+-----------------------
+- 审批人在审批管理中可以看到工资表审批
+- 可以选择"通过"或"拒绝"
+- 填写审批意见
+
+
+### 3. 撤回审批
+-----------------------
+- 提交人可以撤回待审批的工资表审批
+- 撤回后，可以重新提交
+
+
+## 📊 数据库表结构
+
+### salary_approvals（新表）
+- id：主键
+- account_set_id：账套ID
+- project_id：项目ID
+- month：工资期间（YYYY-MM）
+- approval_type：审批方式（online/offline）
+- status：审批状态（pending/approved/rejected）
+- submitted_by：提交人ID
+- submitted_at：提交时间
+- approved_by：审批人ID
+- approved_at：审批时间
+- rejection_reason：拒绝原因
+- remarks：备注
+
+### salaries（修改）
+- 新增字段：salary_approval_id（工资表审批ID）
+
+
+## 🔗 API接口
+
+### 工资表审批相关
+- GET /api/salary-approvals - 获取审批列表
+- POST /api/salary-approvals/submit - 提交审批
+- POST /api/salary-approvals/approve - 审批通过
+- POST /api/salary-approvals/reject - 审批拒绝
+- DELETE /api/salary-approvals - 撤回审批
+
+
+## ⚠️ 待完成功能
+
+以下功能需要用户确认需求后再实现：
+
+1. 在审批管理中集成工资表审批
+   - 需要修改审批管理页面
+   - 添加工资表审批的列表和操作
+
+2. 发起工资付款审批
+   - 工资表审批通过后，可以发起付款申请
+   - 创建付款申请记录
+
+3. 修改付款申请模块
+   - 添加类型分类（工资/保险）
+   - 区分显示不同类型的付款申请
+
+
+## 📝 已创建/修改的文件列表
+
+### 后端
+- app/Models/SalaryApproval.php（新建）
+- app/Models/PaymentRequest.php（新建）
+- app/Models/Salary.php（修改）
+- app/Http/Controllers/SalaryApprovalController.php（新建）
+- app/Http/Controllers/SalaryController.php（修改）
+- routes/api.php（修改）
+
+### 前端
+- src/api/salaryApprovals.js（新建）
+- src/views/Salaries/index.vue（修改）
+
+### 数据库
+- create_salary_approvals_table.sql（新建）
+
+### 文档
+- ✅工资表审批功能-完整实现.md（新建）
+- ⚠️工资表审批-立即部署.txt（本文件）
+
+
+## 🎉 部署完成后的效果
+
+1. 工资表列表中会有"提交审批"按钮
+2. 点击后弹出审批方式选择对话框
+3. 提交后可以在审批管理中看到审批记录
+4. 审批人可以审批通过或拒绝
+5. 审批通过后可以发起付款申请（待实现）
+
+
+## 💡 提示
+
+- 确保数据库SQL执行成功，没有报错
+- 如果遇到问题，检查浏览器控制台的错误信息
+- 如果后端报错，检查Laravel日志文件 storage/logs/laravel.log
+
+
+创建时间：2025-10-28
+状态：✅ 核心功能已完成，可以开始测试
+

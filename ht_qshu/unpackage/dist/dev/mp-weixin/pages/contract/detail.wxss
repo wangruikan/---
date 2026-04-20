@@ -1,0 +1,273 @@
+
+.container.data-v-450aad6f {
+	min-height: 100vh;
+	background-color: #f5f5f5;
+	padding-bottom: 100px;
+}
+.loading.data-v-450aad6f {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	height: 100vh;
+}
+.contract-detail.data-v-450aad6f {
+	padding: 20px;
+}
+.info-section.data-v-450aad6f {
+	background-color: #fff;
+	border-radius: 12px;
+	padding: 20px;
+	margin-bottom: 20px;
+}
+.info-header.data-v-450aad6f {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20px;
+}
+.contract-type.data-v-450aad6f {
+	font-size: 18px;
+	font-weight: bold;
+	color: #333;
+}
+.status-tag.data-v-450aad6f {
+	padding: 6px 12px;
+	border-radius: 20px;
+	font-size: 14px;
+}
+.status-pending_sign.data-v-450aad6f {
+	background-color: #fff3e0;
+	color: #ff9800;
+}
+.status-employee_signed.data-v-450aad6f {
+	background-color: #e3f2fd;
+	color: #2196f3;
+}
+.status-completed.data-v-450aad6f {
+	background-color: #e8f5e9;
+	color: #4caf50;
+}
+.info-item.data-v-450aad6f {
+	display: flex;
+	margin-bottom: 12px;
+	font-size: 14px;
+}
+.label.data-v-450aad6f {
+	color: #999;
+	width: 80px;
+}
+.value.data-v-450aad6f {
+	color: #333;
+	flex: 1;
+}
+.preview-section.data-v-450aad6f {
+	background-color: #fff;
+	border-radius: 12px;
+	padding: 20px;
+	margin-bottom: 20px;
+}
+.section-title.data-v-450aad6f {
+	font-size: 16px;
+	font-weight: bold;
+	color: #333;
+	margin-bottom: 15px;
+}
+.preview-images.data-v-450aad6f {
+	margin-bottom: 20px;
+}
+.page-wrapper.data-v-450aad6f {
+	margin-bottom: 20px;
+}
+.page-number.data-v-450aad6f {
+	display: block;
+	font-size: 14px;
+	color: #666;
+	margin-bottom: 10px;
+	text-align: center;
+}
+.preview-image.data-v-450aad6f {
+	width: 100%;
+	border-radius: 8px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.sign-tip.data-v-450aad6f {
+	background-color: #fff9e6;
+	padding: 12px;
+	border-radius: 8px;
+	text-align: center;
+}
+.sign-tip text.data-v-450aad6f {
+	color: #ff9800;
+	font-size: 14px;
+}
+
+/* 新增：签名按钮区域样式 */
+.sign-action-section.data-v-450aad6f {
+	margin-top: 20px;
+	padding-top: 20px;
+	border-top: 1px solid #eee;
+}
+.sign-tip-new.data-v-450aad6f {
+	background-color: #e8f5e9;
+	padding: 15px;
+	border-radius: 8px;
+	text-align: center;
+	margin-bottom: 15px;
+}
+.sign-tip-new text.data-v-450aad6f {
+	color: #4caf50;
+	font-size: 14px;
+}
+.sign-btn-primary.data-v-450aad6f {
+	background: linear-gradient(135deg, #4caf50, #66bb6a);
+	color: #fff;
+	border: none;
+	border-radius: 10px;
+	padding: 16px;
+	width: 100%;
+	font-size: 18px;
+	font-weight: bold;
+	box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+.file-section.data-v-450aad6f {
+	background-color: #fff;
+	border-radius: 12px;
+	padding: 20px;
+	margin-bottom: 20px;
+}
+.preview-btn.data-v-450aad6f {
+	background-color: #2196f3;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	padding: 15px;
+	width: 100%;
+	font-size: 16px;
+}
+.fallback-section.data-v-450aad6f {
+	background-color: #fff;
+	border-radius: 12px;
+	padding: 20px;
+	margin-bottom: 20px;
+}
+.sign-tip-fallback.data-v-450aad6f {
+	background-color: #fff9e6;
+	padding: 12px;
+	border-radius: 8px;
+	text-align: center;
+	margin: 15px 0;
+}
+.sign-tip-fallback text.data-v-450aad6f {
+	color: #ff9800;
+	font-size: 14px;
+}
+.sign-btn-fallback.data-v-450aad6f {
+	background-color: #4caf50;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	padding: 15px;
+	width: 100%;
+	font-size: 16px;
+	font-weight: bold;
+}
+.sign-mask.data-v-450aad6f {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: flex-end;
+	z-index: 1000;
+}
+.sign-popup.data-v-450aad6f {
+	background-color: #fff;
+	border-top-left-radius: 20px;
+	border-top-right-radius: 20px;
+	padding: 20px;
+}
+.popup-header.data-v-450aad6f {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20px;
+}
+.popup-title.data-v-450aad6f {
+	font-size: 18px;
+	font-weight: bold;
+	color: #333;
+}
+.close-btn.data-v-450aad6f {
+	background: none;
+	border: none;
+	font-size: 30px;
+	color: #999;
+	padding: 0;
+	width: 40px;
+	height: 40px;
+	line-height: 40px;
+}
+.canvas-wrapper.data-v-450aad6f {
+	width: 100%;
+	height: 200px;
+	border: 2px dashed #ddd;
+	border-radius: 8px;
+	overflow: hidden;
+	margin-bottom: 20px;
+}
+.sign-canvas.data-v-450aad6f {
+	width: 100%;
+	height: 100%;
+}
+.popup-actions.data-v-450aad6f {
+	display: flex;
+	gap: 15px;
+}
+.clear-btn.data-v-450aad6f, .confirm-btn.data-v-450aad6f {
+	flex: 1;
+	padding: 15px;
+	border-radius: 8px;
+	border: none;
+	font-size: 16px;
+}
+.clear-btn.data-v-450aad6f {
+	background-color: #f5f5f5;
+	color: #666;
+}
+.confirm-btn.data-v-450aad6f {
+	background-color: #4caf50;
+	color: #fff;
+}
+.action-section.data-v-450aad6f {
+	background-color: #fff;
+	border-radius: 12px;
+	padding: 20px;
+}
+.signed-info.data-v-450aad6f, .completed-info.data-v-450aad6f {
+	text-align: center;
+}
+.signed-text.data-v-450aad6f, .completed-text.data-v-450aad6f {
+	display: block;
+	font-size: 16px;
+	color: #4caf50;
+	margin-bottom: 10px;
+}
+.wait-text.data-v-450aad6f, .time-text.data-v-450aad6f {
+	display: block;
+	font-size: 14px;
+	color: #999;
+}
+.pending-actions.data-v-450aad6f {
+	display: flex;
+	justify-content: center;
+}
+.reject-btn.data-v-450aad6f {
+	background-color: #f44336;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	padding: 15px 40px;
+	font-size: 16px;
+}

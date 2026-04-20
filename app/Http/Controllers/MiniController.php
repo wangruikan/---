@@ -1,0 +1,1652 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Employee;
+use App\Models\EmployeeContract;
+use App\Models\OnboardingForm;
+use App\Services\SmsService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+class MiniController extends Controller
+{
+    /**
+     * 小程序登录（简化版）
+     */
+    public function login(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string',
+            'password' => 'required|string',
+        ], [
+            'phone.required' => '请输入手机号',
+            'password.required' => '请输入密码',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // 查询员工
+        $employee = Employee::where('phone', $request->phone)->first();
+
+        if (!$employee) {
+            return response()->json([
+                'success' => false,
+                'message' => '手机号或密码错误'
+            ], 401);
+        }
+
+        // 验证密码（身份证后6位）
+        $last6 = substr($employee->id_number, -6);
+        if ($request->password !== $last6) {
+            return response()->json([
+                'success' => false,
+                'message' => '手机号或密码错误'
+            ], 401);
+        }
+
+        // 生成 token（7天有效期）
+        $token = $employee->createToken('mini-app')->plainTextToken;
+        
+        // 获取员工所属项目的登记表类型设置（优先使用活跃项目）
+        $registrationFormType = 'onboarding';  // 默认入职登记表
+        $employee->load('projects');
+        
+        // 优先获取活跃项目
+        $activeProject = $employee->projects()->wherePivot('status', 'active')->first();
+        if ($activeProject) {
+            $registrationFormType = $activeProject->registration_form_type ?? 'onboarding';
+        } elseif (!empty($employee->project_ids)) {
+            // 如果没有活跃项目，使用 project_ids 字段
+            $projectId = is_array($employee->project_ids) ? ($employee->project_ids[0] ?? null) : $employee->project_ids;
+            if ($projectId) {
+                $project = \App\Models\Project::find($projectId);
+                if ($project) {
+                    $registrationFormType = $project->registration_form_type ?? 'onboarding';
+                }
+            }
+        } elseif ($employee->projects && $employee->projects->count() > 0) {
+            // 兜底：使用第一个关联项目
+            $project = $employee->projects->first();
+            $registrationFormType = $project->registration_form_type ?? 'onboarding';
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => '登录成功',
+            'data' => [
+                'token' => $token,
+                'employee' => [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    'phone' => $employee->phone,
+                    'id_number' => $employee->id_number,
+                    'account_set_id' => $employee->account_set_id,
+                    'registration_form_type' => $registrationFormType,
+                    'contract_status' => $employee->contract_status,
+                ],
+            ]
+        ]);
+    }
+
+
+    /**
+     * 获取待签署合同列表
+     */
+    public function getPendingContracts(Request $request)
+    {
+        $employee = Employee::find($request->user()->id);
+
+        $contracts = EmployeeContract::where('employee_id', $employee->id)
+            ->where('status', 'pending_sign')
+            ->with(['creator:id,name'])
+            ->orderBy('uploaded_at', 'desc')
+            ->get();
+
+        // 生成文件访问URL
+        $host = $request->getSchemeAndHttpHost();
+        foreach ($contracts as $contract) {
+            if ($contract->contract_file) {
+                $contract->file_url = $host . '/storage/' . $contract->contract_file;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $contracts
+        ]);
+    }
+
+    /**
+     * 获取我的所有合同
+     */
+    public function getMyContracts(Request $request)
+    {
+        $employee = Employee::find($request->user()->id);
+        
+        $status = $request->input('status'); // pending_sign, employee_signed, completed
+
+        $query = EmployeeContract::where('employee_id', $employee->id)
+            ->with(['creator:id,name']);
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        $contracts = $query->orderBy('created_at', 'desc')->get();
+
+        // 生成文件访问URL
+        $host = $request->getSchemeAndHttpHost();
+        foreach ($contracts as $contract) {
+            if ($contract->contract_file) {
+                $contract->file_url = $host . '/storage/' . $contract->contract_file;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $contracts
+        ]);
+    }
+
+    /**
+     * 获取合同详情
+     */
+    public function getContractDetail(Request $request, $id)
+    {
+        $employee = Employee::find($request->user()->id);
+
+        $contract = EmployeeContract::where('id', $id)
+            ->where('employee_id', $employee->id)
+            ->with(['creator:id,name'])
+            ->first();
+
+        if (!$contract) {
+            return response()->json([
+                'success' => false,
+                'message' => '合同不存在或无权查看'
+            ], 404);
+        }
+
+        // 生成文件访问URL（使用完整的HTTP URL）
+        if ($contract->contract_file) {
+            // 获取请求的host，这样会自动适应不同的访问地址
+            $host = $request->getSchemeAndHttpHost();
+            $contract->file_url = $host . '/storage/' . $contract->contract_file;
+            
+            // 如果是待签署状态，生成PDF预览图片
+            if ($contract->status === 'pending_sign') {
+                $contract->preview_images = $this->convertPdfToImages($contract->contract_file, $host);
+            }
+        }
+
+        // 检查是否需要显示须知文件
+        $noticeInfo = $this->getContractNoticeInfo($contract, $request);
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'contract' => $contract,
+                'notice_file' => $noticeInfo['notice_file'],
+                'must_read_notice' => $noticeInfo['must_read_notice']
+            ]
+        ]);
+    }
+    
+    /**
+     * 获取合同须知信息
+     */
+    private function getContractNoticeInfo($contract, $request)
+    {
+        // 只有劳动合同且待签署状态才需要检查须知
+        if ($contract->contract_type !== 'labor' || $contract->status !== 'pending_sign') {
+            return [
+                'notice_file' => null,
+                'must_read_notice' => false
+            ];
+        }
+
+        // 获取员工所在的项目
+        $employee = Employee::find($contract->employee_id);
+        $projects = $employee->projects()->where('account_set_id', $employee->account_set_id)->get();
+        
+        if ($projects->isEmpty()) {
+            return [
+                'notice_file' => null,
+                'must_read_notice' => false
+            ];
+        }
+
+        // 检查项目是否配置了须知文件
+        foreach ($projects as $project) {
+            // 优先使用新的关联方式（contract_notice_file_id）
+            if ($project->contract_notice_file_id) {
+                $noticeFile = \App\Models\SharedFile::where('id', $project->contract_notice_file_id)
+                    ->where('file_category', 'notice')
+                    ->first();
+                
+                if ($noticeFile && $noticeFile->path) {
+                    $host = $request->getSchemeAndHttpHost();
+                    return [
+                        'notice_file' => [
+                            'name' => $noticeFile->original_name ?: '劳动合同须知.pdf',
+                            'view_url' => $host . '/storage/' . $noticeFile->path
+                        ],
+                        'must_read_notice' => true
+                    ];
+                }
+            }
+            
+            // 兼容旧的字段方式
+            if ($project->labor_contract_notice_file) {
+                $host = $request->getSchemeAndHttpHost();
+                return [
+                    'notice_file' => [
+                        'name' => $project->labor_contract_notice_name ?: '劳动合同须知.pdf',
+                        'view_url' => $host . '/storage/' . $project->labor_contract_notice_file
+                    ],
+                    'must_read_notice' => true
+                ];
+            }
+        }
+
+        return [
+            'notice_file' => null,
+            'must_read_notice' => false
+        ];
+    }
+    
+    /**
+     * 将PDF转换为图片（用于小程序预览和点击签名）
+     */
+    private function convertPdfToImages($pdfPath, $host)
+    {
+        try {
+            $fullPath = storage_path('app/public/' . $pdfPath);
+            
+            if (!file_exists($fullPath)) {
+                \Log::error('PDF文件不存在', ['path' => $fullPath]);
+                return [];
+            }
+            
+            // 生成图片缓存目录
+            $cacheDir = 'contract_previews/' . pathinfo($pdfPath, PATHINFO_FILENAME);
+            $cachePath = storage_path('app/public/' . $cacheDir);
+            
+            // 如果缓存已存在，直接返回
+            if (is_dir($cachePath)) {
+                $images = [];
+                $files = scandir($cachePath);
+                foreach ($files as $file) {
+                    if (preg_match('/^page_(\d+)\.png$/', $file)) {
+                        $images[] = $host . '/storage/' . $cacheDir . '/' . $file;
+                    }
+                }
+                if (!empty($images)) {
+                    sort($images);
+                    return $images;
+                }
+            }
+            
+            // 创建缓存目录
+            if (!is_dir($cachePath)) {
+                mkdir($cachePath, 0755, true);
+            }
+            
+            $images = [];
+            
+            // 使用Imagick转换PDF为图片
+            if (extension_loaded('imagick')) {
+                $imagick = new \Imagick();
+                
+                // 在Windows上，手动设置Ghostscript路径
+                if (PHP_OS_FAMILY === 'Windows') {
+                    $gsPath = 'C:\\Program Files\\gs\\gs10.02.1\\bin\\gswin64c.exe';
+                    if (file_exists($gsPath)) {
+                        putenv("MAGICK_GHOSTSCRIPT_PATH={$gsPath}");
+                        \Log::info('设置Ghostscript路径', ['path' => $gsPath]);
+                    }
+                }
+                
+                $imagick->setResolution(150, 150); // 设置分辨率
+                $imagick->readImage($fullPath);
+                
+                $pageCount = $imagick->getNumberImages();
+                
+                for ($i = 0; $i < $pageCount; $i++) {
+                    $imagick->setIteratorIndex($i);
+                    $imagick->setImageFormat('png');
+                    $imagick->setImageCompressionQuality(85);
+                    
+                    $imagePath = $cachePath . '/page_' . ($i + 1) . '.png';
+                    $imagick->writeImage($imagePath);
+                    
+                    $images[] = $host . '/storage/' . $cacheDir . '/page_' . ($i + 1) . '.png';
+                }
+                
+                $imagick->clear();
+                $imagick->destroy();
+            } else {
+                // Imagick未安装，返回空数组，小程序将使用原PDF预览
+                \Log::warning('Imagick未安装，无法生成PDF预览图片');
+                return [];
+            }
+            
+            return $images;
+            
+        } catch (\Exception $e) {
+            \Log::error('PDF转图片失败', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    /**
+     * 员工签署合同（简化版 - 签名位置由后端预设决定）
+     * 员工只需签名一次，签名会自动合成到所有预设位置
+     */
+    public function signContract(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'id_last_4' => 'required|string|size:4',
+            'signature_image' => 'required|string', // base64签名图片
+            // 以下参数为可选（兼容旧版本）
+            'signed_pdf' => 'nullable|file|mimes:pdf',
+            'sign_x_percent' => 'nullable|numeric|min:0|max:100', 
+            'sign_y_percent' => 'nullable|numeric|min:0|max:100', 
+            'page_index' => 'nullable|integer|min:0',
+        ], [
+            'id_last_4.required' => '请输入身份证后4位',
+            'id_last_4.size' => '请输入正确的身份证后4位',
+            'signature_image.required' => '请先签名',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $employee = Employee::find($request->user()->id);
+
+        // 验证身份证后4位
+        $last4 = substr($employee->id_number, -4);
+        if ($request->id_last_4 !== $last4) {
+            return response()->json([
+                'success' => false,
+                'message' => '身份证后4位错误'
+            ], 401);
+        }
+
+        $contract = EmployeeContract::where('id', $id)
+            ->where('employee_id', $employee->id)
+            ->first();
+
+        if (!$contract) {
+            return response()->json([
+                'success' => false,
+                'message' => '合同不存在或无权签署'
+            ], 404);
+        }
+
+        if ($contract->status !== 'pending_sign') {
+            return response()->json([
+                'success' => false,
+                'message' => '该合同当前状态不允许签署'
+            ], 422);
+        }
+
+        try {
+            \Log::info('收到签署请求', [
+                'contract_id' => $id,
+                'employee_id' => $employee->id,
+                'has_preset_positions' => !empty($contract->signature_positions),
+                'has_pdf' => $request->hasFile('signed_pdf')
+            ]);
+            
+            // 1. 保存签名图片
+            $signatureImage = $this->saveSignatureImage($request->signature_image);
+            
+            // 2. 根据是否有预设位置决定处理方式
+            if ($request->hasFile('signed_pdf')) {
+                // 旧版本兼容：前端已经合成好了PDF
+                $signedPdf = $request->file('signed_pdf');
+                $originalFilename = pathinfo($contract->contract_file, PATHINFO_FILENAME);
+                $newPdfPath = 'contracts/signed_' . time() . '_' . $originalFilename . '.pdf';
+                $signedPdf->storeAs('', $newPdfPath, 'public');
+                
+                // 删除原PDF文件
+                if ($contract->contract_file) {
+                    Storage::disk('public')->delete($contract->contract_file);
+                }
+                
+                $contract->contract_file = $newPdfPath;
+                $contract->sign_x_percent = $request->sign_x_percent;
+                $contract->sign_y_percent = $request->sign_y_percent;
+                $contract->sign_page_index = $request->page_index;
+                
+                \Log::info('使用前端合成的PDF（旧版本兼容）', ['path' => $newPdfPath]);
+            }
+            // 新版本：签名位置由后端预设决定，PDF合成在管理员确认时进行
+            
+            // 3. 更新合同记录
+            $contract->signature_image = $signatureImage;
+            $contract->status = 'employee_signed'; // 签署完成，等待HR确认
+            $contract->employee_signed_at = now();
+            $contract->sign_ip = $request->ip();
+            $contract->sign_device = 'WeChat MiniProgram';
+            $contract->save();
+
+            \Log::info('员工签署成功', [
+                'contract_id' => $id,
+                'employee_id' => $employee->id,
+                'has_preset_positions' => !empty($contract->signature_positions)
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => '签署成功，等待HR确认'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('合同签署失败', [
+                'contract_id' => $id,
+                'employee_id' => $employee->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => '提交失败：' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 获取合同类型的中文名称
+     */
+    private function getContractTypeName($type)
+    {
+        $types = [
+            'labor' => '劳动合同',
+            'labor_dispatch' => '劳务派遣合同',
+            'part_time' => '非全日制用工合同',
+            'internship' => '实习协议',
+            'retirement' => '退休返聘协议',
+            'project' => '项目合作协议',
+            'confidentiality' => '保密协议',
+            'non_compete' => '竞业限制协议',
+        ];
+
+        return $types[$type] ?? $type;
+    }
+
+    /**
+     * 保存签名图片
+     */
+    private function saveSignatureImage($base64Image)
+    {
+        // 去掉base64前缀
+        $image = preg_replace('/^data:image\/\w+;base64,/', '', $base64Image);
+        $image = str_replace(' ', '+', $image);
+        $imageData = base64_decode($image);
+        
+        // 生成文件名
+        $filename = uniqid() . '_' . time() . '.png';
+        
+        // 确保目录存在
+        $dir = public_path('uploads/signatures');
+        if (!file_exists($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        
+        // 保存到 public/uploads/signatures/
+        file_put_contents($dir . '/' . $filename, $imageData);
+        
+        return 'uploads/signatures/' . $filename;
+    }
+    
+    /**
+     * 将签名添加到PDF指定位置
+     */
+    private function addSignatureToPDF($originalPdfPath, $signatureImagePath, $employeeName, $signTime, $signX, $signY, $pageIndex)
+    {
+        if (extension_loaded('imagick')) {
+            return $this->addSignatureWithImagick($originalPdfPath, $signatureImagePath, $employeeName, $signTime, $signX, $signY, $pageIndex);
+        } else {
+            // 备用方案：使用 Intervention/Image
+            return $this->addSignatureWithDompdf($originalPdfPath, $signatureImagePath, $employeeName, $signTime, $signX, $signY, $pageIndex);
+        }
+    }
+    
+    /**
+     * 使用 Intervention/Image 添加签名（备用方案）
+     */
+    private function addSignatureWithDompdf($originalPdfPath, $signatureImagePath, $employeeName, $signTime, $signX, $signY, $pageIndex)
+    {
+        try {
+            \Log::info('Imagick未安装，使用备用方案处理签名');
+            
+            $originalFullPath = storage_path('app/public/' . $originalPdfPath);
+            $signatureFullPath = storage_path('app/public/' . $signatureImagePath);
+            
+            // 使用 Intervention/Image 在 PDF 第一页上添加签名
+            // 注意：这只是一个简化方案，只能在第一页添加签名
+            $img = \Intervention\Image\Facades\Image::make($originalFullPath);
+            $signature = \Intervention\Image\Facades\Image::make($signatureFullPath);
+            
+            // 调整签名大小
+            $signature->resize(300, null, function ($constraint) {
+                $constraint->aspectRatio();
+            });
+            
+            // 获取图片尺寸
+            $imgWidth = $img->width();
+            $imgHeight = $img->height();
+            
+            // 计算签名位置（右下角）
+            $signX = $imgWidth - 320;
+            $signY = $imgHeight - 150;
+            
+            // 添加签名图片
+            $img->insert($signature, 'top-left', $signX, $signY);
+            
+            // 添加签署文字
+            $signText = "签署人：{$employeeName}  签署时间：{$signTime}";
+            $img->text($signText, $signX, $signY + 120, function($font) {
+                $font->file(storage_path('fonts/simhei.ttf'));
+                $font->size(12);
+                $font->color('#000000');
+            });
+            
+            // 生成新文件名
+            $newFilename = 'contracts/signed_' . basename($originalPdfPath);
+            $newFullPath = storage_path('app/public/' . $newFilename);
+            
+            // 保存为PDF（如果原文件是PDF）或图片
+            $img->save($newFullPath);
+            
+            return $newFilename;
+            
+        } catch (\Exception $e) {
+            \Log::error('备用签名方案失败', ['error' => $e->getMessage()]);
+            
+            // 如果备用方案也失败，至少保存签名，返回原PDF路径
+            \Log::warning('所有签名方案失败，签名单独保存', [
+                'original_pdf' => $originalPdfPath,
+                'signature' => $signatureImagePath
+            ]);
+            
+            return $originalPdfPath;
+        }
+    }
+    
+    /**
+     * 使用 Imagick 添加签名到PDF指定位置
+     */
+    private function addSignatureWithImagick($originalPdfPath, $signatureImagePath, $employeeName, $signTime, $signX, $signY, $pageIndex)
+    {
+        $originalFullPath = storage_path('app/public/' . $originalPdfPath);
+        $signatureFullPath = storage_path('app/public/' . $signatureImagePath);
+        
+        // 读取PDF
+        $imagick = new \Imagick();
+        $imagick->setResolution(150, 150);
+        $imagick->readImage($originalFullPath);
+        
+        // 获取页面数量
+        $pageCount = $imagick->getNumberImages();
+        
+        // 跳转到指定页（用户点击的页）
+        $imagick->setIteratorIndex($pageIndex);
+        
+        // 读取签名图片
+        $signature = new \Imagick($signatureFullPath);
+        $signature->scaleImage(200, 0); // 缩放签名图片，宽度200px，高度自适应
+        
+        // 使用用户点击的坐标（需要根据预览图片分辨率和PDF分辨率进行换算）
+        // 预览图片分辨率150dpi，PDF原始分辨率也是150dpi，所以坐标可以直接使用
+        // 但为了安全起见，我们获取实际PDF页面尺寸
+        $geometry = $imagick->getImageGeometry();
+        $pageWidth = $geometry['width'];
+        $pageHeight = $geometry['height'];
+        
+        \Log::info('签名位置', [
+            'user_click_x' => $signX,
+            'user_click_y' => $signY,
+            'page_width' => $pageWidth,
+            'page_height' => $pageHeight,
+            'page_index' => $pageIndex
+        ]);
+        
+        // 在PDF上添加签名图片（使用用户点击的坐标）
+        $imagick->compositeImage($signature, \Imagick::COMPOSITE_OVER, $signX, $signY);
+        
+        // 在签名下方添加签署文字
+        $draw = new \ImagickDraw();
+        if (file_exists(storage_path('fonts/simhei.ttf'))) {
+            $draw->setFont(storage_path('fonts/simhei.ttf'));
+        }
+        $draw->setFontSize(10);
+        $draw->setFillColor('#000000');
+        
+        $signText = "{$employeeName} {$signTime}";
+        $imagick->annotateImage($draw, $signX, $signY + 80, 0, $signText);
+        
+        // 生成新PDF路径
+        $newFilename = 'contracts/signed_' . basename($originalPdfPath);
+        $newFullPath = storage_path('app/public/' . $newFilename);
+        
+        // 保存新PDF
+        $imagick->setImageFormat('pdf');
+        $imagick->writeImages($newFullPath, true);
+        
+        // 清理资源
+        $imagick->clear();
+        $imagick->destroy();
+        $signature->clear();
+        $signature->destroy();
+        
+        return $newFilename;
+    }
+
+    /**
+     * 员工拒绝合同
+     */
+    public function rejectContract(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'reason' => 'required|string|max:500',
+        ], [
+            'reason.required' => '请输入拒绝原因',
+            'reason.max' => '拒绝原因不能超过500字',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $employee = Employee::find($request->user()->id);
+
+        $contract = EmployeeContract::where('id', $id)
+            ->where('employee_id', $employee->id)
+            ->first();
+
+        if (!$contract) {
+            return response()->json([
+                'success' => false,
+                'message' => '合同不存在或无权操作'
+            ], 404);
+        }
+
+        if ($contract->status !== 'pending_sign') {
+            return response()->json([
+                'success' => false,
+                'message' => '该合同当前状态不允许拒绝'
+            ], 422);
+        }
+
+        $contract->status = 'rejected';
+        $contract->employee_reject_reason = $request->reason;
+        $contract->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => '已拒绝该合同'
+        ]);
+    }
+
+    /**
+     * 获取员工信息
+     */
+    public function getMyInfo(Request $request)
+    {
+        $employee = Employee::find($request->user()->id);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'phone' => $employee->phone,
+                'id_number' => substr($employee->id_number, 0, 6) . '********' . substr($employee->id_number, -4),
+                'gender' => $employee->gender,
+                'hire_date' => $employee->hire_date,
+                'contract_status' => $employee->contract_status,
+                'last_login_at' => $employee->last_login_at,
+                'password_changed_at' => $employee->password_changed_at,
+            ]
+        ]);
+    }
+
+    /**
+     * 获取我的资料上传列表（小程序端，支持多文件）
+     */
+    public function getMyDocuments(Request $request)
+    {
+        try {
+            $employee = Employee::with('projects')->find($request->user()->id);
+
+            if (!$employee) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '员工信息不存在'
+                ], 404);
+            }
+
+            // 获取员工所属项目的资料配置
+            $projectIds = $employee->projects->pluck('id')->toArray();
+
+            if (empty($projectIds)) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => '您未分配到任何项目'
+                ]);
+            }
+
+            // 获取所有相关项目的资料配置
+            $configs = \App\Models\ProjectDocumentConfig::whereIn('project_id', $projectIds)
+                ->with('project:id,name')
+                ->orderBy('sort_order', 'asc')
+                ->get();
+
+            // 获取员工已上传的资料（按config_id分组，支持多文件）
+            $uploadedDocuments = \App\Models\EmployeeDocument::where('employee_id', $employee->id)
+                ->orderBy('uploaded_at', 'desc')
+                ->get()
+                ->groupBy('document_config_id');
+
+            // 合并配置和上传状态
+            $host = $request->getSchemeAndHttpHost();
+            $result = $configs->map(function ($config) use ($uploadedDocuments, $employee, $host) {
+                $uploadedFiles = $uploadedDocuments->get($config->id, collect());
+                $fileCount = $uploadedFiles->count();
+
+                return [
+                    'config_id' => $config->id,
+                    'project_id' => $config->project_id,
+                    'project_name' => $config->project->name ?? null,
+                    'document_name' => $config->document_name,
+                    'document_type' => $config->document_type,
+                    'document_type_text' => $config->document_type_text,
+                    'is_required' => $config->is_required,
+                    'sort_order' => $config->sort_order,
+                    'uploaded' => $fileCount > 0,
+                    'file_count' => $fileCount,
+                    // 保持向后兼容
+                    'upload_info' => $fileCount > 0 ? [
+                        'id' => $uploadedFiles->first()->id,
+                        'file_url' => $host . '/' . $uploadedFiles->first()->file_path,
+                        'original_filename' => $uploadedFiles->first()->original_filename,
+                        'file_size' => $uploadedFiles->first()->file_size,
+                        'file_size_formatted' => $uploadedFiles->first()->file_size_formatted,
+                        'uploaded_at' => $uploadedFiles->first()->uploaded_at,
+                        'upload_source' => $uploadedFiles->first()->upload_source,
+                    ] : null,
+                    // 新增：所有文件列表
+                    'files' => $uploadedFiles->map(function ($file) use ($host) {
+                        return [
+                            'id' => $file->id,
+                            'file_url' => $host . '/' . $file->file_path,
+                            'original_filename' => $file->original_filename,
+                            'file_size' => $file->file_size,
+                            'file_size_formatted' => $file->file_size_formatted,
+                            'uploaded_at' => $file->uploaded_at,
+                            'upload_source' => $file->upload_source,
+                        ];
+                    })->values()->toArray(),
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $result
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('获取员工资料列表失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '获取资料列表失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 上传资料（小程序端）
+     */
+    public function uploadDocument(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'document_config_id' => 'required|integer|exists:project_document_configs,id',
+            'file' => 'required|file|max:10240', // 最大10MB
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $employee = Employee::find($request->user()->id);
+            $config = \App\Models\ProjectDocumentConfig::findOrFail($request->document_config_id);
+
+            // 验证文件类型
+            $file = $request->file('file');
+            $mimeType = $file->getMimeType();
+            $extension = strtolower($file->getClientOriginalExtension());
+
+            $allowedMimes = [];
+            $allowedExtensions = [];
+            
+            if ($config->document_type === 'image') {
+                // 仅图片
+                $allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            } elseif ($config->document_type === 'pdf') {
+                // 仅PDF
+                $allowedMimes = ['application/pdf'];
+                $allowedExtensions = ['pdf'];
+            } elseif ($config->document_type === 'document') {
+                // 文档类型（Word/Excel/PDF）
+                $allowedMimes = [
+                    'application/pdf',
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.ms-excel',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/octet-stream', // 兼容某些情况
+                ];
+                $allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
+            } else {
+                // all - 所有类型
+                $allowedMimes = [
+                    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+                    'application/pdf',
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.ms-excel',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/octet-stream',
+                ];
+                $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx'];
+            }
+
+            // 同时检查MIME类型和文件扩展名（更宽松的验证）
+            $mimeValid = in_array($mimeType, $allowedMimes);
+            $extensionValid = in_array($extension, $allowedExtensions);
+
+            if (!$mimeValid && !$extensionValid) {
+                \Log::error('文件类型验证失败', [
+                    'mime_type' => $mimeType,
+                    'extension' => $extension,
+                    'allowed_mimes' => $allowedMimes,
+                    'allowed_extensions' => $allowedExtensions
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => "文件类型不符合要求，支持的格式：" . implode(', ', $allowedExtensions)
+                ], 422);
+            }
+
+            // 存储文件到public目录
+            $publicPath = public_path('employee_documents/' . $employee->id);
+            if (!is_dir($publicPath)) {
+                mkdir($publicPath, 0755, true);
+            }
+            
+            // 在移动文件前获取文件信息
+            $originalFilename = $file->getClientOriginalName();
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+            $extension = $file->getClientOriginalExtension();
+            
+            $filename = time() . '_' . uniqid() . '.' . $extension;
+            $path = 'employee_documents/' . $employee->id . '/' . $filename;
+            $file->move($publicPath, $filename);
+
+            // 创建新的资料记录（支持多文件）
+            $document = \App\Models\EmployeeDocument::create([
+                'employee_id' => $employee->id,
+                'document_config_id' => $config->id,
+                'project_id' => $config->project_id,
+                'document_name' => $config->document_name,
+                'file_path' => $path,
+                'original_filename' => $originalFilename,
+                'file_size' => $fileSize,
+                'file_type' => $mimeType,
+                'upload_source' => 'miniapp',
+                'uploaded_at' => now(),
+            ]);
+
+            // 获取该配置下的文件总数
+            $fileCount = \App\Models\EmployeeDocument::where('employee_id', $employee->id)
+                ->where('document_config_id', $config->id)
+                ->count();
+
+            $host = $request->getSchemeAndHttpHost();
+
+            return response()->json([
+                'success' => true,
+                'message' => '上传成功',
+                'data' => [
+                    'id' => $document->id,
+                    'file_url' => $host . '/' . $document->file_path,
+                    'original_filename' => $document->original_filename,
+                    'file_size_formatted' => $document->file_size_formatted,
+                    'uploaded_at' => $document->uploaded_at,
+                    'file_count' => $fileCount,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('上传员工资料失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '上传失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 删除资料（小程序端）
+     */
+    public function deleteDocument(Request $request, $documentId)
+    {
+        try {
+            $employee = Employee::find($request->user()->id);
+
+            $document = \App\Models\EmployeeDocument::where('employee_id', $employee->id)
+                ->where('id', $documentId)
+                ->firstOrFail();
+
+            // 删除文件（文件存储在public目录）
+            if ($document->file_path) {
+                $filePath = public_path($document->file_path);
+                if (file_exists($filePath)) {
+                    unlink($filePath);
+                    \Log::info('删除文件成功', ['file' => $filePath]);
+                }
+            }
+
+            // 删除记录
+            $document->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => '删除成功'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('删除员工资料失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '删除失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 上传一寸照片
+     */
+    public function uploadPhoto(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'photo' => 'required|image|max:5120', // 最大5MB
+        ], [
+            'photo.required' => '请上传照片',
+            'photo.image' => '请上传图片文件',
+            'photo.max' => '照片大小不能超过5MB',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $file = $request->file('photo');
+            $employee = Employee::find($request->user()->id);
+            
+            // 生成文件名
+            $filename = $employee->id . '_' . time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+            
+            // 确保目录存在
+            $dir = public_path('uploads/photos');
+            if (!file_exists($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            
+            // 保存到 public/uploads/photos/
+            $file->move($dir, $filename);
+            
+            // 返回完整URL
+            $host = request()->getSchemeAndHttpHost();
+            $photoUrl = $host . '/uploads/photos/' . $filename;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'path' => 'uploads/photos/' . $filename,
+                    'url' => $photoUrl
+                ],
+                'message' => '照片上传成功'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('上传照片失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '上传失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 上传签名图片
+     */
+    public function uploadSignature(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'signature' => 'required|string', // base64签名图片
+        ], [
+            'signature.required' => '请提供签名图片',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // 保存签名图片
+            $signaturePath = $this->saveSignatureImage($request->signature);
+            
+            // 返回完整URL（直接从public目录访问）
+            $signatureUrl = asset($signaturePath);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'path' => $signaturePath,  // 相对路径
+                    'url' => $signatureUrl     // 完整URL
+                ],
+                'message' => '签名上传成功'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('上传签名失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '上传失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 获取我的入职登记表
+     */
+    public function getMyOnboardingForm(Request $request)
+    {
+        try {
+            $employee = Employee::find($request->user()->id);
+
+            $form = OnboardingForm::where('employee_id', $employee->id)->first();
+
+            if ($form) {
+                $formData = $form->toArray();
+                $host = request()->getSchemeAndHttpHost();
+                
+                // 将签名路径转换为完整URL
+                if (!empty($formData['signature'])) {
+                    if (strpos($formData['signature'], 'http') === 0) {
+                        // 已经是完整URL，不处理
+                    } elseif (strpos($formData['signature'], 'uploads/') === 0) {
+                        $formData['signature'] = $host . '/' . $formData['signature'];
+                    } else {
+                        $formData['signature'] = $host . '/storage/' . $formData['signature'];
+                    }
+                }
+                
+                // 将寸照路径转换为完整URL
+                if (!empty($formData['photo'])) {
+                    if (strpos($formData['photo'], 'http') === 0) {
+                        // 已经是完整URL，不处理
+                    } elseif (strpos($formData['photo'], 'uploads/') === 0) {
+                        $formData['photo'] = $host . '/' . $formData['photo'];
+                    } else {
+                        $formData['photo'] = $host . '/storage/' . $formData['photo'];
+                    }
+                }
+                
+                return response()->json([
+                    'success' => true,
+                    'data' => $formData
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $form
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('获取入职登记表失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '获取失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 提交入职登记表
+     */
+    public function submitOnboardingForm(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'registration_date' => 'required|date',
+            'name' => 'required|string|max:50',
+            'gender' => 'required|in:male,female',
+            'ethnicity' => 'nullable|string|max:50',
+            'political_status' => 'nullable|string|max:50',
+            'place_of_origin' => 'nullable|string|max:100',
+            'birth_date' => 'nullable|date',
+            'graduated_school' => 'nullable|string|max:200',
+            'graduation_date' => 'nullable|date',
+            'education_level' => 'nullable|string|max:50',
+            'major' => 'nullable|string|max:100',
+            'degree' => 'nullable|string|max:50',
+            'technical_title' => 'nullable|string|max:50',
+            'health_status' => 'nullable|string|max:50',
+            'height' => 'nullable|integer|min:1|max:300',
+            'weight' => 'nullable|numeric|min:1|max:500',
+            'marital_status' => 'nullable|string|max:20',
+            'id_number' => 'required|string|max:18',
+            'current_residence' => 'nullable|string|max:200',
+            'household_registration' => 'nullable|string|max:200',
+            'position' => 'nullable|string|max:100',
+            'desired_location' => 'nullable|string|max:100',
+            'accept_assignment' => 'nullable|boolean',
+            'contact_address' => 'nullable|string|max:200',
+            'contact_phone' => 'nullable|string|max:20',
+            'remarks' => 'nullable|string',
+            'education_background' => 'nullable|array',
+            'education_background.*.start_date' => 'nullable|string',
+            'education_background.*.end_date' => 'nullable|string',
+            'education_background.*.school' => 'nullable|string',
+            'education_background.*.level' => 'nullable|string',
+            'education_background.*.certifier' => 'nullable|string',
+            'work_experience' => 'nullable|array',
+            'work_experience.*.start_date' => 'nullable|string',
+            'work_experience.*.end_date' => 'nullable|string',
+            'work_experience.*.employer' => 'nullable|string',
+            'work_experience.*.job_content' => 'nullable|string',
+            'work_experience.*.certifier' => 'nullable|string',
+            'family_info' => 'nullable|array',
+            'family_info.*.name' => 'nullable|string',
+            'family_info.*.relationship' => 'nullable|string',
+            'family_info.*.employer' => 'nullable|string',
+            'family_info.*.phone' => 'nullable|string',
+            'signature' => 'required|string', // 签名图片路径（通过uploadSignature接口上传后返回）
+            'photo' => 'nullable|string',     // 一寸照片路径（通过uploadPhoto接口上传后返回）
+        ], [
+            'registration_date.required' => '请输入登记日期',
+            'name.required' => '请输入姓名',
+            'gender.required' => '请选择性别',
+            'id_number.required' => '请输入身份证号码',
+            'signature.required' => '请先完成手写签名',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $employee = Employee::find($request->user()->id);
+
+            // 签名已经通过uploadSignature接口上传，这里直接使用路径
+            // signature字段现在应该是相对路径，不是base64
+
+            // 创建或更新入职登记表
+            $form = OnboardingForm::updateOrCreate(
+                ['employee_id' => $employee->id],
+                [
+                    'account_set_id' => $employee->account_set_id,
+                    'registration_date' => $request->registration_date,
+                    'name' => $request->name,
+                    'gender' => $request->gender,
+                    'ethnicity' => $request->ethnicity,
+                    'political_status' => $request->political_status,
+                    'place_of_origin' => $request->place_of_origin,
+                    'birth_date' => $request->birth_date,
+                    'graduated_school' => $request->graduated_school,
+                    'graduation_date' => $request->graduation_date,
+                    'education_level' => $request->education_level,
+                    'major' => $request->major,
+                    'degree' => $request->degree,
+                    'technical_title' => $request->technical_title,
+                    'health_status' => $request->health_status,
+                    'height' => $request->height,
+                    'weight' => $request->weight,
+                    'marital_status' => $request->marital_status,
+                    'id_number' => $request->id_number,
+                    'current_residence' => $request->current_residence,
+                    'household_registration' => $request->household_registration,
+                    'position' => $request->position,
+                    'desired_location' => $request->desired_location,
+                    'accept_assignment' => $request->accept_assignment,
+                    'contact_address' => $request->contact_address,
+                    'contact_phone' => $request->contact_phone,
+                    'remarks' => $request->remarks,
+                    'signature' => $request->signature, // 保存签名图片路径（已经通过uploadSignature上传）
+                    'photo' => $request->photo,         // 保存一寸照片路径（已经通过uploadPhoto上传）
+                    'education_background' => $request->education_background,
+                    'work_experience' => $request->work_experience,
+                    'family_info' => $request->family_info,
+                ]
+            );
+
+            // 自动同步数据到员工信息表
+            $updateData = [];
+            
+            // 同步出生日期（如果入职登记表有值且员工信息为空，或者入职登记表的值更新了）
+            if ($request->birth_date) {
+                $updateData['birth_date'] = $request->birth_date;
+            }
+            
+            // 同步身份证（检查是否与其他员工重复）
+            if ($request->id_number && $request->id_number !== $employee->id_number) {
+                // 检查身份证号是否已被其他员工使用
+                $existingEmployee = Employee::where('id_number', $request->id_number)
+                    ->where('id', '!=', $employee->id)
+                    ->first();
+                
+                if ($existingEmployee) {
+                    // 身份证号已被其他员工使用，不同步，但记录日志
+                    \Log::warning('入职登记表身份证号与其他员工重复，跳过同步', [
+                        'employee_id' => $employee->id,
+                        'id_number' => $request->id_number,
+                        'existing_employee_id' => $existingEmployee->id
+                    ]);
+                } else {
+                    $updateData['id_number'] = $request->id_number;
+                }
+            }
+            
+            // 同步性别（如果入职登记表有值且员工信息为空，或者入职登记表的值更新了）
+            if ($request->gender) {
+                $updateData['gender'] = $request->gender;
+            }
+            
+            // 如果有需要更新的字段，更新员工信息
+            if (!empty($updateData)) {
+                $employee->update($updateData);
+                \Log::info('入职登记表数据已同步到员工信息', [
+                    'employee_id' => $employee->id,
+                    'updated_fields' => array_keys($updateData)
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => '提交成功',
+                'data' => $form
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('提交入职登记表失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '提交失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 获取我的从业人员登记表
+     */
+    public function getMyRegistrationForm(Request $request)
+    {
+        try {
+            $employee = Employee::find($request->user()->id);
+            $form = \App\Models\EmployeeRegistrationForm::where('employee_id', $employee->id)->first();
+
+            if ($form && $form->signature) {
+                $formData = $form->toArray();
+                // 兼容新旧路径格式
+                if (strpos($formData['signature'], 'uploads/') === 0) {
+                    $formData['signature'] = asset($formData['signature']);
+                } else {
+                    $formData['signature'] = asset('storage/' . $formData['signature']);
+                }
+                $form = $formData;
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $form
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('获取从业人员登记表失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '获取失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 提交从业人员登记表
+     */
+    public function submitRegistrationForm(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:50',
+            'id_number' => 'required|string|max:20',
+            'signature' => 'required|string',
+        ], [
+            'name.required' => '请输入姓名',
+            'id_number.required' => '请输入身份证号码',
+            'signature.required' => '请先完成手写签名',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $employee = Employee::find($request->user()->id);
+
+            $form = \App\Models\EmployeeRegistrationForm::updateOrCreate(
+                ['employee_id' => $employee->id],
+                [
+                    'account_set_id' => $employee->account_set_id,
+                    'fill_date' => $request->fill_date,
+                    'entry_position' => $request->entry_position,
+                    'entry_date' => $request->entry_date,
+                    'department' => $request->department,
+                    'job_title' => $request->job_title,
+                    'housing_fund_account' => $request->housing_fund_account,
+                    'bank_account' => $request->bank_account,
+                    'bank_name' => $request->bank_name,
+                    'name' => $request->name,
+                    'english_name' => $request->english_name,
+                    'gender' => $request->gender,
+                    'height' => $request->height,
+                    'birth_date' => $request->birth_date,
+                    'political_status' => $request->political_status,
+                    'education_level' => $request->education_level,
+                    'native_place' => $request->native_place,
+                    'marital_status' => $request->marital_status,
+                    'has_children' => $request->has_children,
+                    'id_number' => $request->id_number,
+                    'household_type' => $request->household_type,
+                    'current_address' => $request->current_address,
+                    'postal_code' => $request->postal_code,
+                    'household_address' => $request->household_address,
+                    'contact_phone' => $request->contact_phone,
+                    'document_address' => $request->document_address,
+                    'disability_level' => $request->disability_level,
+                    'language_skills' => $request->language_skills,
+                    'engineering_skills' => $request->engineering_skills,
+                    'professional_title' => $request->professional_title,
+                    'hobbies' => $request->hobbies,
+                    'other_skills' => $request->other_skills,
+                    'education_history' => $request->education_history,
+                    'work_history' => $request->work_history,
+                    'reference_company' => $request->reference_company,
+                    'reference_contact' => $request->reference_contact,
+                    'rewards_punishments' => $request->rewards_punishments,
+                    'family_members' => $request->family_members,
+                    'emergency_contact1_name' => $request->emergency_contact1_name,
+                    'emergency_contact1_relation' => $request->emergency_contact1_relation,
+                    'emergency_contact1_phone' => $request->emergency_contact1_phone,
+                    'emergency_contact2_name' => $request->emergency_contact2_name,
+                    'emergency_contact2_relation' => $request->emergency_contact2_relation,
+                    'emergency_contact2_phone' => $request->emergency_contact2_phone,
+                    'mental_illness' => $request->mental_illness,
+                    'mental_illness_detail' => $request->mental_illness_detail,
+                    'other_illness' => $request->other_illness,
+                    'other_illness_detail' => $request->other_illness_detail,
+                    'hospitalized_recently' => $request->hospitalized_recently,
+                    'hospitalized_reason' => $request->hospitalized_reason,
+                    'criminal_record' => $request->criminal_record,
+                    'criminal_record_time' => $request->criminal_record_time,
+                    'employment_documents' => $request->employment_documents,
+                    'remarks' => $request->remarks,
+                    'is_pregnant' => $request->is_pregnant,
+                    'pregnant_detail' => $request->pregnant_detail,
+                    'accept_overtime' => $request->accept_overtime,
+                    'need_accommodation' => $request->need_accommodation,
+                    'accommodation_detail' => $request->accommodation_detail,
+                    'has_driving_license' => $request->has_driving_license,
+                    'driving_license_detail' => $request->driving_license_detail,
+                    'signature' => $request->signature,
+                    'signature_date' => $request->signature_date,
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => '提交成功',
+                'data' => $form
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('提交从业人员登记表失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '提交失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 获取我的离职证明列表
+     */
+    public function getMyResignationCertificates(Request $request)
+    {
+        $employee = Employee::find($request->user()->id);
+        
+        if (!$employee) {
+            return response()->json([
+                'success' => false,
+                'message' => '员工不存在'
+            ], 404);
+        }
+        
+        // 检查员工是否为离职或退休状态
+        if (!in_array($employee->contract_status, ['terminated', 'retired'])) {
+            return response()->json([
+                'success' => false,
+                'message' => '只有离职或退休员工才能查看离职证明'
+            ], 403);
+        }
+        
+        $certificates = $employee->resignationCertificates()
+            ->with('uploader:id,name')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($cert) {
+                return [
+                    'id' => $cert->id,
+                    'file_name' => $cert->file_name,
+                    'file_path' => $cert->file_path,
+                    'file_type' => $cert->file_type,
+                    'file_size' => $cert->file_size,
+                    'upload_source' => $cert->upload_source,
+                    'uploaded_by_name' => $cert->uploader ? $cert->uploader->name : '未知',
+                    'created_at' => $cert->created_at->format('Y-m-d H:i:s'),
+                ];
+            });
+        
+        return response()->json([
+            'success' => true,
+            'data' => $certificates
+        ]);
+    }
+    
+    /**
+     * 上传离职证明
+     */
+    public function uploadResignationCertificate(Request $request)
+    {
+        $employee = Employee::find($request->user()->id);
+        
+        if (!$employee) {
+            return response()->json([
+                'success' => false,
+                'message' => '员工不存在'
+            ], 404);
+        }
+        
+        // 检查员工是否为离职或退休状态
+        if (!in_array($employee->contract_status, ['terminated', 'retired'])) {
+            return response()->json([
+                'success' => false,
+                'message' => '只有离职或退休员工才能上传离职证明'
+            ], 403);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|mimes:jpg,jpeg,png,pdf|max:10240', // 最大10MB
+        ], [
+            'file.required' => '请选择文件',
+            'file.mimes' => '只支持 JPG、PNG、PDF 格式',
+            'file.max' => '文件大小不能超过 10MB',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
+        }
+        
+        try {
+            $file = $request->file('file');
+            $originalName = $file->getClientOriginalName();
+            $extension = $file->getClientOriginalExtension();
+            $fileSize = $file->getSize();
+            $fileType = $file->getMimeType();
+            
+            // 生成友好的文件名：员工姓名_离职证明_时间戳.扩展名
+            $friendlyName = $employee->name . '_离职证明_' . date('YmdHis') . '.' . $extension;
+            
+            // 存储文件
+            $path = $file->store("public/resignation_certificates/{$employee->id}");
+            $filePath = str_replace('public/', '', $path);
+            
+            // 创建记录
+            $certificate = $employee->resignationCertificates()->create([
+                'file_name' => $friendlyName, // 使用友好的文件名
+                'file_path' => $filePath,
+                'file_type' => $fileType,
+                'file_size' => $fileSize,
+                'uploaded_by' => null, // 员工自己上传，不是管理员上传
+                'upload_source' => 'miniprogram',
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => '上传成功',
+                'data' => [
+                    'id' => $certificate->id,
+                    'file_name' => $certificate->file_name,
+                    'file_path' => $certificate->file_path,
+                    'file_type' => $certificate->file_type,
+                    'file_size' => $certificate->file_size,
+                    'upload_source' => $certificate->upload_source,
+                    'created_at' => $certificate->created_at->format('Y-m-d H:i:s'),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('上传离职证明失败', [
+                'employee_id' => $employee->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => '上传失败：' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * 删除离职证明
+     */
+    public function deleteResignationCertificate(Request $request, $id)
+    {
+        $employee = Employee::find($request->user()->id);
+        
+        if (!$employee) {
+            return response()->json([
+                'success' => false,
+                'message' => '员工不存在'
+            ], 404);
+        }
+        
+        // 查找离职证明
+        $certificate = $employee->resignationCertificates()->find($id);
+        
+        if (!$certificate) {
+            return response()->json([
+                'success' => false,
+                'message' => '离职证明不存在或无权删除'
+            ], 404);
+        }
+        
+        try {
+            // 删除文件
+            if (Storage::exists('public/' . $certificate->file_path)) {
+                Storage::delete('public/' . $certificate->file_path);
+            }
+            
+            // 删除记录
+            $certificate->delete();
+            
+            return response()->json([
+                'success' => true,
+                'message' => '删除成功'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('删除离职证明失败', [
+                'certificate_id' => $id,
+                'employee_id' => $employee->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => '删除失败：' . $e->getMessage()
+            ], 500);
+        }
+    }
+}

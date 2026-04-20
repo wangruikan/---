@@ -1,0 +1,301 @@
+/* 全局样式 */
+:root {
+  --primary-color: #409eff;
+  --success-color: #67c23a;
+  --warning-color: #e6a23c;
+  --danger-color: #f56c6c;
+  --info-color: #909399;
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-placeholder: #c0c4cc;
+  --border-color: #dcdfe6;
+  --border-light: #e4e7ed;
+  --border-lighter: #ebeef5;
+  --border-extra-light: #f2f6fc;
+  --background-color: #f5f7fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+  background-color: var(--background-color);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* 通用工具类 */
+.text-center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.mb-10 {
+  margin-bottom: 10px;
+}
+
+.mb-20 {
+  margin-bottom: 20px;
+}
+
+.mt-10 {
+  margin-top: 10px;
+}
+
+.mt-20 {
+  margin-top: 20px;
+}
+
+.p-20 {
+  padding: 20px;
+}
+
+.p-10 {
+  padding: 10px;
+}
+
+/* 页面容器 */
+.page-container {
+  padding: 20px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 表格样式 */
+.table-container {
+  background: #fff;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* 卡片样式 */
+.card {
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+/* 状态标签 */
+.status-tag {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-active {
+  background: #f0f9ff;
+  color: #1890ff;
+}
+
+.status-pending {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.status-completed {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.status-rejected {
+  background: #fff2f0;
+  color: #ff4d4f;
+}
+
+/* 搜索表单中的输入框统一宽度 */
+.search-section .el-select {
+  width: 200px;
+}
+
+.search-section .el-input {
+  width: 200px;
+}
+
+.search-section .el-date-picker {
+  width: 200px;
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .page-container {
+    padding: 10px;
+  }
+
+  .card {
+    padding: 15px;
+    margin-bottom: 15px;
+  }
+}
+
+/* =========================================================================
+   UI视觉优化 (防疲劳降噪)
+   ========================================================================= */
+
+/* 1. 色彩策略：控制饱和度与对比度，重置柔和的底色和文字色 */
+.el-tag {
+  border: none !important;
+}
+
+.el-tag.el-tag--primary {
+  background-color: #E6F1FC !important;
+  color: #409EFF !important;
+}
+
+.el-tag.el-tag--success {
+  background-color: #E1F3D8 !important;
+  color: #529B2E !important;
+}
+
+.el-tag.el-tag--warning {
+  background-color: #FAECD8 !important;
+  color: #E6A23C !important;
+}
+
+.el-tag.el-tag--danger {
+  background-color: #FDE2E2 !important;
+  color: #F56C6C !important;
+}
+
+.el-tag.el-tag--info {
+  background-color: #F4F4F5 !important;
+  color: #909399 !important;
+}
+
+/* 降低Element Plus全局边框和主文字带来的鲜艳度/过高的对比度 */
+:root {
+  --el-border-color: #EBEEF5;
+  --el-border-color-light: #F2F6FC;
+  --el-border-color-lighter: #F5F7FA;
+  --el-text-color-primary: #303133;
+  --el-text-color-regular: #606266;
+  --el-text-color-secondary: #909399;
+  --el-fill-color-blank: #ffffff;
+  --el-bg-color-page: #F5F7FA;
+}
+
+/* 为了视觉纵深，全局底层使用冷灰色 */
+body {
+  background-color: #F5F7FA !important;
+}
+
+/* 2. 字体与排版：赋予数据“呼吸空间” */
+/* 数字强制等宽对齐，专治表格里的金额、日期、工号、身份证等，提高扫视效率 */
+.el-table,
+.stats-section .stat-value,
+.el-form-item__content {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 增加留白，让表格行高更高，看着不压抑 */
+.el-table .el-table__cell {
+  padding: 12px 0 !important;
+  line-height: 1.6;
+}
+
+/* 3. 组件与交互：平滑的光影 */
+/* 给页面容器和卡片极致柔和的扩散阴影，去掉生硬的细边框 */
+.el-card,
+.page-container,
+.card,
+.table-container {
+  border: none !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+  border-radius: 8px !important;
+}
+
+/* 新增的组件阴影悬浮效果 */
+.el-card:hover,
+.card:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06) !important;
+  transition: box-shadow 0.3s ease;
+}
+
+/* 表格斑马纹和悬浮导引 (Hover Effects) 优化 */
+/* 斑马纹的颜色调淡，弱化线条感（使用实色，防止 el-table 固定列发生文字透视现象） */
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background-color: #FAFBFC !important;
+}
+
+/* 鼠标滑过时的高亮背景，提供一种淡淡的、明显的蓝灰色作为"导视尺" */
+.el-table__body tr:hover>td.el-table__cell {
+  background-color: #F0F7FF !important;
+}
+
+/* 确保表格的非斑马纹行也有实色背景，防止固定列透明（Element Plus 默认是白色的，做个保险） */
+.el-table__body tr:not(.el-table__row--striped) td.el-table__cell {
+  background-color: #FFFFFF;
+}
+
+
+/* 优化所有的表单和输入框的边框 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px #E4E7ED inset !important;
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px #C0C4CC inset !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px #409EFF inset !important;
+}

@@ -1,0 +1,51 @@
+-- 工伤和商业险理赔记录表
+CREATE TABLE `insurance_compensation_records` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `account_set_id` bigint(20) unsigned NOT NULL COMMENT '账套ID',
+  `type` enum('work_injury','commercial') NOT NULL COMMENT '类型：work_injury-工伤，commercial-商业险',
+  `employee_id` bigint(20) unsigned NOT NULL COMMENT '员工ID',
+  `employee_name` varchar(100) NOT NULL COMMENT '员工姓名',
+  `project_id` bigint(20) unsigned DEFAULT NULL COMMENT '项目ID',
+  `project_name` varchar(255) DEFAULT NULL COMMENT '项目名称',
+  `policy_id` bigint(20) unsigned DEFAULT NULL COMMENT '保单ID（商业险）',
+  `policy_name` varchar(255) DEFAULT NULL COMMENT '保单名称（商业险）',
+  `incident_date` date NOT NULL COMMENT '事故发生日期',
+  `incident_description` text COMMENT '事故描述',
+  `status` varchar(50) NOT NULL DEFAULT 'registered' COMMENT '状态',
+  `current_step` int(11) NOT NULL DEFAULT 1 COMMENT '当前步骤',
+  `registration_date` datetime NOT NULL COMMENT '登记时间',
+  `recognition_result` enum('success','failed') DEFAULT NULL COMMENT '认定结果（工伤）',
+  `recognition_date` datetime DEFAULT NULL COMMENT '认定完成时间（工伤）',
+  `medical_expense_claimed` tinyint(1) DEFAULT 0 COMMENT '是否申报医药费',
+  `disability_claimed` tinyint(1) DEFAULT 0 COMMENT '是否申报伤残认定',
+  `material_submitted_date` datetime DEFAULT NULL COMMENT '材料提交时间',
+  `claim_received_date` datetime DEFAULT NULL COMMENT '理赔到账时间（商业险）',
+  `completed_date` datetime DEFAULT NULL COMMENT '完成时间',
+  `created_by` bigint(20) unsigned DEFAULT NULL COMMENT '创建人ID',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_account_set_id` (`account_set_id`),
+  KEY `idx_employee_id` (`employee_id`),
+  KEY `idx_project_id` (`project_id`),
+  KEY `idx_policy_id` (`policy_id`),
+  KEY `idx_type` (`type`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工伤和商业险理赔记录表';
+
+-- 理赔附件表
+CREATE TABLE `insurance_compensation_attachments` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `compensation_record_id` bigint(20) unsigned NOT NULL COMMENT '理赔记录ID',
+  `step` int(11) NOT NULL COMMENT '步骤：1-登记，2-认定/材料，3-材料提交',
+  `file_name` varchar(255) NOT NULL COMMENT '文件名',
+  `file_path` varchar(500) NOT NULL COMMENT '文件路径',
+  `file_type` varchar(50) DEFAULT NULL COMMENT '文件类型',
+  `file_size` bigint(20) DEFAULT NULL COMMENT '文件大小（字节）',
+  `uploaded_by` bigint(20) unsigned DEFAULT NULL COMMENT '上传人ID',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_compensation_record_id` (`compensation_record_id`),
+  KEY `idx_step` (`step`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='理赔附件表';

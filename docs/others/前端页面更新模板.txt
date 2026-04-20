@@ -1,0 +1,51 @@
+# 前端页面更新模板
+
+## 需要更新的页面（共5个）
+
+每个页面需要做3个修改：
+
+### 修改 1: 模板开头添加提示组件
+```vue
+<template>
+  <div class="xxx-page">
+    <NoAccountSetTip v-if="!isAdmin && !currentAccountSetId" />
+    <div v-else>
+    <!-- 原有内容 -->
+```
+
+### 修改 2: 模板结尾闭合标签
+```vue
+    </div>  <!-- 闭合 v-else -->
+  </div>
+</template>
+```
+
+### 修改 3: script 部分添加导入和变量
+```vue
+<script setup>
+import { ..., computed } from 'vue'  // 添加 computed
+import { useUserStore } from '@/stores/user'
+import { useAccountSetStore } from '@/stores/accountSet'
+import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
+
+const userStore = useUserStore()
+const accountSetStore = useAccountSetStore()
+
+const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
+const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
+```
+
+---
+
+## 需要更新的页面列表
+
+1. src/views/Attendance/index.vue - 考勤管理
+2. src/views/Insurance/index.vue - 保险管理
+3. src/views/Approvals/index.vue - 审批管理
+4. src/views/Payments/index.vue - 付款管理  
+5. src/views/Invoices/index.vue - 发票管理
+6. src/views/Recruitment/index.vue - 招聘管理
+7. src/views/SharedFiles/index.vue - 共享中心
+
+注：Salaries（薪金计算）已完成！
+

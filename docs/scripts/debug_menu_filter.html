@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>菜单过滤调试</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .debug-section {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .debug-title {
+            font-weight: bold;
+            color: #409EFF;
+            margin-bottom: 10px;
+        }
+        pre {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        .error { color: #F56C6C; }
+        .success { color: #67C23A; }
+        .warning { color: #E6A23C; }
+    </style>
+</head>
+<body>
+    <h1>菜单过滤调试工具</h1>
+    <div id="output"></div>
+
+    <script type="module">
+        const output = document.getElementById('output');
+        
+        function addSection(title, content, type = '') {
+            const section = document.createElement('div');
+            section.className = 'debug-section';
+            section.innerHTML = `
+                <div class="debug-title ${type}">${title}</div>
+                <pre>${content}</pre>
+            `;
+            output.appendChild(section);
+        }
+
+        try {
+            // 1. 获取用户信息
+            const userStoreData = localStorage.getItem('user');
+            if (!userStoreData) {
+                addSection('错误', '未找到用户信息，请先登录', 'error');
+                throw new Error('No user data');
+            }
+
+            const userStore = JSON.parse(userStoreData);
+            const userInfo = userStore.userInfo;
+
+            addSection('1. 用户基本信息', JSON.stringify({
+                username: userInfo?.username,
+                role: userInfo?.role,
+                role_id: userInfo?.role_id,
+                visible_menus_type: typeof userInfo?.visible_menus,
+                visible_menus_is_null: userInfo?.visible_menus === null,
+                visible_menus_is_array: Array.isArray(userInfo?.visible_menus),
+                visible_menus_length: userInfo?.visible_menus?.length
+            }, null, 2));
+
+            addSection('2. visible_menus 完整内容', JSON.stringify(userInfo?.visible_menus, null, 2));
+
+            // 2. 动态导入菜单配置
+            import('/src/config/menuConfig.js').then(module => {
+                const menuConfig = module.menuConfig;
+                
+                addSection('3. 所有菜单ID列表', JSON.stringify(
+                    menuConfig.map(m => m.id),
+                    null, 2
+                ));
+
+                // 3. 模拟过滤逻辑
+                const userVisibleMenus = userInfo?.visible_menus;
+                const filterResults = menuConfig.map(menu => {
+                    let result = {
+                        id: menu.id,
+                        title: menu.title,
+                        visible: true,
+                        reason: '通过'
+                    };
+
+                    // 检查 visible_menus
+                    if (userVisibleMenus === null || userVisibleMenus === undefined) {
+                        result.reason = 'visible_menus 为 null/undefined，可见所有菜单';
+                    } else if (Array.isArray(userVisibleMenus) && userVisibleMenus.length === 0) {
+                        result.visible = false;
+                        result.reason = 'visible_menus 为空数组，无权限';
+                    } else if (Array.isArray(userVisibleMenus) && !userVisibleMenus.includes(menu.id)) {
+                        result.visible = false;
+                        result.reason = `菜单ID "${menu.id}" 不在 visible_menus 中`;
+                    } else {
+                        result.reason = `菜单ID "${menu.id}" 在 visible_menus 中`;
+                    }
+
+                    return result;
+                });
+
+                addSection('4. 菜单过滤结果', JSON.stringify(filterResults, null, 2));
+
+                // 4. 统计
+                const visibleCount = filterResults.filter(r => r.visible).length;
+                const hiddenCount = filterResults.filter(r => !r.visible).length;
+                
+                addSection('5. 统计结果', 
+                    `可见菜单: ${visibleCount}\n隐藏菜单: ${hiddenCount}`,
+                    visibleCount === menuConfig.length ? 'warning' : 'success'
+                );
+
+                // 5. 显示应该隐藏的菜单
+                const shouldBeHidden = filterResults.filter(r => !r.visible);
+                if (shouldBeHidden.length > 0) {
+                    addSection('6. 应该被隐藏的菜单', JSON.stringify(shouldBeHidden, null, 2), 'success');
+                } else {
+                    addSection('6. 应该被隐藏的菜单', '没有菜单被隐藏（所有菜单都可见）', 'warning');
+                }
+
+            }).catch(err => {
+                addSection('错误', '无法加载菜单配置: ' + err.message, 'error');
+            });
+
+        } catch (error) {
+            addSection('错误', error.message, 'error');
+        }
+    </script>
+</body>
+</html>

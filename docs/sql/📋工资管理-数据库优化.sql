@@ -1,0 +1,82 @@
+-- ========================================
+-- 工资管理模块 - 数据库说明
+-- ========================================
+
+-- 说明：
+-- 1. 现有的 salaries 表已经可以使用，基本字段齐全
+-- 2. 考勤审批限制逻辑已在前端实现
+-- 3. 不需要执行任何SQL，表结构已经完整
+
+-- ========================================
+-- salaries 表结构（已存在）
+-- ========================================
+
+-- 字段说明：
+-- id                  - 主键
+-- employee_id         - 员工ID
+-- project_id          - 项目ID
+-- month               - 工资期间（格式：2025-10）
+-- basic_salary        - 基本工资
+-- allowance           - 津贴
+-- overtime_pay        - 加班费
+-- bonus               - 奖金
+-- gross_salary        - 应发工资
+-- social_security     - 社保个人部分
+-- housing_fund        - 公积金个人部分
+-- special_deduction   - 专项扣除
+-- taxable_income      - 应纳税所得额
+-- personal_tax        - 个人所得税
+-- actual_tax          - 实际个税
+-- net_salary          - 实发工资
+-- paid_salary         - 实际发放金额
+-- status              - 状态（draft, submitted, approved, paid, rejected）
+-- submitted_by        - 提交人
+-- approved_by         - 审批人
+-- submitted_at        - 提交时间
+-- approved_at         - 审批时间
+-- paid_at             - 发放时间
+-- rejection_reason    - 拒绝原因
+-- created_at          - 创建时间
+-- updated_at          - 更新时间
+
+-- ========================================
+-- 查询示例（仅供参考，需要先创建 salaries 表）
+-- ========================================
+
+-- ⚠️ 注意：运行查询前，请先执行 create_salaries_table.sql 创建表结构
+
+-- 1. 按项目+期间统计工资汇总
+-- SELECT 
+--     s.project_id,
+--     p.name AS project_name,
+--     s.month,
+--     COUNT(DISTINCT s.employee_id) AS employee_count,
+--     SUM(s.gross_salary) AS total_gross_salary,
+--     SUM(s.net_salary) AS total_net_salary,
+--     s.status,
+--     MAX(s.created_at) AS created_at
+-- FROM salaries s
+-- JOIN projects p ON s.project_id = p.id
+-- GROUP BY s.project_id, p.name, s.month, s.status
+-- ORDER BY s.month DESC, s.project_id;
+
+-- 2. 查询某个项目某个月的所有员工工资
+-- SELECT 
+--     s.*,
+--     e.name AS employee_name
+-- FROM salaries s
+-- JOIN employees e ON s.employee_id = e.id
+-- WHERE s.project_id = 1 
+--   AND s.month = '2025-10'
+-- ORDER BY e.name;
+
+-- 3. 查询草稿状态的工资表
+-- SELECT 
+--     s.month,
+--     p.name AS project_name,
+--     COUNT(*) AS employee_count,
+--     SUM(s.gross_salary) AS total_gross
+-- FROM salaries s
+-- JOIN projects p ON s.project_id = p.id
+-- WHERE s.status = 'draft'
+-- GROUP BY s.month, p.name;

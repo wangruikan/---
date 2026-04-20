@@ -1,0 +1,17 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[remote "origin"]
+	url = https://github.com/GrahamCampbell/Result-Type.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+	pushurl = git@github.com:GrahamCampbell/Result-Type.git
+[branch "1.1"]
+	remote = origin
+	merge = refs/heads/1.1
+[remote "composer"]
+	url = https://github.com/GrahamCampbell/Result-Type.git
+	fetch = +refs/heads/*:refs/remotes/composer/*

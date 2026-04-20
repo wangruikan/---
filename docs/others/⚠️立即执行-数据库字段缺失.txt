@@ -1,0 +1,32 @@
+⚠️ 数据库字段缺失错误 ⚠️
+
+错误信息：
+Column not found: 1054 Unknown column 'cumulative_other_taxable' in 'field list'
+
+原因：
+数据库中缺少以下字段：
+1. insurance_import_setting（保险导入设置）
+2. cumulative_basic_deduction（累计减除费用）
+3. cumulative_special_deduction_insurance（累计专项扣除）
+4. cumulative_other_taxable（累计其他应纳税项）
+5. tax_payable_or_refundable（应补退税额）
+6. employee_signature（本人签字）
+
+解决方案：
+立即执行以下SQL文件：
+✅一次性执行所有SQL-立即执行.sql
+
+执行方式：
+方式1：在数据库管理工具中执行
+- 打开 Navicat/phpMyAdmin/MySQL Workbench
+- 打开 "✅一次性执行所有SQL-立即执行.sql" 文件
+- 全选内容，点击"运行"
+
+方式2：命令行执行
+mysql -u用户名 -p数据库名 < "✅一次性执行所有SQL-立即执行.sql"
+
+执行后：
+1. 刷新浏览器（Ctrl + F5）
+2. 重新生成工资表
+3. 应该就正常了！
+

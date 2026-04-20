@@ -1,0 +1,1 @@
+import{J as e}from"./index-f6f56618.js";function u(t){return e({url:"/projects",method:"get",params:t})}function c(t){return e({url:"/projects",method:"post",data:t})}function n(t,r){return e({url:`/projects/${t}`,method:"put",data:r})}function s(t){return e({url:`/projects/${t}`,method:"delete"})}export{c,s as d,u as g,n as u};

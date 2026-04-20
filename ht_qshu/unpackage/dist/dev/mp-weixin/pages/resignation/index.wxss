@@ -1,0 +1,199 @@
+
+.container.data-v-ad67a4cc {
+	min-height: 100vh;
+	background: #F5F7FA;
+	padding: 30rpx;
+}
+
+/* 提示卡片 */
+.notice-card.data-v-ad67a4cc {
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	border-radius: 16rpx;
+	padding: 30rpx;
+	display: flex;
+	align-items: flex-start;
+	margin-bottom: 30rpx;
+}
+.notice-icon.data-v-ad67a4cc {
+	font-size: 40rpx;
+	margin-right: 20rpx;
+}
+.notice-content.data-v-ad67a4cc {
+	flex: 1;
+}
+.notice-title.data-v-ad67a4cc {
+	display: block;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #fff;
+	margin-bottom: 10rpx;
+}
+.notice-text.data-v-ad67a4cc {
+	display: block;
+	font-size: 26rpx;
+	color: rgba(255, 255, 255, 0.9);
+	line-height: 1.6;
+}
+
+/* 上传区域 */
+.upload-section.data-v-ad67a4cc {
+	margin-bottom: 30rpx;
+}
+.upload-btn.data-v-ad67a4cc {
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+	color: #fff;
+	border: none;
+	border-radius: 16rpx;
+	padding: 30rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 32rpx;
+	font-weight: bold;
+}
+.upload-icon.data-v-ad67a4cc {
+	font-size: 40rpx;
+	margin-right: 15rpx;
+}
+
+/* 文件列表 */
+.file-list.data-v-ad67a4cc {
+	background: #fff;
+	border-radius: 16rpx;
+	padding: 30rpx;
+}
+.list-header.data-v-ad67a4cc {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 30rpx;
+	padding-bottom: 20rpx;
+	border-bottom: 1px solid #F0F0F0;
+}
+.list-title.data-v-ad67a4cc {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333;
+}
+.list-count.data-v-ad67a4cc {
+	font-size: 26rpx;
+	color: #999;
+}
+.file-item.data-v-ad67a4cc {
+	border-bottom: 1px solid #F0F0F0;
+	padding: 30rpx 0;
+}
+.file-item.data-v-ad67a4cc:last-child {
+	border-bottom: none;
+}
+.file-info.data-v-ad67a4cc {
+	display: flex;
+	align-items: flex-start;
+	margin-bottom: 20rpx;
+}
+.file-icon.data-v-ad67a4cc {
+	font-size: 60rpx;
+	margin-right: 20rpx;
+}
+.file-details.data-v-ad67a4cc {
+	flex: 1;
+}
+.file-name.data-v-ad67a4cc {
+	display: block;
+	font-size: 30rpx;
+	color: #333;
+	font-weight: 500;
+	margin-bottom: 10rpx;
+	word-break: break-all;
+}
+.file-meta.data-v-ad67a4cc {
+	display: flex;
+	align-items: center;
+	font-size: 24rpx;
+	color: #999;
+	margin-bottom: 10rpx;
+}
+.file-size.data-v-ad67a4cc {
+	margin-right: 10rpx;
+}
+.file-divider.data-v-ad67a4cc {
+	margin: 0 10rpx;
+}
+.file-time.data-v-ad67a4cc {
+	margin-left: 10rpx;
+}
+.file-source.data-v-ad67a4cc {
+	margin-top: 10rpx;
+}
+.source-tag.data-v-ad67a4cc {
+	display: inline-block;
+	font-size: 22rpx;
+	padding: 6rpx 16rpx;
+	border-radius: 20rpx;
+}
+.tag-primary.data-v-ad67a4cc {
+	background: #E6F7FF;
+	color: #1890FF;
+}
+.tag-default.data-v-ad67a4cc {
+	background: #F5F5F5;
+	color: #999;
+}
+.file-actions.data-v-ad67a4cc {
+	display: flex;
+	justify-content: flex-end;
+	gap: 20rpx;
+}
+.action-btn.data-v-ad67a4cc {
+	display: flex;
+	align-items: center;
+	padding: 12rpx 24rpx;
+	border-radius: 8rpx;
+	font-size: 26rpx;
+	border: none;
+}
+.preview-btn.data-v-ad67a4cc {
+	background: #E6F7FF;
+	color: #1890FF;
+}
+.delete-btn.data-v-ad67a4cc {
+	background: #FFF1F0;
+	color: #FF4D4F;
+}
+.btn-icon.data-v-ad67a4cc {
+	font-size: 28rpx;
+	margin-right: 8rpx;
+}
+
+/* 空状态 */
+.empty-state.data-v-ad67a4cc {
+	text-align: center;
+	padding: 150rpx 0;
+}
+.empty-icon.data-v-ad67a4cc {
+	display: block;
+	font-size: 120rpx;
+	margin-bottom: 30rpx;
+	opacity: 0.5;
+}
+.empty-text.data-v-ad67a4cc {
+	display: block;
+	font-size: 32rpx;
+	color: #999;
+	margin-bottom: 15rpx;
+}
+.empty-tip.data-v-ad67a4cc {
+	display: block;
+	font-size: 26rpx;
+	color: #CCC;
+}
+
+/* 加载状态 */
+.loading-state.data-v-ad67a4cc {
+	text-align: center;
+	padding: 100rpx 0;
+}
+.loading-text.data-v-ad67a4cc {
+	font-size: 28rpx;
+	color: #999;
+}

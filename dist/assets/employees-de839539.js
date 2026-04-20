@@ -1,0 +1,1 @@
+import{J as t}from"./index-f6f56618.js";const s=e=>t({url:"/employees",method:"get",params:e}),l=(e,o)=>t({url:`/employees/${e}`,method:"put",data:o}),m=e=>t({url:`/employees/${e}`,method:"delete"});export{m as d,s as g,l as u};

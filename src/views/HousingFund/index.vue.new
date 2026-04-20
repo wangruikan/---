@@ -1,0 +1,1136 @@
+<template>
+  <div class="housing-fund-container">
+    <div class="page-header">
+      <h2>公积金管理</h2>
+      <div class="header-buttons">
+        <el-button type="primary" @click="showCreateRegionDialog = true">
+          <el-icon><Plus /></el-icon>
+          新建地区
+        </el-button>
+        <el-button 
+          v-if="selectedRegions.length > 0" 
+          type="success" 
+          @click="batchCreateTemplate"
+        >
+          <el-icon><Plus /></el-icon>
+          批量创建模板 ({{ selectedRegions.length }})
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 地区列表 -->
+    <el-card class="region-list-card">
+      <template #header>
+        <div class="card-header">
+          <span>地区列表</span>
+        </div>
+      </template>
+
+      <el-table :data="regions" v-loading="loading" stripe @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" />
+        <el-table-column prop="region_name" label="地区名称" width="200" />
+        <el-table-column prop="account_number" label="公积金账号" width="180" />
+        <el-table-column label="配置数量" width="120">
+          <template #default="{ row }">
+            <el-tag type="info">{{ row.config_count }} 个配置</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="默认配置" width="200">
+          <template #default="{ row }">
+            <el-tag v-if="row.has_default" type="success">已设置默认</el-tag>
+            <el-tag v-else type="warning">未设置默认</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="creator.name" label="创建人" width="100" />
+        <el-table-column prop="created_at" label="创建时间" width="160">
+          <template #default="{ row }">
+            <span v-date-time="row.created_at"></span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="300">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="viewConfigs(row)">
+              查看配置
+            </el-button>
+            <el-button 
+              v-if="!row.has_template"
+              type="success" 
+              size="small" 
+              @click="createTemplate(row)"
+            >
+              创建模板
+            </el-button>
+            <el-button 
+              v-else
+              type="warning" 
+              size="small" 
+              @click="editTemplate(row)"
+            >
+              编辑模板
+            </el-button>
+            <el-button type="warning" size="small" @click="editRegion(row)">
+              编辑
+            </el-button>
+            <el-button type="danger" size="small" @click="deleteRegion(row)">
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- 配置列表 -->
+    <el-card v-if="selectedRegion" class="config-list-card">
+      <template #header>
+        <div class="card-header">
+          <span>{{ selectedRegion.region_name }} - 配置列表</span>
+          <el-button type="primary" @click="showCreateConfigDialog = true">
+            <el-icon><Plus /></el-icon>
+            新建配置
+          </el-button>
+        </div>
+      </template>
+
+      <el-table :data="configs" v-loading="configLoading" stripe>
+        <el-table-column prop="config_name" label="配置名称" width="200" />
+        <el-table-column prop="min_base_amount" label="下限基数" width="120">
+          <template #default="{ row }">
+            ¥{{ row.min_base_amount || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="max_base_amount" label="上限基数" width="120">
+          <template #default="{ row }">
+            ¥{{ row.max_base_amount || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="employee_ratio" label="员工缴纳比例" width="120">
+          <template #default="{ row }">
+            {{ (row.employee_ratio * 100).toFixed(2) }}%
+          </template>
+        </el-table-column>
+        <el-table-column prop="company_ratio" label="公司缴纳比例" width="120">
+          <template #default="{ row }">
+            {{ (row.company_ratio * 100).toFixed(2) }}%
+          </template>
+        </el-table-column>
+        <el-table-column label="默认" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
+            <el-button
+              v-else
+              type="primary"
+              size="small"
+              @click="setDefault(row)"
+            >
+              设为默认
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column prop="creator.name" label="创建人" width="100" />
+        <el-table-column prop="created_at" label="创建时间" width="160">
+          <template #default="{ row }">
+            <span v-date-time="row.created_at"></span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <el-button type="warning" size="small" @click="editConfig(row)">
+              编辑
+            </el-button>
+            <el-button type="danger" size="small" @click="deleteConfig(row)">
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- 创建/编辑地区对话框 -->
+    <el-dialog
+      v-model="showCreateRegionDialog"
+      :title="editingRegion ? '编辑地区' : '新建地区'"
+      width="400px"
+    >
+      <el-form :model="regionForm" :rules="regionRules" ref="regionFormRef" label-width="120px">
+        <el-form-item label="地区名称" prop="region_name">
+          <el-input v-model="regionForm.region_name" placeholder="请输入地区名称，如：北京市" />
+        </el-form-item>
+        <el-form-item label="公积金账号" prop="account_number">
+          <el-input v-model="regionForm.account_number" placeholder="请输入公积金账号（可选）" />
+        </el-form-item>
+        <el-form-item label="单位（公司）" prop="company_name">
+          <el-input v-model="regionForm.company_name" placeholder="请输入单位名称" />
+          <div class="form-tip">缴纳公积金的单位（公司）名称</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreateRegionDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveRegion" :loading="saving">
+          {{ editingRegion ? '更新' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 创建/编辑配置对话框 -->
+    <el-dialog
+      v-model="showCreateConfigDialog"
+      :title="editingConfig ? '编辑配置' : '新建配置'"
+      width="500px"
+    >
+      <el-form :model="configForm" :rules="configRules" ref="configFormRef" label-width="120px">
+        <el-form-item label="配置名称" prop="config_name">
+          <el-input v-model="configForm.config_name" placeholder="请输入配置名称，如：标准配置" />
+        </el-form-item>
+        <el-form-item label="下限基数" prop="min_base_amount">
+          <el-input-number
+            v-model="configForm.min_base_amount"
+            :min="0"
+            :precision="2"
+            placeholder="请输入下限基数"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="上限基数" prop="max_base_amount">
+          <el-input-number
+            v-model="configForm.max_base_amount"
+            :min="0"
+            :precision="2"
+            placeholder="请输入上限基数"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="员工缴纳比例" prop="employee_ratio">
+          <el-input-number
+            v-model="configForm.employee_ratio"
+            :min="0"
+            :max="1"
+            :precision="4"
+            :step="0.0001"
+            placeholder="请输入员工缴纳比例"
+            style="width: 100%"
+          />
+          <div class="form-tip">例如：0.12 表示 12%</div>
+        </el-form-item>
+        <el-form-item label="公司缴纳比例" prop="company_ratio">
+          <el-input-number
+            v-model="configForm.company_ratio"
+            :min="0"
+            :max="1"
+            :precision="4"
+            :step="0.0001"
+            placeholder="请输入公司缴纳比例"
+            style="width: 100%"
+          />
+          <div class="form-tip">例如：0.12 表示 12%</div>
+        </el-form-item>
+        <el-form-item label="设为默认">
+          <el-switch v-model="configForm.is_default" />
+          <div class="form-tip">设为默认后，该地区将使用此配置作为默认配置</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreateConfigDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveConfig" :loading="saving">
+          {{ editingConfig ? '更新' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加表头字段对话框 -->
+    <el-dialog v-model="showAddHeaderFieldDialog" title="添加表头字段" width="500px">
+      <el-form :model="newHeaderField" label-width="100px">
+        <el-form-item label="字段标签">
+          <el-input v-model="newHeaderField.label" placeholder="例如：公司名称" />
+        </el-form-item>
+        <el-form-item label="字段类型">
+          <el-radio-group v-model="newHeaderField.type">
+            <el-radio label="system">系统字段</el-radio>
+            <el-radio label="text">固定文本</el-radio>
+            <el-radio label="date">日期</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="系统字段" v-if="newHeaderField.type === 'system'">
+          <el-select v-model="newHeaderField.systemField" style="width: 100%">
+            <el-option 
+              v-for="opt in systemFieldOptions" 
+              :key="opt.value" 
+              :label="opt.label" 
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="字段值" v-if="newHeaderField.type === 'text'">
+          <el-input v-model="newHeaderField.value" placeholder="输入固定文本" />
+        </el-form-item>
+        <el-form-item label="日期格式" v-if="newHeaderField.type === 'date'">
+          <el-select v-model="newHeaderField.dateFormat" style="width: 100%">
+            <el-option label="2025-01-02" value="YYYY-MM-DD" />
+            <el-option label="2025年01月02日" value="YYYY年MM月DD日" />
+            <el-option label="2025/01/02" value="YYYY/MM/DD" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddHeaderFieldDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmAddHeaderField">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加表尾字段对话框 -->
+    <el-dialog v-model="showAddFooterFieldDialog" title="添加表尾字段" width="500px">
+      <el-form :model="newFooterField" label-width="100px">
+        <el-form-item label="字段标签">
+          <el-input v-model="newFooterField.label" placeholder="例如：制表人" />
+        </el-form-item>
+        <el-form-item label="字段类型">
+          <el-radio-group v-model="newFooterField.type">
+            <el-radio label="system">系统字段</el-radio>
+            <el-radio label="text">固定文本</el-radio>
+            <el-radio label="date">日期</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="系统字段" v-if="newFooterField.type === 'system'">
+          <el-select v-model="newFooterField.systemField" style="width: 100%">
+            <el-option label="制表人" value="creator_name" />
+            <el-option label="审核人" value="auditor_name" />
+            <el-option label="当前用户" value="current_user" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="字段值" v-if="newFooterField.type === 'text'">
+          <el-input v-model="newFooterField.value" placeholder="输入固定文本" />
+        </el-form-item>
+        <el-form-item label="日期格式" v-if="newFooterField.type === 'date'">
+          <el-select v-model="newFooterField.dateFormat" style="width: 100%">
+            <el-option label="2025-01-02" value="YYYY-MM-DD" />
+            <el-option label="2025年01月02日" value="YYYY年MM月DD日" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddFooterFieldDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmAddFooterField">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑报表标题对话框 -->
+    <el-dialog v-model="showEditTitleDialog" title="设置报表标题" width="400px">
+      <el-input v-model="reportTitle" placeholder="请输入报表标题" />
+      <template #footer>
+        <el-button @click="showEditTitleDialog = false">取消</el-button>
+        <el-button type="primary" @click="showEditTitleDialog = false">确定</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Delete, Back, Right, Grid, Document, Close, Edit } from '@element-plus/icons-vue'
+import { useAccountSetStore } from '@/stores/accountSet'
+import request from '@/api/request'
+import {
+  getHousingFundRegions,
+  createHousingFundRegion,
+  updateHousingFundRegion,
+  deleteHousingFundRegion,
+  getHousingFundRegionConfigs
+} from '@/api/housingFundRegion'
+import {
+  createHousingFundConfig,
+  updateHousingFundConfig,
+  deleteHousingFundConfig,
+  setDefaultHousingFundConfig
+} from '@/api/housingFundConfig'
+
+const accountSetStore = useAccountSetStore()
+
+// 计算属性
+const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
+
+
+// 响应式数据
+const loading = ref(false)
+const configLoading = ref(false)
+const saving = ref(false)
+const submitting = ref(false)
+const regions = ref([])
+const selectedRegions = ref([])
+const configs = ref([])
+const selectedRegion = ref(null)
+const showCreateRegionDialog = ref(false)
+const showCreateConfigDialog = ref(false)
+const editingRegion = ref(null)
+const editingConfig = ref(null)
+const regionFormRef = ref()
+const configFormRef = ref()
+
+// 地区表单
+const regionForm = reactive({
+  region_name: '',
+  account_number: '',
+  company_name: ''
+})
+
+// 配置表单
+const configForm = reactive({
+  config_name: '',
+  min_base_amount: 0,
+  max_base_amount: 0,
+  employee_ratio: 0.12,
+  company_ratio: 0.12,
+  is_default: false
+})
+
+// 表单验证规则
+const regionRules = {
+  region_name: [
+    { required: true, message: '请输入地区名称', trigger: 'blur' }
+  ]
+}
+
+const configRules = {
+  config_name: [
+    { required: true, message: '请输入配置名称', trigger: 'blur' }
+
+// 模板设计器相关
+const showTemplateDesigner = ref(false)
+const currentTemplateRegion = ref(null)
+const currentTemplateType = ref('housing_fund') 
+  ],
+  min_base_amount: [
+    { required: true, message: '请输入下限基数', trigger: 'blur' }
+  ],
+  max_base_amount: [
+    { required: true, message: '请输入上限基数', trigger: 'blur' }
+  ],
+  employee_ratio: [
+    { required: true, message: '请输入员工缴纳比例', trigger: 'blur' }
+  ],
+  company_ratio: [
+    { required: true, message: '请输入公司缴纳比例', trigger: 'blur' }
+  ]
+}
+
+// 表格计算方法
+// 加载地区列表
+const loadRegions = async () => {
+  loading.value = true
+  try {
+    const response = await getHousingFundRegions({
+      account_set_id: currentAccountSetId.value
+    })
+    if (response.success) {
+      regions.value = response.data
+    } else {
+      ElMessage.error('加载地区列表失败')
+    }
+  } catch (error) {
+    console.error('加载地区列表失败:', error)
+    ElMessage.error('加载地区列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+// 查看配置
+const viewConfigs = async (region) => {
+  selectedRegion.value = region
+  configLoading.value = true
+  try {
+    const response = await getHousingFundRegionConfigs(region.id)
+    if (response.success) {
+      configs.value = response.data
+    } else {
+      ElMessage.error('加载配置列表失败')
+    }
+  } catch (error) {
+    console.error('加载配置列表失败:', error)
+    ElMessage.error('加载配置列表失败')
+  } finally {
+    configLoading.value = false
+  }
+}
+
+// 编辑地区
+const editRegion = (region) => {
+  editingRegion.value = region
+  regionForm.region_name = region.region_name
+  regionForm.account_number = region.account_number || ''
+  regionForm.company_name = region.company_name || ''
+  showCreateRegionDialog.value = true
+}
+
+// 保存地区
+const saveRegion = async () => {
+  if (!regionFormRef.value) return
+  
+  await regionFormRef.value.validate(async (valid) => {
+    if (valid) {
+      saving.value = true
+      try {
+        let response
+        const dataToSave = { ...regionForm, account_set_id: currentAccountSetId.value }
+        if (editingRegion.value) {
+          response = await updateHousingFundRegion(editingRegion.value.id, dataToSave)
+        } else {
+          response = await createHousingFundRegion(dataToSave)
+        }
+        
+        if (response.success) {
+          ElMessage.success(editingRegion.value ? '地区更新成功' : '地区创建成功')
+          showCreateRegionDialog.value = false
+          resetRegionForm()
+          loadRegions()
+        } else {
+          ElMessage.error(response.message || '保存失败')
+        }
+      } catch (error) {
+        console.error('保存地区失败:', error)
+        ElMessage.error('保存地区失败')
+      } finally {
+        saving.value = false
+      }
+    }
+  })
+}
+
+// 删除地区
+const deleteRegion = async (region) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除地区"${region.region_name}"吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const response = await deleteHousingFundRegion(region.id)
+    if (response.success) {
+      ElMessage.success('地区删除成功')
+      loadRegions()
+      if (selectedRegion.value && selectedRegion.value.id === region.id) {
+        selectedRegion.value = null
+        configs.value = []
+      }
+    } else {
+      ElMessage.error(response.message || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除地区失败:', error)
+      ElMessage.error('删除地区失败')
+    }
+  }
+}
+
+// 编辑配置
+const editConfig = (config) => {
+  editingConfig.value = config
+  Object.assign(configForm, {
+    config_name: config.config_name,
+    min_base_amount: config.min_base_amount,
+    max_base_amount: config.max_base_amount,
+    employee_ratio: config.employee_ratio,
+    company_ratio: config.company_ratio,
+    is_default: config.is_default
+  })
+  showCreateConfigDialog.value = true
+}
+
+// 保存配置
+const saveConfig = async () => {
+  if (!configFormRef.value) return
+  
+  await configFormRef.value.validate(async (valid) => {
+    if (valid) {
+      saving.value = true
+      try {
+        let response
+        const dataToSave = { 
+          ...configForm, 
+          region_id: selectedRegion.value.id,
+          account_set_id: currentAccountSetId.value 
+        }
+        if (editingConfig.value) {
+          response = await updateHousingFundConfig(editingConfig.value.id, dataToSave)
+        } else {
+          response = await createHousingFundConfig(dataToSave)
+        }
+        
+        if (response.success) {
+          ElMessage.success(editingConfig.value ? '配置更新成功' : '配置创建成功')
+          showCreateConfigDialog.value = false
+          resetConfigForm()
+          viewConfigs(selectedRegion.value) // 重新加载配置列表
+          loadRegions() // 重新加载地区列表以更新统计信息
+        } else {
+          ElMessage.error(response.message || '保存失败')
+        }
+      } catch (error) {
+        console.error('保存配置失败:', error)
+        ElMessage.error('保存配置失败')
+      } finally {
+        saving.value = false
+      }
+    }
+  })
+}
+
+// 删除配置
+const deleteConfig = async (config) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除配置"${config.config_name}"吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const response = await deleteHousingFundConfig(config.id)
+    if (response.success) {
+      ElMessage.success('配置删除成功')
+      viewConfigs(selectedRegion.value) // 重新加载配置列表
+      loadRegions() // 重新加载地区列表以更新统计信息
+    } else {
+      ElMessage.error(response.message || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除配置失败:', error)
+      ElMessage.error('删除配置失败')
+    }
+  }
+}
+
+// 设置默认配置
+const setDefault = async (config) => {
+  try {
+    const response = await setDefaultHousingFundConfig(config.id)
+    if (response.success) {
+      ElMessage.success('默认配置设置成功')
+      viewConfigs(selectedRegion.value) // 重新加载配置列表
+      loadRegions() // 重新加载地区列表以更新统计信息
+    } else {
+      ElMessage.error(response.message || '设置失败')
+    }
+  } catch (error) {
+    console.error('设置默认配置失败:', error)
+    ElMessage.error('设置默认配置失败')
+  }
+}
+
+// 重置表单
+const resetRegionForm = () => {
+  editingRegion.value = null
+  regionForm.region_name = ''
+  regionForm.account_number = ''
+  regionForm.company_name = ''
+  regionFormRef.value?.resetFields()
+}
+
+const resetConfigForm = () => {
+  editingConfig.value = null
+  Object.assign(configForm, {
+    config_name: '',
+    min_base_amount: 0,
+    max_base_amount: 0,
+    employee_ratio: 0.12,
+    company_ratio: 0.12,
+    is_default: false
+  })
+  configFormRef.value?.resetFields()
+}
+
+// 创建模板（单个地区）
+const createTemplate = (region) => {
+  ElMessage.info('创建模板功能开发中...')
+  // TODO: 实现创建模板功能
+  console.log('创建模板:', region)
+}
+
+// 批量创建模板
+const batchCreateTemplate = () => {
+  if (selectedRegions.value.length === 0) {
+    ElMessage.warning('请先选择地区')
+    return
+  }
+  ElMessage.info('批量创建模板功能开发中...')
+  // TODO: 实现批量创建模板功能
+  console.log('批量创建模板:', selectedRegions.value)
+}
+
+
+
+// 监听账套变化
+const unwatchAccountSet = accountSetStore.$subscribe((mutation, state) => {
+  if (state.currentAccountSetId) {
+    loadRegions()
+  }
+})
+
+// 组件挂载时加载数据
+onMounted(() => {
+  if (currentAccountSetId.value) {
+    loadRegions()
+  }
+})
+</script>
+
+<style scoped>
+.housing-fund-container {
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.page-header h2 {
+  margin: 0;
+  color: #303133;
+}
+
+.region-list-card {
+  margin-bottom: 20px;
+}
+
+.config-list-card {
+  margin-bottom: 20px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.calculation-result {
+  background: #f5f7fa;
+  padding: 15px;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+}
+
+.calc-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.calc-item:last-child {
+  margin-bottom: 0;
+}
+
+.calc-item.total {
+  border-top: 1px solid #e4e7ed;
+  padding-top: 8px;
+  font-weight: bold;
+  color: #409eff;
+}
+
+.calc-label {
+  color: #606266;
+}
+
+.calc-value {
+  color: #303133;
+  font-weight: 500;
+}
+
+/* 模板设计器样式 */
+.template-designer {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+}
+
+.designer-header {
+  padding: 16px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.designer-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.designer-sidebar {
+  width: 220px;
+  border-right: 1px solid #e4e7ed;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.sidebar-header h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #303133;
+}
+
+.field-item {
+  padding: 10px 16px;
+  margin: 4px 8px;
+  background: white;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.field-item:hover {
+  background: #ecf5ff;
+  border-color: #409eff;
+  transform: translateX(4px);
+}
+
+.field-item .el-icon {
+  color: #909399;
+}
+
+/* 表头字段列表样式 */
+.header-fields-list {
+  padding: 8px;
+}
+
+.header-field-preview {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: white;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.header-field-preview:hover {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.header-field-preview.selected {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.field-preview-label {
+  font-weight: 500;
+  color: #303133;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.field-preview-value {
+  color: #909399;
+  font-size: 12px;
+}
+
+.designer-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.designer-toolbar {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.table-preview {
+  flex: 1;
+  overflow: auto;
+  border: 2px dashed #dcdfe6;
+  border-radius: 4px;
+  padding: 16px;
+  background: white;
+  position: relative;
+}
+
+.table-total-row {
+  margin-top: -1px;
+}
+
+.table-total-row .el-table {
+  border-top: 2px solid #409eff;
+}
+
+.table-total-row .total-cell {
+  font-weight: bold;
+  color: #303133;
+}
+
+.empty-table {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 报表预览样式 */
+.report-preview {
+  flex: 1;
+  overflow: auto;
+  border: 2px solid #e4e7ed;
+  border-radius: 4px;
+  background: white;
+  padding: 20px;
+}
+
+.report-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #303133;
+}
+
+.header-title {
+  text-align: center;
+  margin-bottom: 16px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.header-title:hover {
+  background: #f5f7fa;
+}
+
+.header-title h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: bold;
+  color: #303133;
+  display: inline-block;
+}
+
+.header-title .edit-icon {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+.header-fields {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  min-height: 60px;
+}
+
+.header-field-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.header-field-item:hover {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.header-field-item.selected {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.header-field-item .field-label {
+  font-weight: 500;
+  color: #606266;
+  margin-right: 4px;
+}
+
+.header-field-item .field-value {
+  color: #909399;
+}
+
+.header-field-item .remove-icon {
+  margin-left: 8px;
+  color: #f56c6c;
+  cursor: pointer;
+}
+
+.header-field-item .remove-icon:hover {
+  color: #f56c6c;
+  transform: scale(1.2);
+}
+
+.report-footer {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.footer-fields {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  min-height: 50px;
+}
+
+.footer-field-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  font-size: 14px;
+  color: #606266;
+}
+
+.footer-field-item:hover {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.footer-field-item.selected {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.footer-field-item .field-label {
+  font-weight: 500;
+  color: #606266;
+  margin-right: 4px;
+}
+
+.footer-field-item .field-value {
+  color: #909399;
+}
+
+.footer-field-item .remove-icon {
+  margin-left: 8px;
+  color: #f56c6c;
+  cursor: pointer;
+}
+
+.footer-field-item .remove-icon:hover {
+  color: #f56c6c;
+  transform: scale(1.2);
+}
+
+.column-header {
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.column-header:hover {
+  background: #ecf5ff;
+}
+
+.column-header.selected {
+  background: #409eff;
+  color: white;
+}
+
+.column-header.parent-column {
+  background: #f0f9ff;
+  border: 2px dashed #409eff;
+  padding: 8px;
+  min-height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.column-header.parent-column.drop-zone {
+  background: #e6f7ff;
+}
+
+.column-header.parent-column:hover {
+  background: #d9f0ff;
+}
+
+.column-header.child-column {
+  background: #fafafa;
+}
+
+.designer-properties {
+  width: 280px;
+  border-left: 1px solid #e4e7ed;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+}
+
+.properties-header {
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.properties-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #303133;
+}
+
+.designer-properties .el-form {
+  padding: 16px;
+}
+
+.designer-properties .el-form-item {
+  margin-bottom: 18px;
+}
+
+:deep(.selected-column) {
+  background: #ecf5ff !important;
+}
+
+</style>

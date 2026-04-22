@@ -62,6 +62,7 @@ class EmployeeContract extends Model
         'sign_device',
         'employee_reject_reason',
         'signature_positions',  // 预设的多个签名位置（JSON格式）
+        'notice_signed_files',  // 须知签名副本列表（JSON）
     ];
 
     protected $casts = [
@@ -69,6 +70,7 @@ class EmployeeContract extends Model
         'employee_signed_at' => 'datetime',
         'completed_at' => 'datetime',
         'signature_positions' => 'array',  // 自动转换为数组
+        'notice_signed_files' => 'array',
     ];
 
     /**

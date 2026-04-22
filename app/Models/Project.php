@@ -67,6 +67,7 @@ class Project extends Model
         'account_set_id',  // 【账套关联】
         'contract_notice_file_id',  // 【劳动合同须知文件ID】单个文件
         'contract_notice_files',  // 【劳动合同须知文件ID列表】逗号分隔
+        'notice_placeholder_positions',  // 【须知文件签名占位符配置】按文件ID映射
         'labor_contract_notice_name',  // 【劳动合同须知文件名称】
         'labor_contract_notice_file',  // 【劳动合同须知文件路径】
         'social_security_regions',  // 【社保地区ID列表】
@@ -88,6 +89,7 @@ class Project extends Model
         'medical_insurance_regions' => 'array',
         'housing_fund_regions' => 'array',
         'placeholder_fields' => 'array',
+        'notice_placeholder_positions' => 'array',
         'start_date' => 'date:Y-m-d',
         'end_date' => 'date:Y-m-d',
         'created_at' => 'datetime:Y-m-d H:i:s',

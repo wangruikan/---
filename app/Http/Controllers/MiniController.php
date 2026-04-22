@@ -219,7 +219,21 @@ class MiniController extends Controller
 
         // 获取员工所在的项目
         $employee = Employee::find($contract->employee_id);
-        $projects = $employee->projects()->where('account_set_id', $employee->account_set_id)->get();
+        if (!$employee) {
+            return [
+                'notice_file' => null,
+                'notice_files' => [],
+                'must_read_notice' => false
+            ];
+        }
+
+        $projectQuery = $employee->projects();
+        $accountSetId = $contract->account_set_id ?: $employee->account_set_id;
+        if ($accountSetId) {
+            $projectQuery->where('projects.account_set_id', $accountSetId);
+        }
+
+        $projects = $projectQuery->get();
 
         if ($projects->isEmpty()) {
             return [
@@ -253,10 +267,14 @@ class MiniController extends Controller
                         if (empty($file->path)) {
                             continue;
                         }
+                        $projectNoticePositions = is_array($project->notice_placeholder_positions)
+                            ? $project->notice_placeholder_positions
+                            : [];
                         $noticeFiles[] = [
                             'id' => $file->id,
                             'name' => $file->original_name ?: '劳动合同须知.pdf',
-                            'view_url' => $host . '/storage/' . $file->path
+                            'view_url' => $host . '/storage/' . $file->path,
+                            'signature_positions' => $projectNoticePositions[$file->id] ?? []
                         ];
                     }
                 }
@@ -270,10 +288,14 @@ class MiniController extends Controller
                     ->first();
 
                 if ($noticeFile && $noticeFile->path) {
+                    $projectNoticePositions = is_array($project->notice_placeholder_positions)
+                        ? $project->notice_placeholder_positions
+                        : [];
                     $noticeFiles[] = [
                         'id' => $noticeFile->id,
                         'name' => $noticeFile->original_name ?: '劳动合同须知.pdf',
-                        'view_url' => $host . '/storage/' . $noticeFile->path
+                        'view_url' => $host . '/storage/' . $noticeFile->path,
+                        'signature_positions' => $projectNoticePositions[$noticeFile->id] ?? []
                     ];
                 }
             }
@@ -394,12 +416,15 @@ class MiniController extends Controller
     public function signContract(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'id_last_4' => 'required|string|size:4',
+            'id_last_4' => 'required|string',
             'signature_image' => 'required|string', // base64签名图片
             // 以下参数为可选（兼容旧版本）
             'signed_pdf' => 'nullable|file|mimes:pdf',
-            'sign_x_percent' => 'nullable|numeric|min:0|max:100', 
-            'sign_y_percent' => 'nullable|numeric|min:0|max:100', 
+            'notice_signed_pdfs' => 'nullable',
+            'notice_signed_file_ids' => 'nullable|array',
+            'notice_signed_file_names' => 'nullable|array',
+            'sign_x_percent' => 'nullable|numeric|min:0|max:100',
+            'sign_y_percent' => 'nullable|numeric|min:0|max:100',
             'page_index' => 'nullable|integer|min:0',
         ], [
             'id_last_4.required' => '请输入身份证后4位',
@@ -417,9 +442,12 @@ class MiniController extends Controller
 
         $employee = Employee::find($request->user()->id);
 
-        // 验证身份证后4位
-        $last4 = substr($employee->id_number, -4);
-        if ($request->id_last_4 !== $last4) {
+        // 验证身份证后4位（兼容空格/全角输入）
+        $inputLast4 = preg_replace('/\D/u', '', str_replace('　', '', trim((string) $request->id_last_4)));
+        $idNumber = preg_replace('/\D/u', '', (string) $employee->id_number);
+        $last4 = substr($idNumber, -4);
+
+        if ($inputLast4 !== $last4) {
             return response()->json([
                 'success' => false,
                 'message' => '身份证后4位错误'
@@ -449,7 +477,8 @@ class MiniController extends Controller
                 'contract_id' => $id,
                 'employee_id' => $employee->id,
                 'has_preset_positions' => !empty($contract->signature_positions),
-                'has_pdf' => $request->hasFile('signed_pdf')
+                'has_pdf' => $request->hasFile('signed_pdf'),
+                'has_notice_signed_pdfs' => $request->hasFile('notice_signed_pdfs')
             ]);
             
             // 1. 保存签名图片
@@ -477,8 +506,45 @@ class MiniController extends Controller
             }
             // 新版本：签名位置由后端预设决定，PDF合成在管理员确认时进行
             
+            $noticeSignedFiles = [];
+            if ($request->hasFile('notice_signed_pdfs')) {
+                $noticeSignedPdfs = $request->file('notice_signed_pdfs');
+                $noticeFileIds = $request->input('notice_signed_file_ids', []);
+                $noticeFileNames = $request->input('notice_signed_file_names', []);
+
+                foreach ($noticeSignedPdfs as $index => $noticePdf) {
+                    if (!$noticePdf) {
+                        continue;
+                    }
+
+                    $noticeSignedPath = 'contracts/notices/signed_notice_' . time() . '_' . uniqid() . '_' . $index . '.pdf';
+                    $noticePdf->storeAs('', $noticeSignedPath, 'public');
+
+                    $noticeSignedFiles[] = [
+                        'notice_file_id' => isset($noticeFileIds[$index]) ? (int) $noticeFileIds[$index] : null,
+                        'template_path' => null,
+                        'signed_path' => $noticeSignedPath,
+                        'name' => $noticeFileNames[$index] ?? ('须知签名副本_' . ($index + 1) . '.pdf'),
+                    ];
+
+                    EmployeeContract::create([
+                        'employee_id' => $contract->employee_id,
+                        'account_set_id' => $contract->account_set_id,
+                        'contract_type' => 'other',
+                        'contract_file' => $noticeSignedPath,
+                        'original_filename' => $noticeFileNames[$index] ?? ('须知签名副本_' . ($index + 1) . '.pdf'),
+                        'status' => 'completed',
+                        'created_by' => $contract->created_by,
+                        'uploaded_at' => now(),
+                        'completed_at' => now(),
+                        'notes' => '小程序签署时上传的须知签名副本',
+                    ]);
+                }
+            }
+
             // 3. 更新合同记录
             $contract->signature_image = $signatureImage;
+            $contract->notice_signed_files = $noticeSignedFiles;
             $contract->status = 'employee_signed'; // 签署完成，等待HR确认
             $contract->employee_signed_at = now();
             $contract->sign_ip = $request->ip();

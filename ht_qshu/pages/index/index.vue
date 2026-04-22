@@ -21,7 +21,7 @@
 				>
 					<view class="contract-icon">📄</view>
 					<view class="contract-info">
-						<text class="contract-type">{{ getContractTypeText(contract.contract_type) }}</text>
+						<text class="contract-type">{{ getContractTypeText(contract.contract_type, contract) }}</text>
 						<text class="contract-time">上传时间：{{ formatTime(contract.uploaded_at) }}</text>
 					</view>
 					<view class="contract-action">
@@ -157,7 +157,13 @@ import request from '@/utils/request.js'
 			}
 		},
 		
-		getContractTypeText(type) {
+		getContractTypeText(type, contract = null) {
+				if (type === 'other') {
+					const notes = contract?.notes || ''
+					if (notes.includes('须知签名副本') || notes.includes('小程序签署时上传的须知签名副本')) {
+						return '须知文件'
+					}
+				}
 			const types = {
 				labor: '劳动合同',
 				termination: '解除协议合同',
@@ -482,8 +488,6 @@ import request from '@/utils/request.js'
 	color: #333;
 }
 
-.contract-list {
-}
 
 .contract-item {
 	display: flex;
@@ -519,8 +523,6 @@ import request from '@/utils/request.js'
 	color: #999;
 }
 
-.contract-action {
-}
 
 .sign-btn {
 	display: inline-block;

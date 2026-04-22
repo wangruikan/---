@@ -8,7 +8,7 @@
 			<!-- 合同信息 -->
 			<view class="info-section">
 				<view class="info-header">
-					<text class="contract-type">{{ getContractTypeText(contract.contract_type) }}</text>
+					<text class="contract-type">{{ getContractTypeText(contract.contract_type, contract) }}</text>
 					<view :class="['status-tag', getStatusClass(contract.status)]">
 						<text>{{ getStatusText(contract.status) }}</text>
 					</view>
@@ -189,22 +189,14 @@ export default {
 			}
 		},
 		
-		// 直接打开签名弹窗（签名位置由后端预设决定）
-		handleDirectSign() {
-			console.log('直接打开签名弹窗')
+		// 跳转到H5签署页（统一走可上传须知副本的签署链路）
+			handleDirectSign() {
+				uni.navigateTo({
+					url: `/pages/contract/sign-h5?id=${this.contractId}`
+				})
+			},
 			
-			// 打开签名弹窗
-			this.showSignPopup = true
-			
-			// 延迟初始化Canvas
-			this.$nextTick(() => {
-				setTimeout(() => {
-					this.initCanvas()
-				}, 300)
-			})
-		},
-		
-		// 初始化Canvas
+			// 初始化Canvas
 		initCanvas() {
 			const query = uni.createSelectorQuery().in(this)
 			query.select('.sign-canvas').boundingClientRect(data => {
@@ -296,8 +288,16 @@ export default {
 				editable: true,
 				placeholderText: '请输入身份证后4位',
 				success: (res) => {
-					if (res.confirm && res.content) {
-						this.getSignatureImage(res.content)
+					if (res.confirm) {
+						const normalized = String(res.content || '').replace(/\s|　/g, '')
+						if (!/^\d{4}$/.test(normalized)) {
+							uni.showToast({
+								title: '请输入4位数字',
+								icon: 'none'
+							})
+							return
+						}
+						this.getSignatureImage(normalized)
 					}
 				}
 			})
@@ -466,11 +466,18 @@ export default {
 			})
 		},
 		
-		getContractTypeText(type) {
+		getContractTypeText(type, contract = null) {
+			if (type === 'other') {
+				const notes = contract?.notes || ''
+				if (notes.includes('须知签名副本') || notes.includes('小程序签署时上传的须知签名副本')) {
+					return '须知文件'
+				}
+			}
 			const types = {
 				labor: '劳动合同',
 				termination: '解除协议合同',
-				retirement: '退休解除协议合同'
+				retirement: '退休解除协议合同',
+				other: '其他合同'
 			}
 			return types[type] || type
 		},

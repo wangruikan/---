@@ -199,10 +199,9 @@ class EmployeeContractController extends Controller
                 'sign_page_index' => $contract->sign_page_index,
                 'signature_positions' => $contract->signature_positions
             ]);
-            
+
+            $employee = \App\Models\Employee::find($contract->employee_id);
             if ($contract->signature_image) {
-                // 获取员工信息
-                $employee = \App\Models\Employee::find($contract->employee_id);
                 
                 // 检查是否有预设的多签名位置
                 $signaturePositions = $contract->signature_positions;
@@ -508,7 +507,217 @@ class EmployeeContractController extends Controller
         $signature->destroy();
         
         \Log::info('多签名PDF合成完成', ['new_path' => $newFilename]);
-        
+
+        return $newFilename;
+    }
+
+    private function generateSignedNoticeCopies(EmployeeContract $contract, ?Employee $employee): array
+    {
+        if (!$employee || !$contract->signature_image || $contract->contract_type !== 'labor') {
+            return [];
+        }
+
+        if (!extension_loaded('imagick')) {
+            \Log::warning('Imagick不可用，须知签名副本将使用FPDI兜底生成', ['contract_id' => $contract->id]);
+        }
+
+        $projectQuery = $employee->projects();
+        $accountSetId = $contract->account_set_id ?: $employee->account_set_id;
+        if ($accountSetId) {
+            $projectQuery->where('projects.account_set_id', $accountSetId);
+        }
+
+        $projects = $projectQuery->get();
+        if ($projects->isEmpty()) {
+            return [];
+        }
+
+        $noticeMetaById = [];
+        foreach ($projects as $project) {
+            $noticeIds = [];
+            if (!empty($project->contract_notice_files)) {
+                $noticeIds = array_values(array_unique(array_filter(array_map('intval', explode(',', $project->contract_notice_files)))));
+            } elseif (!empty($project->contract_notice_file_id)) {
+                $noticeIds = [(int) $project->contract_notice_file_id];
+            }
+
+            if (empty($noticeIds)) {
+                continue;
+            }
+
+            $files = \App\Models\SharedFile::whereIn('id', $noticeIds)
+                ->where('file_category', 'notice')
+                ->where('account_set_id', $project->account_set_id)
+                ->get()
+                ->keyBy('id');
+
+            $positionsMap = is_array($project->notice_placeholder_positions) ? $project->notice_placeholder_positions : [];
+            foreach ($noticeIds as $noticeId) {
+                if (!isset($files[$noticeId])) {
+                    continue;
+                }
+                if (!isset($noticeMetaById[$noticeId])) {
+                    $noticeMetaById[$noticeId] = [
+                        'file' => $files[$noticeId],
+                        'positions' => is_array($positionsMap[$noticeId] ?? null) ? $positionsMap[$noticeId] : [],
+                    ];
+                }
+            }
+        }
+
+        if (empty($noticeMetaById)) {
+            return [];
+        }
+
+        $signTime = $contract->employee_signed_at
+            ? $contract->employee_signed_at->format('Y-m-d H:i:s')
+            : now()->format('Y-m-d H:i:s');
+
+        $results = [];
+        foreach ($noticeMetaById as $noticeId => $meta) {
+            $sharedFile = $meta['file'];
+            $positions = $meta['positions'];
+            if (empty($sharedFile->path)) {
+                continue;
+            }
+
+            $signedPath = $this->mergeNoticeSignatureToPDF($sharedFile->path, $contract->signature_image, $employee->name, $signTime, $positions);
+            if (!$signedPath) {
+                continue;
+            }
+
+            $results[] = [
+                'notice_file_id' => (int) $noticeId,
+                'template_path' => $sharedFile->path,
+                'signed_path' => $signedPath,
+                'name' => $sharedFile->original_name ?: $sharedFile->name,
+            ];
+        }
+
+        return $results;
+    }
+
+    private function mergeNoticeSignatureToPDF(string $noticeTemplatePath, string $signatureImagePath, string $employeeName, string $signTime, array $positions = []): ?string
+    {
+        $templateFullPath = storage_path('app/public/' . $noticeTemplatePath);
+        if (!file_exists($templateFullPath)) {
+            $templateFullPath = public_path('storage/' . $noticeTemplatePath);
+        }
+        if (!file_exists($templateFullPath)) {
+            \Log::warning('须知模板文件不存在，跳过签名副本生成', ['template_path' => $noticeTemplatePath]);
+            return null;
+        }
+
+        $signatureFullPath = storage_path('app/public/' . $signatureImagePath);
+        if (!file_exists($signatureFullPath)) {
+            $signatureFullPath = public_path($signatureImagePath);
+        }
+        if (!file_exists($signatureFullPath)) {
+            \Log::warning('签名图片不存在，跳过须知签名副本生成', ['signature_path' => $signatureImagePath]);
+            return null;
+        }
+
+        $imagick = new \Imagick();
+        if (PHP_OS_FAMILY === 'Windows') {
+            $gsPath = 'C:\\Program Files\\gs\\gs10.02.1\\bin\\gswin64c.exe';
+            if (file_exists($gsPath)) {
+                putenv("MAGICK_GHOSTSCRIPT_PATH={$gsPath}");
+            }
+        }
+
+        $imagick->setResolution(150, 150);
+        $imagick->readImage($templateFullPath);
+
+        $signature = new \Imagick($signatureFullPath);
+        $signature->scaleImage(150, 0);
+
+        $normalizedPositions = [];
+        foreach ($positions as $pos) {
+            if (($pos['type'] ?? '') !== 'employee_signature') {
+                continue;
+            }
+            $normalizedPositions[] = $pos;
+        }
+
+        if (empty($normalizedPositions)) {
+            $normalizedPositions[] = [
+                'x_percent' => 70,
+                'y_percent' => 85,
+                'page' => max(0, $imagick->getNumberImages() - 1),
+            ];
+        }
+
+        $pagePositions = [];
+        foreach ($normalizedPositions as $pos) {
+            $page = (int) ($pos['page'] ?? 0);
+            if (!isset($pagePositions[$page])) {
+                $pagePositions[$page] = [];
+            }
+            $pagePositions[$page][] = $pos;
+        }
+
+        $totalPages = $imagick->getNumberImages();
+        for ($pageIndex = 0; $pageIndex < $totalPages; $pageIndex++) {
+            if (!isset($pagePositions[$pageIndex])) {
+                continue;
+            }
+
+            $imagick->setIteratorIndex($pageIndex);
+            $geometry = $imagick->getImageGeometry();
+            $pageWidth = $geometry['width'];
+            $pageHeight = $geometry['height'];
+
+            foreach ($pagePositions[$pageIndex] as $pos) {
+                $x = isset($pos['x_percent'])
+                    ? ($pos['x_percent'] / 100) * $pageWidth
+                    : ($pos['x'] ?? 0);
+                $y = isset($pos['y_percent'])
+                    ? ($pos['y_percent'] / 100) * $pageHeight
+                    : ($pos['y'] ?? 0);
+
+                $signatureCopy = clone $signature;
+                $imagick->compositeImage($signatureCopy, \Imagick::COMPOSITE_OVER, (int) $x, (int) $y);
+                $signatureCopy->clear();
+                $signatureCopy->destroy();
+            }
+        }
+
+        $lastPos = end($normalizedPositions);
+        $lastPage = (int) ($lastPos['page'] ?? 0);
+        if ($lastPage < $totalPages) {
+            $imagick->setIteratorIndex($lastPage);
+            $geometry = $imagick->getImageGeometry();
+            $x = isset($lastPos['x_percent'])
+                ? ($lastPos['x_percent'] / 100) * $geometry['width']
+                : ($lastPos['x'] ?? 0);
+            $y = isset($lastPos['y_percent'])
+                ? ($lastPos['y_percent'] / 100) * $geometry['height']
+                : ($lastPos['y'] ?? 0);
+
+            $draw = new \ImagickDraw();
+            if (file_exists(storage_path('fonts/simhei.ttf'))) {
+                $draw->setFont(storage_path('fonts/simhei.ttf'));
+            }
+            $draw->setFontSize(10);
+            $draw->setFillColor('#000000');
+            $imagick->annotateImage($draw, (int) $x, (int) $y + 60, 0, "{$employeeName} {$signTime}");
+        }
+
+        $newFilename = 'contracts/notices/signed_notice_' . time() . '_' . uniqid() . '_' . basename($noticeTemplatePath);
+        $newFullPath = storage_path('app/public/' . $newFilename);
+        $dir = dirname($newFullPath);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $imagick->setImageFormat('pdf');
+        $imagick->writeImages($newFullPath, true);
+
+        $imagick->clear();
+        $imagick->destroy();
+        $signature->clear();
+        $signature->destroy();
+
         return $newFilename;
     }
 

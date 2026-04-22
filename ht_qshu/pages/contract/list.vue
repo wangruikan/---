@@ -24,7 +24,7 @@
 					<view class="contract-header">
 						<view class="contract-type">
 							<text class="type-icon">📄</text>
-							<text class="type-text">{{ getContractTypeText(contract.contract_type) }}</text>
+							<text class="type-text">{{ getContractTypeText(contract.contract_type, contract) }}</text>
 						</view>
 						<view :class="['status-tag', getStatusClass(contract.status)]">
 							<text>{{ getStatusText(contract.status) }}</text>
@@ -287,11 +287,18 @@ export default {
 			})
 		},
 
-		getContractTypeText(type) {
+		getContractTypeText(type, contract = null) {
+			if (type === 'other') {
+				const notes = contract?.notes || ''
+				if (notes.includes('须知签名副本') || notes.includes('小程序签署时上传的须知签名副本')) {
+					return '须知文件'
+				}
+			}
 			const types = {
 				labor: '劳动合同',
 				termination: '解除协议合同',
-				retirement: '退休解除协议合同'
+				retirement: '退休解除协议合同',
+				other: '其他合同'
 			}
 			return types[type] || type
 		},

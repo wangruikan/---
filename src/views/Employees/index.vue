@@ -3927,7 +3927,7 @@
           <el-table-column prop="contract_type" label="合同类型" width="150">
             <template #default="{ row }">
               <el-tag :type="getContractTypeColor(row.contract_type)">
-                {{ getContractTypeText(row.contract_type) }}
+                {{ getContractTypeText(row.contract_type, row) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -7807,7 +7807,14 @@ const formatDate = (date) => {
 }
 
 // 合同类型文本
-const getContractTypeText = (type) => {
+const getContractTypeText = (type, row = null) => {
+  if (type === 'other') {
+    const notes = row?.notes || ''
+    if (notes.includes('须知签名副本') || notes.includes('小程序签署时上传的须知签名副本')) {
+      return '须知文件'
+    }
+  }
+
   const types = {
     labor: '劳动合同',
     termination: '解除协议合同',

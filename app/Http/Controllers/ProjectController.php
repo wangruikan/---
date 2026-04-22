@@ -6,6 +6,7 @@ use App\Models\Project;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use App\Traits\ChecksPermission;
 
 class ProjectController extends Controller
@@ -192,9 +193,14 @@ class ProjectController extends Controller
         
         $project = Project::findOrFail($id);
         
-        $validator = Validator::make($request->all(), [
+        $requestData = $request->all();
+        if (array_key_exists('code', $requestData) && is_string($requestData['code'])) {
+            $requestData['code'] = trim($requestData['code']);
+        }
+
+        $rules = [
             'name' => 'sometimes|required|string|max:255',
-            'code' => 'sometimes|required|string|unique:projects,code,' . $id,
+            'code' => ['sometimes', 'required', 'string'],
             'description' => 'nullable|string',
             'social_security_location' => 'nullable|string',
             'insurance_types' => 'nullable|array',
@@ -206,7 +212,15 @@ class ProjectController extends Controller
             'social_security_regions' => 'nullable|array',
             'medical_insurance_regions' => 'nullable|array',
             'housing_fund_regions' => 'nullable|array',
-        ]);
+        ];
+
+        $incomingCode = $requestData['code'] ?? null;
+        $currentCode = is_string($project->code) ? trim($project->code) : $project->code;
+        if (array_key_exists('code', $requestData) && $incomingCode !== $currentCode) {
+            $rules['code'][] = Rule::unique('projects', 'code');
+        }
+
+        $validator = Validator::make($requestData, $rules);
 
         if ($validator->fails()) {
             return response()->json([
@@ -217,7 +231,7 @@ class ProjectController extends Controller
         }
 
         // 同步 requires_attendance 和 require_attendance 字段
-        $updateData = $request->all();
+        $updateData = $requestData;
         if ($request->has('requires_attendance')) {
             $updateData['require_attendance'] = $request->input('requires_attendance');
         }
@@ -258,6 +272,7 @@ class ProjectController extends Controller
             'notice_file_ids' => 'sometimes|array',
             'notice_file_ids.*' => 'integer|exists:shared_files,id',
             'notice_file_id' => 'nullable|integer|exists:shared_files,id',
+            'notice_placeholder_positions' => 'sometimes|array',
         ]);
 
         if ($validator->fails()) {
@@ -299,9 +314,26 @@ class ProjectController extends Controller
         ]);
 
         $firstNoticeFileId = $noticeFileIds[0] ?? null;
+
+        $rawNoticePositions = $request->has('notice_placeholder_positions')
+            ? $request->input('notice_placeholder_positions', [])
+            : ($project->notice_placeholder_positions ?? []);
+
+        $noticePlaceholderPositions = [];
+        if (is_array($rawNoticePositions)) {
+            foreach ($rawNoticePositions as $fileId => $positions) {
+                $fileIdInt = (int) $fileId;
+                if ($fileIdInt <= 0 || !in_array($fileIdInt, $noticeFileIds, true)) {
+                    continue;
+                }
+                $noticePlaceholderPositions[$fileIdInt] = is_array($positions) ? array_values($positions) : [];
+            }
+        }
+
         $project->update([
             'contract_notice_file_id' => $firstNoticeFileId,
-            'contract_notice_files' => empty($noticeFileIds) ? null : implode(',', $noticeFileIds)
+            'contract_notice_files' => empty($noticeFileIds) ? null : implode(',', $noticeFileIds),
+            'notice_placeholder_positions' => empty($noticeFileIds) ? null : $noticePlaceholderPositions,
         ]);
 
         $noticeFiles = collect();
@@ -327,6 +359,10 @@ class ProjectController extends Controller
             'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
         ]);
 
+        $savedPlaceholderPositions = is_array($project->notice_placeholder_positions)
+            ? $project->notice_placeholder_positions
+            : [];
+
         return response()->json([
             'success' => true,
             'message' => !empty($noticeFileIds) ? '须知文件设置成功' : '须知文件已清除',
@@ -334,6 +370,7 @@ class ProjectController extends Controller
                 'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
                 'notice_files' => $noticeFiles,
                 'notice_file' => $noticeFiles->first(),
+                'notice_placeholder_positions' => $savedPlaceholderPositions,
             ]
         ]);
     }
@@ -385,12 +422,17 @@ class ProjectController extends Controller
             'contract_notice_files' => $project->contract_notice_files,
         ]);
 
+        $noticePlaceholderPositions = is_array($project->notice_placeholder_positions)
+            ? $project->notice_placeholder_positions
+            : [];
+
         return response()->json([
             'success' => true,
             'data' => [
                 'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
                 'notice_files' => $noticeFiles->values(),
                 'notice_file' => $noticeFiles->first(),
+                'notice_placeholder_positions' => $noticePlaceholderPositions,
             ]
         ]);
     }

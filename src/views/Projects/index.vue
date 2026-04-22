@@ -888,6 +888,16 @@
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
+        <el-table-column label="签名占位符" width="170">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openNoticePlaceholderSetup(row)">
+              设置
+            </el-button>
+            <el-tag v-if="getNoticePlaceholderCount(row.id) > 0" size="small" type="success">
+              {{ getNoticePlaceholderCount(row.id) }}个
+            </el-tag>
+          </template>
+        </el-table-column>
       </el-table>
       
       <div style="margin-top: 15px; text-align: right;">
@@ -903,7 +913,26 @@
         </el-button>
       </template>
     </el-dialog>
-    
+
+    <!-- 须知签名占位符设置对话框 -->
+    <el-dialog
+      v-model="showNoticePlaceholderSetupDialog"
+      :title="`设置须知签名占位符 - ${currentNoticePlaceholderFile?.name || ''}`"
+      width="90%"
+      :close-on-click-modal="false"
+      @close="cleanupNoticePlaceholderPdfUrl"
+    >
+      <PdfPlaceholderSetup
+        v-if="currentNoticePlaceholderFile && showNoticePlaceholderSetupDialog"
+        :pdf-url="currentNoticePlaceholderPdfUrl"
+        :template-id="currentNoticePlaceholderTemplateId"
+        :saved-positions="currentNoticePlaceholderPositions"
+        :placeholder-fields="[{ key: 'employee_signature', label: '员工签字' }]"
+        @save="handleSaveNoticePlaceholderPositions"
+        @cancel="() => { showNoticePlaceholderSetupDialog = false; cleanupNoticePlaceholderPdfUrl(); }"
+      />
+    </el-dialog>
+
     <!-- 合同模板上传对话框 -->
     <el-dialog
       v-model="showTemplateUploadDialog"
@@ -1152,7 +1181,6 @@
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DocumentChecked, ArrowRight, Tickets } from '@element-plus/icons-vue'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
 import { getProjects, createProject, updateProject, deleteProject } from '@/api/projects'
@@ -1261,6 +1289,12 @@ const currentProject = ref(null)
 const availableNoticeFiles = ref([])
 const selectedNoticeFileIds = ref([])
 const noticeTableRef = ref()
+const noticePlaceholderPositions = ref({})
+const showNoticePlaceholderSetupDialog = ref(false)
+const currentNoticePlaceholderFile = ref(null)
+const currentNoticePlaceholderPdfUrl = ref(null)
+const currentNoticePlaceholderTemplateId = ref(0)
+const currentNoticePlaceholderPositions = ref([])
 
 // 合同模板管理相关
 const availableSharedFiles = ref([])
@@ -1374,6 +1408,10 @@ const documentFormRules = {
 // 清理PDF URL
 const cleanupPdfUrl = () => {
   currentPdfUrl.value = null
+}
+
+const cleanupNoticePlaceholderPdfUrl = () => {
+  currentNoticePlaceholderPdfUrl.value = null
 }
 
 // 打开资料配置对话框
@@ -2173,12 +2211,14 @@ const loadProjectNoticeFiles = async (projectId) => {
     console.log('📋 加载项目须知文件:', response)
 
     let ids = []
+    let loadedNoticePlaceholderPositions = {}
     if (response.success && response.data) {
       if (Array.isArray(response.data.notice_file_ids)) {
         ids = response.data.notice_file_ids.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
       } else if (response.data.notice_file && response.data.notice_file.id) {
         ids = [Number(response.data.notice_file.id)]
       }
+      loadedNoticePlaceholderPositions = response.data.notice_placeholder_positions || {}
     }
 
     selectedNoticeFileIds.value = ids
@@ -2192,9 +2232,12 @@ const loadProjectNoticeFiles = async (projectId) => {
         }
       })
     }
+
+    noticePlaceholderPositions.value = loadedNoticePlaceholderPositions
   } catch (error) {
     console.error('❌ 加载项目须知文件失败:', error)
     selectedNoticeFileIds.value = []
+    noticePlaceholderPositions.value = {}
     if (noticeTableRef.value) {
       noticeTableRef.value.clearSelection()
     }
@@ -2202,11 +2245,28 @@ const loadProjectNoticeFiles = async (projectId) => {
 }
 
 const handleNoticeSelectionChange = (rows) => {
-  selectedNoticeFileIds.value = (rows || []).map(row => row.id)
+  const selectedIds = (rows || []).map(row => Number(row.id))
+  selectedNoticeFileIds.value = selectedIds
+
+  const selectedIdSet = new Set(selectedIds)
+  const nextPositions = {}
+  Object.entries(noticePlaceholderPositions.value || {}).forEach(([fileId, positions]) => {
+    const id = Number(fileId)
+    if (selectedIdSet.has(id)) {
+      nextPositions[id] = positions
+    }
+  })
+  noticePlaceholderPositions.value = nextPositions
 }
 
 const handleClearNotice = () => {
   selectedNoticeFileIds.value = []
+  noticePlaceholderPositions.value = {}
+  showNoticePlaceholderSetupDialog.value = false
+  currentNoticePlaceholderFile.value = null
+  currentNoticePlaceholderPositions.value = []
+  currentNoticePlaceholderTemplateId.value = 0
+  cleanupNoticePlaceholderPdfUrl()
   if (noticeTableRef.value) {
     noticeTableRef.value.clearSelection()
   }
@@ -2222,7 +2282,10 @@ const handleSaveNoticeSettings = async () => {
     await request({
       url: `/projects/${currentProject.value.id}/contract-notices`,
       method: 'post',
-      data: { notice_file_ids: selectedNoticeFileIds.value }
+      data: {
+        notice_file_ids: selectedNoticeFileIds.value,
+        notice_placeholder_positions: noticePlaceholderPositions.value
+      }
     })
 
     if (selectedNoticeFileIds.value.length > 0) {
@@ -2242,10 +2305,54 @@ const handleSaveNoticeSettings = async () => {
 
 const handleNoticeDialogClose = () => {
   selectedNoticeFileIds.value = []
+  noticePlaceholderPositions.value = {}
+  currentNoticePlaceholderFile.value = null
+  currentNoticePlaceholderPositions.value = []
+  currentNoticePlaceholderTemplateId.value = 0
+  cleanupNoticePlaceholderPdfUrl()
   if (noticeTableRef.value) {
     noticeTableRef.value.clearSelection()
   }
   currentProject.value = null
+}
+
+const getNoticePlaceholderCount = (fileId) => {
+  const positions = noticePlaceholderPositions.value?.[fileId] || []
+  return (positions || []).filter(p => p && p.type === 'employee_signature').length
+}
+
+const openNoticePlaceholderSetup = (row) => {
+  if (!row || !row.path) {
+    ElMessage.warning('该须知文件无可用PDF路径')
+    return
+  }
+
+  if (!selectedNoticeFileIds.value.includes(Number(row.id))) {
+    ElMessage.warning('请先勾选该须知文件后再设置占位符')
+    return
+  }
+
+  currentNoticePlaceholderFile.value = row
+  currentNoticePlaceholderTemplateId.value = Number(`9${currentProject.value?.id || 0}${row.id}`)
+  currentNoticePlaceholderPositions.value = Array.isArray(noticePlaceholderPositions.value?.[row.id])
+    ? noticePlaceholderPositions.value[row.id]
+    : []
+  currentNoticePlaceholderPdfUrl.value = `/storage/${row.path}`
+  showNoticePlaceholderSetupDialog.value = true
+}
+
+const handleSaveNoticePlaceholderPositions = (data) => {
+  const fileId = currentNoticePlaceholderFile.value?.id
+  if (!fileId) {
+    return
+  }
+  noticePlaceholderPositions.value = {
+    ...noticePlaceholderPositions.value,
+    [fileId]: (data.positions || []).filter(p => p && p.type === 'employee_signature')
+  }
+  showNoticePlaceholderSetupDialog.value = false
+  cleanupNoticePlaceholderPdfUrl()
+  ElMessage.success('须知签名占位符已保存到当前配置')
 }
 
 // 合同模板管理方法
@@ -2314,7 +2421,7 @@ const handleUploadTemplate = async () => {
     const existingTemplates = contractTemplates.value[currentTemplateType.value] || []
     const isFirstTemplate = existingTemplates.length === 0
     
-    const response = await addContractTemplate(currentProject.value.id, {
+    await addContractTemplate(currentProject.value.id, {
       contract_type: currentTemplateType.value,
       shared_file_id: selectedSharedFileId.value,
       is_default: isFirstTemplate  // 只有第一个模板才自动设为默认

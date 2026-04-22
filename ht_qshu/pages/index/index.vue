@@ -53,7 +53,7 @@
 			<view class="modal-mask" @click="closeNoticeModal"></view>
 			<view class="modal-content">
 				<view class="modal-header">
-					<text class="modal-title">📋 劳动合同须知</text>
+					<text class="modal-title">📋 劳动合同须知（{{ currentNoticeIndex + 1 }}/{{ noticeFiles.length || 1 }}）</text>
 					<text class="modal-close" @click="closeNoticeModal">✕</text>
 				</view>
 				
@@ -86,7 +86,7 @@
 						:class="{ disabled: !hasAgreed }"
 						@click="handleConfirmSign"
 					>
-						确认签署
+						{{ currentNoticeIndex < noticeFiles.length - 1 ? '确认下一份' : '确认签署' }}
 					</button>
 				</view>
 			</view>
@@ -110,6 +110,8 @@ import request from '@/utils/request.js'
 			hasAgreed: false,
 			noticeFileName: '',
 			noticeFileUrl: '',
+			noticeFiles: [],
+			currentNoticeIndex: 0,
 			currentContractId: null
 		}
 	},
@@ -288,41 +290,44 @@ import request from '@/utils/request.js'
 		// 检查须知并签署
 		async checkNoticeAndSign(contractId) {
 			console.log('🔍 准备显示须知弹窗，合同ID:', contractId)
-			
+
 			// 确保没有loading状态
 			uni.hideLoading()
-			
-			// 先显示弹窗（无论什么情况都显示）
-			this.showNoticeModal = true
-			this.hasAgreed = false
+
 			this.currentContractId = contractId
-			this.noticeFileName = '劳动合同须知.pdf'  // 默认名称
-			this.noticeFileUrl = ''  // 稍后从API获取
-			
-			console.log('✅ 弹窗已显示')
-			
-			// 后台异步加载须知文件信息
+			this.hasAgreed = false
+			this.currentNoticeIndex = 0
+			this.noticeFiles = []
+			this.noticeFileName = ''
+			this.noticeFileUrl = ''
+
 			try {
 				const res = await getContractDetail(contractId)
-				
 				console.log('📦 API返回:', res)
-				
-				// 检查返回结果
-				if (res && res.success) {
-					const { notice_file } = res.data
-					if (notice_file) {
-						console.log('📄 加载到须知文件:', notice_file)
-						this.noticeFileName = notice_file.name
-						this.noticeFileUrl = notice_file.view_url
-					} else {
-						console.log('📄 没有须知文件')
-					}
-				} else {
-					console.log('📄 API返回失败或无数据')
+
+				if (!res || !res.success || !res.data) {
+					this.goToSignPage(contractId)
+					return
 				}
+
+				const noticeFiles = Array.isArray(res.data.notice_files) && res.data.notice_files.length > 0
+					? res.data.notice_files
+					: (res.data.notice_file ? [res.data.notice_file] : [])
+
+				if (!noticeFiles.length) {
+					this.goToSignPage(contractId)
+					return
+				}
+
+				this.noticeFiles = noticeFiles
+				this.currentNoticeIndex = 0
+				this.noticeFileName = noticeFiles[0].name || '劳动合同须知.pdf'
+				this.noticeFileUrl = noticeFiles[0].view_url || ''
+				this.showNoticeModal = true
+				console.log('✅ 弹窗已显示，须知数量:', noticeFiles.length)
 			} catch (error) {
 				console.error('❌ 加载须知文件失败:', error)
-				// 不影响弹窗显示
+				this.goToSignPage(contractId)
 			}
 		},
 		
@@ -378,7 +383,7 @@ import request from '@/utils/request.js'
 			this.hasAgreed = e.detail.value.length > 0
 		},
 		
-		// 确认签署（需要勾选）
+		// 确认签署（需要逐个勾选）
 		handleConfirmSign() {
 			if (!this.hasAgreed) {
 				uni.showToast({
@@ -387,8 +392,16 @@ import request from '@/utils/request.js'
 				})
 				return
 			}
-			
-			// 进入签署页面
+
+			if (this.currentNoticeIndex < this.noticeFiles.length - 1) {
+				this.currentNoticeIndex += 1
+				const current = this.noticeFiles[this.currentNoticeIndex] || {}
+				this.noticeFileName = current.name || '劳动合同须知.pdf'
+				this.noticeFileUrl = current.view_url || ''
+				this.hasAgreed = false
+				return
+			}
+
 			this.goToSignPage(this.currentContractId)
 			this.closeNoticeModal()
 		},
@@ -399,6 +412,8 @@ import request from '@/utils/request.js'
 			this.hasAgreed = false
 			this.noticeFileName = ''
 			this.noticeFileUrl = ''
+			this.noticeFiles = []
+			this.currentNoticeIndex = 0
 			this.currentContractId = null
 		},
 		

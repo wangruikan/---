@@ -66,6 +66,7 @@ class Project extends Model
         'delivery_method',
         'account_set_id',  // 【账套关联】
         'contract_notice_file_id',  // 【劳动合同须知文件ID】单个文件
+        'contract_notice_files',  // 【劳动合同须知文件ID列表】逗号分隔
         'labor_contract_notice_name',  // 【劳动合同须知文件名称】
         'labor_contract_notice_file',  // 【劳动合同须知文件路径】
         'social_security_regions',  // 【社保地区ID列表】
@@ -251,4 +252,5 @@ class Project extends Model
             'config_id'
         )->withTimestamps();
     }
+
 }

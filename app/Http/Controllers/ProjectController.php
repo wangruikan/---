@@ -250,11 +250,13 @@ class ProjectController extends Controller
     }
 
     /**
-     * 设置项目的劳动合同须知文件（单个）
+     * 设置项目的劳动合同须知文件（支持多个）
      */
     public function setContractNotices(Request $request, $id)
     {
         $validator = \Validator::make($request->all(), [
+            'notice_file_ids' => 'sometimes|array',
+            'notice_file_ids.*' => 'integer|exists:shared_files,id',
             'notice_file_id' => 'nullable|integer|exists:shared_files,id',
         ]);
 
@@ -267,76 +269,129 @@ class ProjectController extends Controller
         }
 
         $project = Project::findOrFail($id);
-        
-        // 如果提供了文件ID，验证是否为须知文件
-        if ($request->filled('notice_file_id')) {
-            $noticeFile = \App\Models\SharedFile::where('id', $request->notice_file_id)
+
+        $noticeFileIds = [];
+        if ($request->has('notice_file_ids')) {
+            $noticeFileIds = $request->input('notice_file_ids', []);
+        } elseif ($request->filled('notice_file_id')) {
+            $noticeFileIds = [$request->input('notice_file_id')];
+        }
+
+        $noticeFileIds = array_values(array_unique(array_filter(array_map('intval', $noticeFileIds))));
+
+        if (!empty($noticeFileIds)) {
+            $validNoticeFiles = \App\Models\SharedFile::whereIn('id', $noticeFileIds)
                 ->where('file_category', 'notice')
-                ->first();
-                
-            if (!$noticeFile) {
+                ->where('account_set_id', $project->account_set_id)
+                ->get();
+
+            if ($validNoticeFiles->count() !== count($noticeFileIds)) {
                 return response()->json([
                     'success' => false,
-                    'message' => '所选文件不是须知文件'
+                    'message' => '部分文件不是当前账套的须知文件'
                 ], 422);
             }
         }
 
         \Log::info('💾 保存项目须知文件设置', [
             'project_id' => $id,
-            'notice_file_id' => $request->notice_file_id
+            'notice_file_ids' => $noticeFileIds
         ]);
-        
+
+        $firstNoticeFileId = $noticeFileIds[0] ?? null;
         $project->update([
-            'contract_notice_file_id' => $request->notice_file_id
+            'contract_notice_file_id' => $firstNoticeFileId,
+            'contract_notice_files' => empty($noticeFileIds) ? null : implode(',', $noticeFileIds)
         ]);
-        
-        // 重新读取验证是否保存成功
-        $project = $project->fresh();
-        
+
+        $noticeFiles = collect();
+        if (!empty($noticeFileIds)) {
+            $filesMap = \App\Models\SharedFile::with('uploader')
+                ->whereIn('id', $noticeFileIds)
+                ->where('file_category', 'notice')
+                ->where('account_set_id', $project->account_set_id)
+                ->get()
+                ->keyBy('id');
+
+            $ordered = [];
+            foreach ($noticeFileIds as $noticeFileId) {
+                if (isset($filesMap[$noticeFileId])) {
+                    $ordered[] = $filesMap[$noticeFileId];
+                }
+            }
+            $noticeFiles = collect($ordered);
+        }
+
         \Log::info('✅ 保存后读取项目数据', [
-            'contract_notice_file_id' => $project->contract_notice_file_id,
-            'project' => $project->toArray()
+            'contract_notice_file_id' => $project->fresh()->contract_notice_file_id,
+            'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => $request->notice_file_id ? '须知文件设置成功' : '须知文件已清除',
-            'data' => $project
+            'message' => !empty($noticeFileIds) ? '须知文件设置成功' : '须知文件已清除',
+            'data' => [
+                'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
+                'notice_files' => $noticeFiles,
+                'notice_file' => $noticeFiles->first(),
+            ]
         ]);
     }
 
     /**
-     * 获取项目的须知文件（单个文件信息）
+     * 获取项目的须知文件（支持多个）
      */
     public function getContractNotices($id)
     {
         $project = Project::findOrFail($id);
-        
-        \Log::info('📋 读取项目须知文件', [
-            'project_id' => $id,
-            'contract_notice_file_id' => $project->contract_notice_file_id,
-            'project_data' => $project->toArray()
-        ]);
-        
-        if (empty($project->contract_notice_file_id)) {
-            \Log::info('ℹ️ 项目未设置须知文件');
-            return response()->json([
-                'success' => true,
-                'data' => null
-            ]);
+
+        $noticeFiles = collect();
+        if (!empty($project->contract_notice_files)) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $project->contract_notice_files)))));
+            if (!empty($ids)) {
+                $filesMap = \App\Models\SharedFile::with('uploader')
+                    ->whereIn('id', $ids)
+                    ->where('file_category', 'notice')
+                    ->where('account_set_id', $project->account_set_id)
+                    ->get()
+                    ->keyBy('id');
+
+                $ordered = [];
+                foreach ($ids as $idItem) {
+                    if (isset($filesMap[$idItem])) {
+                        $ordered[] = $filesMap[$idItem];
+                    }
+                }
+                $noticeFiles = collect($ordered);
+            }
         }
 
-        $noticeFile = \App\Models\SharedFile::with('uploader')
-            ->where('id', $project->contract_notice_file_id)
-            ->where('file_category', 'notice')
-            ->first();
+        if ($noticeFiles->isEmpty() && !empty($project->contract_notice_file_id)) {
+            $legacyNoticeFile = \App\Models\SharedFile::with('uploader')
+                ->where('id', $project->contract_notice_file_id)
+                ->where('file_category', 'notice')
+                ->where('account_set_id', $project->account_set_id)
+                ->first();
 
-        \Log::info('✅ 找到须知文件', ['file' => $noticeFile ? $noticeFile->toArray() : null]);
+            if ($legacyNoticeFile) {
+                $noticeFiles = collect([$legacyNoticeFile]);
+            }
+        }
+
+        \Log::info('📋 读取项目须知文件', [
+            'project_id' => $id,
+            'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
+            'contract_notice_file_id' => $project->contract_notice_file_id,
+            'contract_notice_files' => $project->contract_notice_files,
+        ]);
 
         return response()->json([
             'success' => true,
-            'data' => $noticeFile
+            'data' => [
+                'notice_file_ids' => $noticeFiles->pluck('id')->toArray(),
+                'notice_files' => $noticeFiles->values(),
+                'notice_file' => $noticeFiles->first(),
+            ]
         ]);
     }
 

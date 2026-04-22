@@ -53,7 +53,7 @@
 			<view class="modal-mask" @click="closeNoticeModal"></view>
 			<view class="modal-content">
 				<view class="modal-header">
-					<text class="modal-title">签订须知</text>
+					<text class="modal-title">签订须知（{{ currentNoticeIndex + 1 }}/{{ noticeFiles.length || 1 }}）</text>
 					<text class="close-btn" @click="closeNoticeModal">×</text>
 				</view>
 				
@@ -84,7 +84,7 @@
 				<view class="modal-footer">
 					<button class="cancel-btn" @click="closeNoticeModal">取消</button>
 					<button class="confirm-btn" @click="handleConfirmSign" :disabled="!hasAgreed">
-						确认签署
+						{{ currentNoticeIndex < noticeFiles.length - 1 ? '确认下一份' : '确认签署' }}
 					</button>
 				</view>
 			</view>
@@ -111,15 +111,17 @@ export default {
 			hasAgreed: false,
 			noticeFileName: '',
 			noticeFileUrl: '',
+			noticeFiles: [],
+			currentNoticeIndex: 0,
 			currentContractId: null
 		}
 	},
-	
+
 	onShow() {
 		this.checkLogin()
 		this.loadContracts()
 	},
-	
+
 	methods: {
 		checkLogin() {
 			const employeeInfo = uni.getStorageSync('employeeInfo')
@@ -129,12 +131,12 @@ export default {
 				})
 			}
 		},
-		
+
 		switchTab(value) {
 			this.currentTab = value
 			this.loadContracts()
 		},
-		
+
 		async loadContracts() {
 			try {
 				uni.showLoading({ title: '加载中...' })
@@ -148,87 +150,76 @@ export default {
 				uni.hideLoading()
 			}
 		},
-		
+
 		async goToDetail(id) {
-			// 测试：代码是否生效
-			uni.showToast({ title: '点击了合同:' + id, icon: 'none', duration: 1000 })
-			console.log('🖱️ 点击合同，ID:', id)
-			
-			// 根据合同状态跳转到不同页面
 			const contract = this.contracts.find(c => c.id === id)
-			
-			console.log('📋 合同对象:', contract)
-			console.log('📊 合同状态:', contract ? contract.status : 'null')
-			
-			// 待签署的合同需要检查须知
 			if (contract && contract.status === 'pending_sign') {
-				console.log('✅ 是待签署合同，开始检查须知')
 				await this.checkNoticeAndSign(id)
 			} else {
-				console.log('ℹ️ 不是待签署合同，跳转详情页')
-				// 其他状态跳转到普通详情页
 				uni.navigateTo({
 					url: `/pages/contract/detail?id=${id}`
 				})
 			}
 		},
-		
+
 		// 检查须知并签署
 		async checkNoticeAndSign(contractId) {
-			console.log('🔍 准备显示须知弹窗，合同ID:', contractId)
-			
-			// 先显示弹窗（无论什么情况都显示）
-			this.showNoticeModal = true
-			this.hasAgreed = false
 			this.currentContractId = contractId
-			this.noticeFileName = '劳动合同须知.pdf'  // 默认名称
-			this.noticeFileUrl = ''  // 稍后从API获取
-			
-			console.log('✅ 弹窗已显示')
-			
-			// 后台异步加载须知文件信息
+			this.hasAgreed = false
+			this.currentNoticeIndex = 0
+			this.noticeFiles = []
+			this.noticeFileName = ''
+			this.noticeFileUrl = ''
+			this.showNoticeModal = false
+
 			try {
 				const res = await getContractDetail(contractId)
-				
-				console.log('📦 API返回:', res)
-				
-				// 检查返回结果
-				if (res && res.success) {
-					const { notice_file } = res.data
-					if (notice_file) {
-						console.log('📄 加载到须知文件:', notice_file)
-						this.noticeFileName = notice_file.name
-						this.noticeFileUrl = notice_file.view_url
-					} else {
-						console.log('📄 没有须知文件')
-					}
-				} else {
-					console.log('📄 API返回失败或无数据')
+				if (!res || !res.success || !res.data) {
+					this.goToSignPage(contractId)
+					return
 				}
+
+				const noticeFiles = Array.isArray(res.data.notice_files) && res.data.notice_files.length > 0
+					? res.data.notice_files
+					: (res.data.notice_file ? [res.data.notice_file] : [])
+
+				if (!noticeFiles.length) {
+					this.goToSignPage(contractId)
+					return
+				}
+
+				this.noticeFiles = noticeFiles
+				this.currentNoticeIndex = 0
+				this.noticeFileName = noticeFiles[0].name || '劳动合同须知.pdf'
+				this.noticeFileUrl = noticeFiles[0].view_url || ''
+				this.showNoticeModal = true
 			} catch (error) {
-				console.error('❌ 加载须知文件失败:', error)
-				// 不影响弹窗显示
+				console.error('加载须知文件失败:', error)
+				this.goToSignPage(contractId)
 			}
 		},
-		
+
 		// 阅读须知文件
 		handleReadNotice() {
+			if (!this.noticeFileUrl) {
+				uni.showToast({
+					title: '暂无须知文件',
+					icon: 'none'
+				})
+				return
+			}
+
 			uni.showLoading({ title: '加载中...' })
-			
-			// 下载文件
 			uni.downloadFile({
 				url: this.noticeFileUrl,
 				success: (res) => {
 					uni.hideLoading()
 					if (res.statusCode === 200) {
-						// 用微信打开PDF
 						uni.openDocument({
 							filePath: res.tempFilePath,
 							fileType: 'pdf',
 							showMenu: true,
-							success: () => {
-								console.log('文件打开成功')
-							},
+							success: () => {},
 							fail: (err) => {
 								console.error('文件打开失败:', err)
 								uni.showToast({
@@ -249,13 +240,13 @@ export default {
 				}
 			})
 		},
-		
+
 		// 勾选同意
 		handleAgreeChange(e) {
 			this.hasAgreed = e.detail.value.length > 0
 		},
-		
-		// 确认签署（需要勾选）
+
+		// 确认签署（需要逐个勾选）
 		handleConfirmSign() {
 			if (!this.hasAgreed) {
 				uni.showToast({
@@ -264,28 +255,38 @@ export default {
 				})
 				return
 			}
-			
-			// 进入签署页面
+
+			if (this.currentNoticeIndex < this.noticeFiles.length - 1) {
+				this.currentNoticeIndex += 1
+				const current = this.noticeFiles[this.currentNoticeIndex] || {}
+				this.noticeFileName = current.name || '劳动合同须知.pdf'
+				this.noticeFileUrl = current.view_url || ''
+				this.hasAgreed = false
+				return
+			}
+
 			this.goToSignPage(this.currentContractId)
 			this.closeNoticeModal()
 		},
-		
+
 		// 关闭须知弹窗
 		closeNoticeModal() {
 			this.showNoticeModal = false
 			this.hasAgreed = false
 			this.noticeFileName = ''
 			this.noticeFileUrl = ''
+			this.noticeFiles = []
+			this.currentNoticeIndex = 0
 			this.currentContractId = null
 		},
-		
+
 		// 进入签署页面
 		goToSignPage(contractId) {
 			uni.navigateTo({
 				url: `/pages/contract/sign-h5?id=${contractId}`
 			})
 		},
-		
+
 		getContractTypeText(type) {
 			const types = {
 				labor: '劳动合同',
@@ -294,7 +295,7 @@ export default {
 			}
 			return types[type] || type
 		},
-		
+
 		getStatusText(status) {
 			const statuses = {
 				draft: '草稿',
@@ -305,7 +306,7 @@ export default {
 			}
 			return statuses[status] || status
 		},
-		
+
 		getStatusClass(status) {
 			const classes = {
 				draft: 'status-draft',
@@ -316,7 +317,7 @@ export default {
 			}
 			return classes[status] || ''
 		},
-		
+
 		formatTime(time) {
 			if (!time) return ''
 			const date = new Date(time)

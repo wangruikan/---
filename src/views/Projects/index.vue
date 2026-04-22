@@ -861,26 +861,21 @@
       <div style="margin-bottom: 15px;">
         <el-alert type="info" :closable="false" show-icon>
           <template #title>
-            为该项目设置劳动合同签订前需要阅读的须知文件（只能选择一个）
+            为该项目设置劳动合同签订前需要阅读的须知文件（可选择多个，签署时将按顺序逐个确认）
           </template>
         </el-alert>
       </div>
       
       <el-table
+        ref="noticeTableRef"
         :data="availableNoticeFiles"
         v-loading="loadingNotices"
         border
         max-height="400"
-        highlight-current-row
-        @current-change="handleNoticeRowChange"
+        row-key="id"
+        @selection-change="handleNoticeSelectionChange"
       >
-        <el-table-column label="选择" width="80">
-          <template #default="{ row }">
-            <el-radio v-model="selectedNoticeFileId" :label="row.id">
-              <span></span>
-            </el-radio>
-          </template>
-        </el-table-column>
+        <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="文件名" min-width="250" />
         <el-table-column prop="size" label="大小" width="120">
           <template #default="{ row }">
@@ -1264,7 +1259,8 @@ const loadingNotices = ref(false)
 const savingNotices = ref(false)
 const currentProject = ref(null)
 const availableNoticeFiles = ref([])
-const selectedNoticeFileId = ref(null)  // 单选：只存储一个文件ID
+const selectedNoticeFileIds = ref([])
+const noticeTableRef = ref()
 
 // 合同模板管理相关
 const availableSharedFiles = ref([])
@@ -2173,50 +2169,63 @@ const loadProjectNoticeFiles = async (projectId) => {
       url: `/projects/${projectId}/contract-notices`,
       method: 'get'
     })
-    
+
     console.log('📋 加载项目须知文件:', response)
-    
+
+    let ids = []
     if (response.success && response.data) {
-      // 设置已选中的文件ID（单个）
-      selectedNoticeFileId.value = response.data.id
-      console.log('✅ 设置选中文件ID:', response.data.id)
-    } else {
-      selectedNoticeFileId.value = null
-      console.log('ℹ️ 项目未设置须知文件')
+      if (Array.isArray(response.data.notice_file_ids)) {
+        ids = response.data.notice_file_ids.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
+      } else if (response.data.notice_file && response.data.notice_file.id) {
+        ids = [Number(response.data.notice_file.id)]
+      }
+    }
+
+    selectedNoticeFileIds.value = ids
+
+    const selectedIdSet = new Set(ids)
+    if (noticeTableRef.value) {
+      noticeTableRef.value.clearSelection()
+      availableNoticeFiles.value.forEach(file => {
+        if (selectedIdSet.has(Number(file.id))) {
+          noticeTableRef.value.toggleRowSelection(file, true)
+        }
+      })
     }
   } catch (error) {
     console.error('❌ 加载项目须知文件失败:', error)
-    selectedNoticeFileId.value = null
+    selectedNoticeFileIds.value = []
+    if (noticeTableRef.value) {
+      noticeTableRef.value.clearSelection()
+    }
   }
 }
 
-const handleNoticeRowChange = (row) => {
-  // 点击行时，选中该行的单选框
-  if (row) {
-    selectedNoticeFileId.value = row.id
-  }
+const handleNoticeSelectionChange = (rows) => {
+  selectedNoticeFileIds.value = (rows || []).map(row => row.id)
 }
 
 const handleClearNotice = () => {
-  selectedNoticeFileId.value = null
+  selectedNoticeFileIds.value = []
+  if (noticeTableRef.value) {
+    noticeTableRef.value.clearSelection()
+  }
 }
 
 const handleSaveNoticeSettings = async () => {
   if (!currentProject.value) return
-  
-  console.log('💾 保存须知文件设置:', selectedNoticeFileId.value)
-  
+
+  console.log('💾 保存须知文件设置:', selectedNoticeFileIds.value)
+
   savingNotices.value = true
   try {
-    const response = await request({
+    await request({
       url: `/projects/${currentProject.value.id}/contract-notices`,
       method: 'post',
-      data: { notice_file_id: selectedNoticeFileId.value }  // 单个文件ID
+      data: { notice_file_ids: selectedNoticeFileIds.value }
     })
-    
-    console.log('✅ 保存成功:', response)
-    
-    if (selectedNoticeFileId.value) {
+
+    if (selectedNoticeFileIds.value.length > 0) {
       ElMessage.success('须知文件设置成功')
     } else {
       ElMessage.success('须知文件已清除')
@@ -2232,7 +2241,10 @@ const handleSaveNoticeSettings = async () => {
 }
 
 const handleNoticeDialogClose = () => {
-  selectedNoticeFileId.value = null
+  selectedNoticeFileIds.value = []
+  if (noticeTableRef.value) {
+    noticeTableRef.value.clearSelection()
+  }
   currentProject.value = null
 }
 

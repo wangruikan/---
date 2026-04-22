@@ -89,7 +89,12 @@ export class PdfFillService {
       
       // 前端渲染PDF时使用的缩放比例
       const renderScale = 1.5
-      
+      const namePosition = positionsArray.find((pos) => pos.type === 'name')
+      const uniformFontSize = namePosition
+        ? Math.max(Math.min(namePosition.height * 0.9, 20), 14)
+        : 16
+      const uniformFontFamily = 'SimSun'
+
       for (const position of positionsArray) {
         const fieldName = position.type
         const pageIndex = position.page || 0
@@ -116,15 +121,24 @@ export class PdfFillService {
         // 将前端像素坐标转换为PDF坐标（除以渲染缩放比例）
         const pdfX = position.x / renderScale
         const pdfY = position.y / renderScale
-        const pdfWidth = position.width / renderScale
-        const pdfHeight = position.height / renderScale
-        
+
+        // 根据实际值长度动态扩展绘制宽度，避免内容被占位框宽度截断
+        const dynamicImageSize = this.calculateTextImageSize(fieldValue, {
+          baseWidth: position.width,
+          baseHeight: position.height,
+          fontSize: uniformFontSize,
+          fontFamily: uniformFontFamily
+        })
+
+        const pdfWidth = dynamicImageSize.width / renderScale
+        const pdfHeight = dynamicImageSize.height / renderScale
+
         // 生成文字图片（优化字体大小和清晰度）
         const textImageBytes = await this.createTextImage(fieldValue, {
-          width: position.width,  // 图片用原始尺寸保证清晰度
-          height: position.height,
-          fontSize: Math.max(Math.min(position.height * 0.9, 20), 14), // 更大的字体：最小14px，最大20px
-          fontFamily: 'Arial',
+          width: dynamicImageSize.width,
+          height: dynamicImageSize.height,
+          fontSize: uniformFontSize,
+          fontFamily: uniformFontFamily,
           color: '#000000'
         })
         
@@ -160,6 +174,33 @@ export class PdfFillService {
   }
   
   /**
+   * 根据文本内容计算绘制图片尺寸
+   */
+  static calculateTextImageSize(text, options = {}) {
+    const {
+      baseWidth = 100,
+      baseHeight = 20,
+      fontSize = 14,
+      fontFamily = 'SimSun'
+    } = options
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    const actualFontSize = Math.max(fontSize, 14)
+    ctx.font = `${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+
+    const textWidth = Math.ceil(ctx.measureText(String(text || '')).width)
+    const horizontalPadding = 16
+    const minWidth = Math.max(baseWidth, 32)
+    const width = Math.max(minWidth, textWidth + horizontalPadding)
+
+    return {
+      width,
+      height: Math.max(baseHeight, 16)
+    }
+  }
+
+  /**
    * 创建透明背景的文字图片
    * @param {string} text - 文字内容
    * @param {Object} options - 选项
@@ -170,7 +211,7 @@ export class PdfFillService {
       width = 200,
       height = 30,
       fontSize = 14,
-      fontFamily = 'Arial',
+      fontFamily = 'SimSun',
       color = '#000000',
       backgroundColor = 'transparent'
     } = options

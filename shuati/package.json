@@ -1,0 +1,32 @@
+{
+  "name": "exam-app",
+  "version": "1.0.0",
+  "description": "刷题App",
+  "main": "main.js",
+  "scripts": {
+    "dev:mp-weixin": "cross-env NODE_ENV=development UNI_PLATFORM=mp-weixin vue-cli-service uni-build --watch",
+    "build:mp-weixin": "cross-env NODE_ENV=production UNI_PLATFORM=mp-weixin vue-cli-service uni-build",
+    "dev:h5": "cross-env NODE_ENV=development UNI_PLATFORM=h5 vue-cli-service uni-serve",
+    "build:h5": "cross-env NODE_ENV=production UNI_PLATFORM=h5 vue-cli-service uni-build"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app-plus": "*",
+    "@dcloudio/uni-h5": "*",
+    "@dcloudio/uni-mp-weixin": "*",
+    "vue": "^2.6.11"
+  },
+  "devDependencies": {
+    "@dcloudio/uni-cli-shared": "*",
+    "@dcloudio/uni-template-compiler": "*",
+    "@dcloudio/webpack-uni-mp-loader": "*",
+    "@dcloudio/webpack-uni-pages-loader": "*",
+    "@vue/cli-plugin-babel": "~4.5.0",
+    "@vue/cli-service": "~4.5.0",
+    "cross-env": "^7.0.2",
+    "vue-template-compiler": "^2.6.11"
+  },
+  "browserslist": [
+    "Android >= 4.4",
+    "ios >= 9"
+  ]
+}

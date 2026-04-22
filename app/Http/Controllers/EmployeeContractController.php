@@ -580,8 +580,15 @@ class EmployeeContractController extends Controller
                 ], 404);
             }
 
-            \Log::info('开始发送文件');
-            return response()->download($filePath, $contract->original_filename);
+            $downloadName = $contract->original_filename ?: basename($contract->contract_file);
+            $downloadName = trim(str_replace(['/', '\\'], '-', $downloadName));
+            $downloadName = preg_replace('/[\x00-\x1F\x7F]/u', '', $downloadName);
+            if ($downloadName === '') {
+                $downloadName = 'contract_' . $contract->id . '.pdf';
+            }
+
+            \Log::info('开始发送文件', ['download_name' => $downloadName]);
+            return response()->download($filePath, $downloadName);
         } catch (\Exception $e) {
             \Log::error('下载合同失败', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json([

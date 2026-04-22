@@ -160,26 +160,21 @@ export default {
 
 		async handleUpload(item) {
 			try {
-				// 根据文件类型选择不同的上传方式
-				let sourceType = ['album', 'camera']
+				// 根据文件类型设置可选扩展名
 				let extension = []
 
 				if (item.document_type === 'image') {
-					sourceType = ['album', 'camera']
 					extension = ['jpg', 'jpeg', 'png', 'gif', 'webp']
 				} else if (item.document_type === 'pdf') {
-					sourceType = ['album']
 					extension = ['pdf']
 				} else if (item.document_type === 'document') {
-					sourceType = ['album']
 					extension = ['pdf', 'doc', 'docx', 'xls', 'xlsx']
 				} else {
-					sourceType = ['album', 'camera']
 					extension = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx']
 				}
 
-				// 选择文件（支持多选）
-				const chooseResult = await this.chooseFiles(sourceType, extension)
+				// 选择文件（拍照 / 相册 / 文件夹）
+				const chooseResult = await this.chooseFiles(extension)
 				
 				if (!chooseResult || chooseResult.length === 0) {
 					return
@@ -239,68 +234,49 @@ export default {
 			}
 		},
 
-		// 选择多个文件
-		chooseFiles(sourceType, extension) {
+		// 选择多个文件：拍照 / 相册 / 文件管理器
+		chooseFiles(extension) {
 			return new Promise((resolve, reject) => {
-				const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp']
-				const isOnlyImage = extension.every(ext => imageExtensions.includes(ext))
-				const hasDocument = extension.some(ext => ['pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext))
-				
-				// 如果只允许图片，使用chooseImage（支持多选）
-				if (isOnlyImage && !hasDocument) {
-					uni.chooseImage({
-						count: 9, // 最多选择9张图片
-						sourceType: sourceType,
-						success: (res) => {
-							console.log('选择图片成功:', res)
-							resolve(res.tempFilePaths.map(path => ({ tempFilePath: path })))
-						},
-						fail: (err) => {
-							console.error('选择图片失败:', err)
-							reject(err)
+				uni.showActionSheet({
+					itemList: ['拍照', '从相册选择', '从微信会话文件选择'],
+					success: (sheetRes) => {
+						if (sheetRes.tapIndex === 0) {
+							uni.chooseImage({
+								count: 9,
+								sourceType: ['camera'],
+								success: (res) => {
+									resolve(res.tempFilePaths.map(path => ({ tempFilePath: path })))
+								},
+								fail: (err) => reject(err)
+							})
+							return
 						}
-					})
-				} else {
-					// 使用chooseMessageFile（支持多选）
-					uni.chooseMessageFile({
-						count: 9, // 最多选择9个文件
-						type: 'file',
-						extension: extension,
-						success: (res) => {
-							console.log('选择文件成功:', res)
-							resolve(res.tempFiles.map(file => ({ tempFilePath: file.path })))
-						},
-						fail: (err) => {
-							console.error('选择文件失败:', err)
-							// 如果chooseMessageFile失败且包含图片格式，尝试使用chooseImage
-							if (extension.some(ext => imageExtensions.includes(ext))) {
-								console.log('尝试使用chooseImage...')
-								uni.chooseImage({
-									count: 9,
-									sourceType: sourceType,
-									success: (imgRes) => {
-										console.log('使用chooseImage成功:', imgRes)
-										resolve(imgRes.tempFilePaths.map(path => ({ tempFilePath: path })))
-									},
-									fail: (imgErr) => {
-										console.error('chooseImage也失败:', imgErr)
-										uni.showToast({
-											title: '选择文件失败，请重试',
-											icon: 'none'
-										})
-										reject(imgErr)
-									}
-								})
-							} else {
-								uni.showToast({
-									title: '选择文件失败，请重试',
-									icon: 'none'
-								})
-								reject(err)
-							}
+
+						if (sheetRes.tapIndex === 1) {
+							uni.chooseImage({
+								count: 9,
+								sourceType: ['album'],
+								success: (res) => {
+									resolve(res.tempFilePaths.map(path => ({ tempFilePath: path })))
+								},
+								fail: (err) => reject(err)
+							})
+							return
 						}
-					})
-				}
+
+						uni.chooseMessageFile({
+							count: 9,
+							type: 'file',
+							extension,
+							success: (res) => {
+								const files = (res.tempFiles || []).map(file => ({ tempFilePath: file.path || file.tempFilePath }))
+								resolve(files)
+							},
+							fail: (err) => reject(err)
+						})
+					},
+					fail: () => resolve([])
+				})
 			})
 		},
 

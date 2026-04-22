@@ -53,7 +53,12 @@
                   fontSize: placeholder.type === 'employee_signature' ? '12px' : '10px',
                   color: placeholder.type === 'employee_signature' ? '#E6A23C' : '#409EFF',
                   fontWeight: 'bold',
-                  userSelect: 'none'
+                  userSelect: 'none',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-all',
+                  lineHeight: '12px',
+                  textAlign: 'center',
+                  padding: '0 2px'
                 }"
                 @mousedown="startPlaceholderDrag($event, idx, index)"
                 @dblclick="removePlaceholder(idx)"
@@ -184,6 +189,73 @@ const fieldExamples = {
   employee_signature: '[签名]'
 }
 
+const fallbackLabels = {
+  name: '姓名',
+  id_number: '身份证号',
+  id_card: '身份证号',
+  phone: '手机号',
+  address: '地址',
+  gender: '性别',
+  birth_date: '出生日期',
+  nationality: '民族',
+  education: '学历',
+  position: '岗位',
+  employee_number: '工号',
+  email: '邮箱',
+  bank_name: '开户银行',
+  bank_account: '银行卡号',
+  bank_account_holder: '开户名',
+  hire_date: '入职日期',
+  contract_start_date: '合同开始日期',
+  contract_end_date: '合同结束日期',
+  contract_start_year: '合同开始年',
+  contract_start_month: '合同开始月',
+  contract_start_day: '合同开始日',
+  contract_end_year: '合同结束年',
+  contract_end_month: '合同结束月',
+  contract_end_day: '合同结束日',
+  emergency_contact: '紧急联系人',
+  emergency_phone: '紧急联系电话',
+  household_address: '户籍地址',
+  residence_address: '居住地址',
+  contact_address: '通讯地址',
+  employee_signature: '员工签字'
+}
+
+const resolvePlaceholderLabel = (type) => {
+  const configuredField = (props.placeholderFields || []).find((field) => {
+    const key = field?.key || field
+    return key === type
+  })
+
+  if (configuredField) {
+    return configuredField.label || configuredField.key || type
+  }
+
+  return fallbackLabels[type] || type
+}
+
+const getDefaultPlaceholderSize = (type) => {
+  if (type === 'employee_signature') {
+    return { width: 150, height: 50 }
+  }
+
+  const label = String(resolvePlaceholderLabel(type) || '')
+  const charsPerLine = 3
+  const lineCount = Math.max(1, Math.min(2, Math.ceil(label.length / charsPerLine)))
+
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  ctx.font = 'bold 10px sans-serif'
+
+  const singleLineSample = '字'.repeat(charsPerLine)
+  const width = Math.max(32, Math.ceil(ctx.measureText(singleLineSample).width + 10))
+  const lineHeight = 12
+  const height = Math.max(16, lineCount * lineHeight)
+
+  return { width, height }
+}
+
 const emit = defineEmits(['save', 'cancel'])
 
 // 响应式数据
@@ -208,15 +280,18 @@ watch(() => props.templateId, () => {
   // 模板ID变化时，重新初始化占位符
   placeholderId = 0
   if (props.savedPositions && props.savedPositions.length > 0) {
-    placeholderList.value = props.savedPositions.map((pos) => ({
-      id: ++placeholderId,
-      type: pos.type,
-      x: pos.x,
-      y: pos.y,
-      width: pos.width,
-      height: pos.height,
-      page: pos.page || 0
-    }))
+    placeholderList.value = props.savedPositions.map((pos) => {
+      const defaultSize = getDefaultPlaceholderSize(pos.type)
+      return {
+        id: ++placeholderId,
+        type: pos.type,
+        x: pos.x,
+        y: pos.y,
+        width: pos.type === 'employee_signature' ? (pos.width || defaultSize.width) : defaultSize.width,
+        height: pos.type === 'employee_signature' ? (pos.height || defaultSize.height) : defaultSize.height,
+        page: pos.page || 0
+      }
+    })
   } else {
     placeholderList.value = []
   }
@@ -332,23 +407,16 @@ const onDrop = (event) => {
     const y = event.clientY - targetRect.top - 30  // 减去页码标签高度
     
     // 获取占位符宽度和高度（签名需要更大区域）
-    const isSignature = draggedItem.value === 'employee_signature'
-    const widthMap = { 
-      name: 100, id_card: 150, phone: 120, address: 200,
-      employee_signature: 150  // 签名区域宽度
-    }
-    const heightMap = {
-      employee_signature: 50  // 签名区域高度
-    }
-    
+    const { width, height } = getDefaultPlaceholderSize(draggedItem.value)
+
     // 添加新占位符
     placeholderList.value.push({
       id: ++placeholderId,
       type: draggedItem.value,
-      x: Math.max(0, x - 50),
-      y: Math.max(0, y - (isSignature ? 25 : 15)),
-      width: widthMap[draggedItem.value] || 100,
-      height: heightMap[draggedItem.value] || 15,
+      x: Math.max(0, x - width / 2),
+      y: Math.max(0, y - height / 2),
+      width,
+      height,
       page: targetPage
     })
     

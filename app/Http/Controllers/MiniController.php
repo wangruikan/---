@@ -197,11 +197,12 @@ class MiniController extends Controller
             'data' => [
                 'contract' => $contract,
                 'notice_file' => $noticeInfo['notice_file'],
+                'notice_files' => $noticeInfo['notice_files'],
                 'must_read_notice' => $noticeInfo['must_read_notice']
             ]
         ]);
     }
-    
+
     /**
      * 获取合同须知信息
      */
@@ -211,6 +212,7 @@ class MiniController extends Controller
         if ($contract->contract_type !== 'labor' || $contract->status !== 'pending_sign') {
             return [
                 'notice_file' => null,
+                'notice_files' => [],
                 'must_read_notice' => false
             ];
         }
@@ -218,42 +220,77 @@ class MiniController extends Controller
         // 获取员工所在的项目
         $employee = Employee::find($contract->employee_id);
         $projects = $employee->projects()->where('account_set_id', $employee->account_set_id)->get();
-        
+
         if ($projects->isEmpty()) {
             return [
                 'notice_file' => null,
+                'notice_files' => [],
                 'must_read_notice' => false
             ];
         }
 
+        $host = $request->getSchemeAndHttpHost();
+
         // 检查项目是否配置了须知文件
         foreach ($projects as $project) {
-            // 优先使用新的关联方式（contract_notice_file_id）
-            if ($project->contract_notice_file_id) {
+            $noticeFiles = [];
+
+            // 优先读取多文件配置（contract_notice_files 逗号列表）
+            if (!empty($project->contract_notice_files)) {
+                $noticeIds = array_values(array_unique(array_filter(array_map('intval', explode(',', $project->contract_notice_files)))));
+                if (!empty($noticeIds)) {
+                    $filesMap = \App\Models\SharedFile::whereIn('id', $noticeIds)
+                        ->where('file_category', 'notice')
+                        ->where('account_set_id', $project->account_set_id)
+                        ->get()
+                        ->keyBy('id');
+
+                    foreach ($noticeIds as $noticeId) {
+                        if (!isset($filesMap[$noticeId])) {
+                            continue;
+                        }
+                        $file = $filesMap[$noticeId];
+                        if (empty($file->path)) {
+                            continue;
+                        }
+                        $noticeFiles[] = [
+                            'id' => $file->id,
+                            'name' => $file->original_name ?: '劳动合同须知.pdf',
+                            'view_url' => $host . '/storage/' . $file->path
+                        ];
+                    }
+                }
+            }
+
+            // 兼容旧单文件字段
+            if (empty($noticeFiles) && $project->contract_notice_file_id) {
                 $noticeFile = \App\Models\SharedFile::where('id', $project->contract_notice_file_id)
                     ->where('file_category', 'notice')
+                    ->where('account_set_id', $project->account_set_id)
                     ->first();
-                
+
                 if ($noticeFile && $noticeFile->path) {
-                    $host = $request->getSchemeAndHttpHost();
-                    return [
-                        'notice_file' => [
-                            'name' => $noticeFile->original_name ?: '劳动合同须知.pdf',
-                            'view_url' => $host . '/storage/' . $noticeFile->path
-                        ],
-                        'must_read_notice' => true
+                    $noticeFiles[] = [
+                        'id' => $noticeFile->id,
+                        'name' => $noticeFile->original_name ?: '劳动合同须知.pdf',
+                        'view_url' => $host . '/storage/' . $noticeFile->path
                     ];
                 }
             }
-            
-            // 兼容旧的字段方式
-            if ($project->labor_contract_notice_file) {
-                $host = $request->getSchemeAndHttpHost();
+
+            // 兼容旧的文件路径字段
+            if (empty($noticeFiles) && $project->labor_contract_notice_file) {
+                $noticeFiles[] = [
+                    'id' => null,
+                    'name' => $project->labor_contract_notice_name ?: '劳动合同须知.pdf',
+                    'view_url' => $host . '/storage/' . $project->labor_contract_notice_file
+                ];
+            }
+
+            if (!empty($noticeFiles)) {
                 return [
-                    'notice_file' => [
-                        'name' => $project->labor_contract_notice_name ?: '劳动合同须知.pdf',
-                        'view_url' => $host . '/storage/' . $project->labor_contract_notice_file
-                    ],
+                    'notice_file' => $noticeFiles[0],
+                    'notice_files' => $noticeFiles,
                     'must_read_notice' => true
                 ];
             }
@@ -261,6 +298,7 @@ class MiniController extends Controller
 
         return [
             'notice_file' => null,
+            'notice_files' => [],
             'must_read_notice' => false
         ];
     }

@@ -1,6 +1,0 @@
-{
-  "navigationBarTitleText": "从业人员登记表",
-  "usingComponents": {
-    "signature-canvas": "../../components/SignatureCanvas"
-  }
-}

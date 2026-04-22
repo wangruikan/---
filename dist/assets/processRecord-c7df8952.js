@@ -1,1 +1,0 @@
-import{J as r}from"./index-f6f56618.js";function c(e){return r({url:"/process-records",method:"get",params:e})}function o(e){return r({url:"/process-records/stats",method:"get",params:e})}function t(e){return r({url:"/process-records/check-access",method:"get",params:e})}export{t as checkProcessRecordAccess,o as getProcessRecordStats,c as getProcessRecords};

@@ -102,6 +102,7 @@ class Employee extends Model
         'bank_branch',
         'remittance_remark',
         'basic_salary',
+        'salary_items',
         'social_security_base',
         'social_security_enrollment_month', // 社保参保月份
         'medical_insurance_base',
@@ -171,6 +172,7 @@ class Employee extends Model
         'offline_onboarding_date' => 'date',
         'contract_upload_deadline' => 'date',
         'basic_salary' => 'decimal:2',
+        'salary_items' => 'array',
         'social_security_base' => 'decimal:2',
         'housing_fund_base' => 'decimal:2',
         'special_deduction' => 'decimal:2',

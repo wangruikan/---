@@ -9,7 +9,7 @@
 		<!-- 待办事项 -->
 		<view class="todo-section">
 			<view class="section-header">
-				<text class="section-title">📋 待办事项</text>
+				<text class="section-title">待办事项</text>
 			</view>
 			
 			<view v-if="pendingContracts.length > 0" class="contract-list">
@@ -53,7 +53,7 @@
 			<view class="modal-mask" @click="closeNoticeModal"></view>
 			<view class="modal-content">
 				<view class="modal-header">
-					<text class="modal-title">📋 劳动合同须知（{{ currentNoticeIndex + 1 }}/{{ noticeFiles.length || 1 }}）</text>
+					<text class="modal-title">劳动合同须知（{{ currentNoticeIndex + 1 }}/{{ noticeFiles.length || 1 }}）</text>
 					<text class="modal-close" @click="closeNoticeModal">✕</text>
 				</view>
 				

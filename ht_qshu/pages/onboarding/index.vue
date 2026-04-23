@@ -576,21 +576,7 @@ export default {
 		
 		// 校验身份证号码
 		validateIdNumber(idNumber) {
-			if (!idNumber || idNumber.length !== 18) return false
-			
-			// 校验格式
-			const reg = /^[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/
-			if (!reg.test(idNumber)) return false
-			
-			// 校验校验码
-			const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
-			const checkCodes = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2']
-			let sum = 0
-			for (let i = 0; i < 17; i++) {
-				sum += parseInt(idNumber[i]) * weights[i]
-			}
-			const checkCode = checkCodes[sum % 11]
-			return idNumber[17].toUpperCase() === checkCode
+			return !!idNumber && idNumber.length === 18
 		},
 		
 		// 民族选择
@@ -1463,4 +1449,3 @@ export default {
 	color: #999;
 }
 </style>
-

@@ -11,9 +11,53 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 
 class MiniController extends Controller
 {
+    /**
+     * 按数据库真实列过滤员工更新字段
+     */
+    private function filterEmployeeUpdateData(array $data): array
+    {
+        static $columns = null;
+
+        if ($columns === null) {
+            $columns = Schema::getColumnListing('employees');
+        }
+
+        return array_filter(
+            $data,
+            fn($value, $key) => in_array($key, $columns, true),
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
+    /**
+     * 身份证号同步（保留唯一校验）
+     */
+    private function resolveEmployeeIdNumber(Employee $employee, ?string $idNumber): ?string
+    {
+        if (!$idNumber || $idNumber === $employee->id_number) {
+            return $employee->id_number;
+        }
+
+        $exists = Employee::where('id_number', $idNumber)
+            ->where('id', '!=', $employee->id)
+            ->exists();
+
+        if ($exists) {
+            \Log::warning('登记表身份证号与其他员工重复，跳过身份证号同步', [
+                'employee_id' => $employee->id,
+                'id_number' => $idNumber,
+            ]);
+
+            return $employee->id_number;
+        }
+
+        return $idNumber;
+    }
+
     /**
      * 小程序登录（简化版）
      */
@@ -1285,7 +1329,7 @@ class MiniController extends Controller
             'height' => 'nullable|integer|min:1|max:300',
             'weight' => 'nullable|numeric|min:1|max:500',
             'marital_status' => 'nullable|string|max:20',
-            'id_number' => 'required|string|max:18',
+            'id_number' => 'required|string|size:18',
             'current_residence' => 'nullable|string|max:200',
             'household_registration' => 'nullable|string|max:200',
             'position' => 'nullable|string|max:100',
@@ -1318,6 +1362,7 @@ class MiniController extends Controller
             'name.required' => '请输入姓名',
             'gender.required' => '请选择性别',
             'id_number.required' => '请输入身份证号码',
+            'id_number.size' => '身份证号码必须为18位',
             'signature.required' => '请先完成手写签名',
         ]);
 
@@ -1374,44 +1419,40 @@ class MiniController extends Controller
                 ]
             );
 
-            // 自动同步数据到员工信息表
-            $updateData = [];
-            
-            // 同步出生日期（如果入职登记表有值且员工信息为空，或者入职登记表的值更新了）
-            if ($request->birth_date) {
-                $updateData['birth_date'] = $request->birth_date;
-            }
-            
-            // 同步身份证（检查是否与其他员工重复）
-            if ($request->id_number && $request->id_number !== $employee->id_number) {
-                // 检查身份证号是否已被其他员工使用
-                $existingEmployee = Employee::where('id_number', $request->id_number)
-                    ->where('id', '!=', $employee->id)
-                    ->first();
-                
-                if ($existingEmployee) {
-                    // 身份证号已被其他员工使用，不同步，但记录日志
-                    \Log::warning('入职登记表身份证号与其他员工重复，跳过同步', [
-                        'employee_id' => $employee->id,
-                        'id_number' => $request->id_number,
-                        'existing_employee_id' => $existingEmployee->id
-                    ]);
-                } else {
-                    $updateData['id_number'] = $request->id_number;
-                }
-            }
-            
-            // 同步性别（如果入职登记表有值且员工信息为空，或者入职登记表的值更新了）
-            if ($request->gender) {
-                $updateData['gender'] = $request->gender;
-            }
-            
-            // 如果有需要更新的字段，更新员工信息
-            if (!empty($updateData)) {
-                $employee->update($updateData);
-                \Log::info('入职登记表数据已同步到员工信息', [
+            // 每次提交都按映射覆盖员工信息（仅覆盖 employees 表已有字段）
+            $employeeUpdateData = [
+                'name' => $request->name,
+                'gender' => $request->gender,
+                'id_number' => $this->resolveEmployeeIdNumber($employee, $request->id_number),
+                'birth_date' => $request->birth_date,
+                'marital_status' => $request->marital_status,
+                'position' => $request->position,
+                'education' => $request->education_level,
+                'phone' => $request->contact_phone,
+                'address' => $request->current_residence,
+                'household_registration' => $request->household_registration,
+                'contact_address' => $request->contact_address,
+                'remarks' => $request->remarks,
+                'native_place' => $request->place_of_origin,
+                'ethnicity' => $request->ethnicity,
+                'political_status' => $request->political_status,
+                'health_status' => $request->health_status,
+                'height' => $request->height,
+                'weight' => $request->weight,
+                'graduation_school' => $request->graduated_school,
+                'graduation_date' => $request->graduation_date,
+                'major' => $request->major,
+                'degree' => $request->degree,
+                'job_title' => $request->technical_title,
+            ];
+
+            $employeeUpdateData = $this->filterEmployeeUpdateData($employeeUpdateData);
+
+            if (!empty($employeeUpdateData)) {
+                $employee->update($employeeUpdateData);
+                \Log::info('入职登记表数据已覆盖同步到员工信息', [
                     'employee_id' => $employee->id,
-                    'updated_fields' => array_keys($updateData)
+                    'updated_fields' => array_keys($employeeUpdateData),
                 ]);
             }
 
@@ -1469,11 +1510,12 @@ class MiniController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:50',
-            'id_number' => 'required|string|max:20',
+            'id_number' => 'required|string|size:18',
             'signature' => 'required|string',
         ], [
             'name.required' => '请输入姓名',
             'id_number.required' => '请输入身份证号码',
+            'id_number.size' => '身份证号码必须为18位',
             'signature.required' => '请先完成手写签名',
         ]);
 
@@ -1556,6 +1598,49 @@ class MiniController extends Controller
                     'signature_date' => $request->signature_date,
                 ]
             );
+
+            // 每次提交都按映射覆盖员工信息（仅覆盖 employees 表已有字段）
+            $normalizedHouseholdType = match ($request->household_type) {
+                'urban' => 'non_agricultural',
+                'rural' => 'agricultural',
+                'non_agricultural', 'agricultural' => $request->household_type,
+                default => null,
+            };
+
+            $employeeUpdateData = [
+                'name' => $request->name,
+                'gender' => $request->gender,
+                'id_number' => $this->resolveEmployeeIdNumber($employee, $request->id_number),
+                'birth_date' => $request->birth_date,
+                'marital_status' => $request->marital_status,
+                'position' => $request->entry_position,
+                'job_title' => $request->job_title,
+                'hire_date' => $request->entry_date,
+                'education' => $request->education_level,
+                'phone' => $request->contact_phone,
+                'address' => $request->current_address,
+                'household_address' => $request->household_address,
+                'household_type' => $normalizedHouseholdType,
+                'contact_address' => $request->document_address,
+                'bank_account' => $request->bank_account,
+                'bank_branch' => $request->bank_name,
+                'emergency_contact' => $request->emergency_contact1_name,
+                'emergency_phone' => $request->emergency_contact1_phone,
+                'remarks' => $request->remarks,
+                'native_place' => $request->native_place,
+                'political_status' => $request->political_status,
+                'height' => $request->height,
+            ];
+
+            $employeeUpdateData = $this->filterEmployeeUpdateData($employeeUpdateData);
+
+            if (!empty($employeeUpdateData)) {
+                $employee->update($employeeUpdateData);
+                \Log::info('从业人员登记表数据已覆盖同步到员工信息', [
+                    'employee_id' => $employee->id,
+                    'updated_fields' => array_keys($employeeUpdateData),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

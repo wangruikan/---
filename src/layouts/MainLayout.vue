@@ -15,7 +15,17 @@
             </el-breadcrumb>
             
             <!-- 账套选择器 -->
-            <AccountSetSelector style="margin-left: 30px;" />
+            <div class="account-set-header-actions">
+              <AccountSetSelector />
+              <el-button
+                v-if="canAccessAccountSets"
+                type="primary"
+                plain
+                @click="handleQuickCreateAccountSet"
+              >
+                新建账套
+              </el-button>
+            </div>
           </div>
           
           <div class="header-right">
@@ -197,6 +207,9 @@ const passwordRules = {
 
 const currentPageTitle = computed(() => route.meta?.title)
 const unreadCount = computed(() => notifications.value.filter(n => !n.is_read).length)
+const canAccessAccountSets = computed(() => {
+  return userStore.userInfo?.role === 'admin' || permissionStore.hasModuleAccess('account_sets')
+})
 
 const handleUserCommand = async (command) => {
   switch (command) {
@@ -317,6 +330,10 @@ const loadNotifications = async () => {
   }
 }
 
+const handleQuickCreateAccountSet = () => {
+  router.push({ path: '/account-sets', query: { action: 'create' } })
+}
+
 onMounted(async () => {
   loadNotifications()
   
@@ -359,6 +376,13 @@ onMounted(async () => {
 .header-left {
   display: flex;
   align-items: center;
+}
+
+.account-set-header-actions {
+  margin-left: 30px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .collapse-btn {

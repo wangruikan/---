@@ -2882,6 +2882,80 @@
           </div>
         </el-tab-pane>
         
+        <el-tab-pane label="工资" name="salary">
+          <el-form
+            :model="form"
+            label-width="120px"
+            :disabled="isViewMode"
+          >
+            <el-divider content-position="left">工资信息</el-divider>
+
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="基础工资" prop="basic_salary">
+                  <el-input-number
+                    v-model="form.basic_salary"
+                    :min="0"
+                    :precision="2"
+                    :step="100"
+                    placeholder="请输入基础工资"
+                    style="width: 100%"
+                    controls-position="right"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">自定义工资项</el-divider>
+
+            <div
+              v-for="(item, index) in form.salary_items"
+              :key="index"
+              style="margin-bottom: 12px"
+            >
+              <el-row :gutter="12">
+                <el-col :span="10">
+                  <el-input
+                    v-model="item.name"
+                    placeholder="请输入工资项名称（如岗位工资）"
+                    :disabled="isViewMode"
+                    clearable
+                  />
+                </el-col>
+                <el-col :span="10">
+                  <el-input-number
+                    v-model="item.amount"
+                    :min="0"
+                    :precision="2"
+                    :step="100"
+                    placeholder="请输入金额"
+                    style="width: 100%"
+                    controls-position="right"
+                    :disabled="isViewMode"
+                  />
+                </el-col>
+                <el-col :span="4" style="text-align: right">
+                  <el-button
+                    type="danger"
+                    plain
+                    @click="removeSalaryItem(index)"
+                    :disabled="isViewMode"
+                  >删除</el-button>
+                </el-col>
+              </el-row>
+            </div>
+
+            <el-button
+              type="primary"
+              plain
+              @click="addSalaryItem"
+              :disabled="isViewMode"
+            >
+              新增工资项
+            </el-button>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="工资卡" name="salary-card">
           <el-form
             ref="salaryCardFormRef"
@@ -2891,7 +2965,7 @@
             :disabled="isViewMode"
           >
             <el-divider content-position="left">工资卡信息</el-divider>
-            
+
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="银行账号" prop="bank_account">
@@ -2912,7 +2986,7 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            
+
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="开户行" prop="bank_name">
@@ -2936,20 +3010,6 @@
 
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="基础工资" prop="basic_salary">
-                  <el-input-number
-                    v-model="form.basic_salary"
-                    :min="0"
-                    :precision="2"
-                    :step="100"
-                    placeholder="请输入基础工资"
-                    style="width: 100%"
-                    controls-position="right"
-                  />
-                  <div class="form-tip">合同约定的基本工资</div>
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
                 <el-form-item label="汇款备注" prop="remittance_remark">
                   <el-input
                     v-model="form.remittance_remark"
@@ -2959,7 +3019,7 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            
+
             <div class="form-tip">
               <el-text type="info" size="small">
                 工资卡信息用于工资发放，请确保信息准确无误
@@ -4658,6 +4718,7 @@ const form = reactive({
   project_ids: [],
   // 工资信息
   basic_salary: null,
+  salary_items: [],
   // 工资卡信息
   bank_account: '',
   bank_account_holder: '',
@@ -4879,6 +4940,14 @@ const salaryCardRules = {
   remittance_remark: [
     { max: 100, message: '汇款备注长度不能超过100个字符', trigger: 'blur' }
   ]
+}
+
+const addSalaryItem = () => {
+  form.salary_items.push({ name: '', amount: null })
+}
+
+const removeSalaryItem = (index) => {
+  form.salary_items.splice(index, 1)
 }
 
 const loadEmployees = async () => {
@@ -5975,7 +6044,8 @@ const handleView = async (row) => {
       const employeeData = convertNumericFields(data.employee)
       Object.assign(form, {
         ...employeeData,
-        project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || []
+        project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
+        salary_items: Array.isArray(data.employee.salary_items) ? data.employee.salary_items : []
       })
       
       // 2. 设置项目相关的地区信息
@@ -6048,7 +6118,8 @@ const handleView = async (row) => {
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
-        project_ids: row.project_ids || row.projects?.map(p => p.id) || []
+        project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
+        salary_items: Array.isArray(row.salary_items) ? row.salary_items : []
       })
       onboardingForm.value = null
       onboardingFormLoading.value = false
@@ -6100,7 +6171,8 @@ const handleEdit = async (row) => {
       const employeeData = convertNumericFields(data.employee)
       Object.assign(form, {
         ...employeeData,
-        project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || []
+        project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
+        salary_items: Array.isArray(data.employee.salary_items) ? data.employee.salary_items : []
       })
       
       // 2. 设置项目相关的地区信息
@@ -6176,7 +6248,8 @@ const handleEdit = async (row) => {
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
-        project_ids: row.project_ids || row.projects?.map(p => p.id) || []
+        project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
+        salary_items: Array.isArray(row.salary_items) ? row.salary_items : []
       })
       onboardingForm.value = null
       onboardingFormLoading.value = false
@@ -6697,7 +6770,11 @@ const fillSampleData = () => {
       address: '北京市朝阳区建国路1号',
       project_ids: projectIds,
       basic_salary: 12000,
-      
+      salary_items: [
+        { name: '岗位工资', amount: 8000 },
+        { name: '绩效工资', amount: 4000 }
+      ],
+
       // 工资卡信息
       bank_account: '6222021234567890123',
       bank_account_holder: '张三',
@@ -6831,6 +6908,7 @@ const resetDialogState = () => {
     address: '',
     project_ids: [],
     basic_salary: null,
+    salary_items: [],
     // 工资卡信息
     bank_account: '',
     bank_account_holder: '',
@@ -8289,6 +8367,8 @@ const handleNewEmployee = async () => {
       form[key] = null
     } else if (['basic_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base'].includes(key)) {
       form[key] = null
+    } else if (key === 'salary_items') {
+      form[key] = []
     } else {
       form[key] = ''
     }

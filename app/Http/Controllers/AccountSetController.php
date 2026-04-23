@@ -98,13 +98,13 @@ class AccountSetController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:191',
-            'code' => 'required|string|max:50|unique:account_sets,code',
             'description' => 'nullable|string',
             'company_name' => 'nullable|string|max:191',
             'tax_number' => 'nullable|string|max:100',
             'contact_person' => 'nullable|string|max:100',
             'contact_phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
+            'enabled_date' => 'nullable|date',
             'is_default' => 'boolean',
         ]);
 
@@ -116,26 +116,23 @@ class AccountSetController extends Controller
             ], 422);
         }
 
-        // 检查代码是否已存在
-        if (AccountSet::where('code', $request->code)->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => '套账代码已存在，请使用其他代码'
-            ], 422);
-        }
-
         $accountSet = AccountSet::create([
             'name' => $request->name,
-            'code' => $request->code,
+            'code' => uniqid('AS_TMP_'),
             'description' => $request->description,
             'company_name' => $request->company_name,
             'tax_number' => $request->tax_number,
             'contact_person' => $request->contact_person,
             'contact_phone' => $request->contact_phone,
             'address' => $request->address,
+            'enabled_date' => $request->enabled_date,
             'status' => 'active',
             'is_default' => $request->is_default ?? false,
             'created_by' => $request->user()->id,
+        ]);
+
+        $accountSet->update([
+            'code' => 'AS' . str_pad((string) $accountSet->id, 6, '0', STR_PAD_LEFT)
         ]);
 
         // 如果设置为默认，取消其他默认套账
@@ -189,7 +186,6 @@ class AccountSetController extends Controller
         
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:191',
-            'code' => 'sometimes|required|string|max:50|unique:account_sets,code,' . $id,
             'description' => 'nullable|string',
             'company_name' => 'nullable|string|max:191',
             'tax_number' => 'nullable|string|max:100',
@@ -200,6 +196,7 @@ class AccountSetController extends Controller
             'is_default' => 'boolean',
             'base_adjustment_months' => 'nullable|array',
             'base_adjustment_months.*' => 'integer|min:1|max:12',
+            'enabled_date' => 'nullable|date',
         ]);
 
         if ($validator->fails()) {
@@ -211,8 +208,8 @@ class AccountSetController extends Controller
         }
 
         $accountSet->update($request->only([
-            'name', 'code', 'description', 'company_name', 'tax_number',
-            'contact_person', 'contact_phone', 'address', 'status', 'base_adjustment_months'
+            'name', 'description', 'company_name', 'tax_number',
+            'contact_person', 'contact_phone', 'address', 'status', 'base_adjustment_months', 'enabled_date'
         ]));
 
         // 如果设置为默认，取消其他默认套账

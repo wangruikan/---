@@ -447,17 +447,11 @@ const getMonthDisplay = (month) => {
   return month
 }
 
-// 获取发薪日期（格式：年月+发放日，如：20251025）
+// 获取发薪日期（格式：15日）
 const getSalaryPaymentDate = (month, paymentDay) => {
   if (!month || !paymentDay) return '-'
-  const parts = month.split('-')
-  if (parts.length === 2) {
-    const year = parts[0]
-    const monthNum = parts[1]
-    const day = String(paymentDay).padStart(2, '0')
-    return `${year}${monthNum}${day}`
-  }
-  return '-'
+  const day = String(paymentDay).padStart(2, '0')
+  return `${day}日`
 }
 
 // 查询

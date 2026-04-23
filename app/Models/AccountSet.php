@@ -29,6 +29,7 @@ class AccountSet extends Model
         'address' => '地址',
         'status' => '状态',
         'is_default' => '是否默认',
+        'enabled_date' => '启用日期',
     ];
 
     /**
@@ -52,11 +53,13 @@ class AccountSet extends Model
         'is_default',
         'created_by',
         'base_adjustment_months',
+        'enabled_date',
     ];
 
     protected $casts = [
         'is_default' => 'boolean',
         'base_adjustment_months' => 'array',
+        'enabled_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

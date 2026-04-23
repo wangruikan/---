@@ -260,6 +260,9 @@ class EmployeeController extends ApiController
             'project_ids' => 'nullable|array',
             'project_ids.*' => 'exists:projects,id',
             'remittance_remark' => 'nullable|string|max:255',
+            'salary_items' => 'nullable|array',
+            'salary_items.*.name' => 'required|string|max:50',
+            'salary_items.*.amount' => 'required|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -332,7 +335,7 @@ class EmployeeController extends ApiController
             'id_card_valid_from', 'id_card_valid_until',
             
             // 工资卡信息
-            'bank_name', 'bank_account', 'bank_account_holder', 'bank_branch', 'basic_salary', 'remittance_remark',
+            'bank_name', 'bank_account', 'bank_account_holder', 'bank_branch', 'basic_salary', 'salary_items', 'remittance_remark',
             
             // 保险信息
             'social_security_base', 'social_security_enrollment_month', 'medical_insurance_base', 
@@ -544,6 +547,9 @@ class EmployeeController extends ApiController
             'contract_start_date' => 'sometimes|required|date',
             'contract_end_date' => 'nullable|date|after:contract_start_date',
             'remittance_remark' => 'nullable|string|max:255',
+            'salary_items' => 'nullable|array',
+            'salary_items.*.name' => 'required|string|max:50',
+            'salary_items.*.amount' => 'required|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -570,7 +576,7 @@ class EmployeeController extends ApiController
             'id_card_valid_from', 'id_card_valid_until',
             
             // 工资卡信息
-            'bank_name', 'bank_account', 'bank_account_holder', 'bank_branch', 'basic_salary', 'remittance_remark',
+            'bank_name', 'bank_account', 'bank_account_holder', 'bank_branch', 'basic_salary', 'salary_items', 'remittance_remark',
             
             // 保险信息
             'social_security_base', 'medical_insurance_base', 'housing_fund_base', 

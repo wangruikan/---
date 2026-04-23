@@ -89,14 +89,14 @@
           <el-table-column prop="requires_salary_basis" label="上传工资依据" width="120">
             <template #default="{ row }">
               <el-tag :type="row.requires_salary_basis ? 'success' : 'info'">
-                {{ row.requires_salary_basis ? '需要' : '不需要' }}
+                {{ row.requires_salary_basis ? '是' : '否' }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="requires_attendance_basis" label="上传考勤依据" width="120">
             <template #default="{ row }">
               <el-tag :type="row.requires_attendance_basis ? 'success' : 'info'">
-                {{ row.requires_attendance_basis ? '需要' : '不需要' }}
+                {{ row.requires_attendance_basis ? '是' : '否' }}
               </el-tag>
             </template>
           </el-table-column>
@@ -943,7 +943,10 @@
       <div style="margin-bottom: 15px;">
         <el-alert type="info" :closable="false" show-icon>
           <template #title>
-            从共享文件中选择一个文件作为{{ getTemplateTypeName(currentTemplateType) }}模板
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>从共享文件中选择一个文件作为{{ getTemplateTypeName(currentTemplateType) }}模板</span>
+              <el-tag size="small" type="warning">仅限 PDF 文件</el-tag>
+            </div>
           </template>
         </el-alert>
       </div>

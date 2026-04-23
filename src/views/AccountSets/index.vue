@@ -115,6 +115,11 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="enabled_date" label="启用日期" width="120">
+            <template #default="{ row }">
+              {{ formatDate(row.enabled_date) }}
+            </template>
+          </el-table-column>
           <el-table-column prop="creator.name" label="创建人" width="100" />
           <el-table-column prop="created_at" label="创建时间" width="180">
             <template #default="{ row }">
@@ -272,8 +277,8 @@
         label-width="100px"
         :disabled="isViewMode"
       >
-        <el-form-item label="套账代码" prop="code">
-          <el-input v-model="form.code" placeholder="请输入套账代码（唯一）" />
+        <el-form-item label="套账代码">
+          <el-input v-model="form.code" :disabled="true" :placeholder="isEdit ? '' : '系统自动生成'" />
         </el-form-item>
 
         <el-form-item label="套账名称" prop="name">
@@ -302,6 +307,16 @@
             type="textarea"
             :rows="2"
             placeholder="请输入地址"
+          />
+        </el-form-item>
+
+        <el-form-item label="启用日期">
+          <el-date-picker
+            v-model="form.enabled_date"
+            type="date"
+            placeholder="请选择启用日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
           />
         </el-form-item>
 
@@ -371,10 +386,11 @@ import {
   removeAccountSetUser
 } from '@/api/accountSets'
 import { useUserStore } from '@/stores/user'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import request from '@/api/request'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 // 权限检查
@@ -389,6 +405,11 @@ onMounted(() => {
   }
   loadAccountSets()
   loadStatistics()
+
+  if (route.query.action === 'create') {
+    showCreateDialog.value = true
+    router.replace({ path: '/account-sets' })
+  }
 })
 
 const loading = ref(false)
@@ -432,6 +453,7 @@ const form = reactive({
   contact_person: '',
   contact_phone: '',
   address: '',
+  enabled_date: '',
   status: 'active',
   is_default: false,
   base_adjustment_months: []
@@ -440,10 +462,6 @@ const form = reactive({
 const rules = {
   name: [
     { required: true, message: '请输入套账名称', trigger: 'blur' }
-  ],
-  code: [
-    { required: true, message: '请输入套账代码', trigger: 'blur' },
-    { pattern: /^[A-Z0-9_-]+$/, message: '代码只能包含大写字母、数字、下划线和横线', trigger: 'blur' }
   ]
 }
 
@@ -530,7 +548,9 @@ const handleSubmit = async () => {
         await updateAccountSet(form.id, form)
         ElMessage.success('套账更新成功')
       } else {
-        await createAccountSet(form)
+        const createPayload = { ...form }
+        delete createPayload.code
+        await createAccountSet(createPayload)
         ElMessage.success('套账创建成功')
       }
       
@@ -630,6 +650,7 @@ const resetForm = () => {
     contact_person: '',
     contact_phone: '',
     address: '',
+    enabled_date: '',
     status: 'active',
     is_default: false,
     base_adjustment_months: []
@@ -654,6 +675,16 @@ const getStatusText = (status) => {
     archived: '已归档'
   }
   return texts[status] || '未知'
+}
+
+const formatDate = (dateValue) => {
+  if (!dateValue) return '-'
+  const date = new Date(dateValue)
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
 }
 
 const formatDateTime = (dateTime) => {

@@ -244,17 +244,16 @@ export class PdfFillService {
     ctx.font = `${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
     ctx.fillStyle = color
     ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    
+
     // 启用文字抗锯齿
     ctx.fontKerning = 'normal'
     ctx.fontVariantCaps = 'normal'
-    
-    // 计算文字位置（居中）
-    const textMetrics = ctx.measureText(text)
+
     const textX = 8 // 增加左边距
-    const textY = height / 2 // 垂直居中
-    
+    const useBottomLineAsBaseline = height > 16
+    ctx.textBaseline = useBottomLineAsBaseline ? 'bottom' : 'middle'
+    const textY = useBottomLineAsBaseline ? (height - 2) : (height / 2)
+
     // 绘制文字（清晰无阴影）
     ctx.fillText(text, textX, textY)
     

@@ -364,6 +364,7 @@ class SocialSecurityController extends Controller
             'name' => 'required|string|max:100',
             'employee_ratio' => 'required|numeric|min:0|max:1',
             'company_ratio' => 'required|numeric|min:0|max:1',
+            'only_company_pay' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -400,10 +401,12 @@ class SocialSecurityController extends Controller
             ], 422);
         }
 
+        $employeeRatio = $request->boolean('only_company_pay') ? 0 : $request->employee_ratio;
+
         $type = SocialSecurityType::create([
             'region_id' => $regionId,
             'name' => $request->name,
-            'employee_ratio' => $request->employee_ratio,
+            'employee_ratio' => $employeeRatio,
             'company_ratio' => $request->company_ratio,
             'created_by' => $user->id,
         ]);
@@ -431,6 +434,7 @@ class SocialSecurityController extends Controller
             'name' => 'required|string|max:100',
             'employee_ratio' => 'required|numeric|min:0|max:1',
             'company_ratio' => 'required|numeric|min:0|max:1',
+            'only_company_pay' => 'nullable|boolean',
             'min_base_amount' => 'nullable|numeric|min:0',
             'max_base_amount' => 'nullable|numeric|min:0',
         ]);
@@ -473,10 +477,12 @@ class SocialSecurityController extends Controller
         // 保存旧数据用于变更检测
         $oldData = $type->toArray();
 
+        $employeeRatio = $request->boolean('only_company_pay') ? 0 : $request->employee_ratio;
+
         // 更新基本信息（类型不处理上下限，上下限在地区层级）
         $type->update([
             'name' => $request->name,
-            'employee_ratio' => $request->employee_ratio,
+            'employee_ratio' => $employeeRatio,
             'company_ratio' => $request->company_ratio,
         ]);
 

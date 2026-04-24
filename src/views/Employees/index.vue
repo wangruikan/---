@@ -4839,42 +4839,8 @@ const formRules = {
   project_ids: [
     { required: true, message: '请选择所属项目', trigger: 'change' }
   ],
-  // 保险信息必填
-  social_security_base: [
-    { required: true, message: '请输入社保基数', trigger: 'blur' }
-  ],
-  medical_insurance_base: [
-    { required: true, message: '请输入医保基数', trigger: 'blur' }
-  ],
-  housing_fund_base: [
-    { required: true, message: '请输入公积金基数', trigger: 'blur' }
-  ],
-  large_medical_base: [
-    { required: true, message: '请输入大额医疗基数', trigger: 'blur' }
-  ],
-  social_security_region_id: [
-    { required: true, message: '请选择社保参保地区', trigger: 'change' }
-  ],
-  medical_insurance_region_id: [
-    { required: true, message: '请选择医保参保地区', trigger: 'change' }
-  ],
-  housing_fund_region_id: [
-    { required: true, message: '请选择公积金参保地区', trigger: 'change' }
-  ],
-  large_medical_insurance_config_id: [
-    { required: true, message: '请选择大额医疗保险配置', trigger: 'change' }
-  ],
-  // 参保日期必填（大额除外）
-  social_insurance_enrollment_date: [
-    { required: true, message: '请选择社保参保日期', trigger: 'change' }
-  ],
-  provident_fund_enrollment_date: [
-    { required: true, message: '请选择公积金参保日期', trigger: 'change' }
-  ],
-  medical_insurance_enrollment_date: [
-    { required: true, message: '请选择医保参保日期', trigger: 'change' }
-  ]
-  // large_medical_enrollment_date 不是必填，但开启大额医疗时需要校验
+  // 保险信息改为非必填
+  // large_medical_enrollment_date 保持非必填
   // basic_salary: [
   //   { required: true, message: '请输入基础工资', trigger: 'blur' }
   // ]

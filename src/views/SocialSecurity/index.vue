@@ -142,7 +142,7 @@
       width="800px"
     >
       <div class="types-header">
-        <el-button type="primary" @click="showAddTypeDialog = true">
+        <el-button type="primary" @click="openAddTypeDialog">
           <el-icon><Plus /></el-icon>
           添加社保类型
         </el-button>
@@ -186,35 +186,40 @@
       v-model="showAddTypeDialog"
       :title="editingType ? '编辑社保类型' : '添加社保类型'"
       width="500px"
+      @closed="resetTypeForm"
     >
       <el-form :model="typeForm" :rules="typeRules" ref="typeFormRef" label-width="120px">
         <el-form-item label="保险名称" prop="name">
           <el-input v-model="typeForm.name" placeholder="请输入保险名称，如：养老保险" />
           <div class="form-tip">基数上下限已在地区层级统一设置</div>
         </el-form-item>
+        <el-form-item label="仅单位缴纳">
+          <el-switch v-model="typeForm.only_company_pay" @change="handleOnlyCompanyPayChange" />
+        </el-form-item>
         <el-form-item label="员工缴纳比例" prop="employee_ratio">
           <el-input-number
             v-model="typeForm.employee_ratio"
             :min="0"
-            :max="1"
-            :precision="4"
-            :step="0.0001"
-            placeholder="请输入员工缴纳比例"
+            :max="100"
+            :precision="2"
+            :step="0.01"
+            placeholder="请输入员工缴纳比例（%）"
             style="width: 100%"
+            :disabled="typeForm.only_company_pay"
           />
-          <div class="form-tip">例如：0.08 表示 8%</div>
+          <div class="form-tip">例如：8 表示 8%</div>
         </el-form-item>
         <el-form-item label="公司缴纳比例" prop="company_ratio">
           <el-input-number
             v-model="typeForm.company_ratio"
             :min="0"
-            :max="1"
-            :precision="4"
-            :step="0.0001"
-            placeholder="请输入公司缴纳比例"
+            :max="100"
+            :precision="2"
+            :step="0.01"
+            placeholder="请输入公司缴纳比例（%）"
             style="width: 100%"
           />
-          <div class="form-tip">例如：0.16 表示 16%</div>
+          <div class="form-tip">例如：16 表示 16%</div>
         </el-form-item>
         <el-form-item label="单位" prop="unit">
           <el-input v-model="typeForm.unit" placeholder="请输入单位，如：元" />
@@ -412,25 +417,25 @@
               <el-input-number
                 v-model="medicalTypeForm.employee_ratio"
                 :min="0"
-                :max="1"
-                :precision="4"
-                :step="0.0001"
-                placeholder="请输入员工缴纳比例"
+                :max="100"
+                :precision="2"
+                :step="0.01"
+                placeholder="请输入员工缴纳比例（%）"
                 style="width: 100%"
               />
-              <div class="form-tip">例如：0.02 表示 2%</div>
+              <div class="form-tip">例如：2 表示 2%</div>
             </el-form-item>
             <el-form-item label="公司缴纳比例" prop="company_ratio">
               <el-input-number
                 v-model="medicalTypeForm.company_ratio"
                 :min="0"
-                :max="1"
-                :precision="4"
-                :step="0.0001"
-                placeholder="请输入公司缴纳比例"
+                :max="100"
+                :precision="2"
+                :step="0.01"
+                placeholder="请输入公司缴纳比例（%）"
                 style="width: 100%"
               />
-              <div class="form-tip">例如：0.10 表示 10%</div>
+              <div class="form-tip">例如：10 表示 10%</div>
             </el-form-item>
           </el-form>
           <template #footer>
@@ -440,6 +445,10 @@
             </el-button>
           </template>
         </el-dialog>
+      </el-tab-pane>
+
+      <el-tab-pane label="大额医疗" name="large-medical">
+        <LargeMedicalInsuranceView />
       </el-tab-pane>
     </el-tabs>
 
@@ -499,13 +508,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Back, Right, Grid, Document, Close, Edit } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
 import request from '@/api/request'
 import ReportTemplateDesigner from '@/components/ReportTemplateDesigner.vue'
+import LargeMedicalInsuranceView from '@/views/LargeMedicalInsurance/index.vue'
 import {
   getSocialSecurityRegions,
   getSocialSecurityRegion,
@@ -527,6 +538,8 @@ import {
   deleteMedicalInsuranceType
 } from '@/api/medicalInsurance'
 
+const route = useRoute()
+const router = useRouter()
 const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
 
@@ -562,7 +575,12 @@ const copyTargetRegionOptions = computed(() => {
 })
 
 // 标签页
-const activeTab = ref('social')
+const tabRouteMap = {
+  '/social-security': 'social',
+  '/large-medical-insurance': 'large-medical'
+}
+
+const activeTab = ref(tabRouteMap[route.path] || 'social')
 
 // 模板设计器相关
 const showTemplateDesigner = ref(false)
@@ -867,7 +885,9 @@ const regionForm = ref({
 const typeForm = ref({
   name: '',
   employee_ratio: 0,
-  company_ratio: 0
+  company_ratio: 0,
+  unit: '元',
+  only_company_pay: false
 })
 
 // 表单验证规则
@@ -1050,13 +1070,36 @@ const resetRegionForm = () => {
   }
 }
 
+const decimalToPercent = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  return Number((Number(value) * 100).toFixed(2))
+}
+
+const percentToDecimal = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  return Number((Number(value) / 100).toFixed(4))
+}
+
+const handleOnlyCompanyPayChange = (value) => {
+  if (value) {
+    typeForm.value.employee_ratio = 0
+  }
+}
+
+const openAddTypeDialog = () => {
+  resetTypeForm()
+  showAddTypeDialog.value = true
+}
+
 // 编辑类型
 const editType = (type) => {
   editingType.value = type
   typeForm.value = {
     name: type.name,
-    employee_ratio: type.employee_ratio,
-    company_ratio: type.company_ratio
+    employee_ratio: decimalToPercent(type.employee_ratio),
+    company_ratio: decimalToPercent(type.company_ratio),
+    unit: type.unit || '元',
+    only_company_pay: Number(type.employee_ratio) === 0
   }
   showAddTypeDialog.value = true
 }
@@ -1095,8 +1138,9 @@ const handleSubmitType = async () => {
 
     const data = {
       name: typeForm.value.name,
-      employee_ratio: typeForm.value.employee_ratio,
-      company_ratio: typeForm.value.company_ratio
+      employee_ratio: typeForm.value.only_company_pay ? 0 : percentToDecimal(typeForm.value.employee_ratio),
+      company_ratio: percentToDecimal(typeForm.value.company_ratio),
+      only_company_pay: typeForm.value.only_company_pay
     }
 
     if (editingType.value) {
@@ -1123,11 +1167,10 @@ const resetTypeForm = () => {
   editingType.value = null
   typeForm.value = {
     name: '',
-    min_base_amount: 0,
-    max_base_amount: 0,
     employee_ratio: 0,
     company_ratio: 0,
-    unit: '元'
+    unit: '元',
+    only_company_pay: false
   }
   if (typeFormRef.value) {
     typeFormRef.value.resetFields()
@@ -1141,10 +1184,25 @@ const unwatchAccountSet = accountSetStore.$subscribe((mutation, state) => {
   }
 })
 
+watch(
+  () => route.path,
+  (path) => {
+    activeTab.value = tabRouteMap[path] || 'social'
+  },
+  { immediate: true }
+)
+
+watch(activeTab, (tab) => {
+  const targetPath = tab === 'large-medical' ? '/large-medical-insurance' : '/social-security'
+  if (route.path !== targetPath) {
+    router.replace(targetPath)
+  }
+})
+
 onMounted(async () => {
   // 先初始化账套信息
   await accountSetStore.loadMyAccountSets()
-  
+
   if (currentAccountSetId.value) {
     loadRegions()
     loadMedicalRegions()
@@ -1297,8 +1355,8 @@ const editMedicalType = (type) => {
   editingMedicalType.value = type
   medicalTypeForm.value = {
     name: type.name,
-    employee_ratio: type.employee_ratio,
-    company_ratio: type.company_ratio
+    employee_ratio: decimalToPercent(type.employee_ratio),
+    company_ratio: decimalToPercent(type.company_ratio)
   }
   showAddMedicalTypeDialog.value = true
 }
@@ -1339,8 +1397,8 @@ const handleSubmitMedicalType = async () => {
 
     const data = {
       name: medicalTypeForm.value.name,
-      employee_ratio: medicalTypeForm.value.employee_ratio,
-      company_ratio: medicalTypeForm.value.company_ratio,
+      employee_ratio: percentToDecimal(medicalTypeForm.value.employee_ratio),
+      company_ratio: percentToDecimal(medicalTypeForm.value.company_ratio),
       account_set_id: currentAccountSetId.value
     }
 

@@ -90,7 +90,7 @@ export const menuConfig = [
       { title: '社保管理', path: '/social-security', icon: 'UserFilled' },
       { title: '公积金管理', path: '/housing-fund', icon: 'House' },
       { title: '其他保险管理', path: '/other-insurance', icon: 'Document' },
-      { title: '大额医疗保险', path: '/large-medical-insurance', icon: 'Document' },
+      { title: '医保与大额医疗', path: '/large-medical-insurance', icon: 'Document' },
       { title: '基数调差管理', path: '/base-adjustment', icon: 'Edit' },
       { title: '专项扣除管理', path: '/special-deductions', icon: 'DocumentChecked' },
       { title: '发票项目配置', path: '/invoice-projects', icon: 'Setting', requireInvoice: true },

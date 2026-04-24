@@ -152,11 +152,11 @@
           </template>
           
           <el-form-item label="公司比例" prop="company_ratio">
-            <el-input-number v-model="formData.company_ratio" :min="0" :max="1" :precision="4" :step="0.01" style="width: 100%" />
-            <span style="margin-left: 10px; color: #909399;">例如：0.1 代表 10%</span>
+            <el-input-number v-model="formData.company_ratio" :min="0" :max="100" :precision="2" :step="0.01" style="width: 100%" />
+            <span style="margin-left: 10px; color: #909399;">例如：10 代表 10%</span>
           </el-form-item>
           <el-form-item label="员工比例" prop="employee_ratio">
-            <el-input-number v-model="formData.employee_ratio" :min="0" :max="1" :precision="4" :step="0.01" style="width: 100%" />
+            <el-input-number v-model="formData.employee_ratio" :min="0" :max="100" :precision="2" :step="0.01" style="width: 100%" />
           </el-form-item>
         </template>
 
@@ -310,6 +310,16 @@ import request from '@/api/request'
 const accountSetStore = useAccountSetStore()
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 
+const decimalToPercent = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  return Number((Number(value) * 100).toFixed(2))
+}
+
+const percentToDecimal = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  return Number((Number(value) / 100).toFixed(4))
+}
+
 // 数据
 const configs = ref([])
 const loading = ref(false)
@@ -404,12 +414,18 @@ const showCreateDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true; editingId.value = row.id
   formData.value = {
-    region_name: row.region_name, calculation_type: row.calculation_type,
-    base_source: row.base_source || 'employee', base_amount: row.base_amount || 0,
-    employee_base_amount: row.employee_base_amount || 0, company_ratio: row.company_ratio || 0,
-    employee_ratio: row.employee_ratio || 0, company_amount: row.company_amount || 0,
-    employee_amount: row.employee_amount || 0, payment_cycle: row.payment_cycle,
-    status: row.status, remarks: row.remarks || ''
+    region_name: row.region_name,
+    calculation_type: row.calculation_type,
+    base_source: row.base_source || 'employee',
+    base_amount: row.base_amount || 0,
+    employee_base_amount: row.employee_base_amount || 0,
+    company_ratio: decimalToPercent(row.company_ratio || 0),
+    employee_ratio: decimalToPercent(row.employee_ratio || 0),
+    company_amount: row.company_amount || 0,
+    employee_amount: row.employee_amount || 0,
+    payment_cycle: row.payment_cycle,
+    status: row.status,
+    remarks: row.remarks || ''
   }
   dialogVisible.value = true
 }
@@ -429,7 +445,12 @@ const handleSubmit = async () => {
   try {
     await formRef.value.validate()
     submitting.value = true
-    const data = { ...formData.value, account_set_id: currentAccountSetId.value }
+    const data = {
+      ...formData.value,
+      account_set_id: currentAccountSetId.value,
+      company_ratio: formData.value.calculation_type === 'base' ? percentToDecimal(formData.value.company_ratio) : formData.value.company_ratio,
+      employee_ratio: formData.value.calculation_type === 'base' ? percentToDecimal(formData.value.employee_ratio) : formData.value.employee_ratio
+    }
     const response = isEdit.value
       ? await request.put(`/large-medical-insurance/${editingId.value}`, data)
       : await request.post('/large-medical-insurance', data)

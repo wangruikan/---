@@ -218,8 +218,8 @@ const routes = [
       {
         path: '/large-medical-insurance',
         name: 'LargeMedicalInsurance',
-        component: () => import('@/views/LargeMedicalInsurance/index.vue'),
-        meta: { title: '大额医疗保险' }
+        component: () => import('@/views/SocialSecurity/index.vue'),
+        meta: { title: '医保与大额医疗' }
       },
       {
         path: '/base-adjustment',

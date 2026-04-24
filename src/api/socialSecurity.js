@@ -68,3 +68,11 @@ export function deleteSocialSecurityType(typeId) {
     method: 'delete'
   })
 }
+
+// 获取社保地区上下限历史
+export function getSocialSecurityRegionLimitHistories(id) {
+  return request({
+    url: `/social-security/${id}/limit-histories`,
+    method: 'get'
+  })
+}

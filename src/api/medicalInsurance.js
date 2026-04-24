@@ -71,3 +71,12 @@ export function deleteMedicalInsuranceType(typeId, params) {
   })
 }
 
+// 获取医保地区上下限历史
+export function getMedicalInsuranceRegionLimitHistories(id, params) {
+  return request({
+    url: `/medical-insurance/${id}/limit-histories`,
+    method: 'get',
+    params
+  })
+}
+

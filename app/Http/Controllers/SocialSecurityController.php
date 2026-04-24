@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SocialSecurityRegion;
 use App\Models\SocialSecurityType;
+use App\Models\OperationLog;
 use App\Models\AccountSet;
 use App\Services\InsuranceChangeDetectionService;
 use Illuminate\Http\Request;
@@ -522,7 +523,7 @@ class SocialSecurityController extends Controller
         // 保存删除前的数据用于变更检测
         $oldData = $type->toArray();
         $regionId = $type->region_id;
-        
+
         $type->delete();
 
         // 检测保险信息变更并自动导入到增减模块
@@ -533,6 +534,53 @@ class SocialSecurityController extends Controller
             'success' => true,
             'message' => '社保类型删除成功',
             'import_result' => $importResult
+        ]);
+    }
+
+    /**
+     * 获取社保地区上下限历史
+     */
+    public function getRegionLimitHistories(Request $request, $id)
+    {
+        if ($response = $this->checkPermission('social_security.view')) {
+            return $response;
+        }
+
+        $region = SocialSecurityRegion::findOrFail($id);
+        $user = $request->user();
+
+        if ($user->role !== 'admin') {
+            $hasAccess = $user->accountSets()->where('account_set_id', $region->account_set_id)->exists();
+            if (!$hasAccess) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '无权限访问该账套'
+                ], 403);
+            }
+        }
+
+        $histories = OperationLog::where('model_type', SocialSecurityRegion::class)
+            ->where('model_id', $region->id)
+            ->where('action', 'updated')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($log) {
+                $oldValues = $log->old_values ?? [];
+                $newValues = $log->new_values ?? [];
+                return [
+                    'changed_at' => $log->created_at ? $log->created_at->format('Y-m-d H:i:s') : null,
+                    'min_base_amount' => array_key_exists('min_base_amount', $newValues) ? $newValues['min_base_amount'] : ($oldValues['min_base_amount'] ?? null),
+                    'max_base_amount' => array_key_exists('max_base_amount', $newValues) ? $newValues['max_base_amount'] : ($oldValues['max_base_amount'] ?? null),
+                ];
+            })
+            ->filter(function ($item) {
+                return !is_null($item['min_base_amount']) || !is_null($item['max_base_amount']);
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $histories,
         ]);
     }
 }

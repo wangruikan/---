@@ -41,31 +41,34 @@
             <span v-date-time="row.created_at"></span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="370">
+        <el-table-column label="操作" width="450">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewConfigs(row)">
               查看配置
             </el-button>
-            <el-button 
+            <el-button type="info" size="small" @click="showRegionHistory(row)">
+              历史
+            </el-button>
+            <el-button
               v-if="!row.has_template"
-              type="success" 
-              size="small" 
+              type="success"
+              size="small"
               @click="createTemplate(row)"
             >
               创建模板
             </el-button>
-            <!-- <el-button 
+            <!-- <el-button
               v-else
-              type="warning" 
-              size="small" 
+              type="warning"
+              size="small"
               @click="editTemplate(row)"
             >
               编辑模板
             </el-button>
-            <el-button 
+            <el-button
               v-if="row.has_template"
-              type="info" 
-              size="small" 
+              type="info"
+              size="small"
               @click="openCopyTemplateDialog(row)"
             >
               复制模板
@@ -221,6 +224,26 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="showHistoryDialog"
+      :title="historyTitle"
+      width="600px"
+    >
+      <el-table :data="regionHistories" v-loading="historyLoading" stripe>
+        <el-table-column prop="changed_at" label="修改时间" width="180" />
+        <el-table-column prop="min_base_amount" label="下限基数" width="180">
+          <template #default="{ row }">
+            {{ row.min_base_amount === null || row.min_base_amount === undefined ? '-' : `¥${Number(row.min_base_amount).toFixed(2)}` }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="max_base_amount" label="上限基数" width="180">
+          <template #default="{ row }">
+            {{ row.max_base_amount === null || row.max_base_amount === undefined ? '-' : `¥${Number(row.max_base_amount).toFixed(2)}` }}
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
     <!-- 添加表头字段对话框 -->
     <el-dialog v-model="showAddHeaderFieldDialog" title="添加表头字段" width="500px">
       <el-form :model="newHeaderField" label-width="100px">
@@ -368,12 +391,13 @@ import { Plus, Delete, Edit, Download, Search, Refresh, Setting, Document, Print
 import { useAccountSetStore } from '@/stores/accountSet'
 import request from '@/api/request'
 import ReportTemplateDesigner from '@/components/ReportTemplateDesigner.vue'
-import { 
-  getHousingFundRegions, 
-  createHousingFundRegion, 
-  updateHousingFundRegion, 
+import {
+  getHousingFundRegions,
+  createHousingFundRegion,
+  updateHousingFundRegion,
   deleteHousingFundRegion,
-  getHousingFundRegionConfigs 
+  getHousingFundRegionConfigs,
+  getHousingFundRegionLimitHistories
 } from '@/api/housingFundRegion'
 import { 
   createHousingFundConfig, 
@@ -580,6 +604,10 @@ const editingRegion = ref(null)
 const editingConfig = ref(null)
 const regionFormRef = ref()
 const configFormRef = ref()
+const showHistoryDialog = ref(false)
+const historyLoading = ref(false)
+const regionHistories = ref([])
+const historyTitle = ref('')
 
 // 地区表单
 const regionForm = reactive({
@@ -659,6 +687,22 @@ const viewConfigs = async (region) => {
     ElMessage.error('加载配置列表失败')
   } finally {
     configLoading.value = false
+  }
+}
+
+const showRegionHistory = async (region) => {
+  historyTitle.value = `${region.region_name} - 上下限历史`
+  showHistoryDialog.value = true
+  historyLoading.value = true
+  try {
+    const response = await getHousingFundRegionLimitHistories(region.id)
+    regionHistories.value = response.data || []
+  } catch (error) {
+    console.error('加载公积金上下限历史失败:', error)
+    ElMessage.error('加载历史失败')
+    regionHistories.value = []
+  } finally {
+    historyLoading.value = false
   }
 }
 

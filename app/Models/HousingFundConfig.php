@@ -2,12 +2,26 @@
 
 namespace App\Models;
 
+use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class HousingFundConfig extends Model
 {
-    use HasFactory;
+    use HasFactory, Auditable;
+
+    protected $auditName = '公积金配置';
+
+    protected $auditableFields = [
+        'config_name' => '配置名称',
+        'min_base_amount' => '下限基数',
+        'max_base_amount' => '上限基数',
+    ];
+
+    public function getAuditIdentifier()
+    {
+        return $this->config_name;
+    }
 
     protected $fillable = [
         'region_id',

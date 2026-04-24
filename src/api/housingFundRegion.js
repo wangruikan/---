@@ -44,3 +44,10 @@ export function getHousingFundRegionConfigs(regionId) {
     method: 'get'
   })
 }
+
+export function getHousingFundRegionLimitHistories(id) {
+  return request({
+    url: `/housing-fund-regions/${id}/limit-histories`,
+    method: 'get'
+  })
+}

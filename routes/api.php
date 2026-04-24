@@ -503,6 +503,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [SocialSecurityController::class, 'show']);
         Route::put('/{id}', [SocialSecurityController::class, 'update']);
         Route::delete('/{id}', [SocialSecurityController::class, 'destroy']);
+        Route::get('/{id}/limit-histories', [SocialSecurityController::class, 'getRegionLimitHistories']);
         Route::post('/{regionId}/types', [SocialSecurityController::class, 'addType']);
         Route::put('/types/{typeId}', [SocialSecurityController::class, 'updateType']);
         Route::delete('/types/{typeId}', [SocialSecurityController::class, 'destroyType']);
@@ -524,6 +525,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}', [HousingFundRegionController::class, 'update']);
         Route::delete('/{id}', [HousingFundRegionController::class, 'destroy']);
         Route::get('/{id}/configs', [HousingFundRegionController::class, 'getConfigs']);
+        Route::get('/{id}/limit-histories', [HousingFundRegionController::class, 'getRegionLimitHistories']);
     });
 
     // 公积金配置管理
@@ -542,6 +544,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\MedicalInsuranceController::class, 'showRegion']);
         Route::put('/{id}', [\App\Http\Controllers\MedicalInsuranceController::class, 'updateRegion']);
         Route::delete('/{id}', [\App\Http\Controllers\MedicalInsuranceController::class, 'deleteRegion']);
+        Route::get('/{id}/limit-histories', [\App\Http\Controllers\MedicalInsuranceController::class, 'getRegionLimitHistories']);
         Route::post('/{regionId}/types', [\App\Http\Controllers\MedicalInsuranceController::class, 'addType']);
         Route::put('/types/{typeId}', [\App\Http\Controllers\MedicalInsuranceController::class, 'updateType']);
         Route::delete('/types/{typeId}', [\App\Http\Controllers\MedicalInsuranceController::class, 'deleteType']);

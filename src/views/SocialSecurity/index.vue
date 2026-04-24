@@ -42,31 +42,38 @@
             <el-tag type="info">{{ row.social_security_types?.length || 0 }} 种</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="420">
+        <el-table-column label="操作" width="500">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewTypes(row)">
               查看类型
             </el-button>
-            <el-button 
+            <el-button
+              type="info"
+              size="small"
+              @click="showSocialRegionHistory(row)"
+            >
+              历史
+            </el-button>
+            <el-button
               v-if="!row.has_template"
-              type="success" 
-              size="small" 
+              type="success"
+              size="small"
               @click="createTemplate(row)"
             >
               创建模板
             </el-button>
-            <!-- <el-button 
+            <!-- <el-button
               v-else
-              type="warning" 
-              size="small" 
+              type="warning"
+              size="small"
               @click="editTemplate(row)"
             >
               编辑模板
             </el-button>
-            <el-button 
+            <el-button
               v-if="row.has_template"
-              type="info" 
-              size="small" 
+              type="info"
+              size="small"
               @click="openCopyTemplateDialog(row, 'social_security')"
             >
               复制模板
@@ -74,10 +81,10 @@
             <el-button type="warning" size="small" @click="editRegion(row)">
               编辑
             </el-button>
-            <el-button 
+            <el-button
               v-if="row.adjustment_base && row.effective_date"
-              type="info" 
-              size="small" 
+              type="info"
+              size="small"
               @click="cancelAdjustment(row)"
             >
               取消调整
@@ -271,31 +278,38 @@
                 <el-tag type="info">{{ row.medical_insurance_types?.length || 0 }} 种</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="320">
+            <el-table-column label="操作" width="400">
               <template #default="{ row }">
                 <el-button type="primary" size="small" @click="viewMedicalTypes(row)">
                   查看类型
                 </el-button>
-                <el-button 
+                <el-button
+                  type="info"
+                  size="small"
+                  @click="showMedicalRegionHistory(row)"
+                >
+                  历史
+                </el-button>
+                <el-button
                   v-if="!row.has_template"
-                  type="success" 
-                  size="small" 
+                  type="success"
+                  size="small"
                   @click="createMedicalTemplate(row)"
                 >
                   创建模板
                 </el-button>
-                <!-- <el-button 
+                <!-- <el-button
                   v-else
-                  type="warning" 
-                  size="small" 
+                  type="warning"
+                  size="small"
                   @click="editMedicalTemplate(row)"
                 >
                   编辑模板
                 </el-button>
-                <el-button 
+                <el-button
                   v-if="row.has_template"
-                  type="info" 
-                  size="small" 
+                  type="info"
+                  size="small"
                   @click="openCopyTemplateDialog(row, 'medical_insurance')"
                 >
                   复制模板
@@ -452,6 +466,26 @@
       </el-tab-pane>
     </el-tabs>
 
+    <el-dialog
+      v-model="showRegionHistoryDialog"
+      :title="regionHistoryTitle"
+      width="600px"
+    >
+      <el-table :data="regionHistories" v-loading="regionHistoryLoading" stripe>
+        <el-table-column prop="changed_at" label="修改时间" width="180" />
+        <el-table-column prop="min_base_amount" label="下限基数" width="180">
+          <template #default="{ row }">
+            {{ row.min_base_amount === null || row.min_base_amount === undefined ? '-' : `¥${Number(row.min_base_amount).toFixed(2)}` }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="max_base_amount" label="上限基数" width="180">
+          <template #default="{ row }">
+            {{ row.max_base_amount === null || row.max_base_amount === undefined ? '-' : `¥${Number(row.max_base_amount).toFixed(2)}` }}
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
     <!-- 复制模板对话框 -->
     <el-dialog
       v-model="showCopyTemplateDialog"
@@ -525,7 +559,8 @@ import {
   deleteSocialSecurityRegion,
   addSocialSecurityType,
   updateSocialSecurityType,
-  deleteSocialSecurityType
+  deleteSocialSecurityType,
+  getSocialSecurityRegionLimitHistories
 } from '@/api/socialSecurity'
 import {
   getMedicalInsuranceRegions,
@@ -535,7 +570,8 @@ import {
   deleteMedicalInsuranceRegion,
   addMedicalInsuranceType,
   updateMedicalInsuranceType,
-  deleteMedicalInsuranceType
+  deleteMedicalInsuranceType,
+  getMedicalInsuranceRegionLimitHistories
 } from '@/api/medicalInsurance'
 
 const route = useRoute()
@@ -852,6 +888,10 @@ const showAddTypeDialog = ref(false)
 const editingRegion = ref(null)
 const editingType = ref(null)
 const currentRegion = ref(null)
+const showRegionHistoryDialog = ref(false)
+const regionHistoryLoading = ref(false)
+const regionHistories = ref([])
+const regionHistoryTitle = ref('')
 
 // 基数调整相关
 const showAdjustmentDialogFlag = ref(false)
@@ -968,6 +1008,22 @@ const loadRegions = async () => {
 const viewTypes = (region) => {
   currentRegion.value = region
   showTypesDialog.value = true
+}
+
+const showSocialRegionHistory = async (region) => {
+  regionHistoryTitle.value = `${region.name} - 上下限历史`
+  showRegionHistoryDialog.value = true
+  regionHistoryLoading.value = true
+  try {
+    const response = await getSocialSecurityRegionLimitHistories(region.id)
+    regionHistories.value = response.data || []
+  } catch (error) {
+    console.error('加载社保上下限历史失败:', error)
+    ElMessage.error('加载历史失败')
+    regionHistories.value = []
+  } finally {
+    regionHistoryLoading.value = false
+  }
 }
 
 // 编辑地区
@@ -1243,6 +1299,24 @@ const loadMedicalRegions = async () => {
 const viewMedicalTypes = (region) => {
   currentMedicalRegion.value = region
   showMedicalTypesDialog.value = true
+}
+
+const showMedicalRegionHistory = async (region) => {
+  regionHistoryTitle.value = `${region.name} - 上下限历史`
+  showRegionHistoryDialog.value = true
+  regionHistoryLoading.value = true
+  try {
+    const response = await getMedicalInsuranceRegionLimitHistories(region.id, {
+      account_set_id: currentAccountSetId.value
+    })
+    regionHistories.value = response.data || []
+  } catch (error) {
+    console.error('加载医保上下限历史失败:', error)
+    ElMessage.error('加载历史失败')
+    regionHistories.value = []
+  } finally {
+    regionHistoryLoading.value = false
+  }
 }
 
 // 编辑医保地区

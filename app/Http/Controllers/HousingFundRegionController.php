@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\HousingFundRegion;
+use App\Models\HousingFundConfig;
+use App\Models\OperationLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Traits\ChecksPermission;
@@ -226,7 +228,7 @@ class HousingFundRegionController extends Controller
         }
 
         $region = HousingFundRegion::find($regionId);
-        
+
         if (!$region) {
             return response()->json([
                 'success' => false,
@@ -242,6 +244,61 @@ class HousingFundRegionController extends Controller
         return response()->json([
             'success' => true,
             'data' => $configs
+        ]);
+    }
+
+    /**
+     * 获取地区下配置的上下限历史
+     */
+    public function getRegionLimitHistories(Request $request, $id)
+    {
+        if ($response = $this->checkPermission('housing_fund.view')) {
+            return $response;
+        }
+
+        $region = HousingFundRegion::find($id);
+        if (!$region) {
+            return response()->json([
+                'success' => false,
+                'message' => '地区未找到'
+            ], 404);
+        }
+
+        $user = $request->user();
+        if ($user->role !== 'admin') {
+            $hasAccess = $user->accountSets()->where('account_set_id', $region->account_set_id)->exists();
+            if (!$hasAccess) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '无权限访问该账套'
+                ], 403);
+            }
+        }
+
+        $configIds = HousingFundConfig::where('region_id', $region->id)->pluck('id');
+
+        $histories = OperationLog::where('model_type', HousingFundConfig::class)
+            ->whereIn('model_id', $configIds)
+            ->where('action', 'updated')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($log) {
+                $oldValues = $log->old_values ?? [];
+                $newValues = $log->new_values ?? [];
+                return [
+                    'changed_at' => $log->created_at ? $log->created_at->format('Y-m-d H:i:s') : null,
+                    'min_base_amount' => array_key_exists('min_base_amount', $newValues) ? $newValues['min_base_amount'] : ($oldValues['min_base_amount'] ?? null),
+                    'max_base_amount' => array_key_exists('max_base_amount', $newValues) ? $newValues['max_base_amount'] : ($oldValues['max_base_amount'] ?? null),
+                ];
+            })
+            ->filter(function ($item) {
+                return !is_null($item['min_base_amount']) || !is_null($item['max_base_amount']);
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $histories,
         ]);
     }
 }

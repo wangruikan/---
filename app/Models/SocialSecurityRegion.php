@@ -2,12 +2,29 @@
 
 namespace App\Models;
 
+use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class SocialSecurityRegion extends Model
 {
-    use HasFactory;
+    use HasFactory, Auditable;
+
+    protected $auditName = '社保地区';
+
+    protected $auditableFields = [
+        'name' => '地区名称',
+        'code' => '社保编号',
+        'company' => '单位',
+        'min_base_amount' => '最低基数',
+        'max_base_amount' => '最高基数',
+        'effective_date' => '生效时间',
+    ];
+
+    public function getAuditIdentifier()
+    {
+        return $this->name;
+    }
 
     protected $fillable = [
         'name',

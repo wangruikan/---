@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
+use App\Models\AssessmentAppeal;
 
 class AssessmentRecord extends Model
 {
@@ -31,7 +32,8 @@ class AssessmentRecord extends Model
 
     protected $appends = [
         'business_type_text',
-        'status_text'
+        'status_text',
+        'can_appeal'
     ];
 
     // 状态文本
@@ -67,6 +69,23 @@ class AssessmentRecord extends Model
             'payment_application' => '付款申请'
         ];
         return $typeMap[$this->business_type] ?? $this->business_type;
+    }
+
+    public function appeals()
+    {
+        return $this->hasMany(AssessmentAppeal::class, 'assessment_record_id');
+    }
+
+    public function latestAppeal()
+    {
+        return $this->hasOne(AssessmentAppeal::class, 'assessment_record_id')->latest('id');
+    }
+
+    public function getCanAppealAttribute()
+    {
+        $latestAppeal = $this->latestAppeal()->first();
+
+        return !$latestAppeal;
     }
 
     // 计算超期天数

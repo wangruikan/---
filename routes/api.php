@@ -233,6 +233,8 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // 员工删除审批
         Route::post('/delete-approval', [EmployeeController::class, 'submitDeleteApproval']);
+        // 员工工资调整审批
+        Route::post('/salary-adjustment-approval', [EmployeeController::class, 'submitSalaryAdjustmentApproval']);
         
         // 线下入职相关
         Route::post('/{id}/offline-onboarding', [App\Http\Controllers\OfflineOnboardingController::class, 'submitOfflineOnboarding']);
@@ -904,6 +906,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/refresh-status', [App\Http\Controllers\AssessmentRecordController::class, 'refreshStatus']);
         Route::post('/trigger-check', [App\Http\Controllers\AssessmentRecordController::class, 'triggerCheck']);
         Route::post('/check-new-employee-documents', [App\Http\Controllers\AssessmentRecordController::class, 'checkNewEmployeeDocuments']);
+        Route::post('/upload-appeal-image', [App\Http\Controllers\AssessmentRecordController::class, 'uploadAppealImage']);
+        Route::post('/{id}/appeals', [App\Http\Controllers\AssessmentRecordController::class, 'submitAppeal']);
+        Route::get('/{id}/appeals', [App\Http\Controllers\AssessmentRecordController::class, 'getAppeals']);
     });
 
     // 专项扣除管理

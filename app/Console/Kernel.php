@@ -28,6 +28,11 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('09:00')
                  ->timezone('Asia/Shanghai');
         
+        // 每天早上9点05分处理保险上下限待生效变更
+        $schedule->command('insurance:process-limit-effective')
+                 ->dailyAt('09:05')
+                 ->timezone('Asia/Shanghai');
+
         // 每天早上9点30分处理基数补差
         $schedule->command('base:process-compensation')
                  ->dailyAt('09:30')
@@ -111,6 +116,11 @@ class Kernel extends ConsoleKernel
         // 每天早上8点检查税费申报提醒
         $schedule->command('tax:check-reminders')
                  ->dailyAt('08:00')
+                 ->timezone('Asia/Shanghai');
+
+        // 每天凌晨1点自动确认符合条件的考核记录（每月15号后生效）
+        $schedule->command('assessment:auto-confirm')
+                 ->dailyAt('01:00')
                  ->timezone('Asia/Shanghai');
     }
 

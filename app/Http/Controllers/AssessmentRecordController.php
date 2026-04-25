@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\AssessmentRecord;
+use App\Models\AssessmentAppeal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 use App\Traits\ChecksPermission;
 
 class AssessmentRecordController extends Controller
@@ -27,7 +30,7 @@ class AssessmentRecordController extends Controller
             ], 400);
         }
 
-        $query = AssessmentRecord::where('account_set_id', $accountSetId);
+        $query = AssessmentRecord::with(['latestAppeal'])->where('account_set_id', $accountSetId);
 
         // 只显示当前用户相关的考核记录
         $currentUserId = auth()->id();
@@ -195,6 +198,144 @@ class AssessmentRecordController extends Controller
             'success' => true,
             'message' => '备注已更新',
             'data' => $record
+        ]);
+    }
+
+    public function uploadAppealImage(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|mimes:jpg,jpeg,png|max:10240'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $file = $request->file('file');
+        $originalName = $file->getClientOriginalName();
+        $extension = $file->getClientOriginalExtension();
+        $filename = time() . '_' . uniqid() . '.' . $extension;
+        $path = $file->storeAs('assessment_appeals/images', $filename, 'public');
+
+        return response()->json([
+            'success' => true,
+            'message' => '图片上传成功',
+            'data' => [
+                'file_name' => $originalName,
+                'file_path' => $path,
+                'url' => '/storage/' . ltrim($path, '/')
+            ]
+        ]);
+    }
+
+    public function submitAppeal(Request $request, $id)
+    {
+        $record = AssessmentRecord::with('latestAppeal')->find($id);
+
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => '记录不存在'
+            ], 404);
+        }
+
+        if ($record->handler_id != auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权限操作此记录'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'description' => 'required|string|max:1000',
+            'images' => 'required|array|min:1|max:9',
+            'images.*' => 'required|string|max:255'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $latestAppeal = $record->latestAppeal;
+        if ($latestAppeal && $latestAppeal->status === 'rejected') {
+            return response()->json([
+                'success' => false,
+                'message' => '该考核申诉已被驳回，不可再次申诉'
+            ], 422);
+        }
+
+        if ($latestAppeal) {
+            return response()->json([
+                'success' => false,
+                'message' => '该考核已发起过申诉'
+            ], 422);
+        }
+
+        $monthStart = Carbon::now()->startOfMonth()->toDateString();
+        $monthEnd = Carbon::now()->endOfMonth()->toDateString();
+
+        $monthlyAppealCount = AssessmentAppeal::where('appellant_id', auth()->id())
+            ->whereDate('created_at', '>=', $monthStart)
+            ->whereDate('created_at', '<=', $monthEnd)
+            ->count();
+
+        if ($monthlyAppealCount >= 3) {
+            return response()->json([
+                'success' => false,
+                'message' => '当月申诉次数已达上限（3次）'
+            ], 422);
+        }
+
+        $appeal = AssessmentAppeal::create([
+            'assessment_record_id' => $record->id,
+            'account_set_id' => $record->account_set_id,
+            'appellant_id' => auth()->id(),
+            'appellant_name' => auth()->user()->name,
+            'description' => $request->input('description'),
+            'images' => $request->input('images'),
+            'status' => 'pending'
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => '申诉提交成功',
+            'data' => $appeal
+        ]);
+    }
+
+    public function getAppeals(Request $request, $id)
+    {
+        $record = AssessmentRecord::find($id);
+
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => '记录不存在'
+            ], 404);
+        }
+
+        if ($record->handler_id != auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权限查看此记录'
+            ], 403);
+        }
+
+        $appeals = AssessmentAppeal::where('assessment_record_id', $record->id)
+            ->orderBy('id', 'desc')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $appeals
         ]);
     }
 

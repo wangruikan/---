@@ -218,31 +218,31 @@ export class PdfFillService {
     } = options
     
     // 创建高分辨率Canvas（提高清晰度）
-    const scale = 2 // 2倍分辨率
+    const scale = 4 // 4倍分辨率，提高清晰度
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
-    
+
     // 设置Canvas尺寸（高分辨率）
     canvas.width = width * scale
     canvas.height = height * scale
-    
+
     // 缩放上下文以保持清晰度
     ctx.scale(scale, scale)
-    
+
     // 启用文字渲染优化
     ctx.textRenderingOptimization = 'optimizeQuality'
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
-    
+
     // 设置背景（透明）
     if (backgroundColor !== 'transparent') {
       ctx.fillStyle = backgroundColor
       ctx.fillRect(0, 0, width, height)
     }
-    
-    // 设置文字样式（使用正常字体，不加粗）
-    const actualFontSize = Math.max(fontSize, 14) // 最小14px，更大更清晰
-    ctx.font = `${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+
+    // 设置文字样式（加粗以提高清晰度）
+    const actualFontSize = Math.max(fontSize, 14)
+    ctx.font = `bold ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
     ctx.fillStyle = color
     ctx.textAlign = 'left'
 

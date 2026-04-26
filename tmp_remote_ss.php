@@ -313,9 +313,8 @@ class SocialSecurityController extends Controller
 
         $requestedMin = $request->has('min_base_amount') ? $request->input('min_base_amount') : $region->min_base_amount;
         $requestedMax = $request->has('max_base_amount') ? $request->input('max_base_amount') : $region->max_base_amount;
-        $hasLimitInput = $request->has('min_base_amount') || $request->has('max_base_amount');
-        $hasLimitValueDiff = (string) $requestedMin !== (string) $region->min_base_amount || (string) $requestedMax !== (string) $region->max_base_amount;
-        $hasLimitChange = $hasLimitInput && ($hasLimitValueDiff || $request->filled('limit_effective_date'));
+        $hasLimitChange = ($request->has('min_base_amount') || $request->has('max_base_amount'))
+            && ((string) $requestedMin !== (string) $region->min_base_amount || (string) $requestedMax !== (string) $region->max_base_amount);
 
         if ($hasLimitChange) {
             if ($request->filled('limit_effective_date')) {

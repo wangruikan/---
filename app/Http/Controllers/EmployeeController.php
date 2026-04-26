@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\Project;
 use App\Models\OnboardingForm;
 use App\Models\OperationLog;
+use App\Models\ApprovalInstance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -205,10 +206,18 @@ class EmployeeController extends ApiController
                 ->where('status', 'pending')
                 ->pluck('business_id')
                 ->toArray();
-            
+
+            // 为每个员工添加 pending_salary_adjustment_approval 字段
+            $pendingSalaryAdjustmentApprovals = \App\Models\ApprovalInstance::where('business_type', 'employee_salary_adjustment')
+                ->whereIn('business_id', $employeeIds)
+                ->where('status', 'pending')
+                ->pluck('business_id')
+                ->toArray();
+
             foreach ($employees as $employee) {
                 $employee->pending_deletion_approval = in_array($employee->id, $pendingDeletionApprovals);
                 $employee->pending_offline_onboarding = in_array($employee->id, $pendingOfflineOnboardingApprovals);
+                $employee->pending_salary_adjustment_approval = in_array($employee->id, $pendingSalaryAdjustmentApprovals);
             }
             
             // 计算人员统计数据
@@ -904,12 +913,12 @@ class EmployeeController extends ApiController
         // if ($response = $this->checkPermission('employees.delete')) {
         //     return $response;
         // }
-        
+
         $validator = \Validator::make($request->all(), [
             'employee_id' => 'required|integer|exists:employees,id',
             'reason' => 'required|string|max:500'
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -917,10 +926,10 @@ class EmployeeController extends ApiController
                 'errors' => $validator->errors()
             ], 422);
         }
-        
+
         try {
             $employee = Employee::findOrFail($request->employee_id);
-            
+
             // 检查是否是在职员工
             if ($employee->contract_status !== 'active') {
                 return response()->json([
@@ -928,29 +937,29 @@ class EmployeeController extends ApiController
                     'message' => '该员工不是在职状态，可以直接删除，无需审批'
                 ], 400);
             }
-            
+
             // 检查是否已有待审批的删除申请（排除已驳回的）
             $existingApproval = \App\Models\ApprovalInstance::where('business_type', 'employee_deletion')
                 ->where('business_id', $employee->id)
                 ->where('status', 'pending')
                 ->exists();
-            
+
             if ($existingApproval) {
                 return response()->json([
                     'success' => false,
                     'message' => '该员工已有待审批的删除申请，请勿重复提交'
                 ], 400);
             }
-            
+
             $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
-            
+
             if (!$accountSetId) {
                 return response()->json([
                     'success' => false,
                     'message' => '请选择账套'
                 ], 400);
             }
-            
+
             // 创建审批流程
             $approvalService = app(\App\Services\ApprovalService::class);
             $stampMethod = $request->input('stamp_method', 'online'); // 盖章方式
@@ -963,22 +972,114 @@ class EmployeeController extends ApiController
                 false,
                 $stampMethod // 盖章方式
             );
-            
+
             // 保存删除原因到审批实例的备注中
             $instance->update(['remark' => $request->reason]);
-            
+
             return response()->json([
                 'success' => true,
                 'message' => '删除审批已提交，请等待审批',
                 'data' => $instance
             ]);
-            
+
         } catch (\Exception $e) {
             \Log::error('提交删除员工审批失败', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 提交工资调整审批
+     */
+    public function submitSalaryAdjustmentApproval(Request $request)
+    {
+        $validator = \Validator::make($request->all(), [
+            'employee_id' => 'required|integer|exists:employees,id',
+            'basic_salary' => 'nullable|numeric|min:0',
+            'salary_items' => 'nullable|array',
+            'salary_items.*.name' => 'required|string|max:50',
+            'salary_items.*.amount' => 'required|numeric|min:0',
+            'reason' => 'required|string|max:500',
+            'stamp_method' => 'nullable|in:online,offline',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $employee = Employee::findOrFail($request->employee_id);
+
+            // 检查是否有审批中的工资调整
+            $existingApproval = ApprovalInstance::where('business_type', 'employee_salary_adjustment')
+                ->where('business_id', $employee->id)
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($existingApproval) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该员工已有待审批的工资调整申请，请勿重复提交'
+                ], 400);
+            }
+
+            $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
+            if (!$accountSetId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择账套'
+                ], 400);
+            }
+
+            $newBasicSalary = $request->input('basic_salary');
+            $newSalaryItems = $request->input('salary_items', []);
+            $reason = $request->input('reason');
+
+            // 先创建审批实例
+            $approvalService = app(\App\Services\ApprovalService::class);
+            $stampMethod = $request->input('stamp_method', 'online');
+            $instance = $approvalService->createApprovalInstance(
+                $accountSetId,
+                'employee_salary_adjustment',
+                $employee->id,
+                $request->user()->id,
+                [],
+                false,
+                $stampMethod
+            );
+
+            // 将本次调薪内容写入审批实例扩展字段
+            $instance->update([
+                'old_basic_salary' => $employee->basic_salary,
+                'old_salary_items' => $employee->salary_items,
+                'new_basic_salary' => $newBasicSalary,
+                'new_salary_items' => $newSalaryItems,
+                'salary_adjustment_reason' => $reason,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => '工资调整审批已提交，请等待审批',
+                'data' => $instance
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('提交工资调整审批失败', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -1770,7 +1871,7 @@ class EmployeeController extends ApiController
             if ($form) {
                 $formData = $form->toArray();
                 $host = request()->getSchemeAndHttpHost();
-                
+
                 // 将签名路径转换为完整URL
                 if (!empty($formData['signature'])) {
                     if (strpos($formData['signature'], 'http') === 0) {
@@ -1792,6 +1893,25 @@ class EmployeeController extends ApiController
                     }
                 }
                 $result['onboarding_form'] = $formData;
+            }
+
+            // 7. 获取审核中的工资调整数据
+            $pendingSalaryAdjustment = ApprovalInstance::where('business_type', 'employee_salary_adjustment')
+                ->where('business_id', $employee->id)
+                ->where('status', 'pending')
+                ->latest('id')
+                ->first();
+
+            if ($pendingSalaryAdjustment) {
+                $result['pending_salary_adjustment'] = [
+                    'id' => $pendingSalaryAdjustment->id,
+                    'basic_salary' => $pendingSalaryAdjustment->new_basic_salary,
+                    'salary_items' => $pendingSalaryAdjustment->new_salary_items,
+                    'reason' => $pendingSalaryAdjustment->salary_adjustment_reason,
+                    'created_at' => $pendingSalaryAdjustment->created_at,
+                ];
+            } else {
+                $result['pending_salary_adjustment'] = null;
             }
 
             return response()->json([

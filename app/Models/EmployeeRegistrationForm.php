@@ -29,6 +29,7 @@ class EmployeeRegistrationForm extends Model
         'birth_date',
         'political_status',
         'education_level',
+        'education_type',
         'native_place',
         'marital_status',
         'has_children',

@@ -108,6 +108,20 @@
             ¥{{ row.max_base_amount || '-' }}
           </template>
         </el-table-column>
+        <el-table-column label="待生效上下限" width="220">
+          <template #default="{ row }">
+            <span v-if="row.pending_limits">
+              ¥{{ Number(row.pending_limits.min_base_amount || 0).toFixed(2) }} -
+              ¥{{ Number(row.pending_limits.max_base_amount || 0).toFixed(2) }}
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="待生效日期" width="130">
+          <template #default="{ row }">
+            {{ row.pending_limits?.effective_date || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="employee_ratio" label="员工缴纳比例" width="120">
           <template #default="{ row }">
             {{ (row.employee_ratio * 100).toFixed(2) }}%
@@ -191,29 +205,39 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingConfig">
+          <el-date-picker
+            v-model="configForm.limit_effective_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择上下限生效日期"
+            style="width: 100%"
+          />
+          <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
+        </el-form-item>
         <el-form-item label="员工缴纳比例" prop="employee_ratio">
           <el-input-number
             v-model="configForm.employee_ratio"
             :min="0"
-            :max="1"
-            :precision="4"
-            :step="0.0001"
+            :max="100"
+            :precision="2"
+            :step="0.01"
             placeholder="请输入员工缴纳比例"
             style="width: 100%"
           />
-          <div class="form-tip">例如：0.12 表示 12%</div>
+          <div class="form-tip">例如：12 表示 12%</div>
         </el-form-item>
         <el-form-item label="公司缴纳比例" prop="company_ratio">
           <el-input-number
             v-model="configForm.company_ratio"
             :min="0"
-            :max="1"
-            :precision="4"
-            :step="0.0001"
+            :max="100"
+            :precision="2"
+            :step="0.01"
             placeholder="请输入公司缴纳比例"
             style="width: 100%"
           />
-          <div class="form-tip">例如：0.12 表示 12%</div>
+          <div class="form-tip">例如：12 表示 12%</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -621,8 +645,9 @@ const configForm = reactive({
   config_name: '',
   min_base_amount: 0,
   max_base_amount: 0,
-  employee_ratio: 0.12,
-  company_ratio: 0.12
+  limit_effective_date: '',
+  employee_ratio: 12,
+  company_ratio: 12
 })
 
 // 表单验证规则
@@ -781,15 +806,26 @@ const deleteRegion = async (region) => {
   }
 }
 
+const decimalToPercent = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  return Number((Number(value) * 100).toFixed(2))
+}
+
+const percentToDecimal = (value) => {
+  if (value === null || value === undefined || value === '') return 0
+  return Number((Number(value) / 100).toFixed(4))
+}
+
 // 编辑配置
 const editConfig = (config) => {
   editingConfig.value = config
   Object.assign(configForm, {
     config_name: config.config_name,
-    min_base_amount: config.min_base_amount,
-    max_base_amount: config.max_base_amount,
-    employee_ratio: config.employee_ratio,
-    company_ratio: config.company_ratio
+    min_base_amount: config.pending_limits?.min_base_amount ?? config.min_base_amount,
+    max_base_amount: config.pending_limits?.max_base_amount ?? config.max_base_amount,
+    limit_effective_date: config.pending_limits?.effective_date || '',
+    employee_ratio: decimalToPercent(config.employee_ratio),
+    company_ratio: decimalToPercent(config.company_ratio)
   })
   showCreateConfigDialog.value = true
 }
@@ -803,10 +839,13 @@ const saveConfig = async () => {
       saving.value = true
       try {
         let response
-        const dataToSave = { 
-          ...configForm, 
+        const dataToSave = {
+          ...configForm,
+          employee_ratio: percentToDecimal(configForm.employee_ratio),
+          company_ratio: percentToDecimal(configForm.company_ratio),
           region_id: selectedRegion.value.id,
-          account_set_id: currentAccountSetId.value 
+          account_set_id: currentAccountSetId.value,
+          limit_effective_date: configForm.limit_effective_date || null
         }
         if (editingConfig.value) {
           response = await updateHousingFundConfig(editingConfig.value.id, dataToSave)
@@ -877,8 +916,9 @@ const resetConfigForm = () => {
     config_name: '',
     min_base_amount: 0,
     max_base_amount: 0,
-    employee_ratio: 0.12,
-    company_ratio: 0.12
+    limit_effective_date: '',
+    employee_ratio: 12,
+    company_ratio: 12
   })
   configFormRef.value?.resetFields()
 }

@@ -35,6 +35,12 @@ class EmployeeContractController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $contracts->each(function ($contract) {
+            $isOffline = $contract->status === 'completed' && is_null($contract->employee_signed_at);
+            $contract->source_type = $isOffline ? 'offline' : 'online';
+            $contract->source_text = $isOffline ? '线下' : '线上';
+        });
+
         return response()->json([
             'success' => true,
             'data' => $contracts
@@ -994,6 +1000,7 @@ class EmployeeContractController extends Controller
                         'household_agricultural_check' => $employee->household_type === 'agricultural' ? '√' : '',
                         'household_non_agricultural_check' => $employee->household_type === 'non_agricultural' ? '√' : '',
                         'hire_date' => $employee->hire_date?->format('Y-m-d'),
+                        'contract_sign_date' => now()->format('Y-m-d'),
                         'contract_start_date' => $employee->contract_start_date?->format('Y-m-d'),
                         'contract_end_date' => $employee->contract_end_date?->format('Y-m-d'),
                         'contract_months' => $employee->contract_months,

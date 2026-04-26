@@ -196,9 +196,8 @@ class HousingFundConfigController extends Controller
 
         $requestedMin = $request->has('min_base_amount') ? $request->input('min_base_amount') : $config->min_base_amount;
         $requestedMax = $request->has('max_base_amount') ? $request->input('max_base_amount') : $config->max_base_amount;
-        $hasLimitInput = $request->has('min_base_amount') || $request->has('max_base_amount');
-        $hasLimitValueDiff = (string) $requestedMin !== (string) $config->min_base_amount || (string) $requestedMax !== (string) $config->max_base_amount;
-        $hasLimitChange = $hasLimitInput && ($hasLimitValueDiff || $request->filled('limit_effective_date'));
+        $hasLimitChange = ($request->has('min_base_amount') || $request->has('max_base_amount'))
+            && ((string) $requestedMin !== (string) $config->min_base_amount || (string) $requestedMax !== (string) $config->max_base_amount);
 
         if ($hasLimitChange) {
             if ($request->filled('limit_effective_date')) {

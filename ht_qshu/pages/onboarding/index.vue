@@ -147,7 +147,20 @@
 				<text class="label">文化程度</text>
 				<input type="text" placeholder="请输入文化程度" v-model="formData.education_level" />
 			</view>
-			
+
+			<!-- 学历性质 -->
+			<view class="form-item">
+				<text class="label">学历性质</text>
+				<radio-group @change="onEducationTypeChange">
+					<label class="radio-label">
+						<radio value="统招" :checked="formData.education_type === '统招'" />统招
+					</label>
+					<label class="radio-label">
+						<radio value="非统招" :checked="formData.education_type === '非统招'" />非统招
+					</label>
+				</radio-group>
+			</view>
+
 			<!-- 所学专业 -->
 			<view class="form-item">
 				<text class="label">所学专业</text>
@@ -366,6 +379,7 @@ export default {
 				graduated_school: '',
 				graduation_date: '',
 				education_level: '',
+				education_type: '',
 				major: '',
 				degree: '',
 				technical_title: '',
@@ -608,6 +622,10 @@ export default {
 			this.healthIndex = e.detail.value
 			this.formData.health_status = this.healthOptions[e.detail.value]
 		},
+
+		onEducationTypeChange(e) {
+			this.formData.education_type = e.detail.value
+		},
 		
 		// 选择一寸照片
 		async choosePhoto() {
@@ -776,6 +794,7 @@ export default {
 							graduated_school: '北京大学',
 							graduation_date: `${gradYear}-${String(gradMonth).padStart(2, '0')}`,
 							education_level: '本科',
+							education_type: '统招',
 							major: '计算机科学与技术',
 							degree: '学士',
 							technical_title: '工程师',

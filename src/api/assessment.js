@@ -69,3 +69,32 @@ export function checkNewEmployeeDocuments(data) {
     data
   })
 }
+
+// 上传申诉图片
+export function uploadAssessmentAppealImage(data) {
+  return request({
+    url: '/assessment-records/upload-appeal-image',
+    method: 'post',
+    data,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+// 提交申诉
+export function submitAssessmentAppeal(id, data) {
+  return request({
+    url: `/assessment-records/${id}/appeals`,
+    method: 'post',
+    data
+  })
+}
+
+// 获取申诉记录
+export function getAssessmentAppeals(id) {
+  return request({
+    url: `/assessment-records/${id}/appeals`,
+    method: 'get'
+  })
+}

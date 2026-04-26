@@ -93,3 +93,12 @@ export const markContractUploaded = (id) => {
     method: 'post'
   })
 }
+
+// 提交工资调整审批
+export const submitSalaryAdjustmentApproval = (data) => {
+  return request({
+    url: '/employees/salary-adjustment-approval',
+    method: 'post',
+    data
+  })
+}

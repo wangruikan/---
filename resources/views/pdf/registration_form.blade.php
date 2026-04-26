@@ -442,7 +442,21 @@
                 <tr>
                     <td style="border: none; text-align: left; width: 50%;">
                         <span>申请人签名：</span>
-                        <span class="underline" style="min-width: 130px;"></span>
+                        @if(!empty($form->signature))
+                            @php
+                                $signatureUrl = $form->signature;
+                                if (strpos($signatureUrl, 'http') !== 0) {
+                                    if (strpos($signatureUrl, 'uploads/') === 0) {
+                                        $signatureUrl = public_path(ltrim($signatureUrl, '/'));
+                                    } else {
+                                        $signatureUrl = public_path('storage/' . ltrim($signatureUrl, '/'));
+                                    }
+                                }
+                            @endphp
+                            <img src="{{ $signatureUrl }}" class="signature-img" />
+                        @else
+                            <span class="underline" style="min-width: 130px;"></span>
+                        @endif
                     </td>
                     <td style="border: none; text-align: right; width: 50%;">
                         <span>日期：</span>

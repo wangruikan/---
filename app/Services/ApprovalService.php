@@ -1062,7 +1062,30 @@ class ApprovalService
                     ]);
                 }
                 break;
-            
+
+            case 'employee_salary_adjustment':
+                $employee = \App\Models\Employee::find($businessId);
+                if ($employee) {
+                    $instance = $instanceId ? \App\Models\ApprovalInstance::find($instanceId) : null;
+                    if ($status === 'completed' && $instance) {
+                        $employee->update([
+                            'basic_salary' => $instance->new_basic_salary,
+                            'salary_items' => $instance->new_salary_items,
+                        ]);
+                        Log::info('员工工资调整审批通过，已更新工资', [
+                            'employee_id' => $businessId,
+                            'instance_id' => $instanceId,
+                            'new_basic_salary' => $instance->new_basic_salary,
+                        ]);
+                    } elseif ($status === 'rejected') {
+                        Log::info('员工工资调整审批被驳回', [
+                            'employee_id' => $businessId,
+                            'instance_id' => $instanceId,
+                        ]);
+                    }
+                }
+                break;
+
             case 'offline_onboarding':
                 Log::info('进入 offline_onboarding case', [
                     'businessId' => $businessId,
@@ -2226,6 +2249,7 @@ class ApprovalService
             '考勤申请' => '考勤申请',
             '报销申请' => '报销申请',
             'reimbursement' => '报销申请',  // 兼容英文类型
+            'employee_salary_adjustment' => '员工工资调整审批',
         ];
         
         $typeName = $businessTypeMap[$instance->business_type] ?? $instance->business_type;

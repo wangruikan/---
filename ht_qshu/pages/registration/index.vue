@@ -119,6 +119,18 @@
 			</view>
 			
 			<view class="form-item">
+				<text class="label">学历性质</text>
+				<radio-group @change="onEducationTypeChange">
+					<label class="radio-label">
+						<radio value="统招" :checked="formData.education_type === '统招'" />统招
+					</label>
+					<label class="radio-label">
+						<radio value="非统招" :checked="formData.education_type === '非统招'" />非统招
+					</label>
+				</radio-group>
+			</view>
+			
+			<view class="form-item">
 				<text class="label">籍贯</text>
 				<picker mode="region" :value="nativePlaceArray" @change="onNativePlaceChange">
 					<view class="picker">{{ formData.native_place || '请选择籍贯' }}</view>
@@ -545,6 +557,7 @@ export default {
 				birth_date: '',
 				political_status: '',
 				education_level: '',
+				education_type: '',
 				native_place: '',
 				marital_status: '',
 				has_children: '',
@@ -698,6 +711,9 @@ export default {
 			this.educationIndex = e.detail.value
 			this.formData.education_level = this.educationOptions[e.detail.value]
 		},
+		onEducationTypeChange(e) {
+			this.formData.education_type = e.detail.value
+		},
 		onNativePlaceChange(e) {
 			this.nativePlaceArray = e.detail.value
 			this.formData.native_place = e.detail.value.join('')
@@ -827,6 +843,7 @@ export default {
 							id_number: '110101199005150015',
 							political_status: '群众',
 							education_level: '本科',
+							education_type: '统招',
 							native_place: '北京市',
 							marital_status: 'married',
 							has_children: '男孩',

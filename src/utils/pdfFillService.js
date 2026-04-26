@@ -72,6 +72,7 @@ export class PdfFillService {
         'bank_account': employeeData.bank_account,
         'bank_account_holder': employeeData.bank_account_holder,
         'hire_date': employeeData.hire_date,
+        'contract_sign_date': employeeData.contract_sign_date,
         'contract_start_date': employeeData.contract_start_date,
         'contract_end_date': employeeData.contract_end_date,
         'contract_start_year': employeeData.contract_start_year,

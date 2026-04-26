@@ -4,8 +4,6 @@
       <h2>考核记录</h2>
     </div>
 
-
-    <!-- 筛选条件 -->
     <el-card class="filter-card">
       <el-form :model="filterForm" inline>
         <el-form-item label="业务类型">
@@ -37,20 +35,38 @@
       </el-form>
     </el-card>
 
-    <!-- 考核记录列表 -->
     <el-card class="table-card">
       <el-table :data="records" v-loading="loading" border stripe>
         <el-table-column prop="business_type_text" label="业务类型" width="120" />
-        <el-table-column prop="business_name" label="业务描述" min-width="200" />
-        <el-table-column prop="remark" label="备注" min-width="300" show-overflow-tooltip />
+        <el-table-column prop="business_name" label="业务描述" min-width="180" />
+        <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
+        <el-table-column label="申诉状态" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.latest_appeal" :type="getAppealStatusType(row.latest_appeal.status)">
+              {{ row.latest_appeal.status_text }}
+            </el-tag>
+            <span v-else>未申诉</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="160">
           <template #default="{ row }">
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="showAppealButton(row)"
+              link
+              type="primary"
+              @click="openAppealDialog(row)"
+            >
+              申诉
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
 
-      <!-- 分页 -->
       <div class="pagination-container">
         <el-pagination
           v-model:current-page="pagination.page"
@@ -64,27 +80,56 @@
       </div>
     </el-card>
 
+    <el-dialog v-model="appealDialogVisible" title="发起申诉" width="600px">
+      <el-form :model="appealForm" label-width="90px">
+        <el-form-item label="申诉说明">
+          <el-input
+            v-model="appealForm.description"
+            type="textarea"
+            :rows="4"
+            maxlength="1000"
+            show-word-limit
+            placeholder="请输入申诉说明"
+          />
+        </el-form-item>
+        <el-form-item label="申诉图片">
+          <el-upload
+            list-type="picture-card"
+            :file-list="appealFileList"
+            :http-request="handleAppealImageUpload"
+            :on-remove="handleAppealImageRemove"
+            :limit="9"
+            accept="image/png,image/jpeg,image/jpg"
+          >
+            <el-icon><Plus /></el-icon>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeAppealDialog">取消</el-button>
+        <el-button type="primary" :loading="appealSubmitting" @click="submitAppeal">提交申诉</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
 import {
-  getAssessmentRecords
+  getAssessmentRecords,
+  submitAssessmentAppeal,
+  uploadAssessmentAppealImage
 } from '@/api/assessment'
 
 const accountSetStore = useAccountSetStore()
-
-// 计算属性
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 
-// 响应式数据
 const loading = ref(false)
 const records = ref([])
 
-// 筛选条件
 const filterForm = ref({
   business_type: '',
   status: '',
@@ -95,15 +140,21 @@ const filterForm = ref({
 
 const dateRange = ref([])
 
-// 分页
 const pagination = ref({
   page: 1,
   per_page: 20,
   total: 0
 })
 
+const appealDialogVisible = ref(false)
+const appealSubmitting = ref(false)
+const currentAppealRecordId = ref(null)
+const appealFileList = ref([])
+const appealForm = ref({
+  description: '',
+  images: []
+})
 
-// 加载考核记录
 const loadRecords = async () => {
   if (!currentAccountSetId.value) {
     ElMessage.warning('请先选择账套')
@@ -124,14 +175,12 @@ const loadRecords = async () => {
       pagination.value.total = response.total
     }
   } catch (error) {
-    console.error('加载考核记录失败:', error)
     ElMessage.error('加载考核记录失败')
   } finally {
     loading.value = false
   }
 }
 
-// 处理日期范围变化
 const handleDateChange = (val) => {
   if (val && val.length === 2) {
     filterForm.value.start_date = formatDate(val[0])
@@ -142,7 +191,6 @@ const handleDateChange = (val) => {
   }
 }
 
-// 重置筛选
 const resetFilter = () => {
   filterForm.value = {
     business_type: '',
@@ -156,22 +204,123 @@ const resetFilter = () => {
   loadRecords()
 }
 
-// 格式化日期
+const openAppealDialog = (row) => {
+  currentAppealRecordId.value = row.id
+  appealForm.value.description = ''
+  appealForm.value.images = []
+  appealFileList.value = []
+  appealDialogVisible.value = true
+}
+
+const closeAppealDialog = () => {
+  appealDialogVisible.value = false
+  currentAppealRecordId.value = null
+  appealForm.value.description = ''
+  appealForm.value.images = []
+  appealFileList.value = []
+}
+
+const handleAppealImageUpload = async (option) => {
+  try {
+    const formData = new FormData()
+    formData.append('file', option.file)
+    const response = await uploadAssessmentAppealImage(formData)
+
+    if (response.success) {
+      appealForm.value.images.push(response.data.file_path)
+      appealFileList.value.push({
+        name: response.data.file_name,
+        url: response.data.url,
+        path: response.data.file_path
+      })
+      option.onSuccess(response)
+      return
+    }
+
+    option.onError(new Error('上传失败'))
+  } catch (error) {
+    option.onError(error)
+    ElMessage.error('图片上传失败')
+  }
+}
+
+const handleAppealImageRemove = (file) => {
+  if (!file.path) {
+    return
+  }
+
+  appealForm.value.images = appealForm.value.images.filter(path => path !== file.path)
+}
+
+const submitAppeal = async () => {
+  if (!currentAppealRecordId.value) {
+    return
+  }
+
+  if (!appealForm.value.description.trim()) {
+    ElMessage.warning('请填写申诉说明')
+    return
+  }
+
+  if (appealForm.value.images.length === 0) {
+    ElMessage.warning('请上传至少1张申诉图片')
+    return
+  }
+
+  appealSubmitting.value = true
+  try {
+    const response = await submitAssessmentAppeal(currentAppealRecordId.value, {
+      description: appealForm.value.description,
+      images: appealForm.value.images
+    })
+
+    if (response.success) {
+      ElMessage.success('申诉提交成功')
+      closeAppealDialog()
+      loadRecords()
+    }
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '申诉提交失败')
+  } finally {
+    appealSubmitting.value = false
+  }
+}
+
+const getAppealStatusType = (status) => {
+  if (status === 'approved') return 'success'
+  if (status === 'rejected') return 'danger'
+  return 'warning'
+}
+
+const showAppealButton = (row) => {
+  if (!row || row.latest_appeal) {
+    return false
+  }
+
+  if (!row.deadline_date) {
+    return true
+  }
+
+  const deadline = new Date(row.deadline_date)
+  if (Number.isNaN(deadline.getTime())) {
+    return false
+  }
+
+  return Date.now() <= deadline.getTime()
+}
+
 const formatDate = (date) => {
   if (!date) return '-'
   const d = new Date(date)
   return d.toLocaleDateString('zh-CN')
 }
 
-// 格式化日期时间
 const formatDateTime = (date) => {
   if (!date) return '-'
   const d = new Date(date)
   return d.toLocaleString('zh-CN')
 }
 
-
-// 组件挂载
 onMounted(() => {
   if (currentAccountSetId.value) {
     loadRecords()
@@ -197,92 +346,14 @@ onMounted(() => {
   color: #303133;
 }
 
-.header-actions {
-  display: flex;
-  gap: 10px;
-}
-
-/* 统计卡片 */
-.statistics-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.stat-content {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.stat-icon {
-  width: 50px;
-  height: 50px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  color: white;
-}
-
-.stat-icon.total {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.stat-icon.pending {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-}
-
-.stat-icon.overdue {
-  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-}
-
-.stat-icon.completed {
-  background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
-}
-
-.stat-info {
-  flex: 1;
-}
-
-.stat-value {
-  font-size: 28px;
-  font-weight: bold;
-  color: #303133;
-  line-height: 1;
-  margin-bottom: 5px;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-}
-
-/* 筛选卡片 */
 .filter-card {
   margin-bottom: 20px;
 }
 
-/* 表格卡片 */
 .table-card {
   margin-bottom: 20px;
 }
 
-.overdue-text {
-  color: #f56c6c;
-  font-weight: bold;
-}
-
-/* 分页 */
 .pagination-container {
   margin-top: 20px;
   display: flex;

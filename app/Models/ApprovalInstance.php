@@ -16,12 +16,19 @@ class ApprovalInstance extends Model
         'created_by',
         'completed_at',
         'stamp_method',
+        'old_basic_salary',
+        'old_salary_items',
+        'new_basic_salary',
+        'new_salary_items',
+        'salary_adjustment_reason',
     ];
 
     protected $casts = [
         'completed_at' => 'datetime:Y-m-d H:i:s',
         'created_at' => 'datetime:Y-m-d H:i:s',
         'updated_at' => 'datetime:Y-m-d H:i:s',
+        'old_salary_items' => 'array',
+        'new_salary_items' => 'array',
     ];
 
     /**
@@ -114,6 +121,19 @@ class ApprovalInstance extends Model
                     ->find($this->business_id);
             case 'employee_deletion':
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
+            case 'employee_salary_adjustment':
+                $employee = \App\Models\Employee::with(['projects'])->find($this->business_id);
+                if (!$employee) {
+                    return null;
+                }
+                return [
+                    'employee' => $employee,
+                    'old_basic_salary' => $this->old_basic_salary,
+                    'old_salary_items' => $this->old_salary_items,
+                    'new_basic_salary' => $this->new_basic_salary,
+                    'new_salary_items' => $this->new_salary_items,
+                    'salary_adjustment_reason' => $this->salary_adjustment_reason,
+                ];
             // 后续可以添加其他业务类型
             default:
                 return null;

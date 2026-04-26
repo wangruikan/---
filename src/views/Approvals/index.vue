@@ -1316,6 +1316,7 @@ const getBusinessTypeText = (row) => {
     'employee_contract': '员工合同',
     'offline_onboarding': '线下入职',
     'employee_deletion': '员工删除',
+    'employee_salary_adjustment': '员工工资调整',
     'salary': '工资审核',
     'insurance': '社保审核',
     '工资表审批': '工资表审批',

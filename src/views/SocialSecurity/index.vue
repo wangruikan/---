@@ -35,6 +35,20 @@
         <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="地区名称" width="200" />
         <el-table-column prop="code" label="社保编号" width="180" />
+        <el-table-column label="待生效上下限" width="230">
+          <template #default="{ row }">
+            <span v-if="row.pending_limits">
+              ¥{{ Number(row.pending_limits.min_base_amount || 0).toFixed(2) }} -
+              ¥{{ Number(row.pending_limits.max_base_amount || 0).toFixed(2) }}
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="待生效日期" width="130">
+          <template #default="{ row }">
+            {{ row.pending_limits?.effective_date || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="creator.name" label="创建人" width="120" />
         <el-table-column prop="created_at" label="创建时间" width="180" />
         <el-table-column label="社保类型数量" width="120">
@@ -132,6 +146,16 @@
             style="width: 100%"
           />
           <div class="form-tip">该地区所有社保类型共用此基数上限</div>
+        </el-form-item>
+        <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingRegion">
+          <el-date-picker
+            v-model="regionForm.limit_effective_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择上下限生效日期"
+            style="width: 100%"
+          />
+          <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -271,6 +295,20 @@
             <el-table-column type="selection" width="55" />
             <el-table-column prop="name" label="地区名称" width="200" />
             <el-table-column prop="code" label="医保编号" width="180" />
+            <el-table-column label="待生效上下限" width="230">
+              <template #default="{ row }">
+                <span v-if="row.pending_limits">
+                  ¥{{ Number(row.pending_limits.min_base_amount || 0).toFixed(2) }} -
+                  ¥{{ Number(row.pending_limits.max_base_amount || 0).toFixed(2) }}
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="待生效日期" width="130">
+              <template #default="{ row }">
+                {{ row.pending_limits?.effective_date || '-' }}
+              </template>
+            </el-table-column>
             <el-table-column prop="creator.name" label="创建人" width="120" />
             <el-table-column prop="created_at" label="创建时间" width="180" />
             <el-table-column label="医保类型数量" width="120">
@@ -360,6 +398,16 @@
                 style="width: 100%"
               />
               <div class="form-tip">该地区所有医保类型共用此基数上限</div>
+            </el-form-item>
+            <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingMedicalRegion">
+              <el-date-picker
+                v-model="medicalRegionForm.limit_effective_date"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="请选择上下限生效日期"
+                style="width: 100%"
+              />
+              <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
             </el-form-item>
           </el-form>
           <template #footer>
@@ -919,7 +967,8 @@ const regionForm = ref({
   code: '',
   company: '',
   min_base_amount: null,
-  max_base_amount: null
+  max_base_amount: null,
+  limit_effective_date: ''
 })
 
 const typeForm = ref({
@@ -968,7 +1017,8 @@ const medicalRegionForm = ref({
   code: '',
   company: '',
   min_base_amount: null,
-  max_base_amount: null
+  max_base_amount: null,
+  limit_effective_date: ''
 })
 
 const medicalTypeForm = ref({
@@ -1038,8 +1088,9 @@ const editRegion = async (region) => {
       name: latestRegion.name,
       code: latestRegion.code || '',
       company: latestRegion.company || '',
-      min_base_amount: latestRegion.min_base_amount || null,
-      max_base_amount: latestRegion.max_base_amount || null
+      min_base_amount: latestRegion.pending_limits?.min_base_amount ?? latestRegion.min_base_amount ?? null,
+      max_base_amount: latestRegion.pending_limits?.max_base_amount ?? latestRegion.max_base_amount ?? null,
+      limit_effective_date: latestRegion.pending_limits?.effective_date || ''
     }
     showCreateDialog.value = true
   } catch (error) {
@@ -1086,6 +1137,7 @@ const handleSubmitRegion = async () => {
       company: regionForm.value.company || null,
       min_base_amount: regionForm.value.min_base_amount || null,
       max_base_amount: regionForm.value.max_base_amount || null,
+      limit_effective_date: regionForm.value.limit_effective_date || null,
       account_set_id: currentAccountSetId.value
     }
 
@@ -1119,7 +1171,8 @@ const resetRegionForm = () => {
     code: '',
     company: '',
     min_base_amount: null,
-    max_base_amount: null
+    max_base_amount: null,
+    limit_effective_date: ''
   }
   if (regionFormRef.value) {
     regionFormRef.value.resetFields()
@@ -1331,8 +1384,9 @@ const editMedicalRegion = async (region) => {
       name: latestRegion.name,
       code: latestRegion.code || '',
       company: latestRegion.company || '',
-      min_base_amount: latestRegion.min_base_amount || null,
-      max_base_amount: latestRegion.max_base_amount || null
+      min_base_amount: latestRegion.pending_limits?.min_base_amount ?? latestRegion.min_base_amount ?? null,
+      max_base_amount: latestRegion.pending_limits?.max_base_amount ?? latestRegion.max_base_amount ?? null,
+      limit_effective_date: latestRegion.pending_limits?.effective_date || ''
     }
     showCreateMedicalDialog.value = true
   } catch (error) {
@@ -1381,6 +1435,7 @@ const handleSubmitMedicalRegion = async () => {
       company: medicalRegionForm.value.company || null,
       min_base_amount: medicalRegionForm.value.min_base_amount || null,
       max_base_amount: medicalRegionForm.value.max_base_amount || null,
+      limit_effective_date: medicalRegionForm.value.limit_effective_date || null,
       account_set_id: currentAccountSetId.value
     }
 
@@ -1417,7 +1472,8 @@ const resetMedicalRegionForm = () => {
     code: '',
     company: '',
     min_base_amount: null,
-    max_base_amount: null
+    max_base_amount: null,
+    limit_effective_date: ''
   }
   if (medicalRegionFormRef.value) {
     medicalRegionFormRef.value.resetFields()

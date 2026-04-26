@@ -1366,6 +1366,7 @@ const availablePlaceholderFields = ref({
   household_agricultural_check: '户籍-农业（打勾）',
   household_non_agricultural_check: '户籍-非农业（打勾）',
   hire_date: '入职日期',
+  contract_sign_date: '签订日期',
   contract_start_date: '合同开始日期',
   contract_end_date: '合同结束日期',
   contract_start_year: '合同开始年',

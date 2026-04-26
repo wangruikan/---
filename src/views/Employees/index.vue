@@ -2217,14 +2217,9 @@
               </el-row>
               
               <el-row :gutter="20">
-                <el-col :span="12">
+                <el-col :span="24">
                   <el-form-item label="登记日期">
                     <el-input :value="formatDate(onboardingForm?.registration_date)" placeholder="-" />
-                  </el-form-item>
-                </el-col>
-                <el-col :span="12">
-                  <el-form-item label="姓名">
-                    <el-input :value="onboardingForm?.name || '-'" placeholder="-" />
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -2321,6 +2316,13 @@
                     <el-input :value="onboardingForm?.education_level || '-'" placeholder="-" />
                   </el-form-item>
                 </el-col>
+                <el-col :span="12">
+                  <el-form-item label="学历性质">
+                    <el-input :value="onboardingForm?.education_type || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
                 <el-col :span="12">
                   <el-form-item label="所学专业">
                     <el-input :value="onboardingForm?.major || '-'" placeholder="-" />
@@ -2617,6 +2619,11 @@
                     </el-form-item>
                   </el-col>
                   <el-col :span="8">
+                    <el-form-item label="学历性质">
+                      <el-input :value="registrationForm?.education_type || '-'" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="8">
                     <el-form-item label="籍贯">
                       <el-input :value="registrationForm?.native_place || '-'" />
                     </el-form-item>
@@ -2890,6 +2897,22 @@
           >
             <el-divider content-position="left">工资信息</el-divider>
 
+            <el-alert
+              v-if="pendingSalaryAdjustment"
+              type="warning"
+              :closable="false"
+              style="margin-bottom: 16px;"
+            >
+              <template #title>
+                当前有审核中的工资调整，审批通过后才会生效
+              </template>
+              <template #default>
+                <div>审核中基础工资：¥{{ Number(pendingSalaryAdjustment.basic_salary || 0).toFixed(2) }}</div>
+                <div style="margin-top: 6px;">审核中工资项：{{ formatSalaryItems(pendingSalaryAdjustment.salary_items) }}</div>
+                <div v-if="pendingSalaryAdjustment.reason" style="margin-top: 6px;">申请原因：{{ pendingSalaryAdjustment.reason }}</div>
+              </template>
+            </el-alert>
+
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="基础工资" prop="basic_salary">
@@ -2953,6 +2976,17 @@
             >
               新增工资项
             </el-button>
+
+            <div v-if="isEdit && !isViewMode" style="margin-top: 16px;">
+              <el-button
+                type="warning"
+                @click="handleSubmitSalaryApproval"
+                :loading="submittingSalaryApproval"
+                :disabled="!!pendingSalaryAdjustment"
+              >
+                {{ pendingSalaryAdjustment ? '工资调整审批中' : '提交工资调整审批' }}
+              </el-button>
+            </div>
           </el-form>
         </el-tab-pane>
 
@@ -3859,6 +3893,62 @@
       </template>
     </el-dialog>
 
+    <!-- 工资调整审批对话框 -->
+    <el-dialog
+      v-model="showSalaryApprovalDialog"
+      title="提交工资调整审批"
+      width="600px"
+    >
+      <el-alert
+        title="工资调整需审批后生效"
+        type="warning"
+        :closable="false"
+        style="margin-bottom: 20px;"
+      >
+        <template #default>
+          <p>当前修改不会直接落库。</p>
+          <p>审批通过后，工资信息才会正式更新。</p>
+        </template>
+      </el-alert>
+
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="员工姓名">{{ form.name }}</el-descriptions-item>
+        <el-descriptions-item label="当前基础工资">¥{{ Number(currentSalarySnapshot.basic_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="调整后基础工资">¥{{ Number(form.basic_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="调整后工资项">{{ formatSalaryItems(form.salary_items) }}</el-descriptions-item>
+      </el-descriptions>
+
+      <el-form style="margin-top: 20px;">
+        <el-form-item label="调整原因" required>
+          <el-input
+            v-model="salaryApprovalForm.reason"
+            type="textarea"
+            :rows="4"
+            placeholder="请填写工资调整原因（必填）"
+            maxlength="500"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="盖章方式" required>
+          <el-radio-group v-model="salaryApprovalForm.stamp_method">
+            <el-radio value="online">线上盖章</el-radio>
+            <el-radio value="offline">线下盖章</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="showSalaryApprovalDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="confirmSubmitSalaryApproval"
+          :loading="submittingSalaryApproval"
+        >
+          提交审批
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量创建员工列表对话框 -->
     <el-dialog
       v-model="showBatchList"
@@ -3996,6 +4086,13 @@
             <template #default="{ row }">
               <el-tag :type="getContractStatusColor(row.status)">
                 {{ getContractStatusText(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="source_text" label="签署方式" width="100">
+            <template #default="{ row }">
+              <el-tag :type="getContractSourceColor(row)">
+                {{ getContractSourceText(row) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -4487,7 +4584,7 @@
 import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { UploadFilled, Download, Search, Refresh, Document, Plus, Edit, Star, Postcard, FolderOpened, Calendar, User, Check, Upload, Delete, View, Warning } from '@element-plus/icons-vue'
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, getPendingContractUpload, markContractUploaded } from '@/api/employees'
+import { getEmployees, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, getPendingContractUpload, markContractUploaded, submitSalaryAdjustmentApproval } from '@/api/employees'
 import { getProjects } from '@/api/projects'
 import { getEmployeeContracts, uploadContract, submitContract, completeContract, deleteContract, downloadContract, uploadSignedContract } from '@/api/employeeContracts'
 import { getDefaultTemplates, getContractTemplates } from '@/api/contractTemplates'
@@ -4584,6 +4681,43 @@ const deleteApprovalForm = reactive({
   stamp_method: 'online' // 盖章方式
 })
 const submittingDeleteApproval = ref(false)
+
+// 工资调整审批相关
+const showSalaryApprovalDialog = ref(false)
+const salaryApprovalForm = reactive({
+  reason: '',
+  stamp_method: 'online'
+})
+const submittingSalaryApproval = ref(false)
+const pendingSalaryAdjustment = ref(null)
+const currentSalarySnapshot = ref({
+  basic_salary: null,
+  salary_items: []
+})
+
+const normalizeSalaryItems = (items) => {
+  if (!Array.isArray(items)) {
+    return []
+  }
+
+  return items
+    .map((item) => ({
+      name: String(item?.name || '').trim(),
+      amount: Number(item?.amount || 0)
+    }))
+    .filter((item) => item.name !== '' || item.amount > 0)
+}
+
+const formatSalaryItems = (items) => {
+  const normalized = normalizeSalaryItems(items)
+  if (normalized.length === 0) {
+    return '无'
+  }
+
+  return normalized
+    .map((item) => `${item.name || '工资项'}: ¥${Number(item.amount || 0).toFixed(2)}`)
+    .join('；')
+}
 
 // 批量创建相关
 const batchEmployees = ref([]) // 待创建的员工列表
@@ -6079,6 +6213,13 @@ const handleView = async (row) => {
       if (registrationFormType.value === 'registration') {
         loadRegistrationForm(row.id)
       }
+
+      // 9. 工资审批相关展示数据
+      pendingSalaryAdjustment.value = data.pending_salary_adjustment || null
+      currentSalarySnapshot.value = {
+        basic_salary: employeeData.basic_salary,
+        salary_items: normalizeSalaryItems(employeeData.salary_items)
+      }
     } else {
       // 如果接口失败，回退到原有逻辑
       const rowData = convertNumericFields(row)
@@ -6091,6 +6232,11 @@ const handleView = async (row) => {
       onboardingFormLoading.value = false
       registrationForm.value = null
       registrationFormType.value = 'onboarding'
+      pendingSalaryAdjustment.value = null
+      currentSalarySnapshot.value = {
+        basic_salary: rowData.basic_salary,
+        salary_items: normalizeSalaryItems(rowData.salary_items)
+      }
     }
   } catch (error) {
     console.error('获取员工详情失败:', error)
@@ -6106,8 +6252,13 @@ const handleView = async (row) => {
     onboardingFormLoading.value = false
     registrationForm.value = null
     registrationFormType.value = 'onboarding'
+    pendingSalaryAdjustment.value = null
+    currentSalarySnapshot.value = {
+      basic_salary: rowData.basic_salary,
+      salary_items: normalizeSalaryItems(rowData.salary_items)
+    }
   }
-  
+
   showCreateDialog.value = true
 }
 
@@ -6209,6 +6360,13 @@ const handleEdit = async (row) => {
       // 9. 加载大额医疗保险状态
       currentEditingEmployeeId.value = row.id
       await loadCurrentLargeMedicalStatus(row.id)
+
+      // 10. 工资审批相关展示数据
+      pendingSalaryAdjustment.value = data.pending_salary_adjustment || null
+      currentSalarySnapshot.value = {
+        basic_salary: employeeData.basic_salary,
+        salary_items: normalizeSalaryItems(employeeData.salary_items)
+      }
     } else {
       // 如果接口失败，回退到原有逻辑
       const rowData = convertNumericFields(row)
@@ -6222,6 +6380,11 @@ const handleEdit = async (row) => {
       registrationForm.value = null
       registrationFormType.value = 'onboarding'
       currentLargeMedicalStatus.value = null
+      pendingSalaryAdjustment.value = null
+      currentSalarySnapshot.value = {
+        basic_salary: rowData.basic_salary,
+        salary_items: normalizeSalaryItems(rowData.salary_items)
+      }
     }
   } catch (error) {
     console.error('获取员工详情失败:', error)
@@ -6238,8 +6401,13 @@ const handleEdit = async (row) => {
     registrationForm.value = null
     registrationFormType.value = 'onboarding'
     currentLargeMedicalStatus.value = null
+    pendingSalaryAdjustment.value = null
+    currentSalarySnapshot.value = {
+      basic_salary: rowData.basic_salary,
+      salary_items: normalizeSalaryItems(rowData.salary_items)
+    }
   }
-  
+
   showCreateDialog.value = true
 }
 
@@ -6322,6 +6490,60 @@ const handleMarkContractUploaded = async (employeeId) => {
       console.error('Mark contract uploaded error:', error)
       ElMessage.error(error.response?.data?.message || '操作失败')
     }
+  }
+}
+
+const handleSubmitSalaryApproval = () => {
+  if (pendingSalaryAdjustment.value) {
+    ElMessage.warning('当前已有工资调整审批在进行中')
+    return
+  }
+
+  salaryApprovalForm.reason = ''
+  salaryApprovalForm.stamp_method = 'online'
+  showSalaryApprovalDialog.value = true
+}
+
+const confirmSubmitSalaryApproval = async () => {
+  if (pendingSalaryAdjustment.value) {
+    ElMessage.warning('当前已有工资调整审批在进行中')
+    return
+  }
+
+  if (!form.id) {
+    ElMessage.warning('缺少员工信息，无法提交审批')
+    return
+  }
+
+  if (!salaryApprovalForm.reason || salaryApprovalForm.reason.trim() === '') {
+    ElMessage.warning('请填写调整原因')
+    return
+  }
+
+  const payload = {
+    employee_id: form.id,
+    basic_salary: Number(form.basic_salary || 0),
+    salary_items: normalizeSalaryItems(form.salary_items),
+    reason: salaryApprovalForm.reason.trim(),
+    stamp_method: salaryApprovalForm.stamp_method
+  }
+
+  try {
+    submittingSalaryApproval.value = true
+    await submitSalaryAdjustmentApproval(payload)
+
+    ElMessage.success('工资调整审批已提交，请等待审批')
+    showSalaryApprovalDialog.value = false
+    pendingSalaryAdjustment.value = {
+      basic_salary: payload.basic_salary,
+      salary_items: payload.salary_items,
+      reason: payload.reason
+    }
+  } catch (error) {
+    console.error('Submit salary adjustment approval error:', error)
+    ElMessage.error(error.response?.data?.message || '提交失败')
+  } finally {
+    submittingSalaryApproval.value = false
   }
 }
 
@@ -6856,6 +7078,14 @@ const resetDialogState = () => {
   isViewMode.value = false // 重置查看模式
   activeTab.value = 'employee' // 重置tab
   onboardingForm.value = null // 清空入职登记表数据
+  pendingSalaryAdjustment.value = null
+  currentSalarySnapshot.value = {
+    basic_salary: null,
+    salary_items: []
+  }
+  salaryApprovalForm.reason = ''
+  salaryApprovalForm.stamp_method = 'online'
+  showSalaryApprovalDialog.value = false
   Object.assign(form, {
     name: '',
     employee_number: '',
@@ -7907,6 +8137,21 @@ const getContractStatusColor = (status) => {
   return colors[status] || ''
 }
 
+const getContractSourceType = (row) => {
+  if (row?.source_type === 'offline' || row?.source_type === 'online') {
+    return row.source_type
+  }
+  return row?.status === 'completed' && !row?.employee_signed_at ? 'offline' : 'online'
+}
+
+const getContractSourceText = (row) => {
+  return getContractSourceType(row) === 'offline' ? '线下' : '线上'
+}
+
+const getContractSourceColor = (row) => {
+  return getContractSourceType(row) === 'offline' ? 'success' : 'primary'
+}
+
 // ========== 盖章签字相关方法 ==========
 
 // 加载我的签名和印章
@@ -8354,6 +8599,11 @@ const handleNewEmployee = async () => {
   availableLargeMedicalInsuranceConfigs.value = []
   
   formRef.value?.resetFields()
+  pendingSalaryAdjustment.value = null
+  currentSalarySnapshot.value = {
+    basic_salary: null,
+    salary_items: []
+  }
   showCreateDialog.value = true
 }
 

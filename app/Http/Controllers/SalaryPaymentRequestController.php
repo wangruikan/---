@@ -6,6 +6,7 @@ use App\Models\PaymentRequest;
 use App\Models\SalaryApproval;
 use App\Models\Salary;
 use App\Services\ApprovalService;
+use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -171,6 +172,9 @@ class SalaryPaymentRequestController extends Controller
                 'accounted' => $formData['accounted'] ?? true,
                 'company' => $formData['company'] ?? null,
             ]);
+
+            // 开启候补资料时，给发起人生成待办
+            PendingTaskService::createPaymentSupplementTask($paymentRequest);
 
             DB::commit();
 

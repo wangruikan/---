@@ -363,7 +363,7 @@ class EmployeeController extends ApiController
             
             // 二、从业任职信息
             'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 
-            'annual_employment_status', 'job_title',
+            'signing_location', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
             'is_disabled', 'disability_cert_type', 'disability_cert_number', 
@@ -603,7 +603,7 @@ class EmployeeController extends ApiController
             
             // 二、从业任职信息
             'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 
-            'annual_employment_status', 'job_title',
+            'signing_location', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
             'is_disabled', 'disability_cert_type', 'disability_cert_number', 
@@ -2204,6 +2204,7 @@ class EmployeeController extends ApiController
     {
         try {
             $employeeIds = $request->input('employee_ids', []);
+            $requestedFormType = $request->input('form_type');
             
             if (empty($employeeIds)) {
                 return response()->json([
@@ -2220,14 +2221,21 @@ class EmployeeController extends ApiController
                 try {
                     $employee = Employee::with(['onboardingForm', 'registrationForm', 'projects'])->findOrFail($employeeId);
                     
-                    // 获取员工所属项目的登记表类型（优先使用活跃项目）
-                    $formType = 'onboarding';
-                    $activeProject = $employee->projects()->wherePivot('status', 'active')->first();
-                    if ($activeProject) {
-                        $formType = $activeProject->registration_form_type ?? 'onboarding';
-                    } elseif ($employee->projects && $employee->projects->count() > 0) {
-                        $project = $employee->projects->first();
-                        $formType = $project->registration_form_type ?? 'onboarding';
+                    // 获取登记表类型：前端明确指定时优先，其次按项目配置，最后按已有表单兜底。
+                    $formType = in_array($requestedFormType, ['onboarding', 'registration'], true)
+                        ? $requestedFormType
+                        : 'onboarding';
+
+                    if (!in_array($requestedFormType, ['onboarding', 'registration'], true)) {
+                        $activeProject = $employee->projects()->wherePivot('status', 'active')->first();
+                        if ($activeProject) {
+                            $formType = $activeProject->registration_form_type ?? 'onboarding';
+                        } elseif ($employee->projects && $employee->projects->count() > 0) {
+                            $project = $employee->projects->first();
+                            $formType = $project->registration_form_type ?? 'onboarding';
+                        } elseif ($employee->registrationForm && !$employee->onboardingForm) {
+                            $formType = 'registration';
+                        }
                     }
                     
                     // 根据类型选择PDF服务和表单数据
@@ -2248,30 +2256,68 @@ class EmployeeController extends ApiController
                         'from_bottom' => true,
                     ];
                     
-                    // 获取签名图片的base64
+                    // 获取签名图片的base64（兼容多种历史路径格式）
                     $signatureBase64 = null;
                     if ($form && $form->signature) {
-                        // 数据库存的是相对路径，如 uploads/signatures/xxx.png
-                        $signaturePath = public_path($form->signature);
-                        if (file_exists($signaturePath)) {
-                            $signatureData = file_get_contents($signaturePath);
-                            $signatureBase64 = base64_encode($signatureData);
+                        $rawSignature = trim($form->signature);
+
+                        // 兼容直接存了 data:image/base64 的历史数据
+                        if (preg_match('/^data:image\/\w+;base64,/', $rawSignature)) {
+                            $signatureBase64 = preg_replace('/^data:image\/\w+;base64,/', '', $rawSignature);
                         } else {
-                            \Log::warning("签名文件不存在: {$signaturePath}");
+                            // 兼容完整URL（提取 path 部分后按本地路径解析）
+                            if (preg_match('/^https?:\/\//i', $rawSignature)) {
+                                $urlPath = parse_url($rawSignature, PHP_URL_PATH);
+                                if (!empty($urlPath)) {
+                                    $rawSignature = $urlPath;
+                                }
+                            }
+
+                            $normalizedSignature = ltrim($rawSignature, '/');
+                            $signatureCandidates = array_values(array_filter(array_unique([
+                                public_path($normalizedSignature),                 // uploads/signatures/xxx.png
+                                public_path('storage/' . $normalizedSignature),    // signatures/xxx.png
+                                storage_path('app/public/' . $normalizedSignature), // 兜底：storage/app/public
+                            ])));
+
+                            foreach ($signatureCandidates as $signaturePath) {
+                                if (is_file($signaturePath)) {
+                                    $signatureData = file_get_contents($signaturePath);
+                                    $signatureBase64 = base64_encode($signatureData);
+                                    break;
+                                }
+                            }
+
+                            if (!$signatureBase64) {
+                                \Log::warning('签名文件不存在，前端将无法合成签名', [
+                                    'employee_id' => $employeeId,
+                                    'signature' => $form->signature,
+                                    'candidates' => $signatureCandidates,
+                                ]);
+                            }
                         }
                     }
                     
-                    // 获取寸照图片的base64（仅入职登记表有）
+                    // 获取寸照图片的base64（仅入职登记表有，兼容URL/相对路径）
                     $photoBase64 = null;
                     if ($formType === 'onboarding' && $form && $form->photo) {
-                        // 尝试多个可能的路径
-                        $possiblePaths = [
-                            public_path($form->photo),  // uploads/photos/xxx.jpg
-                            public_path('storage/' . $form->photo),  // storage/photos/xxx.jpg
-                        ];
-                        
-                        foreach ($possiblePaths as $photoPath) {
-                            if (file_exists($photoPath)) {
+                        $rawPhoto = trim($form->photo);
+                        if (preg_match('/^https?:\/\//i', $rawPhoto)) {
+                            $urlPath = parse_url($rawPhoto, PHP_URL_PATH);
+                            if (!empty($urlPath)) {
+                                $rawPhoto = $urlPath;
+                            }
+                        }
+
+                        $normalizedPhoto = ltrim($rawPhoto, '/');
+                        $photoCandidates = array_values(array_filter(array_unique([
+                            public_path($normalizedPhoto),                 // uploads/photos/xxx.jpg
+                            public_path('storage/' . $normalizedPhoto),    // photos/xxx.jpg
+                            storage_path('app/public/' . $normalizedPhoto), // 兜底
+                        ])));
+
+                        foreach ($photoCandidates as $photoPath) {
+                            if (is_file($photoPath)) {
                                 $photoData = file_get_contents($photoPath);
                                 $photoBase64 = base64_encode($photoData);
                                 break;
@@ -2279,7 +2325,11 @@ class EmployeeController extends ApiController
                         }
                         
                         if (!$photoBase64) {
-                            \Log::warning("寸照文件不存在: {$form->photo}");
+                            \Log::warning('寸照文件不存在，前端将跳过寸照合成', [
+                                'employee_id' => $employeeId,
+                                'photo' => $form->photo,
+                                'candidates' => $photoCandidates,
+                            ]);
                         }
                     }
                     

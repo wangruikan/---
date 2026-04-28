@@ -85,7 +85,8 @@ export class PdfFillService {
         'emergency_phone': employeeData.emergency_phone,
         'household_address': employeeData.household_address,
         'residence_address': employeeData.residence_address,
-        'contact_address': employeeData.contact_address
+        'contact_address': employeeData.contact_address,
+        'signature': employeeData.signature || employeeData.signature_url
       }
       
       // 前端渲染PDF时使用的缩放比例
@@ -109,9 +110,15 @@ export class PdfFillService {
         const { height: pageHeight, width: pageWidth } = targetPage.getSize()
         
         // 获取字段值
-        let fieldValue = employeeData[fieldName] || fieldMapping[fieldName]
+        let fieldValue = employeeData[fieldName] ?? fieldMapping[fieldName]
+
+        // 签订日期兜底为当前日期，避免空白
+        if (fieldName === 'contract_sign_date') {
+          const normalized = String(fieldValue ?? '').trim()
+          fieldValue = normalized || this.getTodayDateString()
+        }
         
-        if (!fieldValue) {
+        if (fieldValue === undefined || fieldValue === null || String(fieldValue).trim() === '') {
           console.warn(`⚠️ 字段 ${fieldName} 没有数据，跳过`)
           console.log('可用的员工数据字段:', Object.keys(employeeData))
           continue
@@ -123,36 +130,102 @@ export class PdfFillService {
         const pdfX = position.x / renderScale
         const pdfY = position.y / renderScale
 
-        // 根据实际值长度动态扩展绘制宽度，避免内容被占位框宽度截断
-        const dynamicImageSize = this.calculateTextImageSize(fieldValue, {
-          baseWidth: position.width,
-          baseHeight: position.height,
-          fontSize: uniformFontSize,
-          fontFamily: uniformFontFamily
-        })
+        let image
+        let pdfWidth, pdfHeight
 
-        const pdfWidth = dynamicImageSize.width / renderScale
-        const pdfHeight = dynamicImageSize.height / renderScale
+        // 特殊处理签名图片
+        const fieldValueStr = typeof fieldValue === 'string' ? fieldValue.trim() : ''
+        const isImageField = fieldName === 'signature' || (fieldValueStr && (fieldValueStr.startsWith('data:image/') || fieldValueStr.match(/\.(png|jpg|jpeg|gif)(\?.*)?$/i)))
 
-        // 生成文字图片（优化字体大小和清晰度）
-        const textImageBytes = await this.createTextImage(fieldValue, {
-          width: dynamicImageSize.width,
-          height: dynamicImageSize.height,
-          fontSize: uniformFontSize,
-          fontFamily: uniformFontFamily,
-          color: '#000000'
-        })
-        
-        // 嵌入图片到PDF
-        const image = await pdfDoc.embedPng(textImageBytes)
-        
+        if (isImageField) {
+          console.log(`🖼️ 检测到图片字段 ${fieldName}，开始加载图片...`)
+          try {
+            let imageBytes
+            let isJpg = false
+
+            if (fieldValueStr.startsWith('data:image/')) {
+              // 处理 Base64
+              const base64Data = fieldValueStr.split(',')[1]
+              const binaryStr = atob(base64Data)
+              imageBytes = new Uint8Array(binaryStr.length)
+              for (let i = 0; i < binaryStr.length; i++) {
+                imageBytes[i] = binaryStr.charCodeAt(i)
+              }
+              isJpg = fieldValueStr.startsWith('data:image/jpeg')
+            } else {
+              // 处理 URL（复用PDF模板同样的地址处理方式）
+              let imageUrl = fieldValueStr
+              if (imageUrl.includes('localhost:8000')) {
+                imageUrl = imageUrl.replace('http://localhost:8000', '')
+              }
+              const imgResponse = await fetch(imageUrl, {
+                credentials: 'include',
+                mode: 'cors'
+              })
+              if (!imgResponse.ok) throw new Error(`加载图片失败: ${imgResponse.status}`)
+              const contentType = imgResponse.headers.get('content-type') || ''
+              imageBytes = new Uint8Array(await imgResponse.arrayBuffer())
+              isJpg = contentType.includes('image/jpeg') || imageUrl.match(/\.(jpg|jpeg)(\?.*)?$/i)
+            }
+
+            image = isJpg ? await pdfDoc.embedJpg(imageBytes) : await pdfDoc.embedPng(imageBytes)
+
+            pdfWidth = position.width / renderScale
+            pdfHeight = position.height / renderScale
+          } catch (imgError) {
+            console.error(`❌ 加载图片字段 ${fieldName} 失败:`, imgError)
+            // 失败后回退到文字处理
+          }
+        }
+
+        // 如果不是图片或加载图片失败，则生成文字图片
+        if (!image) {
+          // 根据实际值长度动态扩展绘制宽度，避免内容被占位框宽度截断
+          const dynamicImageSize = this.calculateTextImageSize(fieldValue, {
+            baseWidth: position.width,
+            baseHeight: position.height,
+            fontSize: uniformFontSize,
+            fontFamily: uniformFontFamily
+          })
+
+          pdfWidth = dynamicImageSize.width / renderScale
+          pdfHeight = dynamicImageSize.height / renderScale
+
+          // 生成文字图片（优化字体大小和清晰度）
+          const textImageBytes = await this.createTextImage(fieldValue, {
+            width: dynamicImageSize.width,
+            height: dynamicImageSize.height,
+            fontSize: uniformFontSize,
+            fontFamily: uniformFontFamily,
+            color: '#000000'
+          })
+
+          // 嵌入图片到PDF
+          image = await pdfDoc.embedPng(textImageBytes)
+        }
+
         // 计算PDF坐标（PDF坐标系Y轴向上，原点在左下角）
-        const x = pdfX
-        const y = pageHeight - pdfY - pdfHeight
-        
+        const safeMargin = 2
+        let x = pdfX
+        let y = pageHeight - pdfY - pdfHeight
+
+        // Keep adaptive-width text inside page bounds to avoid right-side clipping
+        if (x + pdfWidth > pageWidth - safeMargin) {
+          x = Math.max(safeMargin, pageWidth - pdfWidth - safeMargin)
+        }
+        if (x < safeMargin) {
+          x = safeMargin
+        }
+        if (y < safeMargin) {
+          y = safeMargin
+        }
+        if (y + pdfHeight > pageHeight - safeMargin) {
+          y = Math.max(safeMargin, pageHeight - pdfHeight - safeMargin)
+        }
+
         console.log(`📍 页${pageIndex + 1} 原始位置: (${position.x}, ${position.y})`)
         console.log(`📍 页${pageIndex + 1} PDF位置: (${x}, ${y}), 尺寸: ${pdfWidth} x ${pdfHeight}`)
-        
+
         targetPage.drawImage(image, {
           x: x,
           y: y,
@@ -190,10 +263,13 @@ export class PdfFillService {
     const actualFontSize = Math.max(fontSize, 14)
     ctx.font = `${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
 
-    const textWidth = Math.ceil(ctx.measureText(String(text || '')).width)
-    const horizontalPadding = 16
+    const normalizedText = String(text || '').replace(/\r?\n/g, ' ')
+    ctx.font = `bold ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+    const textWidth = Math.ceil(ctx.measureText(normalizedText).width)
+    const horizontalPadding = 24
+    const safetyFactor = 1.12
     const minWidth = Math.max(baseWidth, 32)
-    const width = Math.max(minWidth, textWidth + horizontalPadding)
+    const width = Math.max(minWidth, Math.ceil(textWidth * safetyFactor) + horizontalPadding)
 
     return {
       width,
@@ -282,5 +358,13 @@ export class PdfFillService {
       phone: employee.phone || '',
       address: employee.address || ''
     }
+  }
+
+  static getTodayDateString() {
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
   }
 }

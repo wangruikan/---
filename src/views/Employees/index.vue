@@ -253,7 +253,7 @@
             <el-table-column prop="political_status" label="政治面貌" width="100" />
             <el-table-column prop="marital_status" label="婚姻状况" width="100">
               <template #default="{ row }">
-                {{ row.marital_status === 'married' ? '已婚' : row.marital_status === 'single' ? '未婚' : '-' }}
+                {{ getMaritalStatusText(row.marital_status) }}
               </template>
             </el-table-column>
             <el-table-column prop="health_status" label="健康状况" width="100" />
@@ -402,7 +402,7 @@
             </el-table-column>
             <el-table-column label="婚姻状况" width="100">
               <template #default="{ row }">
-                {{ row.onboarding_form?.marital_status === 'married' ? '已婚' : (row.onboarding_form?.marital_status === 'single' ? '未婚' : '-') }}
+                {{ getMaritalStatusText(row.onboarding_form?.marital_status || row.marital_status) }}
               </template>
             </el-table-column>
             <el-table-column label="健康状况" width="100">
@@ -477,12 +477,12 @@
             <!-- 紧急联系人 -->
             <el-table-column label="紧急联系人" width="120">
               <template #default="{ row }">
-                {{ row.onboarding_form?.emergency_contact_name || '-' }}
+                {{ row.emergency_contact || row.onboarding_form?.emergency_contact_name || '-' }}
               </template>
             </el-table-column>
             <el-table-column label="紧急联系电话" width="130">
               <template #default="{ row }">
-                {{ row.onboarding_form?.emergency_contact_phone || '-' }}
+                {{ row.emergency_phone || row.onboarding_form?.emergency_contact_phone || '-' }}
               </template>
             </el-table-column>
             <el-table-column label="与本人关系" width="120">
@@ -714,6 +714,19 @@
           <el-col :span="12">
             <el-form-item label="手机号" prop="phone">
               <el-input v-model="form.phone" placeholder="请输入手机号" :disabled="isViewMode" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="30">
+          <el-col :span="12">
+            <el-form-item label="紧急联系人">
+              <el-input v-model="form.emergency_contact" placeholder="请输入紧急联系人" :disabled="isViewMode" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="紧急联系电话">
+              <el-input v-model="form.emergency_phone" placeholder="请输入紧急联系电话" :disabled="isViewMode" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -1645,8 +1658,8 @@
           </el-col>
         </el-row>
         
-        <!-- 经常居住地 -->
-        <h4 style="margin: 20px 0 10px 0; color: #606266; font-size: 14px;">经常居住地</h4>
+        <!-- 通讯地址 -->
+        <h4 style="margin: 20px 0 10px 0; color: #606266; font-size: 14px;">通讯地址</h4>
         <el-row :gutter="30">
           <el-col :span="8">
             <el-form-item label="省份" prop="residence_province">
@@ -2295,6 +2308,18 @@
                   </el-form-item>
                 </el-col>
               </el-row>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="紧急联系人">
+                    <el-input :value="form.emergency_contact || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="紧急联系电话">
+                    <el-input :value="form.emergency_phone || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
 
               <!-- 教育信息 -->
               <el-divider content-position="left">教育信息</el-divider>
@@ -2520,7 +2545,7 @@
             <template v-else-if="registrationForm">
               <!-- 导出PDF按钮 -->
               <div style="margin-bottom: 20px; text-align: right;">
-                <el-button type="primary" @click="exportRegistrationFormPdf(form.id)">
+                <el-button type="primary" @click="exportRegistrationFormPdf(registrationForm.employee_id || form.id)">
                   <el-icon><Download /></el-icon>
                   导出PDF
                 </el-button>
@@ -2630,7 +2655,7 @@
                   </el-col>
                   <el-col :span="8">
                     <el-form-item label="婚姻状况">
-                      <el-input :value="registrationForm?.marital_status || '-'" />
+                      <el-input :value="getMaritalStatusText(registrationForm?.marital_status)" />
                     </el-form-item>
                   </el-col>
                 </el-row>
@@ -2647,7 +2672,7 @@
                   </el-col>
                   <el-col :span="8">
                     <el-form-item label="户口状态">
-                      <el-input :value="registrationForm?.household_type || '-'" />
+                      <el-input :value="getHouseholdTypeText(registrationForm?.household_type)" />
                     </el-form-item>
                   </el-col>
                 </el-row>
@@ -2783,7 +2808,7 @@
                   </el-col>
                   <el-col :span="8">
                     <el-form-item label="与己关系">
-                      <el-input :value="registrationForm?.emergency_contact1_relationship || '-'" />
+                      <el-input :value="registrationForm?.emergency_contact1_relation || '-'" />
                     </el-form-item>
                   </el-col>
                   <el-col :span="8">
@@ -2800,7 +2825,7 @@
                   </el-col>
                   <el-col :span="8">
                     <el-form-item label="与己关系">
-                      <el-input :value="registrationForm?.emergency_contact2_relationship || '-'" />
+                      <el-input :value="registrationForm?.emergency_contact2_relation || '-'" />
                     </el-form-item>
                   </el-col>
                   <el-col :span="8">
@@ -2908,7 +2933,10 @@
               </template>
               <template #default>
                 <div>审核中基础工资：¥{{ Number(pendingSalaryAdjustment.basic_salary || 0).toFixed(2) }}</div>
-                <div style="margin-top: 6px;">审核中工资项：{{ formatSalaryItems(pendingSalaryAdjustment.salary_items) }}</div>
+                <div style="margin-top: 6px;">审核中综合薪资：¥{{ Number(pendingSalaryAdjustment.comprehensive_salary || 0).toFixed(2) }}</div>
+                <div style="margin-top: 6px;">审核中试用期薪资：¥{{ Number(pendingSalaryAdjustment.probation_salary || 0).toFixed(2) }}</div>
+                <div style="margin-top: 6px;">审核中绩效薪资：¥{{ Number(pendingSalaryAdjustment.performance_salary || 0).toFixed(2) }}</div>
+                <div style="margin-top: 6px;">审核中自定义工资项：{{ formatSalaryItems(pendingSalaryAdjustment.salary_items) }}</div>
                 <div v-if="pendingSalaryAdjustment.reason" style="margin-top: 6px;">申请原因：{{ pendingSalaryAdjustment.reason }}</div>
               </template>
             </el-alert>
@@ -2922,6 +2950,48 @@
                     :precision="2"
                     :step="100"
                     placeholder="请输入基础工资"
+                    style="width: 100%"
+                    controls-position="right"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="综合薪资" prop="comprehensive_salary">
+                  <el-input-number
+                    v-model="form.comprehensive_salary"
+                    :min="0"
+                    :precision="2"
+                    :step="100"
+                    placeholder="请输入综合薪资"
+                    style="width: 100%"
+                    controls-position="right"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="试用期薪资" prop="probation_salary">
+                  <el-input-number
+                    v-model="form.probation_salary"
+                    :min="0"
+                    :precision="2"
+                    :step="100"
+                    placeholder="请输入试用期薪资"
+                    style="width: 100%"
+                    controls-position="right"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="绩效薪资" prop="performance_salary">
+                  <el-input-number
+                    v-model="form.performance_salary"
+                    :min="0"
+                    :precision="2"
+                    :step="100"
+                    placeholder="请输入绩效薪资"
                     style="width: 100%"
                     controls-position="right"
                   />
@@ -3186,6 +3256,19 @@
             </el-form-item>
           </el-col>
         </el-row>
+
+        <el-row :gutter="30">
+          <el-col :span="12">
+            <el-form-item label="紧急联系人">
+              <el-input v-model="form.emergency_contact" placeholder="请输入紧急联系人" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="紧急联系电话">
+              <el-input v-model="form.emergency_phone" placeholder="请输入紧急联系电话" />
+            </el-form-item>
+          </el-col>
+        </el-row>
         
         <el-row :gutter="30">
           <el-col :span="12">
@@ -3420,6 +3503,54 @@
                 :disabled="isViewMode"
               />
               <div class="form-tip">员工的基础工资金额</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="综合薪资" prop="comprehensive_salary">
+              <el-input-number
+                v-model="form.comprehensive_salary"
+                :min="0"
+                :max="9999999"
+                :precision="2"
+                :step="100"
+                placeholder="请输入综合薪资"
+                style="width: 100%"
+                :disabled="isViewMode"
+              />
+              <div class="form-tip">员工综合薪资金额</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="30">
+          <el-col :span="12">
+            <el-form-item label="试用期薪资" prop="probation_salary">
+              <el-input-number
+                v-model="form.probation_salary"
+                :min="0"
+                :max="9999999"
+                :precision="2"
+                :step="100"
+                placeholder="请输入试用期薪资"
+                style="width: 100%"
+                :disabled="isViewMode"
+              />
+              <div class="form-tip">员工试用期薪资金额</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="绩效薪资" prop="performance_salary">
+              <el-input-number
+                v-model="form.performance_salary"
+                :min="0"
+                :max="9999999"
+                :precision="2"
+                :step="100"
+                placeholder="请输入绩效薪资"
+                style="width: 100%"
+                :disabled="isViewMode"
+              />
+              <div class="form-tip">员工绩效薪资金额</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -3915,6 +4046,13 @@
         <el-descriptions-item label="员工姓名">{{ form.name }}</el-descriptions-item>
         <el-descriptions-item label="当前基础工资">¥{{ Number(currentSalarySnapshot.basic_salary || 0).toFixed(2) }}</el-descriptions-item>
         <el-descriptions-item label="调整后基础工资">¥{{ Number(form.basic_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="当前综合薪资">¥{{ Number(currentSalarySnapshot.comprehensive_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="调整后综合薪资">¥{{ Number(form.comprehensive_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="当前试用期薪资">¥{{ Number(currentSalarySnapshot.probation_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="调整后试用期薪资">¥{{ Number(form.probation_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="当前绩效薪资">¥{{ Number(currentSalarySnapshot.performance_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="调整后绩效薪资">¥{{ Number(form.performance_salary || 0).toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="当前自定义工资项">{{ formatSalaryItems(currentSalarySnapshot.salary_items) }}</el-descriptions-item>
         <el-descriptions-item label="调整后工资项">{{ formatSalaryItems(form.salary_items) }}</el-descriptions-item>
       </el-descriptions>
 
@@ -4692,8 +4830,37 @@ const submittingSalaryApproval = ref(false)
 const pendingSalaryAdjustment = ref(null)
 const currentSalarySnapshot = ref({
   basic_salary: null,
+  comprehensive_salary: null,
+  probation_salary: null,
+  performance_salary: null,
   salary_items: []
 })
+
+const FIXED_SALARY_ITEM_CONFIGS = [
+  {
+    key: 'comprehensive_salary',
+    name: '综合薪资',
+    aliases: ['综合薪资', '综合工资']
+  },
+  {
+    key: 'probation_salary',
+    name: '试用期薪资',
+    aliases: ['试用期薪资', '试用期工资']
+  },
+  {
+    key: 'performance_salary',
+    name: '绩效薪资',
+    aliases: ['绩效薪资', '绩效工资']
+  }
+]
+
+const normalizeNullableNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
 
 const normalizeSalaryItems = (items) => {
   if (!Array.isArray(items)) {
@@ -4706,6 +4873,99 @@ const normalizeSalaryItems = (items) => {
       amount: Number(item?.amount || 0)
     }))
     .filter((item) => item.name !== '' || item.amount > 0)
+}
+
+const splitSalaryItems = (items) => {
+  const normalized = normalizeSalaryItems(items)
+  const fixedMap = {
+    comprehensive_salary: null,
+    probation_salary: null,
+    performance_salary: null
+  }
+  const customItems = []
+
+  normalized.forEach((item) => {
+    const matched = FIXED_SALARY_ITEM_CONFIGS.find((config) =>
+      config.aliases.includes(item.name)
+    )
+    if (matched) {
+      fixedMap[matched.key] = Number(item.amount || 0)
+      return
+    }
+    customItems.push(item)
+  })
+
+  return {
+    ...fixedMap,
+    customItems
+  }
+}
+
+const buildMergedSalaryItems = (source) => {
+  const fixedAliases = new Set(FIXED_SALARY_ITEM_CONFIGS.flatMap((config) => config.aliases))
+  const customItems = normalizeSalaryItems(source?.salary_items)
+    .filter((item) => !fixedAliases.has(item.name))
+  const fixedItems = FIXED_SALARY_ITEM_CONFIGS
+    .map((config) => {
+      const amount = normalizeNullableNumber(source?.[config.key])
+      if (amount === null) {
+        return null
+      }
+      return {
+        name: config.name,
+        amount
+      }
+    })
+    .filter(Boolean)
+
+  return [...customItems, ...fixedItems]
+}
+
+const normalizeSalaryState = (source = {}) => {
+  const splitResult = splitSalaryItems(source.salary_items)
+  return {
+    basic_salary: normalizeNullableNumber(source.basic_salary),
+    comprehensive_salary: normalizeNullableNumber(source.comprehensive_salary ?? splitResult.comprehensive_salary),
+    probation_salary: normalizeNullableNumber(source.probation_salary ?? splitResult.probation_salary),
+    performance_salary: normalizeNullableNumber(source.performance_salary ?? splitResult.performance_salary),
+    salary_items: splitResult.customItems
+  }
+}
+
+const applySalaryStateToForm = (source = {}) => {
+  const normalized = normalizeSalaryState(source)
+  form.basic_salary = normalized.basic_salary
+  form.comprehensive_salary = normalized.comprehensive_salary
+  form.probation_salary = normalized.probation_salary
+  form.performance_salary = normalized.performance_salary
+  form.salary_items = normalized.salary_items
+}
+
+const normalizeSalaryAdjustmentRecord = (adjustment) => {
+  if (!adjustment) {
+    return null
+  }
+  const normalized = normalizeSalaryState(adjustment)
+  return {
+    ...adjustment,
+    basic_salary: normalized.basic_salary,
+    comprehensive_salary: normalized.comprehensive_salary,
+    probation_salary: normalized.probation_salary,
+    performance_salary: normalized.performance_salary,
+    salary_items: normalized.salary_items
+  }
+}
+
+const buildEmployeeSubmitPayload = (source) => {
+  const payload = {
+    ...source,
+    basic_salary: normalizeNullableNumber(source.basic_salary),
+    salary_items: buildMergedSalaryItems(source)
+  }
+  delete payload.comprehensive_salary
+  delete payload.probation_salary
+  delete payload.performance_salary
+  return payload
 }
 
 const formatSalaryItems = (items) => {
@@ -4839,6 +5099,8 @@ const form = reactive({
   position: '', // 岗位
   id_number: '',
   phone: '',
+  emergency_contact: '',
+  emergency_phone: '',
   email: '',
   gender: 'male',
   birth_date: '',
@@ -4852,6 +5114,9 @@ const form = reactive({
   project_ids: [],
   // 工资信息
   basic_salary: null,
+  comprehensive_salary: null,
+  probation_salary: null,
+  performance_salary: null,
   salary_items: [],
   // 工资卡信息
   bank_account: '',
@@ -6103,7 +6368,8 @@ const handleCurrentChange = (page) => {
 // 辅助函数：将字符串类型的数值字段转换为数字（后端返回的 decimal 字段是字符串类型）
 const convertNumericFields = (data) => {
   const numericFields = [
-    'basic_salary', 'social_security_base', 'medical_insurance_base', 
+    'basic_salary', 'comprehensive_salary', 'probation_salary', 'performance_salary',
+    'social_security_base', 'medical_insurance_base', 
     'housing_fund_base', 'large_medical_base', 'large_medical_company_base',
     'personal_investment_amount', 'personal_investment_ratio'
   ]
@@ -6145,8 +6411,9 @@ const handleView = async (row) => {
       Object.assign(form, {
         ...employeeData,
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
-        salary_items: Array.isArray(data.employee.salary_items) ? data.employee.salary_items : []
+        salary_items: []
       })
+      applySalaryStateToForm(employeeData)
       
       // 2. 设置项目相关的地区信息
       if (data.project_regions) {
@@ -6215,28 +6482,23 @@ const handleView = async (row) => {
       }
 
       // 9. 工资审批相关展示数据
-      pendingSalaryAdjustment.value = data.pending_salary_adjustment || null
-      currentSalarySnapshot.value = {
-        basic_salary: employeeData.basic_salary,
-        salary_items: normalizeSalaryItems(employeeData.salary_items)
-      }
+      pendingSalaryAdjustment.value = normalizeSalaryAdjustmentRecord(data.pending_salary_adjustment)
+      currentSalarySnapshot.value = normalizeSalaryState(employeeData)
     } else {
       // 如果接口失败，回退到原有逻辑
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
-        salary_items: Array.isArray(row.salary_items) ? row.salary_items : []
+        salary_items: []
       })
+      applySalaryStateToForm(rowData)
       onboardingForm.value = null
       onboardingFormLoading.value = false
       registrationForm.value = null
       registrationFormType.value = 'onboarding'
       pendingSalaryAdjustment.value = null
-      currentSalarySnapshot.value = {
-        basic_salary: rowData.basic_salary,
-        salary_items: normalizeSalaryItems(rowData.salary_items)
-      }
+      currentSalarySnapshot.value = normalizeSalaryState(rowData)
     }
   } catch (error) {
     console.error('获取员工详情失败:', error)
@@ -6246,17 +6508,16 @@ const handleView = async (row) => {
     const rowData = convertNumericFields(row)
     Object.assign(form, {
       ...rowData,
-      project_ids: row.project_ids || row.projects?.map(p => p.id) || []
+      project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
+      salary_items: []
     })
+    applySalaryStateToForm(rowData)
     onboardingForm.value = null
     onboardingFormLoading.value = false
     registrationForm.value = null
     registrationFormType.value = 'onboarding'
     pendingSalaryAdjustment.value = null
-    currentSalarySnapshot.value = {
-      basic_salary: rowData.basic_salary,
-      salary_items: normalizeSalaryItems(rowData.salary_items)
-    }
+    currentSalarySnapshot.value = normalizeSalaryState(rowData)
   }
 
   showCreateDialog.value = true
@@ -6289,8 +6550,9 @@ const handleEdit = async (row) => {
       Object.assign(form, {
         ...employeeData,
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
-        salary_items: Array.isArray(data.employee.salary_items) ? data.employee.salary_items : []
+        salary_items: []
       })
+      applySalaryStateToForm(employeeData)
       
       // 2. 设置项目相关的地区信息
       if (data.project_regions) {
@@ -6362,29 +6624,24 @@ const handleEdit = async (row) => {
       await loadCurrentLargeMedicalStatus(row.id)
 
       // 10. 工资审批相关展示数据
-      pendingSalaryAdjustment.value = data.pending_salary_adjustment || null
-      currentSalarySnapshot.value = {
-        basic_salary: employeeData.basic_salary,
-        salary_items: normalizeSalaryItems(employeeData.salary_items)
-      }
+      pendingSalaryAdjustment.value = normalizeSalaryAdjustmentRecord(data.pending_salary_adjustment)
+      currentSalarySnapshot.value = normalizeSalaryState(employeeData)
     } else {
       // 如果接口失败，回退到原有逻辑
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
-        salary_items: Array.isArray(row.salary_items) ? row.salary_items : []
+        salary_items: []
       })
+      applySalaryStateToForm(rowData)
       onboardingForm.value = null
       onboardingFormLoading.value = false
       registrationForm.value = null
       registrationFormType.value = 'onboarding'
       currentLargeMedicalStatus.value = null
       pendingSalaryAdjustment.value = null
-      currentSalarySnapshot.value = {
-        basic_salary: rowData.basic_salary,
-        salary_items: normalizeSalaryItems(rowData.salary_items)
-      }
+      currentSalarySnapshot.value = normalizeSalaryState(rowData)
     }
   } catch (error) {
     console.error('获取员工详情失败:', error)
@@ -6394,18 +6651,17 @@ const handleEdit = async (row) => {
     const rowData = convertNumericFields(row)
     Object.assign(form, {
       ...rowData,
-      project_ids: row.project_ids || row.projects?.map(p => p.id) || []
+      project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
+      salary_items: []
     })
+    applySalaryStateToForm(rowData)
     onboardingForm.value = null
     onboardingFormLoading.value = false
     registrationForm.value = null
     registrationFormType.value = 'onboarding'
     currentLargeMedicalStatus.value = null
     pendingSalaryAdjustment.value = null
-    currentSalarySnapshot.value = {
-      basic_salary: rowData.basic_salary,
-      salary_items: normalizeSalaryItems(rowData.salary_items)
-    }
+    currentSalarySnapshot.value = normalizeSalaryState(rowData)
   }
 
   showCreateDialog.value = true
@@ -6522,8 +6778,8 @@ const confirmSubmitSalaryApproval = async () => {
 
   const payload = {
     employee_id: form.id,
-    basic_salary: Number(form.basic_salary || 0),
-    salary_items: normalizeSalaryItems(form.salary_items),
+    basic_salary: Number(normalizeNullableNumber(form.basic_salary) || 0),
+    salary_items: buildMergedSalaryItems(form),
     reason: salaryApprovalForm.reason.trim(),
     stamp_method: salaryApprovalForm.stamp_method
   }
@@ -6534,11 +6790,11 @@ const confirmSubmitSalaryApproval = async () => {
 
     ElMessage.success('工资调整审批已提交，请等待审批')
     showSalaryApprovalDialog.value = false
-    pendingSalaryAdjustment.value = {
+    pendingSalaryAdjustment.value = normalizeSalaryAdjustmentRecord({
       basic_salary: payload.basic_salary,
       salary_items: payload.salary_items,
       reason: payload.reason
-    }
+    })
   } catch (error) {
     console.error('Submit salary adjustment approval error:', error)
     ElMessage.error(error.response?.data?.message || '提交失败')
@@ -6732,13 +6988,14 @@ const handleBatchCreate = async () => {
     // 逐个创建员工
     for (let i = 0; i < batchEmployees.value.length; i++) {
       const employee = batchEmployees.value[i]
+      const submitPayload = buildEmployeeSubmitPayload(employee)
       loadingInstance.setText(`正在创建员工 ${i + 1}/${batchEmployees.value.length}: ${employee.name}`)
       
       try {
         await request({
           url: '/employees',
           method: 'post',
-          data: employee
+          data: submitPayload
         })
         successCount.push(employee.name)
       } catch (error) {
@@ -6839,19 +7096,20 @@ const handleSubmit = async () => {
       
       submitting.value = true
       try {
+        const submitPayload = buildEmployeeSubmitPayload(form)
         if (isEdit.value) {
-          await updateEmployee(form.id, form)
+          await updateEmployee(form.id, submitPayload)
           ElMessage.success('更新成功')
         } else {
           console.log('开始创建员工...')
           
           // 工号由后端自动生成，不需要前端检查
-          console.log('发送到后端的员工数据:', JSON.stringify(form))
+          console.log('发送到后端的员工数据:', JSON.stringify(submitPayload))
           
           const response = await request({
             url: '/employees',
             method: 'post',
-            data: form
+            data: submitPayload
           })
           console.log('创建员工响应:', JSON.stringify(response))
           ElMessage.success('创建成功')
@@ -6949,6 +7207,8 @@ const fillSampleData = () => {
       position: '软件工程师',
       id_number: uniqueIdNumber,
       phone: '13800138000',
+      emergency_contact: '李四',
+      emergency_phone: '13900139000',
       email: 'zhangsan@example.com',
       gender: 'male',
       birth_date: '1990-01-01',
@@ -6958,9 +7218,11 @@ const fillSampleData = () => {
       address: '北京市朝阳区建国路1号',
       project_ids: projectIds,
       basic_salary: 12000,
+      comprehensive_salary: 12000,
+      probation_salary: 9000,
+      performance_salary: 4000,
       salary_items: [
-        { name: '岗位工资', amount: 8000 },
-        { name: '绩效工资', amount: 4000 }
+        { name: '岗位工资', amount: 8000 }
       ],
 
       // 工资卡信息
@@ -7081,6 +7343,9 @@ const resetDialogState = () => {
   pendingSalaryAdjustment.value = null
   currentSalarySnapshot.value = {
     basic_salary: null,
+    comprehensive_salary: null,
+    probation_salary: null,
+    performance_salary: null,
     salary_items: []
   }
   salaryApprovalForm.reason = ''
@@ -7092,6 +7357,8 @@ const resetDialogState = () => {
     position: '',
     id_number: '',
     phone: '',
+    emergency_contact: '',
+    emergency_phone: '',
     email: '',
     gender: 'male',
     birth_date: '',
@@ -7104,6 +7371,9 @@ const resetDialogState = () => {
     address: '',
     project_ids: [],
     basic_salary: null,
+    comprehensive_salary: null,
+    probation_salary: null,
+    performance_salary: null,
     salary_items: [],
     // 工资卡信息
     bank_account: '',
@@ -8006,30 +8276,86 @@ const loadRegistrationForm = async (employeeId) => {
   }
 }
 
-// 导出从业人员登记表PDF
+// 导出从业人员登记表PDF（带签名合成）
 const exportRegistrationFormPdf = async (employeeId) => {
   try {
-    const response = await request({
-      url: `/employees/export-registration-pdfs`,
-      method: 'post',
-      data: { employee_ids: [employeeId] },
-      responseType: 'blob'
+    const response = await fetch('/api/get-batch-pdfs-for-merge', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        employee_ids: [employeeId],
+        form_type: 'registration'
+      })
     })
-    
-    const blob = new Blob([response], { type: 'application/pdf' })
+
+    const result = await response.json()
+    if (!result.success || !result.data || result.data.length === 0) {
+      throw new Error(result.message || '导出失败')
+    }
+
+    const item = result.data[0]
+    if (item.error) {
+      throw new Error(item.error)
+    }
+
+    const pdfBytes = Uint8Array.from(
+      atob(item.pdf_base64),
+      c => c.charCodeAt(0)
+    )
+    const pdfDoc = await PDFDocument.load(pdfBytes)
+
+    if (item.signature_base64) {
+      const signatureBytes = Uint8Array.from(
+        atob(item.signature_base64),
+        c => c.charCodeAt(0)
+      )
+
+      let signatureImage
+      try {
+        signatureImage = await pdfDoc.embedPng(signatureBytes)
+      } catch {
+        signatureImage = await pdfDoc.embedJpg(signatureBytes)
+      }
+
+      const pages = pdfDoc.getPages()
+      const lastPage = pages[pages.length - 1]
+      const position = item.signature_position || {
+        x: 115,
+        y: 142,
+        width: 50,
+        height: 20,
+        from_bottom: true
+      }
+
+      const sigX = position.x
+      const sigY = position.from_bottom ? position.y : (lastPage.getSize().height - position.y)
+
+      lastPage.drawImage(signatureImage, {
+        x: sigX,
+        y: sigY,
+        width: position.width,
+        height: position.height,
+        opacity: 1
+      })
+    }
+
+    const modifiedPdfBytes = await pdfDoc.save()
+    const blob = new Blob([modifiedPdfBytes], { type: 'application/pdf' })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `从业人员登记表_${form.name || employeeId}.pdf`
+    link.download = `${item.employee_name || employeeId}_${item.form_type === 'registration' ? '从业人员登记表' : '入职登记表'}.pdf`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
-    
+
     ElMessage.success('导出成功')
   } catch (error) {
     console.error('导出PDF失败:', error)
-    ElMessage.error('导出PDF失败')
+    ElMessage.error('导出PDF失败: ' + (error.message || '未知错误'))
   }
 }
 
@@ -8059,15 +8385,52 @@ const testRegistrationPdf = async () => {
   }
 }
 
-// 获取婚姻状况文本
+const normalizeEnumValue = (value) => {
+  if (value === null || value === undefined) return ''
+  return String(value).trim()
+}
+
+// 获取婚姻状况文本（兼容中英文、大小写、空格）
 const getMaritalStatusText = (status) => {
+  const raw = normalizeEnumValue(status)
+  if (!raw) return '-'
+
+  const normalized = raw.toLowerCase()
   const map = {
     'single': '未婚',
+    'unmarried': '未婚',
     'married': '已婚',
     'divorced': '离异',
-    'widowed': '丧偶'
+    'widowed': '丧偶',
+    '未婚': '未婚',
+    '已婚': '已婚',
+    '离异': '离异',
+    '丧偶': '丧偶'
   }
-  return map[status] || status || '-'
+
+  return map[normalized] || map[raw] || raw
+}
+
+// 获取户口状态文本（兼容中英文、大小写、空格）
+const getHouseholdTypeText = (type) => {
+  const raw = normalizeEnumValue(type)
+  if (!raw) return '-'
+
+  const normalized = raw.toLowerCase()
+  const map = {
+    'urban': '城镇',
+    'town': '城镇',
+    'rural': '农村',
+    'agricultural': '农业',
+    'non_agricultural': '非农业',
+    '城镇': '城镇',
+    '农村': '农村',
+    '农业': '农业',
+    '非农业': '非农业',
+    '非城镇': '非农业'
+  }
+
+  return map[normalized] || map[raw] || raw
 }
 
 // 格式化日期
@@ -8576,7 +8939,7 @@ const handleNewEmployee = async () => {
       form[key] = []
     } else if (['birth_date', 'hire_date', 'contract_start_date', 'contract_end_date', 'social_insurance_enrollment_date', 'provident_fund_enrollment_date', 'medical_insurance_enrollment_date', 'large_medical_enrollment_date', 'id_card_valid_from', 'id_card_valid_until'].includes(key)) {
       form[key] = null
-    } else if (['basic_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base'].includes(key)) {
+    } else if (['basic_salary', 'comprehensive_salary', 'probation_salary', 'performance_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base'].includes(key)) {
       form[key] = null
     } else if (key === 'salary_items') {
       form[key] = []
@@ -8602,6 +8965,9 @@ const handleNewEmployee = async () => {
   pendingSalaryAdjustment.value = null
   currentSalarySnapshot.value = {
     basic_salary: null,
+    comprehensive_salary: null,
+    probation_salary: null,
+    performance_salary: null,
     salary_items: []
   }
   showCreateDialog.value = true
@@ -9111,3 +9477,4 @@ const getChangeComparison = (detail) => {
   margin-bottom: 20px;
 }
 </style>
+

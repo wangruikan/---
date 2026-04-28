@@ -147,9 +147,10 @@
               link 
               type="success" 
               :icon="UploadFilled" 
+              :title="row.supplement_deadline_at ? `候补截止：${row.supplement_deadline_at}` : '候补资料'"
               @click="handleSupplementAttachment(row)"
             >
-              上传附件
+              候补资料
             </el-button>
             <el-button 
               v-if="['pending_invoice', 'invoice_uploaded'].includes(row.invoice_status) && row.can_upload_invoice"
@@ -1698,4 +1699,3 @@ onMounted(async () => {
   text-align: right;
 }
 </style>
-

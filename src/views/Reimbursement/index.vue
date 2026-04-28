@@ -317,6 +317,9 @@
             form-button-text="填写表格生成PDF"
             form-title="报销付款申请表"
           />
+          <div style="margin-top: 6px; color: #E6A23C; font-size: 12px;">
+            候补资料开启后，可在付款申请列表72小时内补充发票或单据
+          </div>
         </el-form>
 
         <template #footer>

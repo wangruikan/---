@@ -1611,6 +1611,8 @@ class MiniController extends Controller
                 default => null,
             };
 
+            $normalizedEntryDate = trim((string) $request->input('entry_date', ''));
+
             $employeeUpdateData = [
                 'name' => $request->name,
                 'gender' => $request->gender,
@@ -1619,7 +1621,7 @@ class MiniController extends Controller
                 'marital_status' => $request->marital_status,
                 'position' => $request->entry_position,
                 'job_title' => $request->job_title,
-                'hire_date' => $request->entry_date,
+                'hire_date' => $normalizedEntryDate !== '' ? $normalizedEntryDate : null,
                 'education' => $request->education_level,
                 'education_type' => $request->education_type,
                 'phone' => $request->contact_phone,
@@ -1636,6 +1638,16 @@ class MiniController extends Controller
                 'political_status' => $request->political_status,
                 'height' => $request->height,
             ];
+
+            // The mini-program registration form allows these fields to be omitted,
+            // so avoid overwriting required employee columns with null/empty values.
+            if ($normalizedEntryDate === '') {
+                unset($employeeUpdateData['hire_date']);
+            }
+
+            if (!$request->filled('education_type')) {
+                unset($employeeUpdateData['education_type']);
+            }
 
             $employeeUpdateData = $this->filterEmployeeUpdateData($employeeUpdateData);
 

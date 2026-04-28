@@ -84,6 +84,10 @@ class Kernel extends ConsoleKernel
                  ->timezone('Asia/Shanghai');
         
         // 每小时检查社保公积金缴费提醒
+        $schedule->command('payment:expire-supplement-window')
+                 ->hourly()
+                 ->timezone('Asia/Shanghai');
+
         $schedule->command('payment:check-reminders')
                  ->hourly()
                  ->timezone('Asia/Shanghai');

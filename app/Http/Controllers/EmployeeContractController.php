@@ -963,6 +963,10 @@ class EmployeeContractController extends Controller
             $contractEndYear = $employee->contract_end_date?->format('Y');
             $contractEndMonth = $employee->contract_end_date?->format('m');
             $contractEndDay = $employee->contract_end_date?->format('d');
+            $salaryItems = is_array($employee->salary_items) ? $employee->salary_items : [];
+            $comprehensiveSalary = $this->extractSalaryItemAmount($salaryItems, ['综合薪资', '综合工资']);
+            $probationSalary = $this->extractSalaryItemAmount($salaryItems, ['试用期薪资', '试用期工资']);
+            $performanceSalary = $this->extractSalaryItemAmount($salaryItems, ['绩效薪资', '绩效工资']);
 
             // 返回模板和员工信息，让前端进行数据填充
             return response()->json([
@@ -987,11 +991,14 @@ class EmployeeContractController extends Controller
                         'education' => $employee->education,
                         'position' => $employee->position,
                         'employee_number' => $employee->employee_number,
-                        'email' => $employee->email,
+                        'email' => $employee->email_address ?: $employee->email,
                         'bank_name' => $employee->bank_name,
                         'bank_account' => $employee->bank_account,
                         'bank_account_holder' => $employee->bank_account_holder,
                         'basic_salary' => $employee->basic_salary,
+                        'comprehensive_salary' => $comprehensiveSalary,
+                        'probation_salary' => $probationSalary,
+                        'performance_salary' => $performanceSalary,
                         'signing_location' => $employee->signing_location,
                         'household_type' => $employee->household_type,
                         // 条件性打勾字段
@@ -1027,6 +1034,22 @@ class EmployeeContractController extends Controller
                 'message' => '创建合同失败: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function extractSalaryItemAmount(array $salaryItems, array $targetNames): ?float
+    {
+        foreach ($salaryItems as $item) {
+            $name = trim((string)($item['name'] ?? ''));
+            if ($name === '' || !in_array($name, $targetNames, true)) {
+                continue;
+            }
+            if (!isset($item['amount']) || $item['amount'] === '') {
+                return null;
+            }
+            return (float) $item['amount'];
+        }
+
+        return null;
     }
 
     /**
@@ -1471,4 +1494,3 @@ class EmployeeContractController extends Controller
         }
     }
 }
-

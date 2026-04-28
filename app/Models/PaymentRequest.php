@@ -11,6 +11,8 @@ class PaymentRequest extends Model
 {
     use HasFactory, HasApprovalResubmit, Auditable;
 
+    const SUPPLEMENT_WINDOW_HOURS = 72;
+
     /**
      * 审计名称
      */
@@ -288,12 +290,75 @@ class PaymentRequest extends Model
     {
         // 只要勾选了稍后上传，就需要显示补传按钮
         // 直到用户点击"确认上传"，upload_later 变为 0
-        return $this->upload_later == 1;
+        return (int)$this->upload_later === 1 && $this->supportsSupplementAttachment();
     }
 
     /**
      * 判断当前用户是否可以补传附件（只有发起人可以）
      */
+    /**
+     * 判断是否支持候补资料（仅工资/报销）
+     */
+    public function supportsSupplementAttachment()
+    {
+        if ($this->payment_type === 'salary') {
+            return true;
+        }
+
+        if ($this->payment_type === 'insurance') {
+            return false;
+        }
+
+        if (!empty($this->reimbursement_id)) {
+            return true;
+        }
+
+        $reimbursementTypes = ['reimbursement', '报销', '差旅', '采购', '项目', '其他'];
+        return in_array($this->payment_type, $reimbursementTypes, true);
+    }
+
+    /**
+     * 候补截止时间（创建后72小时）
+     */
+    public function getSupplementDeadlineAt()
+    {
+        if (!$this->created_at) {
+            return null;
+        }
+
+        return $this->created_at->copy()->addHours(self::SUPPLEMENT_WINDOW_HOURS);
+    }
+
+    /**
+     * 候补是否已过期
+     */
+    public function isSupplementExpired()
+    {
+        $deadlineAt = $this->getSupplementDeadlineAt();
+        if (!$deadlineAt) {
+            return false;
+        }
+
+        return now()->greaterThan($deadlineAt);
+    }
+
+    /**
+     * 候补剩余秒数
+     */
+    public function getSupplementRemainingSeconds()
+    {
+        if (!$this->needsSupplementAttachment()) {
+            return 0;
+        }
+
+        $deadlineAt = $this->getSupplementDeadlineAt();
+        if (!$deadlineAt) {
+            return 0;
+        }
+
+        return max(0, now()->diffInSeconds($deadlineAt, false));
+    }
+
     public function canSupplementAttachment($user)
     {
         if (!$this->needsSupplementAttachment()) {
@@ -301,7 +366,15 @@ class PaymentRequest extends Model
         }
 
         // 只有发起人可以补传
-        return $user->id === $this->submitted_by;
+        if ($this->isSupplementExpired()) {
+            return false;
+        }
+
+        if (!$user || !$user->id) {
+            return false;
+        }
+
+        return (int)$user->id === (int)$this->submitted_by;
     }
 }
 

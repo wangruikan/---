@@ -922,6 +922,9 @@ export default {
 				const submitData = { ...this.formData }
 				submitData.signature = this.formData.signaturePath
 				delete submitData.signaturePath
+				if (!submitData.entry_date || !String(submitData.entry_date).trim()) {
+					delete submitData.entry_date
+				}
 				
 				const res = await submitRegistrationForm(submitData)
 				

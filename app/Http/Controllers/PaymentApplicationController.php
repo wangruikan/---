@@ -7,6 +7,7 @@ use App\Models\PaymentAttachment;
 use App\Models\ProcessApproval;
 use App\Models\ApprovalAttachment;
 use App\Services\ApprovalService;
+use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -332,6 +333,9 @@ class PaymentApplicationController extends Controller
                 
                 // 检查是否可以补传附件（勾选了稍后上传且还未上传）
                 $result['can_supplement_attachment'] = $req->canSupplementAttachment(request()->user());
+                $supplementDeadline = $req->getSupplementDeadlineAt();
+                $result['supplement_deadline_at'] = $supplementDeadline ? $supplementDeadline->format('Y-m-d H:i:s') : null;
+                $result['supplement_remaining_seconds'] = $req->getSupplementRemainingSeconds();
                 
                 // 如果有报销表单信息（所有付款申请类型都可能包含），添加报销表单信息
                 if ($req->project || $req->apply_date || $req->unit_name) {
@@ -995,6 +999,7 @@ class PaymentApplicationController extends Controller
 
             // 更新 upload_later 标识为 0
             $paymentRequest->update(['upload_later' => 0]);
+            PendingTaskService::checkAndCompletePaymentSupplementTask($paymentRequest);
 
             return response()->json([
                 'success' => true,

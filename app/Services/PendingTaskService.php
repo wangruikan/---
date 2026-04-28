@@ -141,6 +141,119 @@ class PendingTaskService
      * 为线下入职员工创建合同上传任务
      * 当线下入职审批通过后调用
      */
+    /**
+     * 创建付款申请候补资料待办（仅工资/报销）
+     */
+    public static function createPaymentSupplementTask(PaymentRequest $paymentRequest)
+    {
+        try {
+            if (
+                !$paymentRequest->needsSupplementAttachment() ||
+                $paymentRequest->isSupplementExpired()
+            ) {
+                return null;
+            }
+
+            $handler = User::find($paymentRequest->submitted_by);
+            if (!$handler) {
+                Log::warning('无法确定候补资料待办处理人', [
+                    'payment_request_id' => $paymentRequest->id,
+                    'submitted_by' => $paymentRequest->submitted_by,
+                ]);
+                return null;
+            }
+
+            $existingTask = PendingTask::where('account_set_id', $paymentRequest->account_set_id)
+                ->where('task_type', 'payment_supplement')
+                ->where('related_id', $paymentRequest->id)
+                ->where('related_type', 'PaymentRequest')
+                ->where('handler_id', $handler->id)
+                ->where('status', 'pending')
+                ->first();
+
+            if ($existingTask) {
+                return $existingTask;
+            }
+
+            $typeText = self::getSupplementTypeText($paymentRequest);
+            $deadline = $paymentRequest->getSupplementDeadlineAt();
+            $deadlineText = $deadline ? $deadline->format('Y-m-d H:i') : '72小时内';
+
+            $task = PendingTask::create([
+                'account_set_id' => $paymentRequest->account_set_id,
+                'task_type' => 'payment_supplement',
+                'title' => "{$typeText}付款申请候补资料",
+                'description' => "请在 {$deadlineText} 前补充发票或单据附件。",
+                'related_id' => $paymentRequest->id,
+                'related_type' => 'PaymentRequest',
+                'handler_id' => $handler->id,
+                'handler_name' => $handler->name,
+                'status' => 'pending',
+                'route_name' => 'payment-applications',
+                'route_params' => null,
+            ]);
+
+            Log::info('创建付款申请候补资料待办', [
+                'task_id' => $task->id,
+                'payment_request_id' => $paymentRequest->id,
+                'handler_id' => $handler->id,
+            ]);
+
+            return $task;
+        } catch (\Exception $e) {
+            Log::error('创建付款申请候补资料待办失败', [
+                'payment_request_id' => $paymentRequest->id,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * 完成付款申请候补资料待办
+     */
+    public static function checkAndCompletePaymentSupplementTask(PaymentRequest $paymentRequest, $force = false)
+    {
+        $shouldComplete = $force ||
+            !$paymentRequest->needsSupplementAttachment() ||
+            $paymentRequest->isSupplementExpired();
+
+        if (!$shouldComplete) {
+            return 0;
+        }
+
+        $tasks = PendingTask::where('account_set_id', $paymentRequest->account_set_id)
+            ->where('task_type', 'payment_supplement')
+            ->where('related_id', $paymentRequest->id)
+            ->where('related_type', 'PaymentRequest')
+            ->where('status', 'pending')
+            ->get();
+
+        $completedCount = 0;
+        foreach ($tasks as $task) {
+            $task->markAsCompleted();
+            $completedCount++;
+        }
+
+        if ($completedCount > 0) {
+            Log::info('付款申请候补资料待办已完成', [
+                'payment_request_id' => $paymentRequest->id,
+                'completed_count' => $completedCount,
+            ]);
+        }
+
+        return $completedCount;
+    }
+
+    private static function getSupplementTypeText(PaymentRequest $paymentRequest)
+    {
+        if ($paymentRequest->payment_type === 'salary') {
+            return '工资';
+        }
+
+        return '报销';
+    }
+
     public static function createOfflineContractTask(Employee $employee)
     {
         try {

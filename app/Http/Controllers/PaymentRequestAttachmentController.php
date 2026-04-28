@@ -29,6 +29,12 @@ class PaymentRequestAttachmentController extends Controller
         }
 
         $paymentRequest = PaymentRequest::find($request->payment_request_id);
+        if (!$paymentRequest || !$paymentRequest->canSupplementAttachment($request->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前申请不允许候补附件上传或您无权限操作'
+            ], 403);
+        }
 
         try {
             $file = $request->file('file');
@@ -97,6 +103,14 @@ class PaymentRequestAttachmentController extends Controller
         }
 
         try {
+            $paymentRequest = PaymentRequest::find($request->payment_request_id);
+            if (!$paymentRequest || !$paymentRequest->canSupplementAttachment($request->user())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前申请不允许查看候补附件或您无权限操作'
+                ], 403);
+            }
+
             $attachments = PaymentRequestAttachment::with('uploader')
                 ->where('payment_request_id', $request->payment_request_id)
                 ->where('attachment_type', 'supplement')
@@ -135,6 +149,12 @@ class PaymentRequestAttachmentController extends Controller
         }
 
         $attachment = PaymentRequestAttachment::with('paymentRequest')->find($request->id);
+        if (!$attachment || !$attachment->paymentRequest || !$attachment->paymentRequest->canSupplementAttachment($request->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前申请不允许删除候补附件或您无权限操作'
+            ], 403);
+        }
 
         try {
             // 删除文件

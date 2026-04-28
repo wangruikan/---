@@ -121,6 +121,7 @@ const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 const getTaskTypeName = (type) => {
   const typeMap = {
     'payment_receipt': '付款申请回执',
+    'payment_supplement': '付款申请候补资料',
     'offline_contract': '线下合同上传',
     'document_delivery': '资料交付',
     'salary_basis': '工资依据上传',
@@ -135,6 +136,7 @@ const getTaskTypeName = (type) => {
 const getTaskTypeTagType = (type) => {
   const typeMap = {
     'payment_receipt': 'primary',
+    'payment_supplement': 'primary',
     'offline_contract': 'success',
     'document_delivery': 'warning',
     'salary_basis': 'danger',
@@ -199,7 +201,7 @@ const handleStatusChange = () => {
 }
 
 const handleViewTask = (task) => {
-  if (task.task_type === 'payment_receipt') {
+  if (task.task_type === 'payment_receipt' || task.task_type === 'payment_supplement') {
     router.push('/payment-applications')
   } else if (task.task_type === 'offline_contract') {
     router.push('/employees')

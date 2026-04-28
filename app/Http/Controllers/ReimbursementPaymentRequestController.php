@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PaymentRequest;
 use App\Models\Reimbursement;
 use App\Services\ApprovalService;
+use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -162,6 +163,9 @@ class ReimbursementPaymentRequestController extends Controller
                 'accounted' => $formData['accounted'] ?? true,
                 'company' => $formData['company'] ?? null,
             ]);
+
+            // 开启候补资料时，给发起人生成待办
+            PendingTaskService::createPaymentSupplementTask($paymentRequest);
 
             DB::commit();
 

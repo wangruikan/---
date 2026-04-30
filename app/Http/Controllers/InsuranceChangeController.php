@@ -1494,50 +1494,12 @@ class InsuranceChangeController extends ApiController
      */
     public function process(Request $request, $id)
     {
-        $change = InsuranceChange::findOrFail($id);
-        $user = $request->user();
-
-        // 检查用户是否已认证
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => '用户未认证'
-            ], 401);
-        }
-
-        // 检查权限
-        if ($user && $user->role !== 'admin') {
-            $hasAccess = $user->accountSets()->where('account_set_id', $change->account_set_id)->exists();
-            if (!$hasAccess) {
-                return response()->json([
-                    'success' => false,
-                    'message' => '无权限操作'
-                ], 403);
-            }
-        }
-
-        DB::transaction(function () use ($change, $user) {
-            // 更新状态
-            $change->update([
-                'status' => 'completed',
-                'processed_by' => $user->id,
-                'processed_at' => now(),
-                'completed_at' => now()
-            ]);
-
-            // 生成参保明细
-            $this->generateDetails($change);
-        });
-
-        return response()->json([
-            'success' => true,
-            'message' => '处理完成',
-            'data' => $change->fresh()
-        ]);
+        // keep old endpoint compatible, but route into the full confirm flow
+        return $this->confirmProcess($request, $id);
     }
 
     /**
-     * 确认处理（从待处理状态更新为已处理并导入明细）
+     * Confirm change and generate/sync details.
      */
     public function confirmProcess(Request $request, $id)
     {
@@ -1778,10 +1740,12 @@ class InsuranceChangeController extends ApiController
                 $personnel = $this->syncOtherInsuranceOnly($change);
                 
                 // 基于参保人员信息生成当前月份的明细记录（只生成其他保险）
-                $currentYear = date('Y');
-                $currentMonth = date('n');
-                
-                InsuranceDetailRecord::generateFromPersonnel($personnel, $currentYear, $currentMonth);
+                if ($personnel) {
+                    $currentYear = date('Y');
+                    $currentMonth = date('n');
+                    
+                    InsuranceDetailRecord::generateFromPersonnel($personnel, $currentYear, $currentMonth);
+                }
                 
                 // 标记其他保险已处理
                 $change->update(['other_insurance_processed' => 1]);
@@ -2982,7 +2946,11 @@ class InsuranceChangeController extends ApiController
             }
 
             // 获取参保人员记录
-            $personnel = \App\Models\InsurancePersonnel::where('employee_id', $change->employee_id)->first();
+            $personnel = $this->getCurrentPersonnelQuery($change)
+                ->where('status', 'active')
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->first();
             
             if (!$personnel) {
                 return;
@@ -3005,7 +2973,13 @@ class InsuranceChangeController extends ApiController
             $currentYear = date('Y');
             $currentMonth = date('n');
             
-            $paymentCycleService->setPaymentStartTime($change->employee_id, $currentYear, $currentMonth);
+            $paymentCycleService->setPaymentStartTime(
+                $change->employee_id,
+                $currentYear,
+                $currentMonth,
+                $change->project_id,
+                $change->account_set_id
+            );
             
             \Log::info('设置大额医疗保险支付起始时间', [
                 'employee_id' => $change->employee_id,
@@ -3023,8 +2997,22 @@ class InsuranceChangeController extends ApiController
         }
     }
 
+    
     /**
-     * 获取社保补差明细
+     * Build query for current (non-compensation) personnel row.
+     */
+    private function getCurrentPersonnelQuery($change)
+    {
+        return \App\Models\InsurancePersonnel::where('employee_id', $change->employee_id)
+            ->where('project_id', $change->project_id)
+            ->where('account_set_id', $change->account_set_id)
+            ->where(function ($query) {
+                $query->whereNull('is_compensation')->orWhere('is_compensation', 0);
+            });
+    }
+
+    /**
+     * Get social security compensation details.
      */
     public function getSocialSecurityCompensation(Request $request)
     {

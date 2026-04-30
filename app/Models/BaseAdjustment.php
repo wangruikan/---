@@ -487,6 +487,8 @@ class BaseAdjustment extends Model
             }
         }
 
+        $insuranceChangePayload = $this->buildInsuranceChangePayload($type);
+
         $employee->update($employeeUpdateData);
 
         if (!empty($personnelUpdateData)) {
@@ -496,11 +498,94 @@ class BaseAdjustment extends Model
             }
         }
 
+        $this->triggerInsuranceChangeTask($employee, $type, $insuranceChangePayload['old_data'], $insuranceChangePayload['new_data']);
+
         $this->effective_date = $this->{$dateField};
         $this->status = 'applied';
         $this->applied_at = now();
 
         return $this->save();
+    }
+
+    protected function buildInsuranceChangePayload(string $type): array
+    {
+        $config = static::getTypeConfig($type);
+        $payloadKeys = [
+            'social_security_base' => 'employee_social_security_base',
+            'medical_insurance_base' => 'employee_medical_insurance_base',
+            'housing_fund_base' => 'employee_housing_fund_base',
+            'large_medical_base' => 'employee_large_medical_base',
+            'large_medical_company_base' => 'employee_large_medical_company_base',
+        ];
+        $oldData = [];
+        $newData = [];
+
+        foreach ($config['employee_map'] as $targetField => $sourceField) {
+            if (!array_key_exists($targetField, $payloadKeys)) {
+                continue;
+            }
+
+            if (is_null($this->{$sourceField}) || $this->{$sourceField} === '') {
+                continue;
+            }
+
+            $oldField = preg_replace('/^new_/', 'old_', $sourceField);
+            $payloadKey = $payloadKeys[$targetField];
+            $oldData[$payloadKey] = $this->{$oldField};
+            $newData[$payloadKey] = $this->{$sourceField};
+        }
+
+        return [
+            'old_data' => $oldData,
+            'new_data' => $newData,
+        ];
+    }
+
+    protected function triggerInsuranceChangeTask(Employee $employee, string $type, array $oldData, array $newData): void
+    {
+        if (empty($oldData) || empty($newData)) {
+            return;
+        }
+
+        $changeTypeMap = [
+            self::TYPE_SOCIAL_SECURITY => 'social_security',
+            self::TYPE_MEDICAL_INSURANCE => 'medical_insurance',
+            self::TYPE_HOUSING_FUND => 'housing_fund',
+            self::TYPE_LARGE_MEDICAL => 'large_medical_insurance',
+        ];
+
+        $changeType = $changeTypeMap[$type] ?? null;
+        if (!$changeType) {
+            return;
+        }
+
+        try {
+            $result = app(\App\Services\InsuranceChangeDetectionService::class)->triggerChange([
+                'scope' => \App\Services\InsuranceChangeDetectionService::SCOPE_EMPLOYEE,
+                'change_type' => $changeType,
+                'employee' => $employee,
+                'project_id' => $this->project_id,
+                'old_data' => $oldData,
+                'new_data' => $newData,
+                'source' => 'base_adjustment_applied',
+            ]);
+
+            if (empty($result['success'])) {
+                logger()->warning('基数调整已生效，但参保增减变更任务生成失败', [
+                    'base_adjustment_id' => $this->id,
+                    'employee_id' => $employee->id,
+                    'type' => $type,
+                    'result' => $result,
+                ]);
+            }
+        } catch (\Throwable $exception) {
+            logger()->warning('基数调整已生效，但参保增减变更任务触发异常', [
+                'base_adjustment_id' => $this->id,
+                'employee_id' => $employee->id,
+                'type' => $type,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     protected function buildCloneAttributes(): array

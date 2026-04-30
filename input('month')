@@ -1,0 +1,851 @@
+32:        if ($response = $this->checkPermission('insurance_change.view')) {
+36:        $user = $request->user();
+37:        $accountSetId = $request->input('account_set_id');
+38:        $status = $request->input('status');
+39:        $regionName = $request->input('region_name');
+40:        $month = $request->input('month'); // 新增月份筛选参数
+43:            ->with([
+54:        // 月份筛选 - 根据创建时间筛选
+56:            // 解析月份参数 (格式: YYYY-MM)
+61:            $startDate = $year . '-' . $monthNum . '-01 00:00:00';
+62:            $endDate = date('Y-m-t 23:59:59', strtotime($startDate));
+64:            $query->whereBetween('created_at', [$startDate, $endDate]);
+69:            $query->where('status', $status);
+72:        // 地区筛选 - 通过员工关联的地区进行筛选
+74:            $query->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+75:                $q->where('name', $regionName);
+76:            })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+77:                $q->where('name', $regionName);
+78:            })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+79:                $q->where('region_name', $regionName);
+83:        $changes = $query->orderBy('created_at', 'desc')->get();
+86:        $changes->each(function ($change) {
+87:            // $change->social_security_types = $change->getCurrentSocialSecurityConfig();
+88:            // $change->medical_insurance_types = $change->getCurrentMedicalInsuranceConfig();
+89:            // $change->housing_fund_params = $change->getCurrentHousingFundConfig();
+90:            // $change->other_insurance_policies = $change->getCurrentOtherInsuranceConfig();
+93:            // $detectedChanges = $change->checkAndRecordChanges();
+94:            $change->detected_changes = [];
+97:            // $change->large_medical_insurance = $change->getCurrentLargeMedicalInsuranceConfig();
+100:            $change->parsed_change_details = $change->parseChangeDetails();
+103:        return response()->json([
+115:        if ($response = $this->checkPermission('insurance_change.view')) {
+129:        ])->findOrFail($id);
+132:        // $change->social_security_types = $change->getCurrentSocialSecurityConfig();
+133:        // $change->medical_insurance_types = $change->getCurrentMedicalInsuranceConfig();
+134:        // $change->housing_fund_params = $change->getCurrentHousingFundConfig();
+135:        // $change->other_insurance_policies = $change->getCurrentOtherInsuranceConfig();
+139:        // $detectedChanges = $change->checkAndRecordChanges();
+140:        $change->detected_changes = [];
+143:        $change->large_medical_insurance_config = $change->getCurrentLargeMedicalInsuranceConfig();
+146:        $change->parsed_change_details = $change->parseChangeDetails();
+149:        if ($change->other_insurance_policies && is_string($change->other_insurance_policies)) {
+150:            $change->other_insurance_policies = json_decode($change->other_insurance_policies, true) ?: [];
+154:        if ($change->social_security_types && is_string($change->social_security_types)) {
+155:            $change->social_security_types = json_decode($change->social_security_types, true) ?: [];
+159:        if ($change->medical_insurance_types && is_string($change->medical_insurance_types)) {
+160:            $change->medical_insurance_types = json_decode($change->medical_insurance_types, true) ?: [];
+164:        if ($change->housing_fund_params && is_string($change->housing_fund_params)) {
+165:            $change->housing_fund_params = json_decode($change->housing_fund_params, true) ?: [];
+168:        return response()->json([
+180:        if ($response = $this->checkPermission('insurance_change.view')) {
+184:        $user = $request->user();
+185:        $accountSetId = $request->input('account_set_id');
+186:        $regionName = $request->input('region_name');
+187:        $month = $request->input('month'); // 月份筛选参数
+189:        // 完全移除权限检查 - 允许所有访问
+192:        $currentYearMonth = date('Y-m'); // 当前年月，格式：2025-10
+197:            return $this->getCurrentMonthDetails($request, $accountSetId, $regionName);
+200:            return $this->getHistoricalMonthDetails($request, $accountSetId, $regionName, $month);
+211:            ->where('status', 'active') // 只显示活跃的参保记录
+212:            ->with([
+222:        // 地区筛选 - 通过员工关联的地区进行筛选
+224:            $query->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+225:                $q->where('name', $regionName);
+226:            })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+227:                $q->where('name', $regionName);
+228:            })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+229:                $q->where('region_name', $regionName);
+233:        $personnelRecords = $query->orderBy('last_updated_at', 'desc')->get();
+239:            $normalDetail = $this->generatePersonnelDetail($personnel);
+245:            $supplementaryDetails = $this->generateSupplementaryDetails($personnel);
+249:        return response()->json([
+261:        // 解析月份参数 (格式: YYYY-MM)
+267:            ->where('record_year', $year)
+268:            ->where('record_month', $monthNum)
+269:            ->with(['employee', 'project']);
+271:        // 地区筛选 - 通过员工关联的地区进行筛选
+273:            $query->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+274:                $q->where('name', $regionName);
+275:            })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+276:                $q->where('name', $regionName);
+277:            })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+278:                $q->where('region_name', $regionName);
+282:        $records = $query->orderBy('generated_at', 'desc')->get();
+287:            $detail = $this->convertRecordToDetail($record);
+293:        return response()->json([
+306:        if (!$record->employee) {
+311:        $socialSecurityTypes = json_decode($record->social_security_types, true) ?: [];
+312:        $medicalInsuranceTypes = json_decode($record->medical_insurance_types, true) ?: [];
+313:        $housingFundParams = json_decode($record->housing_fund_params, true) ?: [];
+314:        $otherInsurancePolicies = json_decode($record->other_insurance_policies, true) ?: [];
+315:        $largeMedicalConfig = json_decode($record->large_medical_insurance_config, true) ?: [];
+318:            'id' => $record->id,
+319:            'employee_id' => $record->employee_id,
+320:            'employee_name' => $record->employee_name,
+321:            'employee_id_number' => $record->employee_id_number,
+322:            'employee_gender' => $record->employee_gender,
+323:            'employee_birth_date' => $record->employee_birth_date,
+324:            'employee_phone' => $record->employee_phone,
+325:            'project_id' => $record->project_id,
+326:            'project_name' => $record->project_name,
+327:            'employee_social_security_base' => $record->employee_social_security_base,
+328:            'employee_medical_insurance_base' => $record->employee_medical_insurance_base,
+329:            'employee_housing_fund_base' => $record->employee_housing_fund_base,
+330:            'employee_large_medical_base' => $record->employee_large_medical_base,
+335:                'social_security_types' => $record->social_security_types, // JSON字符串
+336:                'medical_insurance_types' => $record->medical_insurance_types, // JSON字符串
+337:                'housing_fund_params' => $record->housing_fund_params, // JSON字符串
+338:                'large_medical_insurance_config' => $record->large_medical_insurance_config, // JSON字符串
+342:            'other_insurance_policies' => $record->other_insurance_policies,
+345:            'social_security_company_amount' => $record->social_security_company_amount,
+346:            'social_security_employee_amount' => $record->social_security_employee_amount,
+347:            'medical_insurance_company_amount' => $record->medical_insurance_company_amount,
+348:            'medical_insurance_employee_amount' => $record->medical_insurance_employee_amount,
+349:            'housing_fund_company_amount' => $record->housing_fund_company_amount,
+350:            'housing_fund_employee_amount' => $record->housing_fund_employee_amount,
+351:            'large_medical_company_amount' => $record->large_medical_company_amount,
+352:            'large_medical_employee_amount' => $record->large_medical_employee_amount,
+353:            'other_insurance_total_amount' => $record->other_insurance_total_amount,
+356:            'created_at' => $record->generated_at, // 使用生成时间作为创建时间
+357:            'last_updated_at' => $record->generated_at,
+362:            'employee' => $record->employee,
+363:            'project' => $record->project,
+367:            'record_year' => $record->record_year,
+368:            'record_month' => $record->record_month,
+377:        if (!$personnel->employee) {
+387:        if ($personnel->social_security_types) {
+389:                $socialSecurityTypes = json_decode($personnel->social_security_types, true) ?: [];
+395:        if ($personnel->medical_insurance_types) {
+397:                $medicalInsuranceTypes = json_decode($personnel->medical_insurance_types, true) ?: [];
+403:        if ($personnel->housing_fund_params) {
+405:                $housingFundConfig = json_decode($personnel->housing_fund_params, true) ?: [];
+413:        if ($personnel->housing_fund_config_id) {
+414:            $housingFundConfigModel = \App\Models\HousingFundConfig::find($personnel->housing_fund_config_id);
+417:        if ($personnel->large_medical_insurance_config) {
+419:                $largeMedicalConfig = json_decode($personnel->large_medical_insurance_config, true) ?: [];
+426:        $originalMedicalBase = $personnel->employee_medical_insurance_base ?? 0;
+427:        $originalPensionBase = $personnel->employee_social_security_base ?? 0;
+428:        $originalHousingFundBase = $personnel->employee_housing_fund_base ?? 0;
+429:        $originalLargeMedicalBase = $personnel->employee_large_medical_base ?? 0;
+434:        if ($personnel->social_security_region_id) {
+435:            $socialRegion = \App\Models\SocialSecurityRegion::find($personnel->social_security_region_id);
+440:            '地区ID' => $personnel->social_security_region_id,
+441:            '下限' => $socialRegion ? $socialRegion->min_base_amount : null,
+442:            '上限' => $socialRegion ? $socialRegion->max_base_amount : null,
+445:        $pensionBase = $this->applyBaseLimits(
+447:            $socialRegion ? $socialRegion->min_base_amount : null,
+448:            $socialRegion ? $socialRegion->max_base_amount : null
+457:        if ($personnel->medical_insurance_region_id) {
+458:            $medicalRegion = \App\Models\MedicalInsuranceRegion::find($personnel->medical_insurance_region_id);
+460:        $medicalBase = $this->applyBaseLimits(
+462:            $medicalRegion ? $medicalRegion->min_base_amount : null,
+463:            $medicalRegion ? $medicalRegion->max_base_amount : null
+469:            $housingFundBase = $this->applyBaseLimits(
+471:                $housingFundConfigModel->min_base_amount,
+472:                $housingFundConfigModel->max_base_amount
+518:        $largeMedicalCompanyBase = $personnel->employee_large_medical_company_base ?? $largeMedicalBase;
+519:        if ($personnel->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
+531:                if ($personnel->large_medical_payment_start_month && $personnel->large_medical_payment_start_year) {
+533:                    if ($currentMonth != $personnel->large_medical_payment_start_month) {
+537:                    if ($currentYear < $personnel->large_medical_payment_start_year) {
+564:        $paymentPeriod = date('Y-m'); // 当前月份，格式：YYYY-MM
+567:        $filteredOtherInsurancePolicies = $this->filterOtherInsurancePoliciesByDate(
+568:            $personnel->other_insurance_policies,
+574:        $employee = $personnel->employee;
+576:            'id' => $personnel->id,
+577:            'employee_id' => $personnel->employee_id,
+578:            'project_id' => $personnel->project_id,
+579:            'account_set_id' => $personnel->account_set_id,
+580:            'employee_name' => $personnel->employee_name,
+581:            'employee_id_number' => $personnel->employee_id_number,
+582:            'employee_gender' => $personnel->employee_gender,
+583:            'employee_birth_date' => $personnel->employee_birth_date,
+584:            'employee_phone' => $personnel->employee_phone,
+585:            'employee_status' => $personnel->employee_status,
+587:            'project_id' => $personnel->project_id,
+588:            'project_name' => $personnel->project ? $personnel->project->name : '',
+591:            'social_security_code' => $personnel->social_security_code, // 社保编号
+592:            'medical_insurance_code' => $personnel->medical_insurance_code, // 医保编号
+593:            'housing_fund_account_number' => $personnel->housing_fund_account_number, // 公积金账号
+595:            'social_insurance_enrollment_date' => $employee ? $employee->social_insurance_enrollment_date : null,
+596:            'medical_insurance_enrollment_date' => $employee ? $employee->medical_insurance_enrollment_date : null,
+597:            'provident_fund_enrollment_date' => $employee ? $employee->provident_fund_enrollment_date : null,
+598:            'large_medical_enrollment_date' => $employee ? $employee->large_medical_enrollment_date : null,
+616:                'social_security_types' => $personnel->social_security_types,
+617:                'medical_insurance_types' => $personnel->medical_insurance_types,
+618:                'housing_fund_params' => $personnel->housing_fund_params,
+619:                'large_medical_insurance_config' => $personnel->large_medical_insurance_config
+621:            'created_at' => $personnel->created_at,
+622:            'last_updated_at' => $personnel->last_updated_at,
+623:            'employee' => $personnel->employee,
+624:            'project' => $personnel->project
+635:        if (!$personnel->employee) {
+645:        if ($personnel->social_security_types) {
+647:                $socialSecurityTypes = json_decode($personnel->social_security_types, true) ?: [];
+653:        if ($personnel->medical_insurance_types) {
+655:                $medicalInsuranceTypes = json_decode($personnel->medical_insurance_types, true) ?: [];
+661:        if ($personnel->housing_fund_params) {
+663:                $housingFundConfig = json_decode($personnel->housing_fund_params, true) ?: [];
+669:        if ($personnel->large_medical_insurance_config) {
+671:                $largeMedicalConfig = json_decode($personnel->large_medical_insurance_config, true) ?: [];
+678:        $medicalBase = $personnel->employee_medical_insurance_base ?? 0;
+679:        $pensionBase = $personnel->employee_social_security_base ?? 0;
+680:        $housingFundBase = $personnel->employee_housing_fund_base ?? 0;
+681:        $largeMedicalBase = $personnel->employee_large_medical_base ?? 0;
+682:        $largeMedicalCompanyBase = $personnel->employee_large_medical_company_base ?? $largeMedicalBase;
+715:        if ($personnel->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
+720:                'employee_name' => $personnel->employee_name,
+726:                'large_medical_insurance_enabled' => $personnel->large_medical_insurance_enabled,
+735:                    $hireMonth = date('m', strtotime($personnel->created_at)); // 入职月份
+772:        // 解析 YYYY-MM 格式的 paymentPeriod
+773:        $periodParts = explode('-', $paymentPeriod);
+776:        $filteredOtherInsurancePolicies = $this->filterOtherInsurancePoliciesByDate(
+777:            $personnel->other_insurance_policies,
+784:            'id' => $personnel->id,
+785:            'employee_id' => $personnel->employee_id,
+786:            'project_id' => $personnel->project_id,
+787:            'account_set_id' => $personnel->account_set_id,
+788:            'employee_name' => $personnel->employee_name,
+789:            'employee_id_number' => $personnel->employee_id_number,
+790:            'employee_gender' => $personnel->employee_gender,
+791:            'employee_birth_date' => $personnel->employee_birth_date,
+792:            'employee_phone' => $personnel->employee_phone,
+793:            'employee_status' => $personnel->employee_status,
+795:            'project_name' => $personnel->project ? $personnel->project->name : '',
+798:            'social_security_code' => $personnel->social_security_code, // 社保编号
+799:            'medical_insurance_code' => $personnel->medical_insurance_code, // 医保编号
+800:            'housing_fund_account_number' => $personnel->housing_fund_account_number, // 公积金账号
+818:                'social_security_types' => $personnel->social_security_types,
+819:                'medical_insurance_types' => $personnel->medical_insurance_types,
+820:                'housing_fund_params' => $personnel->housing_fund_params,
+821:                'large_medical_insurance_config' => $personnel->large_medical_insurance_config
+823:            'created_at' => $personnel->created_at,
+824:            'last_updated_at' => $personnel->last_updated_at,
+825:            'employee' => $personnel->employee,
+826:            'project' => $personnel->project
+844:        $employee = $personnel->employee;
+850:        $firstConfirmationDate = $personnel->created_at;
+855:        $confirmationMonth = date('Y-m', strtotime($firstConfirmationDate));
+856:        $currentMonth = date('Y-m'); // 当前月份
+866:        $socialInsuranceEnrollmentDate = $employee->social_insurance_enrollment_date;
+867:        $medicalInsuranceEnrollmentDate = $employee->medical_insurance_enrollment_date;
+868:        $providentFundEnrollmentDate = $employee->provident_fund_enrollment_date;
+869:        $largeMedicalEnrollmentDate = $employee->large_medical_enrollment_date;
+874:        if ($socialInsuranceEnrollmentDate && date('Y-m', strtotime($socialInsuranceEnrollmentDate)) < $confirmationMonth) {
+877:        if ($medicalInsuranceEnrollmentDate && date('Y-m', strtotime($medicalInsuranceEnrollmentDate)) < $confirmationMonth) {
+880:        if ($providentFundEnrollmentDate && date('Y-m', strtotime($providentFundEnrollmentDate)) < $confirmationMonth) {
+884:        if ($personnel->large_medical_insurance_enabled && $largeMedicalEnrollmentDate && date('Y-m', strtotime($largeMedicalEnrollmentDate)) < $confirmationMonth) {
+895:        $earliestEnrollmentMonth = date('Y-m', strtotime($earliestEnrollmentDate));
+899:        $endDate = date('Y-m-01', strtotime($confirmationMonth . '-01 -1 month')); // 确认月份的前一个月
+901:        while (date('Y-m', strtotime($current)) <= date('Y-m', strtotime($endDate))) {
+902:            $currentPaymentPeriod = date('Y-m', strtotime($current));
+905:            $supplementaryDetail = $this->generateSupplementaryDetailWithEnrollmentDates(
+919:            $current = date('Y-m-01', strtotime($current . ' +1 month'));
+930:        if (!$personnel->employee) {
+935:        $socialEnrollmentMonth = $socialEnrollmentDate ? date('Y-m', strtotime($socialEnrollmentDate)) : null;
+936:        $medicalEnrollmentMonth = $medicalEnrollmentDate ? date('Y-m', strtotime($medicalEnrollmentDate)) : null;
+937:        $providentFundEnrollmentMonth = $providentFundEnrollmentDate ? date('Y-m', strtotime($providentFundEnrollmentDate)) : null;
+938:        $largeMedicalEnrollmentMonth = $largeMedicalEnrollmentDate ? date('Y-m', strtotime($largeMedicalEnrollmentDate)) : null;
+944:        $needLargeMedical = $personnel->large_medical_insurance_enabled && $largeMedicalEnrollmentMonth && $paymentPeriod >= $largeMedicalEnrollmentMonth;
+957:        if ($personnel->social_security_types) {
+959:                $socialSecurityTypes = json_decode($personnel->social_security_types, true) ?: [];
+965:        if ($personnel->medical_insurance_types) {
+967:                $medicalInsuranceTypes = json_decode($personnel->medical_insurance_types, true) ?: [];
+973:        if ($personnel->housing_fund_params) {
+975:                $housingFundConfig = json_decode($personnel->housing_fund_params, true) ?: [];
+981:        if ($personnel->large_medical_insurance_config) {
+983:                $largeMedicalConfig = json_decode($personnel->large_medical_insurance_config, true) ?: [];
+990:        $medicalBase = $personnel->employee_medical_insurance_base ?? 0;
+991:        $pensionBase = $personnel->employee_social_security_base ?? 0;
+992:        $housingFundBase = $personnel->employee_housing_fund_base ?? 0;
+993:        $largeMedicalBase = $personnel->employee_large_medical_base ?? 0;
+994:        $largeMedicalCompanyBase = $personnel->employee_large_medical_company_base ?? $largeMedicalBase;
+1059:            'id' => $personnel->id . '_' . str_replace('-', '', $paymentPeriod), // 生成唯一ID
+1060:            'employee_id' => $personnel->employee_id,
+1061:            'project_id' => $personnel->project_id,
+1062:            'account_set_id' => $personnel->account_set_id,
+1063:            'employee_name' => $personnel->employee_name,
+1064:            'employee_id_number' => $personnel->employee_id_number,
+1065:            'employee_gender' => $personnel->employee_gender,
+1066:            'employee_birth_date' => $personnel->employee_birth_date,
+1067:            'employee_phone' => $personnel->employee_phone,
+1068:            'employee_status' => $personnel->employee_status,
+1070:            'project_name' => $personnel->project ? $personnel->project->name : '',
+1071:            'other_insurance_policies' => $personnel->other_insurance_policies,
+1073:            'social_security_code' => $personnel->social_security_code,
+1074:            'medical_insurance_code' => $personnel->medical_insurance_code,
+1075:            'housing_fund_account_number' => $personnel->housing_fund_account_number,
+1093:                'social_security_types' => $personnel->social_security_types,
+1094:                'medical_insurance_types' => $personnel->medical_insurance_types,
+1095:                'housing_fund_params' => $personnel->housing_fund_params,
+1096:                'large_medical_insurance_config' => $personnel->large_medical_insurance_config
+1098:            'created_at' => $personnel->created_at,
+1099:            'last_updated_at' => $personnel->last_updated_at,
+1100:            'employee' => $personnel->employee,
+1101:            'project' => $personnel->project,
+1117:        if (!$change->employee) {
+1122:        $socialSecurityTypes = $change->getCurrentSocialSecurityConfig();
+1123:        $medicalInsuranceTypes = $change->getCurrentMedicalInsuranceConfig();
+1124:        $housingFundConfig = $change->getCurrentHousingFundConfig();
+1125:        $largeMedicalConfig = $change->getCurrentLargeMedicalInsuranceConfig();
+1129:        $housingFundConfigId = $change->housing_fund_config_id ?: ($change->employee ? $change->employee->housing_fund_config_id : null);
+1135:        $originalMedicalBase = $change->employee_medical_insurance_base ?? 0;
+1136:        $originalPensionBase = $change->employee_social_security_base ?? 0;
+1137:        $originalHousingFundBase = $change->employee_housing_fund_base ?? 0;
+1138:        $originalLargeMedicalBase = $change->employee_large_medical_base ?? 0;
+1139:        $originalLargeMedicalCompanyBase = $change->employee_large_medical_company_base ?? $originalLargeMedicalBase;
+1144:        if ($change->social_security_region_id) {
+1145:            $socialRegion = \App\Models\SocialSecurityRegion::find($change->social_security_region_id);
+1147:        $pensionBase = $this->applyBaseLimits(
+1149:            $socialRegion ? $socialRegion->min_base_amount : null,
+1150:            $socialRegion ? $socialRegion->max_base_amount : null
+1155:        if ($change->medical_insurance_region_id) {
+1156:            $medicalRegion = \App\Models\MedicalInsuranceRegion::find($change->medical_insurance_region_id);
+1158:        $medicalBase = $this->applyBaseLimits(
+1160:            $medicalRegion ? $medicalRegion->min_base_amount : null,
+1161:            $medicalRegion ? $medicalRegion->max_base_amount : null
+1167:            $housingFundBase = $this->applyBaseLimits(
+1169:                $housingFundConfigModel->min_base_amount,
+1170:                $housingFundConfigModel->max_base_amount
+1177:        if ($change->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
+1216:        if ($largeMedicalConfig && $change->large_medical_insurance_enabled) {
+1228:        $employeeType = $this->determineEmployeeType($change);
+1232:            'id' => $change->id,
+1233:            'employee_id' => $change->employee_id,
+1234:            'project_id' => $change->project_id,
+1235:            'account_set_id' => $change->account_set_id,
+1236:            'employee_name' => $change->employee_name,
+1237:            'employee_id_number' => $change->employee_id_number,
+1238:            'employee_gender' => $change->employee_gender,
+1239:            'employee_birth_date' => $change->employee_birth_date,
+1240:            'employee_phone' => $change->employee_phone,
+1241:            'employee_status' => $change->employee_status,
+1243:            'project_name' => $change->project ? $change->project->name : '',
+1256:            'created_at' => $change->created_at,
+1257:            'employee' => $change->employee,
+1258:            'project' => $change->project
+1270:        $createdAt = $personnel->created_at;
+1273:        $lastUpdatedAt = $personnel->last_updated_at;
+1281:        $createdMonth = date('n', strtotime($createdAt)); // 获取月份（1-12）
+1300:        $createdAt = $change->created_at;
+1303:        $completedAt = $change->completed_at;
+1311:        $createdMonth = date('n', strtotime($createdAt)); // 获取月份（1-12）
+1329:        $user = $request->user();
+1330:        $accountSetId = $request->input('account_set_id');
+1331:        $regionName = $request->input('region_name');
+1334:        if ($user && $user->role !== 'admin') {
+1335:            $hasAccess = $user->accountSets()->where('account_set_id', $accountSetId)->exists();
+1337:                return response()->json([
+1348:            $query->where('region_name', $regionName);
+1351:        $summaries = $query->orderBy('region_name')->orderBy('insurance_type')->get();
+1353:        return response()->json([
+1367:            'has_files' => $request->hasFile('attachments'),
+1368:            'files_count' => $request->hasFile('attachments') ? count($request->file('attachments')) : 0,
+1372:        $validator = Validator::make($request->all(), [
+1381:                    $extension = strtolower($value->getClientOriginalExtension());
+1390:        if ($validator->fails()) {
+1392:                'errors' => $validator->errors()->toArray()
+1394:            return response()->json([
+1397:                'errors' => $validator->errors()
+1406:        // 上传所有文件到 public/insurance-attachments 目录
+1407:        $files = $request->file('attachments');
+1409:        $user = $request->user();
+1412:            $path = $file->store('insurance-attachments', 'public');
+1418:                'original_name' => $file->getClientOriginalName(),
+1419:                'file_size' => $file->getSize(),
+1420:                'file_type' => $file->getClientOriginalExtension(),
+1421:                'uploaded_by' => $user ? $user->id : null,
+1428:                'attachment_id' => $attachment->id,
+1430:                'original_name' => $file->getClientOriginalName()
+1435:        $change->update([
+1441:        // $change->clearChangeFlag();
+1443:        return response()->json([
+1448:                'change' => $change->fresh()->load('attachments')
+1462:            $filePath = storage_path('app/public/' . $attachment->file_path);
+1468:            $attachment->delete();
+1472:                'file_path' => $attachment->file_path
+1475:            return response()->json([
+1482:                'error' => $e->getMessage()
+1485:            return response()->json([
+1487:                'message' => '删除附件失败：' . $e->getMessage()
+1498:        $user = $request->user();
+1502:            return response()->json([
+1509:        if ($user && $user->role !== 'admin') {
+1510:            $hasAccess = $user->accountSets()->where('account_set_id', $change->account_set_id)->exists();
+1512:                return response()->json([
+1521:            $change->update([
+1523:                'processed_by' => $user->id,
+1529:            $this->generateDetails($change);
+1532:        return response()->json([
+1535:            'data' => $change->fresh()
+1546:            $user = $request->user();
+1548:            // 完全移除权限检查 - 允许所有操作
+1550:            // 检查状态 - 允许待处理状态和已提交状态
+1551:            if (!in_array($change->status, ['pending', 'submitted'])) {
+1552:                return response()->json([
+1559:            if (!$change->attachments || $change->attachments->count() === 0) {
+1560:                return response()->json([
+1577:                if ($user && $user->id) {
+1578:                    $updateData['processed_by'] = $user->id;
+1581:                $change->update($updateData);
+1585:                // $change->checkAndRecordChanges(true);
+1589:                $this->generateOrUpdateDetails($change);
+1592:                $this->setLargeMedicalPaymentStartTime($change);
+1595:                // $this->autoCreateSurrenderRequestsFromChange($change, $user);
+1598:            return response()->json([
+1601:                'data' => $change->fresh()
+1607:                'error' => $e->getMessage(),
+1608:                'trace' => $e->getTraceAsString()
+1611:            return response()->json([
+1613:                'message' => '处理失败：' . $e->getMessage()
+1622:     * - 仅 change_type = decrease
+1623:     * - other_insurance_policies 中提取保单ID（字段可能为JSON字符串或数组）
+1624:     * - 每个保单生成一条退保单（如已存在未完成退保单，则跳过）
+1629:            'change_id' => $change->id,
+1630:            'change_type' => $change->change_type,
+1631:            'employee_id' => $change->employee_id,
+1632:            'employee_name' => $change->employee_name
+1635:        if ($change->change_type !== 'decrease') {
+1636:            \Log::info('不是减少类型，跳过', ['change_type' => $change->change_type]);
+1640:        $raw = $change->other_insurance_policies;
+1666:            ->map(function ($p) {
+1668:                if (is_object($p)) return $p->id ?? null;
+1671:            ->filter()
+1672:            ->unique()
+1673:            ->values()
+1674:            ->all();
+1687:            $policy = OtherInsurancePolicy::with('type')->find($policyId);
+1694:            $insuranceTypeName = $policy->type ? $policy->type->name : null;
+1697:                'policy_id' => $policy->id,
+1698:                'policy_name' => $policy->policy_name,
+1699:                'type_id' => $policy->type_id,
+1715:            $exists = InsuranceSurrenderRequest::where('account_set_id', $change->account_set_id)
+1716:                ->where('policy_id', $policyId)
+1717:                ->where('employee_id', $change->employee_id)
+1718:                ->whereIn('status', ['pending_business', 'business_done'])
+1719:                ->exists();
+1723:                    'employee_id' => $change->employee_id
+1729:                'account_set_id' => $change->account_set_id,
+1731:                'employee_id' => $change->employee_id,
+1732:                'project_id' => $change->project_id
+1736:                'account_set_id' => $change->account_set_id,
+1738:                'employee_id' => $change->employee_id,
+1739:                'project_id' => $change->project_id,
+1740:                'insurance_change_id' => $change->id,
+1742:                'initiated_by' => $user && $user->id ? $user->id : null,
+1758:            $user = $request->user();
+1761:            if ($change->fully_confirmed) {
+1762:                return response()->json([
+1769:            if (!in_array($change->status, ['pending', 'submitted', 'completed'])) {
+1770:                return response()->json([
+1778:                $personnel = $this->syncOtherInsuranceOnly($change);
+1787:                $change->update(['other_insurance_processed' => 1]);
+1790:                    'insurance_change_id' => $change->id,
+1791:                    'employee_name' => $change->employee_name,
+1792:                    'processed_by' => $user ? $user->id : null
+1796:            return response()->json([
+1799:                'data' => $change->fresh()
+1805:                'error' => $e->getMessage(),
+1806:                'trace' => $e->getTraceAsString()
+1809:            return response()->json([
+1811:                'message' => '处理失败：' . $e->getMessage()
+1827:                'insurance_change_id' => $change->id,
+1828:                'employee_name' => $change->employee_name,
+1829:                'change_type' => $change->change_type
+1835:        $otherInsurancePolicies = $change->other_insurance_policies;
+1838:            $personnel->other_insurance_policies = $otherInsurancePolicies;
+1839:            $personnel->save();
+1842:                'insurance_personnel_id' => $personnel->id,
+1843:                'employee_name' => $change->employee_name,
+1859:            $validator = Validator::make($request->all(), [
+1864:            if ($validator->fails()) {
+1865:                return response()->json([
+1868:                    'errors' => $validator->errors()
+1873:                'change_id' => $change->id,
+1874:                'insurance_id' => $request->insurance_id,
+1875:                'employee_per_capita_cost' => $request->employee_per_capita_cost,
+1876:                'other_insurance_policies' => $change->other_insurance_policies
+1881:            // $policy = \App\Models\OtherInsurancePolicy::find($request->insurance_id);
+1884:            //     return response()->json([
+1891:            // $policy->update([
+1892:            //     'employee_per_capita_cost' => $request->employee_per_capita_cost
+1896:            //     'policy_id' => $policy->id,
+1897:            //     'new_cost' => $request->employee_per_capita_cost
+1900:            return response()->json([
+1904:                    'change' => $change->fresh()
+1908:            \Log::error('更新其他保险费用失败: ' . $e->getMessage(), [
+1909:                'trace' => $e->getTraceAsString()
+1911:            return response()->json([
+1913:                'message' => '更新失败: ' . $e->getMessage()
+1926:            $validator = Validator::make($request->all(), [
+1931:            if ($validator->fails()) {
+1932:                return response()->json([
+1935:                    'errors' => $validator->errors()
+1940:                'change_id' => $change->id,
+1941:                'insurance_id' => $request->insurance_id,
+1942:                'endorsement_number' => $request->endorsement_number
+1946:            $policy = \App\Models\OtherInsurancePolicy::find($request->insurance_id);
+1949:                return response()->json([
+1956:            $policy->update([
+1957:                'endorsement_number' => $request->endorsement_number
+1961:            $change->saveCompleteInsuranceConfig();
+1964:                'policy_id' => $policy->id,
+1965:                'new_endorsement_number' => $request->endorsement_number
+1968:            return response()->json([
+1972:                    'change' => $change->fresh()
+1976:            \Log::error('更新批单号失败: ' . $e->getMessage(), [
+1977:                'trace' => $e->getTraceAsString()
+1979:            return response()->json([
+1981:                'message' => '更新失败: ' . $e->getMessage()
+1994:            $validator = Validator::make($request->all(), [
+1999:            if ($validator->fails()) {
+2000:                return response()->json([
+2003:                    'errors' => $validator->errors()
+2008:                'change_id' => $change->id,
+2009:                'insurance_id' => $request->insurance_id,
+2010:                'employee_per_capita_cost' => $request->employee_per_capita_cost
+2014:            $otherInsuranceConfig = $change->other_insurance_config;
+2017:                    if (isset($insurance['id']) && $insurance['id'] == $request->insurance_id) {
+2018:                        $insurance['employee_per_capita_cost'] = $request->employee_per_capita_cost;
+2022:                $change->other_insurance_config = $otherInsuranceConfig;
+2023:                $change->save();
+2027:                'change_id' => $change->id,
+2028:                'insurance_id' => $request->insurance_id,
+2029:                'new_cost' => $request->employee_per_capita_cost
+2032:            return response()->json([
+2037:            \Log::error('更新员工人均参保费用失败: ' . $e->getMessage(), [
+2038:                'trace' => $e->getTraceAsString()
+2040:            return response()->json([
+2042:                'message' => '更新失败: ' . $e->getMessage()
+2057:            $validator = Validator::make($request->all(), [
+2061:            if ($validator->fails()) {
+2062:                return response()->json([
+2065:                    'errors' => $validator->errors()
+2070:            $policy = \App\Models\OtherInsurancePolicy::findOrFail($request->insurance_id);
+2073:            if (!$policy->quota || $policy->quota <= 0) {
+2074:                return response()->json([
+2081:            $usedQuotas = $change->used_quotas ? json_decode($change->used_quotas, true) : [];
+2082:            if (in_array($request->insurance_id, $usedQuotas)) {
+2083:                return response()->json([
+2090:            $policy->decrement('quota', 1);
+2093:            $usedQuotas[] = $request->insurance_id;
+2094:            $change->update([
+2101:                'insurance_change_id' => $change->id,
+2102:                'insurance_id' => $request->insurance_id,
+2103:                'remaining_quota' => $policy->quota
+2106:            return response()->json([
+2110:                    'change' => $change->fresh(),
+2111:                    'remaining_quota' => $policy->quota
+2116:            \Log::error('使用名额失败: ' . $e->getMessage());
+2117:            return response()->json([
+2119:                'message' => '使用名额失败: ' . $e->getMessage()
+2133:            $validator = Validator::make($request->all(), [
+2137:            if ($validator->fails()) {
+2138:                return response()->json([
+2141:                    'errors' => $validator->errors()
+2146:            $change->large_medical_insurance_enabled = $request->is_enabled;
+2147:            $change->save();
+2152:                'insurance_change_id' => $change->id,
+2153:                'employee_id' => $change->employee_id,
+2154:                'is_enabled' => $request->is_enabled
+2157:            return response()->json([
+2159:                'message' => $request->is_enabled ? '启用成功' : '停用成功',
+2161:                    'change' => $change->fresh()
+2166:            \Log::error('切换大额医疗保险状态失败: ' . $e->getMessage());
+2167:            return response()->json([
+2169:                'message' => '操作失败: ' . $e->getMessage()
+2179:        $validator = Validator::make($request->all(), [
+2185:        if ($validator->fails()) {
+2186:            return response()->json([
+2189:                'errors' => $validator->errors()
+2193:        $user = $request->user();
+2194:        $accountSetId = $request->input('account_set_id');
+2195:        $regionName = $request->input('region_name');
+2196:        $summaryDate = $request->input('summary_date');
+2198:        // 简化权限检查 - 只要用户存在就允许操作
+2203:            $query->where('region_name', $regionName);
+2205:        $query->delete();
+2210:        return response()->json([
+2223:        if ($response = $this->checkPermission('insurance_change.export')) {
+2227:        $validator = Validator::make($request->all(), [
+2232:        if ($validator->fails()) {
+2233:            return response()->json([
+2236:                'errors' => $validator->errors()
+2240:        $user = $request->user();
+2241:        $accountSetId = $request->input('account_set_id');
+2242:        $regionName = $request->input('region_name');
+2247:            $query->where('region_name', $regionName);
+2249:        $summaries = $query->orderBy('region_name')->orderBy('insurance_type')->get();
+2252:        $filename = '参保汇总表_' . ($regionName ?: '全部') . '_' . now()->format('Y-m-d') . '.xlsx';
+2261:        return response()->json([
+2274:        $validator = Validator::make($request->all(), [
+2280:        if ($validator->fails()) {
+2281:            return response()->json([
+2284:                'errors' => $validator->errors()
+2288:        $employee = Employee::findOrFail($request->employee_id);
+2289:        $project = Project::findOrFail($request->project_id);
+2292:        $existing = InsuranceChange::where('employee_id', $employee->id)
+2293:            ->where('project_id', $project->id)
+2294:            ->where('account_set_id', $request->account_set_id)
+2295:            ->first();
+2298:            return response()->json([
+2306:            'employee_id' => $employee->id,
+2307:            'project_id' => $project->id,
+2308:            'account_set_id' => $request->account_set_id,
+2309:            'social_security_region_id' => $employee->social_security_region_id,
+2310:            'medical_insurance_region_id' => $employee->medical_insurance_region_id,
+2311:            'housing_fund_id' => $employee->housing_fund_region_id,
+2314:            'created_by' => $request->user()->id
+2318:        $this->generateInsuranceParams($change, $project);
+2320:        return response()->json([
+2323:            'data' => $change->load(['employee', 'project'])
+2335:        if ($change->social_security_region_id) {
+2336:            $region = SocialSecurityRegion::with('socialSecurityTypes')->find($change->social_security_region_id);
+2338:                $params['social_security_types'] = $region->socialSecurityTypes->map(function($type) {
+2340:                        'id' => $type->id,
+2341:                        'name' => $type->name,
+2342:                        'base_amount' => $type->base_amount,
+2343:                        'employee_ratio' => (float)$type->employee_ratio,  // 确保转换为float
+2344:                        'company_ratio' => (float)$type->company_ratio      // 确保转换为float
+2346:                })->toArray();
+2351:        if ($change->medical_insurance_region_id) {
+2352:            $region = MedicalInsuranceRegion::with('medicalInsuranceTypes')->find($change->medical_insurance_region_id);
+2354:                $params['medical_insurance_types'] = $region->medicalInsuranceTypes->map(function($type) {
+2356:                        'id' => $type->id,
+2357:                        'name' => $type->name,
+2358:                        'base_amount' => $type->base_amount,
+2359:                        'employee_ratio' => (float)$type->employee_ratio,  // 确保转换为float
+2360:                        'company_ratio' => (float)$type->company_ratio      // 确保转换为float
+2362:                })->toArray();
+2367:        if ($change->housing_fund_id) {
+2368:            $fund = HousingFund::find($change->housing_fund_id);
+2371:                    'id' => $fund->id,
+2372:                    'region_name' => $fund->region_name,
+2373:                    'base_amount' => $fund->base_amount,
+2374:                    'employee_ratio' => $fund->employee_ratio,
+2375:                    'company_ratio' => $fund->company_ratio
+2381:        $otherPolicies = $project->otherInsurancePolicies()->with('type')->get();
+2382:        if ($otherPolicies->isNotEmpty()) {
+2383:            $params['other_insurance_policies'] = $otherPolicies->map(function($policy) {
+2385:                    'id' => $policy->id,
+2386:                    'type_name' => $policy->type->name,
+2387:                    'policy_name' => $policy->name,
+2388:                    'coverage_amount' => $policy->coverage_amount,
+2389:                    'premium_amount' => $policy->premium_amount
+2391:            })->toArray();
+2394:        $change->update($params);
+2403:        $socialSecurityTypes = $change->getCurrentSocialSecurityConfig();
+2404:        $medicalInsuranceTypes = $change->getCurrentMedicalInsuranceConfig();
+2405:        $housingFundConfig = $change->getCurrentHousingFundConfig();
+2406:        $otherInsurancePolicies = $change->getCurrentOtherInsuranceConfig();
+2407:        $largeMedicalConfig = $change->getCurrentLargeMedicalInsuranceConfig();
+2410:        $medicalBase = $change->employee_medical_insurance_base ?? 0;
+2411:        $pensionBase = $change->employee_social_security_base ?? 0;
+2414:        $dynamicDetails = $this->buildDynamicInsuranceDetails(
+2418:            $change->large_medical_insurance_enabled,
+2424:        // 计算汇总金额 - 使用员工档案中的基数值
+2428:        // 社保费用 - 使用员工社保基数
+2435:        // 医保费用 - 使用员工医保基数
+2442:        // 大额医疗保险费用 - 使用员工档案中的基数值
+2443:        if ($largeMedicalConfig && $change->large_medical_insurance_enabled) {
+2444:            $largeMedicalBase = $change->employee_large_medical_base ?? 0;
+2445:            $largeMedicalCompanyBase = $change->employee_large_medical_company_base ?? $largeMedicalBase;
+2465:                $currentMonth = now()->month;
+2466:                $isFirstTime = $this->isFirstTimeLargeMedicalEnrollment($change->employee_id, $largeMedicalConfig['id']);
+2474:                    $firstEnrollmentMonth = $this->getFirstEnrollmentMonth($change->employee_id, $largeMedicalConfig['id']);
+2488:            'insurance_change_id' => $change->id,
+2489:            'employee_id' => $change->employee_id,
+2490:            'project_id' => $change->project_id,
+2491:            'account_set_id' => $change->account_set_id,
+2494:            'region_name' => $change->employee->socialSecurityRegion->name ?? '',
+2505:            'employee_medical_insurance_base' => $change->employee_medical_insurance_base,
+2506:            'employee_social_security_base' => $change->employee_social_security_base,
+2511:        $summaryDetail->save();
+2513:        // 如果有公积金配置，创建公积金汇总记录 - 使用员工档案中的公积金基数
+2515:            $housingFundBase = $change->employee_housing_fund_base ?? 0;
+2520:                'insurance_change_id' => $change->id,
+2521:                'employee_id' => $change->employee_id,
+2522:                'project_id' => $change->project_id,
+2523:                'account_set_id' => $change->account_set_id,
+2535:                'employee_housing_fund_base' => $change->employee_housing_fund_base, // 保存员工公积金基数
+2539:            $housingFundDetail->save();
+2552:                'insurance_change_id' => $change->id,
+2553:                'employee_id' => $change->employee_id,
+2554:                'project_id' => $change->project_id,
+2555:                'account_set_id' => $change->account_set_id,
+2570:            $otherInsuranceDetail->save();
+2585:        // 医保细分 - 使用员工医保基数
+2613:        // 社保细分 - 使用员工社保基数
+2641:        // 大额医疗保险 - 使用员工档案中的基数值
+2643:            $largeMedicalBase = $change->employee_large_medical_base ?? 0;
+2644:            $largeMedicalCompanyBase = $change->employee_large_medical_company_base ?? $largeMedicalBase;
+2667:                $currentMonth = now()->month;
+2668:                $isFirstTime = $this->isFirstTimeLargeMedicalEnrollment($change->employee_id, $largeMedicalConfig['id']);
+2676:                    $firstEnrollmentMonth = $this->getFirstEnrollmentMonth($change->employee_id, $largeMedicalConfig['id']);
+2714:        $otherInsurancePolicies = $change->getCurrentOtherInsuranceConfig();
+2729:        $currentMonth = now()->month;
+2734:                'insurance_change_id' => $change->id,
+2735:                'employee_id' => $change->employee_id,
+2736:                'project_id' => $change->project_id,
+2737:                'account_set_id' => $change->account_set_id,
+2756:            $isFirstTime = $this->isFirstTimeLargeMedicalEnrollment($change->employee_id, $config['id']);
+2761:                    'insurance_change_id' => $change->id,
+2762:                    'employee_id' => $change->employee_id,
+2763:                    'project_id' => $change->project_id,
+2764:                    'account_set_id' => $change->account_set_id,
+2782:                $this->recordFirstEnrollmentMonth($change->employee_id, $config['id'], $currentMonth);
+2786:                $firstEnrollmentMonth = $this->getFirstEnrollmentMonth($change->employee_id, $config['id']);
+2791:                        'insurance_change_id' => $change->id,
+2792:                        'employee_id' => $change->employee_id,
+2793:                        'project_id' => $change->project_id,
+2794:                        'account_set_id' => $change->account_set_id,
+2813:                        'insurance_change_id' => $change->id,
+2814:                        'employee_id' => $change->employee_id,
+2815:                        'project_id' => $change->project_id,
+2816:                        'account_set_id' => $change->account_set_id,
+2846:            ->where('insurance_type', '大额医疗保险')
+2847:            ->where('insurance_name', '大额医疗保险')
+2848:            ->where('payment_cycle', 'year')
+2849:            ->where('total_amount', '>', 0) // 只检查有实际金额的记录
+2850:            ->first();
+2876:            ->where('insurance_type', '大额医疗保险')
+2877:            ->where('insurance_name', '大额医疗保险')
+2878:            ->where('payment_cycle', 'year')
+2879:            ->where('total_amount', '>', 0) // 只检查有实际金额的记录
+2880:            ->orderBy('created_at', 'asc')
+2881:            ->first();
+2883:        return $firstDetail ? $firstDetail->payment_month : null;
+2893:            $personnel = $this->syncToInsurancePersonnel($change);
+2898:                    'insurance_change_id' => $change->id,
+2899:                    'employee_name' => $change->employee_name,
+2900:                    'change_type' => $change->change_type
+2912:                'insurance_change_id' => $change->id,
+2913:                'insurance_personnel_id' => $personnel->id,
+2914:                'detail_record_id' => $detailRecord->id,
+2917:                'employee_name' => $change->employee_name
+2923:                'insurance_change_id' => $change->id,
+2924:                'error' => $e->getMessage(),
+2925:                'trace' => $e->getTraceAsString()
+2944:                    'insurance_change_id' => $change->id,
+2945:                    'employee_name' => $change->employee_name,
+2946:                    'change_type' => $change->change_type
+2952:                'insurance_change_id' => $change->id,
+2953:                'insurance_personnel_id' => $personnel->id,
+2954:                'employee_name' => $change->employee_name,
+2955:                'project_id' => $change->project_id
+2961:                'insurance_change_id' => $change->id,
+2962:                'error' => $e->getMessage(),
+2963:                'trace' => $e->getTraceAsString()
+2980:            if (!$change->large_medical_insurance_enabled) {
+2985:            $personnel = \App\Models\InsurancePersonnel::where('employee_id', $change->employee_id)->first();
+2993:            if ($personnel->large_medical_payment_start_month && $personnel->large_medical_payment_start_year) {
+2996:                    'employee_id' => $change->employee_id,
+2997:                    'existing_start_month' => $personnel->large_medical_payment_start_month,
+2998:                    'existing_start_year' => $personnel->large_medical_payment_start_year
+3008:            $paymentCycleService->setPaymentStartTime($change->employee_id, $currentYear, $currentMonth);
+3011:                'employee_id' => $change->employee_id,
+3012:                'employee_name' => $change->employee_name,
+3019:                'change_id' => $change->id,
+3020:                'employee_id' => $change->employee_id,
+3021:                'error' => $e->getMessage()
+3029:    public function getSocialSecurityCompensation(Request $request)
+3032:            $accountSetId = $request->input('account_set_id');
+3035:                return response()->json([
+3043:                ->where('is_compensation', 1)
+3044:                ->whereNotNull('social_security_types')
+3045:                ->with(['employee', 'project'])
+3046:                ->orderBy('created_at', 'desc')
+3047:                ->get();
+3049:            return response()->json([
+3055:            \Log::error('获取社保补差明细失败', ['error' => $e->getMessage()]);
+3056:            return response()->json([
+3058:                'message' => '获取社保补差明细失败: ' . $e->getMessage()
+3069:            $accountSetId = $request->input('account_set_id');
+3072:                return response()->json([
+3080:                ->where('is_compensation', 1)
+3081:                ->whereNotNull('medical_insurance_types')
+3082:                ->with(['employee', 'project'])
+3083:                ->orderBy('created_at', 'desc')
+3084:                ->get();
+3086:            return response()->json([
+3092:            \Log::error('获取医保补差明细失败', ['error' => $e->getMessage()]);
+3093:            return response()->json([
+3095:                'message' => '获取医保补差明细失败: ' . $e->getMessage()
+3103:    public function getHousingFundCompensation(Request $request)
+3106:            $accountSetId = $request->input('account_set_id');
+3109:                return response()->json([
+3117:                ->where('is_compensation', 1)
+3118:                ->whereNotNull('housing_fund_params')
+3119:                ->with(['employee', 'project'])
+3120:                ->orderBy('created_at', 'desc')
+3121:                ->get();
+3123:            return response()->json([
+3129:            \Log::error('获取公积金补差明细失败', ['error' => $e->getMessage()]);
+3130:            return response()->json([
+3132:                'message' => '获取公积金补差明细失败: ' . $e->getMessage()
+3143:            $accountSetId = $request->input('account_set_id');
+3146:                return response()->json([
+3153:            \Artisan::call('base:process-compensation');
+3155:            return response()->json([
+3161:            \Log::error('触发补差计算失败', ['error' => $e->getMessage()]);
+3162:            return response()->json([
+3164:                'message' => '触发补差计算失败: ' . $e->getMessage()
+3234:                $startDate = \Carbon\Carbon::parse($latestPolicy->start_date);
+3235:                $endDate = \Carbon\Carbon::parse($latestPolicy->end_date);
+3238:                if ($currentDate->gte($startDate) && $currentDate->lte($endDate)) {
+3245:                        'current_date' => $currentDate->format('Y-m'),
+3246:                        'start_date' => $startDate->format('Y-m-d'),
+3247:                        'end_date' => $endDate->format('Y-m-d'),
+3253:                        'current_date' => $currentDate->format('Y-m'),
+3254:                        'start_date' => $startDate->format('Y-m-d'),
+3255:                        'end_date' => $endDate->format('Y-m-d'),
+3263:                'error' => $e->getMessage(),
+3264:                'trace' => $e->getTraceAsString()
+3276:        if ($response = $this->checkPermission('insurance_change.export')) {
+3280:        $request->validate([
+3288:            $template = \App\Models\ReportTemplate::findOrFail($request->template_id);
+3292:            $sheet = $spreadsheet->getActiveSheet();
+3296:            foreach ($template->fields as $field) {
+3297:                $sheet->setCellValue($col . '1', $field['label']);
+3299:                $sheet->getStyle($col . '1')->getFont()->setBold(true);
+3300:                $sheet->getStyle($col . '1')->getFill()
+3301:                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+3302:                    ->getStartColor()->setARGB('FFE0E0E0');
+3304:                $sheet->getColumnDimension($col)->setWidth($field['width'] / 7);
+3310:            foreach ($request->data as $dataRow) {
+3312:                foreach ($template->fields as $field) {
+3314:                    $sheet->setCellValue($col . $row, $value);
+3328:            $sheet->getStyle('A1:' . chr(64 + count($template->fields)) . ($row - 1))->applyFromArray($styleArray);
+3332:            $filename = $request->filename . '_' . date('YmdHis') . '.xlsx';
+3340:            $writer->save($tempFile);
+3343:            return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+3347:                'error' => $e->getMessage(),
+3348:                'trace' => $e->getTraceAsString()
+3351:            return response()->json([
+3353:                'message' => '导出失败：' . $e->getMessage()
+3365:            $validator = Validator::make($request->all(), [
+3371:            if ($validator->fails()) {
+3372:                return response()->json([
+3375:                    'errors' => $validator->errors()
+3379:            $taskIds = $request->input('task_ids');
+3380:            $accountSetId = $request->input('account_set_id');
+3381:            $month = $request->input('month'); // 可选的月份参数
+3385:            $files = $reportService->generateReportsForDownload($taskIds, $accountSetId, $month);
+3388:            return response()->json([
+3395:                'error' => $e->getMessage(),
+3396:                'trace' => $e->getTraceAsString(),
+3397:                'task_ids' => $request->input('task_ids')
+3404:                if (strpos($e->getMessage(), $error) !== false) {
+3410:            return response()->json([
+3412:                'message' => $e->getMessage()

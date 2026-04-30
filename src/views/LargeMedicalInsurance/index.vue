@@ -81,30 +81,12 @@
           </template>
         </el-table-column>
         <!-- 待生效配置列（仅特殊地区显示） -->
-        <el-table-column label="待生效配置" width="180">
-          <template #default="{ row }">
-            <template v-if="row.base_source === 'config'">
-              <template v-if="row.pending_changes && row.effective_date">
-                <el-tag type="warning" size="small">
-                  {{ formatDate(row.effective_date, 'date') }} 生效
-                </el-tag>
-                <el-button type="text" size="small" @click="showPendingDetail(row)">查看</el-button>
-              </template>
-              <template v-else>
-                <span style="color: #909399;">无</span>
-              </template>
-            </template>
-            <template v-else>
-              <span style="color: #c0c4cc;">--</span>
-            </template>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <!-- 仅特殊地区显示设置生效和历史按钮 -->
             <template v-if="row.base_source === 'config'">
-              <el-button type="warning" size="small" @click="showPendingDialog(row)">设置生效</el-button>
               <el-button type="info" size="small" @click="showConfigHistory(row)">历史</el-button>
             </template>
             <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -188,70 +170,7 @@
       </template>
     </el-dialog>
 
-    <!-- 设置待生效配置对话框 -->
-    <el-dialog v-model="pendingDialogVisible" title="设置待生效配置" width="650px">
-      <el-alert type="info" :closable="false" style="margin-bottom: 20px;">
-        <template #title>
-          当前配置将保持不变，新配置将在指定日期自动生效
-        </template>
-      </el-alert>
-      
-      <el-form :model="pendingForm" :rules="pendingRules" ref="pendingFormRef" label-width="120px">
-        <el-form-item label="生效日期" prop="effective_date">
-          <el-date-picker v-model="pendingForm.effective_date" type="date" placeholder="选择生效日期" 
-            value-format="YYYY-MM-DD" :disabled-date="disabledDate" style="width: 100%" />
-        </el-form-item>
-        
-        <el-divider content-position="left">当前基数 → 新基数</el-divider>
-        
-        <el-form-item label="公司基数">
-          <el-col :span="10">
-            <el-input :value="'¥' + (currentEditRow?.base_amount || 0)" disabled />
-          </el-col>
-          <el-col :span="4" style="text-align: center;">→</el-col>
-          <el-col :span="10">
-            <el-input-number v-model="pendingForm.changes.base_amount" :min="0" :precision="2" :step="100" style="width: 100%" />
-          </el-col>
-        </el-form-item>
-        <el-form-item label="个人基数">
-          <el-col :span="10">
-            <el-input :value="'¥' + (currentEditRow?.employee_base_amount || 0)" disabled />
-          </el-col>
-          <el-col :span="4" style="text-align: center;">→</el-col>
-          <el-col :span="10">
-            <el-input-number v-model="pendingForm.changes.employee_base_amount" :min="0" :precision="2" :step="100" style="width: 100%" />
-          </el-col>
-        </el-form-item>
-      </el-form>
 
-      <template #footer>
-        <el-button v-if="currentEditRow?.pending_changes" type="danger" @click="cancelPendingChanges">取消待生效</el-button>
-        <el-button @click="pendingDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="submitPendingChanges" :loading="submitting">保存待生效配置</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 待生效配置详情对话框 -->
-    <el-dialog v-model="pendingDetailVisible" title="待生效配置详情" width="500px">
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="生效日期">
-          <el-tag type="warning">{{ formatDate(currentEditRow?.effective_date, 'date') }}</el-tag>
-        </el-descriptions-item>
-        <template v-if="currentEditRow?.pending_changes">
-          <el-descriptions-item label="公司基数">
-            ¥{{ currentEditRow.base_amount || 0 }} → ¥{{ currentEditRow.pending_changes.base_amount || currentEditRow.base_amount || 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="个人基数">
-            ¥{{ currentEditRow.employee_base_amount || 0 }} → ¥{{ currentEditRow.pending_changes.employee_base_amount || currentEditRow.employee_base_amount || 0 }}
-          </el-descriptions-item>
-        </template>
-      </el-descriptions>
-      <template #footer>
-        <el-button type="danger" @click="cancelPendingChanges">取消待生效</el-button>
-        <el-button type="success" @click="applyNow">立即生效</el-button>
-        <el-button @click="pendingDetailVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 历史记录对话框 -->
     <el-dialog v-model="historyDialogVisible" :title="historyTitle" width="900px">
@@ -328,21 +247,7 @@ const submitting = ref(false)
 const isEdit = ref(false)
 const editingId = ref(null)
 const formRef = ref()
-const currentEditRow = ref(null)
 
-// 待生效配置相关
-const pendingDialogVisible = ref(false)
-const pendingDetailVisible = ref(false)
-const pendingFormRef = ref()
-const pendingForm = ref({
-  effective_date: '',
-  changes: { base_amount: 0, employee_base_amount: 0 }
-})
-const pendingRules = {
-  effective_date: [{ required: true, message: '请选择生效日期', trigger: 'change' }]
-}
-
-// 历史记录相关
 const historyDialogVisible = ref(false)
 const historyLoading = ref(false)
 const histories = ref([])
@@ -369,9 +274,6 @@ const formRules = {
 const dialogTitle = computed(() => isEdit.value ? '编辑大额医疗保险配置' : '新建大额医疗保险配置')
 
 // 禁用今天之前的日期（允许选择今天）
-const disabledDate = (time) => time.getTime() < new Date().setHours(0, 0, 0, 0)
-
-// 格式化日期
 const formatDate = (date, type = 'datetime') => {
   if (!date) return '--'
   const d = new Date(date)
@@ -481,75 +383,6 @@ watch(() => formData.value.calculation_type, (newVal) => {
   formData.value.payment_cycle = newVal === 'base' ? 'month' : 'year'
 })
 
-// 显示设置待生效配置对话框
-const showPendingDialog = (row) => {
-  currentEditRow.value = row
-  pendingForm.value = {
-    effective_date: row.effective_date || '',
-    changes: row.pending_changes ? { ...row.pending_changes } : {
-      base_amount: row.base_amount || 0,
-      employee_base_amount: row.employee_base_amount || 0
-    }
-  }
-  pendingDialogVisible.value = true
-}
-
-// 显示待生效配置详情
-const showPendingDetail = (row) => {
-  currentEditRow.value = row
-  pendingDetailVisible.value = true
-}
-
-// 提交待生效配置
-const submitPendingChanges = async () => {
-  if (!pendingFormRef.value) return
-  try {
-    await pendingFormRef.value.validate()
-    submitting.value = true
-    const response = await request.post(`/large-medical-insurance/${currentEditRow.value.id}/pending-changes`, {
-      effective_date: pendingForm.value.effective_date,
-      changes: pendingForm.value.changes
-    })
-    if (response.success) {
-      ElMessage.success('待生效配置设置成功')
-      pendingDialogVisible.value = false; loadConfigs()
-    }
-  } catch (error) {
-    ElMessage.error(error.response?.data?.message || '设置失败')
-  } finally {
-    submitting.value = false
-  }
-}
-
-// 取消待生效配置
-const cancelPendingChanges = async () => {
-  try {
-    await ElMessageBox.confirm('确定要取消待生效配置吗？', '确认取消', { type: 'warning' })
-    const response = await request.delete(`/large-medical-insurance/${currentEditRow.value.id}/pending-changes`)
-    if (response.success) {
-      ElMessage.success('已取消待生效配置')
-      pendingDialogVisible.value = false; pendingDetailVisible.value = false; loadConfigs()
-    }
-  } catch (error) {
-    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '取消失败')
-  }
-}
-
-// 立即生效
-const applyNow = async () => {
-  try {
-    await ElMessageBox.confirm('确定要立即应用待生效配置吗？', '确认立即生效', { type: 'warning' })
-    const response = await request.post(`/large-medical-insurance/${currentEditRow.value.id}/apply-now`)
-    if (response.success) {
-      ElMessage.success('配置已立即生效')
-      pendingDetailVisible.value = false; loadConfigs()
-    }
-  } catch (error) {
-    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '操作失败')
-  }
-}
-
-// 显示单个配置的历史记录（仅特殊地区）
 const showConfigHistory = (row) => {
   historyTitle.value = `${row.region_name} - 历史记录`
   historyConfigId.value = row.id

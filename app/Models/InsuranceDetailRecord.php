@@ -490,7 +490,20 @@ class InsuranceDetailRecord extends Model
                 $isPaymentMonth = true;
                 if ($paymentCycle === 'year' || $paymentCycle === 'yearly') {
                     // 按年付款：需要检查是否为支付月份
-                    $personnel = \App\Models\InsurancePersonnel::where('employee_id', $this->employee_id)->first();
+                    $personnelQuery = \App\Models\InsurancePersonnel::where('employee_id', $this->employee_id)
+                        ->where(function ($q) {
+                            $q->whereNull('is_compensation')->orWhere('is_compensation', 0);
+                        });
+
+                    if (!empty($this->project_id)) {
+                        $personnelQuery->where('project_id', $this->project_id);
+                    }
+
+                    if (!empty($this->account_set_id)) {
+                        $personnelQuery->where('account_set_id', $this->account_set_id);
+                    }
+
+                    $personnel = $personnelQuery->orderByDesc('updated_at')->orderByDesc('id')->first();
                     if ($personnel && $personnel->large_medical_payment_start_month && $personnel->large_medical_payment_start_year) {
                         // 检查月份是否匹配
                         if ($this->record_month != $personnel->large_medical_payment_start_month) {

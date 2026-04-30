@@ -141,31 +141,40 @@ class InsurancePersonnel extends Model
      */
     public static function getOrCreateFromInsuranceChange($change)
     {
-        // 如果是减少记录，直接删除参保人员记录
+        $matchedRecords = self::buildCurrentPersonnelQueryFromChange($change)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get();
+
+        // decrease: remove all matching current records
         if ($change->change_type === 'decrease') {
-            $personnel = self::where('employee_id', $change->employee_id)
-                ->where('project_id', $change->project_id)
-                ->where('account_set_id', $change->account_set_id)
-                ->first();
-            
-            if ($personnel) {
+            foreach ($matchedRecords as $record) {
                 \Log::info('删除参保人员记录', [
-                    'personnel_id' => $personnel->id,
+                    'personnel_id' => $record->id,
                     'employee_id' => $change->employee_id,
                     'employee_name' => $change->employee_name,
                     'employee_status' => $change->employee_status
                 ]);
-                $personnel->delete();
+                $record->delete();
             }
-            
+
             return null;
         }
-        
-        // 查找是否已存在相同的参保人员记录
-        $personnel = self::where('employee_id', $change->employee_id)
-            ->where('project_id', $change->project_id)
-            ->where('account_set_id', $change->account_set_id)
-            ->first();
+
+        $personnel = $matchedRecords->first();
+        $duplicateIds = $matchedRecords->skip(1)->pluck('id')->values()->all();
+
+        if (!empty($duplicateIds)) {
+            \Log::warning('参保人员记录存在重复，已清理', [
+                'employee_id' => $change->employee_id,
+                'project_id' => $change->project_id,
+                'account_set_id' => $change->account_set_id,
+                'kept_id' => $personnel ? $personnel->id : null,
+                'deleted_ids' => $duplicateIds
+            ]);
+
+            self::whereIn('id', $duplicateIds)->delete();
+        }
 
         // 获取员工信息（带地区关联）
         $employee = $change->employee()->with([
@@ -175,14 +184,14 @@ class InsurancePersonnel extends Model
         ])->first();
 
         // 从员工的地区信息中获取编号和账号
-        $socialSecurityCode = $employee && $employee->socialSecurityRegion 
-            ? $employee->socialSecurityRegion->code 
+        $socialSecurityCode = $employee && $employee->socialSecurityRegion
+            ? $employee->socialSecurityRegion->code
             : null;
-        $medicalInsuranceCode = $employee && $employee->medicalInsuranceRegion 
-            ? $employee->medicalInsuranceRegion->code 
+        $medicalInsuranceCode = $employee && $employee->medicalInsuranceRegion
+            ? $employee->medicalInsuranceRegion->code
             : null;
-        $housingFundAccountNumber = $employee && $employee->housingFundRegion 
-            ? $employee->housingFundRegion->account_number 
+        $housingFundAccountNumber = $employee && $employee->housingFundRegion
+            ? $employee->housingFundRegion->account_number
             : null;
 
         // 应用上下限约束到基数
@@ -224,10 +233,11 @@ class InsurancePersonnel extends Model
                 'large_medical_insurance_config' => $change->large_medical_insurance_config,
                 'used_quotas' => $change->used_quotas,
                 'status' => 'active',
+                'is_compensation' => 0,
                 // first_confirmation_date 不更新，保持首次确认日期不变
                 'last_updated_at' => now(),
             ]);
-            
+
             // 如果启用了大额医疗保险且之前没有设置支付起始月份，设置支付起始月份
             if ($change->large_medical_insurance_enabled && $change->large_medical_insurance_config_id) {
                 if (!$personnel->large_medical_payment_start_month || !$personnel->large_medical_payment_start_year) {
@@ -267,10 +277,11 @@ class InsurancePersonnel extends Model
                 'large_medical_insurance_config' => $change->large_medical_insurance_config,
                 'used_quotas' => $change->used_quotas,
                 'status' => 'active',
+                'is_compensation' => 0,
                 'first_confirmation_date' => $change->first_confirmation_date ?? now()->toDateString(),
                 'last_updated_at' => now(),
             ]);
-            
+
             // 如果启用了大额医疗保险，设置支付起始月份
             if ($change->large_medical_insurance_enabled && $change->large_medical_insurance_config_id) {
                 self::setLargeMedicalPaymentStartTime($personnel, $change);
@@ -281,10 +292,23 @@ class InsurancePersonnel extends Model
     }
 
     /**
-     * 设置大额医疗保险支付起始月份
-     * 
-     * @param InsurancePersonnel $personnel 参保人员记录
-     * @param \App\Models\InsuranceChange $change 保险变更记录
+     * Build current personnel query by employee + project + account set.
+     */
+    private static function buildCurrentPersonnelQueryFromChange($change)
+    {
+        return self::where('employee_id', $change->employee_id)
+            ->where('project_id', $change->project_id)
+            ->where('account_set_id', $change->account_set_id)
+            ->where(function ($query) {
+                $query->whereNull('is_compensation')->orWhere('is_compensation', 0);
+            });
+    }
+
+    /**
+     * Set large medical payment start month for yearly cycle.
+     *
+     * @param InsurancePersonnel $personnel
+     * @param \App\Models\InsuranceChange $change
      */
     private static function setLargeMedicalPaymentStartTime($personnel, $change)
     {

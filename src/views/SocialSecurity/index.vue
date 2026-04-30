@@ -35,6 +35,12 @@
         <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="地区名称" width="200" />
         <el-table-column prop="code" label="社保编号" width="180" />
+        <el-table-column label="进行中上下限" width="230">
+          <template #default="{ row }">
+            ¥{{ Number(row.current_limits?.min_base_amount ?? row.min_base_amount ?? 0).toFixed(2) }} -
+            ¥{{ Number(row.current_limits?.max_base_amount ?? row.max_base_amount ?? 0).toFixed(2) }}
+          </template>
+        </el-table-column>
         <el-table-column label="待生效上下限" width="230">
           <template #default="{ row }">
             <span v-if="row.pending_limits">
@@ -155,6 +161,10 @@
             placeholder="请选择上下限生效日期"
             style="width: 100%"
           />
+          <div class="form-tip" v-if="editingRegion?.pending_limits">
+            当前待生效：¥{{ Number(editingRegion.pending_limits.min_base_amount || 0).toFixed(2) }} -
+            ¥{{ Number(editingRegion.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ editingRegion.pending_limits.effective_date }}
+          </div>
           <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
         </el-form-item>
       </el-form>
@@ -295,6 +305,12 @@
             <el-table-column type="selection" width="55" />
             <el-table-column prop="name" label="地区名称" width="200" />
             <el-table-column prop="code" label="医保编号" width="180" />
+            <el-table-column label="进行中上下限" width="230">
+              <template #default="{ row }">
+                ¥{{ Number(row.current_limits?.min_base_amount ?? row.min_base_amount ?? 0).toFixed(2) }} -
+                ¥{{ Number(row.current_limits?.max_base_amount ?? row.max_base_amount ?? 0).toFixed(2) }}
+              </template>
+            </el-table-column>
             <el-table-column label="待生效上下限" width="230">
               <template #default="{ row }">
                 <span v-if="row.pending_limits">
@@ -407,6 +423,10 @@
                 placeholder="请选择上下限生效日期"
                 style="width: 100%"
               />
+              <div class="form-tip" v-if="editingMedicalRegion?.pending_limits">
+                当前待生效：¥{{ Number(editingMedicalRegion.pending_limits.min_base_amount || 0).toFixed(2) }} -
+                ¥{{ Number(editingMedicalRegion.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ editingMedicalRegion.pending_limits.effective_date }}
+              </div>
               <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
             </el-form-item>
           </el-form>
@@ -1088,9 +1108,9 @@ const editRegion = async (region) => {
       name: latestRegion.name,
       code: latestRegion.code || '',
       company: latestRegion.company || '',
-      min_base_amount: latestRegion.pending_limits?.min_base_amount ?? latestRegion.min_base_amount ?? null,
-      max_base_amount: latestRegion.pending_limits?.max_base_amount ?? latestRegion.max_base_amount ?? null,
-      limit_effective_date: latestRegion.pending_limits?.effective_date || ''
+      min_base_amount: null,
+      max_base_amount: null,
+      limit_effective_date: ''
     }
     showCreateDialog.value = true
   } catch (error) {
@@ -1384,9 +1404,9 @@ const editMedicalRegion = async (region) => {
       name: latestRegion.name,
       code: latestRegion.code || '',
       company: latestRegion.company || '',
-      min_base_amount: latestRegion.pending_limits?.min_base_amount ?? latestRegion.min_base_amount ?? null,
-      max_base_amount: latestRegion.pending_limits?.max_base_amount ?? latestRegion.max_base_amount ?? null,
-      limit_effective_date: latestRegion.pending_limits?.effective_date || ''
+      min_base_amount: null,
+      max_base_amount: null,
+      limit_effective_date: ''
     }
     showCreateMedicalDialog.value = true
   } catch (error) {

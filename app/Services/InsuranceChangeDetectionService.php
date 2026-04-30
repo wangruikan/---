@@ -10,59 +10,102 @@ use Illuminate\Support\Facades\Log;
 
 class InsuranceChangeDetectionService
 {
+    public const SCOPE_AFFECTED = 'affected';
+    public const SCOPE_EMPLOYEE = 'employee';
+
     /**
      * 检测保险信息变更并自动导入到增减模块
      */
     public function detectAndImport($changeType, $oldData, $newData, $regionId = null)
     {
-        try {
-            Log::info('开始检测保险信息变更', [
-                'change_type' => $changeType,
-                'region_id' => $regionId,
-                'old_data' => $oldData,
-                'new_data' => $newData
-            ]);
+        return $this->triggerChange([
+            'scope' => self::SCOPE_AFFECTED,
+            'change_type' => $changeType,
+            'old_data' => $oldData,
+            'new_data' => $newData,
+            'region_id' => $regionId,
+            'source' => 'config_change',
+        ]);
+    }
 
-            // 获取受影响的员工列表
+    /**
+     * 统一触发参保增减变更任务
+     */
+    public function triggerChange(array $event)
+    {
+        try {
+            $scope = $event['scope'] ?? self::SCOPE_AFFECTED;
+            $changeType = $event['change_type'] ?? null;
+            $oldData = $event['old_data'] ?? [];
+            $newData = $event['new_data'] ?? [];
+            $regionId = $event['region_id'] ?? null;
+            $projectId = $event['project_id'] ?? null;
+            $year = $event['year'] ?? date('Y');
+            $month = $event['month'] ?? date('n');
+
+            if (!$changeType) {
+                return [
+                    'success' => false,
+                    'message' => '变更类型不能为空',
+                    'imported_count' => 0,
+                ];
+            }
+
+            if ($scope === self::SCOPE_EMPLOYEE) {
+                $employee = $event['employee'] ?? null;
+                if (!$employee && !empty($event['employee_id'])) {
+                    $employee = Employee::with(['projects'])->find($event['employee_id']);
+                }
+
+                if (!$employee) {
+                    return [
+                        'success' => false,
+                        'message' => '员工不存在',
+                        'imported_count' => 0,
+                    ];
+                }
+
+                $record = $this->createOrUpdateInsuranceChange(
+                    $employee,
+                    $changeType,
+                    $year,
+                    $month,
+                    $oldData,
+                    $newData,
+                    ['project_id' => $projectId]
+                );
+
+                return [
+                    'success' => (bool) $record,
+                    'message' => $record ? '参保增减变更任务已生成' : '参保增减变更任务生成失败',
+                    'imported_count' => $record ? 1 : 0,
+                    'record' => $record,
+                ];
+            }
+
             $affectedEmployees = $this->getAffectedEmployees($changeType, $regionId);
-            
             if ($affectedEmployees->isEmpty()) {
-                Log::info('没有找到受影响的员工');
                 return [
                     'success' => true,
                     'message' => '保险信息已更新，但没有员工使用此配置',
-                    'imported_count' => 0
+                    'imported_count' => 0,
                 ];
             }
 
             $importedCount = 0;
-            $currentYear = date('Y');
-            $currentMonth = date('n');
-
             foreach ($affectedEmployees as $employee) {
-                try {
-                    // 检查是否需要导入
-                    $needImport = $this->checkNeedImport($employee, $currentYear, $currentMonth);
-                    
-                    if ($needImport) {
-                        // 创建或更新增减模块记录
-                        $insuranceChange = $this->createOrUpdateInsuranceChange($employee, $changeType, $currentYear, $currentMonth, $oldData, $newData);
-                        
-                        if ($insuranceChange) {
-                            $importedCount++;
-                            Log::info('成功导入员工到增减模块', [
-                                'employee_id' => $employee->id,
-                                'employee_name' => $employee->name,
-                                'insurance_change_id' => $insuranceChange->id
-                            ]);
-                        }
-                    }
-                } catch (\Exception $e) {
-                    Log::error('导入员工到增减模块失败', [
-                        'employee_id' => $employee->id,
-                        'employee_name' => $employee->name,
-                        'error' => $e->getMessage()
-                    ]);
+                $record = $this->createOrUpdateInsuranceChange(
+                    $employee,
+                    $changeType,
+                    $year,
+                    $month,
+                    $oldData,
+                    $newData,
+                    ['project_id' => $projectId]
+                );
+
+                if ($record) {
+                    $importedCount++;
                 }
             }
 
@@ -70,27 +113,23 @@ class InsuranceChangeDetectionService
                 'success' => true,
                 'message' => "保险信息已更新，已自动导入 {$importedCount} 名员工到增减模块",
                 'imported_count' => $importedCount,
-                'affected_employees' => $affectedEmployees->pluck('name')->toArray()
+                'affected_employees' => $affectedEmployees->pluck('name')->toArray(),
             ];
-
         } catch (\Exception $e) {
-            Log::error('检测保险信息变更失败', [
-                'change_type' => $changeType,
+            Log::error('统一触发参保增减变更失败', [
+                'event' => $event,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => '保险信息更新成功，但导入到增减模块失败：' . $e->getMessage(),
-                'imported_count' => 0
+                'message' => '生成参保增减变更任务失败：' . $e->getMessage(),
+                'imported_count' => 0,
             ];
         }
     }
 
-    /**
-     * 获取受影响的员工列表
-     */
     private function getAffectedEmployees($changeType, $regionId = null)
     {
         $query = Employee::with(['projects']);
@@ -141,6 +180,28 @@ class InsuranceChangeDetectionService
     /**
      * 检查是否需要导入到增减模块
      */
+    private function resolveProjectForEmployee($employee, $projectId = null)
+    {
+        if ($projectId) {
+            return Project::find($projectId);
+        }
+
+        try {
+            $activeProject = $employee->activeProjects()->first();
+            if ($activeProject) {
+                return $activeProject;
+            }
+        } catch (\Throwable $e) {
+            // Some older call sites only load the projects relation.
+        }
+
+        if (!$employee->relationLoaded('projects')) {
+            $employee->load('projects');
+        }
+
+        return $employee->projects->first();
+    }
+
     private function checkNeedImport($employee, $year, $month)
     {
         // 检查是否有本月的增减模块记录（基于创建时间判断）
@@ -174,11 +235,11 @@ class InsuranceChangeDetectionService
     /**
      * 创建或更新增减模块记录
      */
-    public function createOrUpdateInsuranceChange($employee, $changeType, $year, $month, $oldData, $newData)
+    public function createOrUpdateInsuranceChange($employee, $changeType, $year, $month, $oldData, $newData, array $options = [])
     {
         try {
             // 获取员工的项目信息
-            $project = $employee->projects->first();
+            $project = $this->resolveProjectForEmployee($employee, $options['project_id'] ?? null);
             if (!$project) {
                 Log::warning('员工没有绑定项目，跳过导入', [
                     'employee_id' => $employee->id,
@@ -194,7 +255,9 @@ class InsuranceChangeDetectionService
             $existingRecord = InsuranceChange::where('employee_id', $employee->id)
                 ->where('project_id', $project->id)
                 ->where('account_set_id', $employee->account_set_id)
+                ->whereIn('status', ['pending', 'submitted'])
                 ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+                ->orderByDesc('id')
                 ->first();
 
             if ($existingRecord) {
@@ -364,7 +427,7 @@ class InsuranceChangeDetectionService
                     $mergedTypes = $existingTypes;
                     foreach ($currentTypes as $currentType) {
                         $exists = false;
-                        foreach ($mergedTypes as $existingType) {
+                        foreach ($mergedTypes as &$existingType) {
                             if ($existingType['id'] === $currentType['id']) {
                                 // 更新现有类型
                                 $existingType = $currentType;
@@ -372,6 +435,7 @@ class InsuranceChangeDetectionService
                                 break;
                             }
                         }
+                        unset($existingType);
                         if (!$exists) {
                             // 添加新类型
                             $mergedTypes[] = $currentType;
@@ -415,7 +479,7 @@ class InsuranceChangeDetectionService
                     $mergedTypes = $existingTypes;
                     foreach ($currentTypes as $currentType) {
                         $exists = false;
-                        foreach ($mergedTypes as $existingType) {
+                        foreach ($mergedTypes as &$existingType) {
                             if ($existingType['id'] === $currentType['id']) {
                                 // 更新现有类型
                                 $existingType = $currentType;
@@ -423,6 +487,7 @@ class InsuranceChangeDetectionService
                                 break;
                             }
                         }
+                        unset($existingType);
                         if (!$exists) {
                             // 添加新类型
                             $mergedTypes[] = $currentType;
@@ -650,12 +715,52 @@ class InsuranceChangeDetectionService
         return $details;
     }
 
+    private function addFieldChange(array &$changes, string $category, string $item, array $oldData, array $newData, string $key): void
+    {
+        if (!array_key_exists($key, $oldData) || !array_key_exists($key, $newData)) {
+            return;
+        }
+
+        if ($this->isSameChangeValue($oldData[$key], $newData[$key])) {
+            return;
+        }
+
+        $changes[] = [
+            'category' => $category,
+            'action' => 'modified',
+            'item' => $item,
+            'old_value' => $this->formatChangeValue($oldData[$key]),
+            'new_value' => $this->formatChangeValue($newData[$key]),
+        ];
+    }
+
+    private function isSameChangeValue($oldValue, $newValue): bool
+    {
+        if (($oldValue === null || $oldValue === '') && ($newValue === null || $newValue === '')) {
+            return true;
+        }
+
+        if (is_numeric($oldValue) || is_numeric($newValue)) {
+            return (float) $oldValue == (float) $newValue;
+        }
+
+        return $oldValue == $newValue;
+    }
+
+    private function formatChangeValue($value)
+    {
+        return ($value === null || $value === '') ? '无' : $value;
+    }
+
     /**
      * 分析社保配置变更
      */
     private function analyzeSocialSecurityChanges($oldData, $newData)
     {
         $changes = [];
+
+        $this->addFieldChange($changes, 'social_security', '社保地区', $oldData, $newData, 'region_id');
+        $this->addFieldChange($changes, 'social_security', '员工社保基数', $oldData, $newData, 'employee_social_security_base');
         
         // 检查是否是删除操作（oldData有数据，newData为空）
         if (!empty($oldData) && empty($newData)) {
@@ -844,6 +949,9 @@ class InsuranceChangeDetectionService
     private function analyzeMedicalInsuranceChanges($oldData, $newData)
     {
         $changes = [];
+
+        $this->addFieldChange($changes, 'medical_insurance', '医保地区', $oldData, $newData, 'region_id');
+        $this->addFieldChange($changes, 'medical_insurance', '员工医保基数', $oldData, $newData, 'employee_medical_insurance_base');
         
         Log::info('分析医保配置变更', [
             'oldData' => $oldData,
@@ -953,6 +1061,10 @@ class InsuranceChangeDetectionService
     private function analyzeHousingFundChanges($oldData, $newData)
     {
         $changes = [];
+
+        $this->addFieldChange($changes, 'housing_fund', '公积金地区', $oldData, $newData, 'region_id');
+        $this->addFieldChange($changes, 'housing_fund', '公积金配置', $oldData, $newData, 'config_id');
+        $this->addFieldChange($changes, 'housing_fund', '员工公积金基数', $oldData, $newData, 'employee_housing_fund_base');
         
         // 检查是否是删除操作（oldData有数据，newData为空）
         if (!empty($oldData) && empty($newData)) {
@@ -1032,6 +1144,9 @@ class InsuranceChangeDetectionService
     private function analyzeLargeMedicalInsuranceChanges($oldData, $newData)
     {
         $changes = [];
+
+        $this->addFieldChange($changes, 'large_medical_insurance', '员工大额医疗个人基数', $oldData, $newData, 'employee_large_medical_base');
+        $this->addFieldChange($changes, 'large_medical_insurance', '员工大额医疗公司基数', $oldData, $newData, 'employee_large_medical_company_base');
         
         // 检查是否是删除操作（oldData有数据，newData为空）
         if (!empty($oldData) && empty($newData)) {
@@ -1166,6 +1281,33 @@ class InsuranceChangeDetectionService
     private function analyzeOtherInsuranceChanges($oldData, $newData)
     {
         $changes = [];
+
+        if (array_key_exists('policies', $oldData) || array_key_exists('policies', $newData)) {
+            $removedPolicies = array_values(array_filter($oldData['policies'] ?? []));
+            $addedPolicies = array_values(array_filter($newData['policies'] ?? []));
+
+            if (!empty($addedPolicies)) {
+                $changes[] = [
+                    'category' => 'other_insurance',
+                    'action' => 'added',
+                    'item' => '项目其他保险保单(新增)',
+                    'old_value' => '无',
+                    'new_value' => '新增保单ID: ' . implode(',', $addedPolicies),
+                ];
+            }
+
+            if (!empty($removedPolicies)) {
+                $changes[] = [
+                    'category' => 'other_insurance',
+                    'action' => 'deleted',
+                    'item' => '项目其他保险保单(移除)',
+                    'old_value' => '移除保单ID: ' . implode(',', $removedPolicies),
+                    'new_value' => '无',
+                ];
+            }
+
+            return $changes;
+        }
         
         // 检查是否是删除操作（oldData有数据，newData为空）
         if (!empty($oldData) && empty($newData)) {

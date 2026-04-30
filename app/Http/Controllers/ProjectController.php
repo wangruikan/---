@@ -626,6 +626,7 @@ class ProjectController extends Controller
         $project->update([
             'social_security_regions' => $validRegions
         ]);
+        $this->logProjectInsuranceSelectionChange($project, 'social_security', $validRegions);
 
         return response()->json([
             'success' => true,
@@ -678,6 +679,7 @@ class ProjectController extends Controller
         $project->update([
             'housing_fund_regions' => $validRegions
         ]);
+        $this->logProjectInsuranceSelectionChange($project, 'housing_fund', $validRegions);
 
         return response()->json([
             'success' => true,
@@ -733,6 +735,7 @@ class ProjectController extends Controller
             $syncData[$regionId] = ['account_set_id' => $project->account_set_id];
         }
         $project->medicalInsuranceRegions()->sync($syncData);
+        $this->logProjectInsuranceSelectionChange($project, 'medical_insurance', $validRegions);
 
         return response()->json([
             'success' => true,
@@ -926,6 +929,7 @@ class ProjectController extends Controller
             $syncData[$configId] = ['account_set_id' => $project->account_set_id];
         }
         $project->largeMedicalInsuranceConfigs()->sync($syncData);
+        $this->logProjectInsuranceSelectionChange($project, 'large_medical_insurance', $configIds);
 
         return response()->json([
             'success' => true,
@@ -1145,50 +1149,17 @@ class ProjectController extends Controller
             }
             
             $detectionService = app(\App\Services\InsuranceChangeDetectionService::class);
-            $currentYear = date('Y');
-            $currentMonth = date('n');
             
             foreach ($employees as $employee) {
-                // 检查该员工本月是否已有待处理的增减记录
-                $existingChange = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                    ->where('project_id', $project->id)
-                    ->where('account_set_id', $project->account_set_id)
-                    ->where('status', 'pending')
-                    ->whereYear('created_at', $currentYear)
-                    ->whereMonth('created_at', $currentMonth)
-                    ->first();
-                
-                if ($existingChange) {
-                    \Log::info('员工本月已有待处理记录，更新其他保险配置', [
-                        'employee_id' => $employee->id,
-                        'insurance_change_id' => $existingChange->id
-                    ]);
-                    
-                    // 更新现有记录的其他保险配置
-                    $detectionService->createOrUpdateInsuranceChange(
-                        $employee,
-                        'other_insurance',
-                        $currentYear,
-                        $currentMonth,
-                        ['policies' => $removedPolicies],
-                        ['policies' => $addedPolicies]
-                    );
-                } else {
-                    \Log::info('为员工创建新的增减记录（项目保单变更）', [
-                        'employee_id' => $employee->id,
-                        'project_id' => $project->id
-                    ]);
-                    
-                    // 创建新的增减记录
-                    $detectionService->createOrUpdateInsuranceChange(
-                        $employee,
-                        'other_insurance',
-                        $currentYear,
-                        $currentMonth,
-                        ['policies' => $removedPolicies],
-                        ['policies' => $addedPolicies]
-                    );
-                }
+                $detectionService->triggerChange([
+                    'scope' => \App\Services\InsuranceChangeDetectionService::SCOPE_EMPLOYEE,
+                    'change_type' => 'other_insurance',
+                    'employee' => $employee,
+                    'project_id' => $project->id,
+                    'old_data' => ['policies' => array_values($removedPolicies)],
+                    'new_data' => ['policies' => array_values($addedPolicies)],
+                    'source' => 'project_other_insurance_policy_change',
+                ]);
             }
             
             \Log::info('项目其他保险保单变更处理完成', [
@@ -1210,6 +1181,20 @@ class ProjectController extends Controller
     /**
      * 获取可用的占位符字段列表
      */
+    /**
+     * 项目层面的四类保险配置只更新项目可选范围，不直接触发参保增减。
+     * 实际增减仍以员工档案或人员绑定中的具体员工变更为准。
+     */
+    private function logProjectInsuranceSelectionChange(Project $project, string $insuranceType, array $selectedIds): void
+    {
+        \Log::info('项目保险配置已更新（仅更新项目配置，不自动触发参保增减）', [
+            'project_id' => $project->id,
+            'project_name' => $project->name,
+            'insurance_type' => $insuranceType,
+            'selected_ids' => array_values($selectedIds),
+        ]);
+    }
+
     public function getAvailablePlaceholderFields()
     {
         return response()->json([

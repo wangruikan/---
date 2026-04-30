@@ -20,11 +20,11 @@ class LargeMedicalPaymentCycleService
      * @param int $month 月份
      * @return bool 是否为支付月份
      */
-    public function isPaymentMonth($employeeId, $year, $month)
+    public function isPaymentMonth($employeeId, $year, $month, $projectId = null, $accountSetId = null)
     {
         try {
             // 获取员工的大额医疗保险配置
-            $personnel = InsurancePersonnel::where('employee_id', $employeeId)->first();
+            $personnel = $this->findCurrentPersonnel($employeeId, $projectId, $accountSetId);
             
             if (!$personnel || !$personnel->large_medical_insurance_enabled) {
                 return false;
@@ -100,11 +100,11 @@ class LargeMedicalPaymentCycleService
      * @param int $month 月份
      * @return array 包含公司缴纳和员工缴纳金额
      */
-    public function calculateLargeMedicalAmount($employeeId, $year, $month)
+    public function calculateLargeMedicalAmount($employeeId, $year, $month, $projectId = null, $accountSetId = null)
     {
         try {
             // 获取员工的大额医疗保险配置
-            $personnel = InsurancePersonnel::where('employee_id', $employeeId)->first();
+            $personnel = $this->findCurrentPersonnel($employeeId, $projectId, $accountSetId);
             
             if (!$personnel || !$personnel->large_medical_insurance_enabled) {
                 return [
@@ -115,7 +115,7 @@ class LargeMedicalPaymentCycleService
             }
             
             // 判断是否为支付月份
-            if (!$this->isPaymentMonth($employeeId, $year, $month)) {
+            if (!$this->isPaymentMonth($employeeId, $year, $month, $projectId, $accountSetId)) {
                 return [
                     'company_amount' => 0.00,
                     'employee_amount' => 0.00,
@@ -171,10 +171,10 @@ class LargeMedicalPaymentCycleService
      * @param int $month 月份
      * @return bool 是否设置成功
      */
-    public function setPaymentStartTime($employeeId, $year, $month)
+    public function setPaymentStartTime($employeeId, $year, $month, $projectId = null, $accountSetId = null)
     {
         try {
-            $personnel = InsurancePersonnel::where('employee_id', $employeeId)->first();
+            $personnel = $this->findCurrentPersonnel($employeeId, $projectId, $accountSetId);
             
             if (!$personnel) {
                 return false;
@@ -214,10 +214,10 @@ class LargeMedicalPaymentCycleService
      * @param int $month 月份
      * @return bool 是否更新成功
      */
-    public function updatePaymentHistory($employeeId, $year, $month)
+    public function updatePaymentHistory($employeeId, $year, $month, $projectId = null, $accountSetId = null)
     {
         try {
-            $personnel = InsurancePersonnel::where('employee_id', $employeeId)->first();
+            $personnel = $this->findCurrentPersonnel($employeeId, $projectId, $accountSetId);
             
             if (!$personnel) {
                 return false;
@@ -247,10 +247,10 @@ class LargeMedicalPaymentCycleService
      * @param int $employeeId 员工ID
      * @return array 支付状态信息
      */
-    public function getPaymentStatus($employeeId)
+    public function getPaymentStatus($employeeId, $projectId = null, $accountSetId = null)
     {
         try {
-            $personnel = InsurancePersonnel::where('employee_id', $employeeId)->first();
+            $personnel = $this->findCurrentPersonnel($employeeId, $projectId, $accountSetId);
             
             if (!$personnel) {
                 return null;
@@ -287,10 +287,10 @@ class LargeMedicalPaymentCycleService
      * @param int $endYear 结束年份
      * @return array 支付月份列表
      */
-    public function generatePaymentMonths($employeeId, $startYear, $endYear)
+    public function generatePaymentMonths($employeeId, $startYear, $endYear, $projectId = null, $accountSetId = null)
     {
         try {
-            $personnel = InsurancePersonnel::where('employee_id', $employeeId)->first();
+            $personnel = $this->findCurrentPersonnel($employeeId, $projectId, $accountSetId);
             
             if (!$personnel || !$personnel->large_medical_insurance_enabled) {
                 return [];
@@ -341,5 +341,30 @@ class LargeMedicalPaymentCycleService
             ]);
             return [];
         }
+    }
+
+    /**
+     * Resolve current personnel row.
+     * If project/account set is provided, use composite key and exclude compensation rows.
+     */
+    private function findCurrentPersonnel($employeeId, $projectId = null, $accountSetId = null)
+    {
+        $query = InsurancePersonnel::where('employee_id', $employeeId);
+
+        if ($projectId !== null) {
+            $query->where('project_id', $projectId);
+        }
+
+        if ($accountSetId !== null) {
+            $query->where('account_set_id', $accountSetId);
+        }
+
+        if ($projectId !== null || $accountSetId !== null) {
+            $query->where(function ($q) {
+                $q->whereNull('is_compensation')->orWhere('is_compensation', 0);
+            });
+        }
+
+        return $query->orderByDesc('updated_at')->orderByDesc('id')->first();
     }
 }

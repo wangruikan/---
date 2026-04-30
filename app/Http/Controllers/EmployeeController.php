@@ -678,10 +678,19 @@ class EmployeeController extends ApiController
             }
         }
         
-        // 检测保险地区变更
-        $this->detectInsuranceRegionChanges($employee, $updateData);
-        
         // 记录项目变更前后的对比（单活跃项目）
+        $originalInsuranceData = $employee->only([
+            'social_security_region_id',
+            'medical_insurance_region_id',
+            'housing_fund_region_id',
+            'housing_fund_config_id',
+            'large_medical_insurance_config_id',
+            'social_security_base',
+            'medical_insurance_base',
+            'housing_fund_base',
+            'large_medical_base',
+            'large_medical_company_base',
+        ]);
         $oldActiveProjectId = $employee->activeProjects()->pluck('projects.id')->first();
         $newProjectId = null;
         if ($request->has('project_ids') && is_array($request->project_ids)) {
@@ -759,6 +768,10 @@ class EmployeeController extends ApiController
                     ]);
                 }
             }
+
+            $employee->refresh();
+            $employee->load('projects');
+            $this->detectInsuranceRegionChanges($employee, $originalInsuranceData, $updateData);
             
             \Log::info('员工数据更新成功', [
                 'employee_id' => $id,
@@ -1535,97 +1548,53 @@ class EmployeeController extends ApiController
     }
 
     /**
-     * 检测员工保险地区变更，自动创建增减记录
+     * 检测员工保险配置/基数变更，自动创建增减记录
      */
-    private function detectInsuranceRegionChanges($employee, $updateData)
+    private function detectInsuranceRegionChanges($employee, array $originalData, array $updateData)
     {
         try {
             $detectionService = app(\App\Services\InsuranceChangeDetectionService::class);
-            $currentYear = date('Y');
-            $currentMonth = date('n');
-            
-            // 检测社保地区变更
-            if (isset($updateData['social_security_region_id']) && 
-                $updateData['social_security_region_id'] != $employee->social_security_region_id) {
-                
-                \Log::info('检测到员工社保地区变更', [
+
+            $fieldMap = [
+                'social_security_region_id' => ['change_type' => 'social_security', 'payload_key' => 'region_id'],
+                'social_security_base' => ['change_type' => 'social_security', 'payload_key' => 'employee_social_security_base'],
+                'medical_insurance_region_id' => ['change_type' => 'medical_insurance', 'payload_key' => 'region_id'],
+                'medical_insurance_base' => ['change_type' => 'medical_insurance', 'payload_key' => 'employee_medical_insurance_base'],
+                'housing_fund_region_id' => ['change_type' => 'housing_fund', 'payload_key' => 'region_id'],
+                'housing_fund_config_id' => ['change_type' => 'housing_fund', 'payload_key' => 'config_id'],
+                'housing_fund_base' => ['change_type' => 'housing_fund', 'payload_key' => 'employee_housing_fund_base'],
+                'large_medical_insurance_config_id' => ['change_type' => 'large_medical_insurance', 'payload_key' => 'config_id'],
+                'large_medical_base' => ['change_type' => 'large_medical_insurance', 'payload_key' => 'employee_large_medical_base'],
+                'large_medical_company_base' => ['change_type' => 'large_medical_insurance', 'payload_key' => 'employee_large_medical_company_base'],
+            ];
+
+            foreach ($fieldMap as $field => $config) {
+                if (!array_key_exists($field, $updateData)) {
+                    continue;
+                }
+
+                $oldValue = $originalData[$field] ?? null;
+                $newValue = $employee->{$field};
+                if ($this->isSameInsuranceChangeValue($oldValue, $newValue)) {
+                    continue;
+                }
+
+                \Log::info('检测到员工保险信息变更', [
                     'employee_id' => $employee->id,
                     'employee_name' => $employee->name,
-                    'old_region_id' => $employee->social_security_region_id,
-                    'new_region_id' => $updateData['social_security_region_id']
+                    'field' => $field,
+                    'old_value' => $oldValue,
+                    'new_value' => $newValue,
                 ]);
-                
-                $detectionService->createOrUpdateInsuranceChange(
-                    $employee,
-                    'social_security',
-                    $currentYear,
-                    $currentMonth,
-                    ['region_id' => $employee->social_security_region_id],
-                    ['region_id' => $updateData['social_security_region_id']]
-                );
-            }
-            
-            // 检测医保地区变更
-            if (isset($updateData['medical_insurance_region_id']) && 
-                $updateData['medical_insurance_region_id'] != $employee->medical_insurance_region_id) {
-                
-                \Log::info('检测到员工医保地区变更', [
-                    'employee_id' => $employee->id,
-                    'employee_name' => $employee->name,
-                    'old_region_id' => $employee->medical_insurance_region_id,
-                    'new_region_id' => $updateData['medical_insurance_region_id']
+
+                $detectionService->triggerChange([
+                    'scope' => \App\Services\InsuranceChangeDetectionService::SCOPE_EMPLOYEE,
+                    'change_type' => $config['change_type'],
+                    'employee' => $employee,
+                    'old_data' => [$config['payload_key'] => $oldValue],
+                    'new_data' => [$config['payload_key'] => $newValue],
+                    'source' => 'employee_insurance_profile_change',
                 ]);
-                
-                $detectionService->createOrUpdateInsuranceChange(
-                    $employee,
-                    'medical_insurance',
-                    $currentYear,
-                    $currentMonth,
-                    ['region_id' => $employee->medical_insurance_region_id],
-                    ['region_id' => $updateData['medical_insurance_region_id']]
-                );
-            }
-            
-            // 检测公积金地区变更
-            if (isset($updateData['housing_fund_region_id']) && 
-                $updateData['housing_fund_region_id'] != $employee->housing_fund_region_id) {
-                
-                \Log::info('检测到员工公积金地区变更', [
-                    'employee_id' => $employee->id,
-                    'employee_name' => $employee->name,
-                    'old_region_id' => $employee->housing_fund_region_id,
-                    'new_region_id' => $updateData['housing_fund_region_id']
-                ]);
-                
-                $detectionService->createOrUpdateInsuranceChange(
-                    $employee,
-                    'housing_fund',
-                    $currentYear,
-                    $currentMonth,
-                    ['region_id' => $employee->housing_fund_region_id],
-                    ['region_id' => $updateData['housing_fund_region_id']]
-                );
-            }
-            
-            // 检测大额医疗保险配置变更
-            if (isset($updateData['large_medical_insurance_config_id']) && 
-                $updateData['large_medical_insurance_config_id'] != $employee->large_medical_insurance_config_id) {
-                
-                \Log::info('检测到员工大额医疗保险配置变更', [
-                    'employee_id' => $employee->id,
-                    'employee_name' => $employee->name,
-                    'old_config_id' => $employee->large_medical_insurance_config_id,
-                    'new_config_id' => $updateData['large_medical_insurance_config_id']
-                ]);
-                
-                $detectionService->createOrUpdateInsuranceChange(
-                    $employee,
-                    'large_medical_insurance',
-                    $currentYear,
-                    $currentMonth,
-                    ['config_id' => $employee->large_medical_insurance_config_id],
-                    ['config_id' => $updateData['large_medical_insurance_config_id']]
-                );
             }
             
         } catch (\Exception $e) {
@@ -1636,6 +1605,19 @@ class EmployeeController extends ApiController
                 'trace' => $e->getTraceAsString()
             ]);
         }
+    }
+
+    private function isSameInsuranceChangeValue($oldValue, $newValue): bool
+    {
+        if (($oldValue === null || $oldValue === '') && ($newValue === null || $newValue === '')) {
+            return true;
+        }
+
+        if (is_numeric($oldValue) || is_numeric($newValue)) {
+            return (float) $oldValue == (float) $newValue;
+        }
+
+        return $oldValue == $newValue;
     }
 
     /**

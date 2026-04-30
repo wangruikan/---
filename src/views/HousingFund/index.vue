@@ -108,6 +108,12 @@
             ¥{{ row.max_base_amount || '-' }}
           </template>
         </el-table-column>
+        <el-table-column label="进行中上下限" width="220">
+          <template #default="{ row }">
+            {{ Number(row.current_limits?.min_base_amount ?? row.min_base_amount ?? 0).toFixed(2) }} -
+            {{ Number(row.current_limits?.max_base_amount ?? row.max_base_amount ?? 0).toFixed(2) }}
+          </template>
+        </el-table-column>
         <el-table-column label="待生效上下限" width="220">
           <template #default="{ row }">
             <span v-if="row.pending_limits">
@@ -213,6 +219,10 @@
             placeholder="请选择上下限生效日期"
             style="width: 100%"
           />
+          <div class="form-tip" v-if="editingConfig?.pending_limits">
+            当前待生效：¥{{ Number(editingConfig.pending_limits.min_base_amount || 0).toFixed(2) }} -
+            ¥{{ Number(editingConfig.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ editingConfig.pending_limits.effective_date }}
+          </div>
           <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
         </el-form-item>
         <el-form-item label="员工缴纳比例" prop="employee_ratio">
@@ -265,6 +275,7 @@
             {{ row.max_base_amount === null || row.max_base_amount === undefined ? '-' : `¥${Number(row.max_base_amount).toFixed(2)}` }}
           </template>
         </el-table-column>
+        
       </el-table>
     </el-dialog>
 
@@ -821,9 +832,9 @@ const editConfig = (config) => {
   editingConfig.value = config
   Object.assign(configForm, {
     config_name: config.config_name,
-    min_base_amount: config.pending_limits?.min_base_amount ?? config.min_base_amount,
-    max_base_amount: config.pending_limits?.max_base_amount ?? config.max_base_amount,
-    limit_effective_date: config.pending_limits?.effective_date || '',
+    min_base_amount: null,
+    max_base_amount: null,
+    limit_effective_date: '',
     employee_ratio: decimalToPercent(config.employee_ratio),
     company_ratio: decimalToPercent(config.company_ratio)
   })

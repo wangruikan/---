@@ -476,6 +476,7 @@ export default {
 			const types = {
 				labor: '劳动合同',
 				termination: '解除协议合同',
+				confidentiality: '保密协议',
 				retirement: '退休解除协议合同',
 				other: '其他合同'
 			}

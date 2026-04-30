@@ -83,6 +83,7 @@ class Salary extends Model
         'cumulative_other_taxable',   // 累计其他应纳税项（合并扣税）
         'tax_payable_or_refundable',  // 应补（退）税额
         'employee_signature',         // 本人签字
+        'import_extra_columns',       // 导入工资模板的动态列（TEXT保存JSON字符串）
         'deductions',
         'net_salary',
         'paid_salary',
@@ -120,6 +121,7 @@ class Salary extends Model
         'taxable_income' => 'decimal:2',
         'cumulative_other_taxable' => 'decimal:2',
         'tax_payable_or_refundable' => 'decimal:2',
+        'import_extra_columns' => 'array',
         'deductions' => 'decimal:2',
         'net_salary' => 'decimal:2',
         'paid_salary' => 'decimal:2',

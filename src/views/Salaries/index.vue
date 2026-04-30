@@ -563,6 +563,21 @@
           </div>
 
           <!-- 员工工资明细 -->
+          <div
+            v-if="importExtraColumns.length > 0"
+            class="import-extra-toolbar"
+          >
+            <el-tag type="info" effect="plain">
+              导入动态列 {{ importExtraColumns.length }} 项
+            </el-tag>
+            <el-button
+              link
+              type="primary"
+              @click="toggleImportExtraColumns"
+            >
+              {{ importExtraColumnsCollapsed ? '展开导入列' : '折叠导入列' }}
+            </el-button>
+          </div>
           <el-table
             :data="salaryDetails"
             border
@@ -599,6 +614,13 @@
                 <span style="color: #F56C6C; font-weight: bold;">{{ formatMoney(row.cumulative_special_deduction_insurance) }}</span>
               </template>
             </el-table-column>
+            <template v-for="column in visibleImportExtraColumns" :key="'import-extra-' + column.key">
+              <el-table-column :label="column.label" min-width="130" align="right">
+                <template #default="{ row }">
+                  {{ getImportExtraColumnValue(row, column.key) }}
+                </template>
+              </el-table-column>
+            </template>
             <!-- (X月)单位部分 - 大标题 -->
             <el-table-column :label="getCurrentMonthLabel()" align="center">
               <!-- 动态生成社保险种列 - 只显示金额 -->
@@ -1021,6 +1043,7 @@ const detailDialogVisible = ref(false)
 const currentSheet = ref(null)
 const salaryDetails = ref([])
 const detailLoading = ref(false)
+const importExtraColumnsCollapsed = ref(false)
 
 // 备注事项弹窗
 const remarksDialogVisible = ref(false)
@@ -1187,6 +1210,38 @@ const getSpecialDeductionTotal = (row) => {
   }
   
   return formatMoney(row.special_deduction_details.total || 0)
+}
+
+const getImportExtraColumns = (details) => {
+  const columns = new Map()
+  ;(details || []).forEach(row => {
+    ;(row.import_extra_columns || []).forEach(column => {
+      if (column && column.key && !columns.has(column.key)) {
+        columns.set(column.key, {
+          key: column.key,
+          label: column.label || column.short_label || column.key
+        })
+      }
+    })
+  })
+
+  return Array.from(columns.values())
+}
+
+const importExtraColumns = computed(() => getImportExtraColumns(salaryDetails.value))
+
+const visibleImportExtraColumns = computed(() => {
+  return importExtraColumnsCollapsed.value ? [] : importExtraColumns.value
+})
+
+const toggleImportExtraColumns = () => {
+  importExtraColumnsCollapsed.value = !importExtraColumnsCollapsed.value
+}
+
+const getImportExtraColumnValue = (row, key) => {
+  const column = (row.import_extra_columns || []).find(item => item.key === key)
+  const value = column ? column.value : ''
+  return value === null || value === undefined || value === '' ? '-' : value
 }
 
 // 获取所有险种类型（从所有员工的保险明细中提取）
@@ -1512,6 +1567,7 @@ const handleGrossSalaryFileChange = async (file) => {
 // 加载工资明细
 const loadSalaryDetails = async (row) => {
   detailLoading.value = true
+  importExtraColumnsCollapsed.value = false
   try {
     const response = await getSalaryDetails({
       project_id: row.project_id,
@@ -2125,6 +2181,14 @@ onMounted(() => {
 .detail-content {
   max-height: 70vh;
   overflow-y: auto;
+}
+
+.import-extra-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 /* 对话框标题样式 */

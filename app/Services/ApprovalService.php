@@ -2300,95 +2300,119 @@ class ApprovalService
                 'social_security_base' => $employee->social_security_base,
                 'medical_insurance_base' => $employee->medical_insurance_base,
                 'housing_fund_base' => $employee->housing_fund_base,
-                'large_medical_base' => $employee->large_medical_base
+                'large_medical_base' => $employee->large_medical_base,
+                'large_medical_company_base' => $employee->large_medical_company_base,
             ]);
-            
-            // 检查员工是否有填写基数
-            $hasSocialBase = !empty($employee->social_security_base) && $employee->social_security_base > 0;
-            $hasMedicalBase = !empty($employee->medical_insurance_base) && $employee->medical_insurance_base > 0;
-            $hasHousingBase = !empty($employee->housing_fund_base) && $employee->housing_fund_base > 0;
-            $hasLargeMedicalBase = !empty($employee->large_medical_base) && $employee->large_medical_base > 0;
-            
-            // 如果没有任何基数，不创建记录
-            if (!$hasSocialBase && !$hasMedicalBase && !$hasHousingBase && !$hasLargeMedicalBase) {
-                Log::info('员工未填写任何基数，跳过创建基数调差记录', [
-                    'employee_id' => $employee->id
-                ]);
-                return;
-            }
-            
-            // 检查是否已存在待生效的调整记录
-            $existingAdjustment = \App\Models\BaseAdjustment::where('employee_id', $employee->id)
-                ->where('status', 'pending')
-                ->first();
-            
-            if ($existingAdjustment) {
-                Log::info('员工已存在待生效的基数调差记录，跳过创建', [
-                    'employee_id' => $employee->id,
-                    'existing_adjustment_id' => $existingAdjustment->id
-                ]);
-                return;
-            }
-            
-            // 创建基数调差记录
-            // 旧基数设为0（因为是新员工），新基数为员工创建时填写的基数
-            // 生效日期设为当前日期（直接生效）
-            $createData = [
-                'employee_id' => $employee->id,
-                'account_set_id' => $accountSetId,
-                'status' => 'applied', // 直接生效（已应用）
-                'adjustment_reason' => '劳动合同审批通过，自动导入员工基数',
-                'created_by' => $createdBy,
-                'applied_at' => now() // 记录生效时间
-            ];
-            
-            // 当前日期作为生效日期
+
             $effectiveDate = now()->format('Y-m-d');
-            
-            // 添加社保基数
-            if ($hasSocialBase) {
-                $createData['old_social_security_base'] = 0; // 新员工旧基数为0
-                $createData['new_social_security_base'] = $employee->social_security_base;
-                $createData['social_security_effective_date'] = $effectiveDate;
+            $projectId = null;
+            if (method_exists($employee, 'projects')) {
+                $projectId = optional($employee->projects()->first())->id;
             }
-            
-            // 添加医保基数
-            if ($hasMedicalBase) {
-                $createData['old_medical_insurance_base'] = 0;
-                $createData['new_medical_insurance_base'] = $employee->medical_insurance_base;
-                $createData['medical_insurance_effective_date'] = $effectiveDate;
+
+            $definitions = [
+                \App\Models\BaseAdjustment::TYPE_SOCIAL_SECURITY => [
+                    'enabled' => !empty($employee->social_security_base) && $employee->social_security_base > 0,
+                    'payload' => [
+                        'old_social_security_base' => 0,
+                        'new_social_security_base' => $employee->social_security_base,
+                        'social_security_effective_date' => $effectiveDate,
+                        'effective_date' => $effectiveDate,
+                    ],
+                ],
+                \App\Models\BaseAdjustment::TYPE_MEDICAL_INSURANCE => [
+                    'enabled' => !empty($employee->medical_insurance_base) && $employee->medical_insurance_base > 0,
+                    'payload' => [
+                        'old_medical_insurance_base' => 0,
+                        'new_medical_insurance_base' => $employee->medical_insurance_base,
+                        'medical_insurance_effective_date' => $effectiveDate,
+                        'effective_date' => $effectiveDate,
+                    ],
+                ],
+                \App\Models\BaseAdjustment::TYPE_HOUSING_FUND => [
+                    'enabled' => !empty($employee->housing_fund_base) && $employee->housing_fund_base > 0,
+                    'payload' => [
+                        'old_housing_fund_base' => 0,
+                        'new_housing_fund_base' => $employee->housing_fund_base,
+                        'housing_fund_effective_date' => $effectiveDate,
+                        'effective_date' => $effectiveDate,
+                    ],
+                ],
+                \App\Models\BaseAdjustment::TYPE_LARGE_MEDICAL => [
+                    'enabled' => (!empty($employee->large_medical_base) && $employee->large_medical_base > 0)
+                        || (!empty($employee->large_medical_company_base) && $employee->large_medical_company_base > 0),
+                    'payload' => [
+                        'old_large_medical_base' => 0,
+                        'new_large_medical_base' => $employee->large_medical_base ?: null,
+                        'old_large_medical_company_base' => 0,
+                        'new_large_medical_company_base' => $employee->large_medical_company_base ?: null,
+                        'large_medical_effective_date' => $effectiveDate,
+                        'effective_date' => $effectiveDate,
+                    ],
+                ],
+            ];
+
+            $createdRecords = [];
+
+            foreach ($definitions as $type => $definition) {
+                if (!$definition['enabled']) {
+                    continue;
+                }
+
+                $existingPending = \App\Models\BaseAdjustment::pending()
+                    ->where('employee_id', $employee->id)
+                    ->where('account_set_id', $accountSetId)
+                    ->get()
+                    ->first(function (\App\Models\BaseAdjustment $record) use ($type) {
+                        return $record->hasType($type);
+                    });
+
+                if ($existingPending) {
+                    Log::info('员工已存在待生效的基数调差记录，跳过自动创建当前险种', [
+                        'employee_id' => $employee->id,
+                        'adjustment_type' => $type,
+                        'existing_adjustment_id' => $existingPending->id,
+                    ]);
+                    continue;
+                }
+
+                $record = \App\Models\BaseAdjustment::create(array_merge(
+                    \App\Models\BaseAdjustment::emptyTypePayload(),
+                    [
+                        'employee_id' => $employee->id,
+                        'project_id' => $projectId,
+                        'account_set_id' => $accountSetId,
+                        'status' => 'applied',
+                        'adjustment_reason' => '劳动合同审批通过，自动导入员工基数',
+                        'created_by' => $createdBy,
+                        'applied_at' => now(),
+                    ],
+                    $definition['payload']
+                ));
+
+                $createdRecords[] = [
+                    'adjustment_id' => $record->id,
+                    'adjustment_type' => $type,
+                ];
             }
-            
-            // 添加公积金基数
-            if ($hasHousingBase) {
-                $createData['old_housing_fund_base'] = 0;
-                $createData['new_housing_fund_base'] = $employee->housing_fund_base;
-                $createData['housing_fund_effective_date'] = $effectiveDate;
+
+            if (empty($createdRecords)) {
+                Log::info('员工没有可自动创建的新调基记录', [
+                    'employee_id' => $employee->id,
+                    'account_set_id' => $accountSetId,
+                ]);
+
+                return null;
             }
-            
-            // 添加大额医疗基数
-            if ($hasLargeMedicalBase) {
-                $createData['old_large_medical_base'] = 0;
-                $createData['new_large_medical_base'] = $employee->large_medical_base;
-                $createData['large_medical_effective_date'] = $effectiveDate;
-            }
-            
-            $adjustment = \App\Models\BaseAdjustment::create($createData);
-            
+
             Log::info('自动创建基数调差记录成功', [
                 'employee_id' => $employee->id,
                 'employee_name' => $employee->name,
-                'adjustment_id' => $adjustment->id,
-                'status' => 'effective',
-                'social_security_base' => $hasSocialBase ? $employee->social_security_base : null,
-                'medical_insurance_base' => $hasMedicalBase ? $employee->medical_insurance_base : null,
-                'housing_fund_base' => $hasHousingBase ? $employee->housing_fund_base : null,
-                'large_medical_base' => $hasLargeMedicalBase ? $employee->large_medical_base : null,
-                'effective_date' => $effectiveDate
+                'records' => $createdRecords,
+                'effective_date' => $effectiveDate,
             ]);
-            
-            return $adjustment;
-            
+
+            return $createdRecords;
         } catch (\Exception $e) {
             Log::error('自动创建基数调差记录失败', [
                 'employee_id' => $employee->id,
@@ -2648,4 +2672,3 @@ class ApprovalService
         }
     }
 }
-

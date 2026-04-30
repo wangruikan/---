@@ -134,4 +134,3 @@ class EmployeeContract extends Model
         return $statuses[$this->status] ?? $this->status;
     }
 }
-

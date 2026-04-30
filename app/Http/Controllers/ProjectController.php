@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Overtrue\Pinyin\Pinyin;
 use App\Traits\ChecksPermission;
 
 class ProjectController extends Controller
@@ -43,7 +44,15 @@ class ProjectController extends Controller
         // 【账套过滤】根据当前账套过滤项目
         $currentAccountSetId = $request->input('current_account_set_id');
         
-        $query = Project::withCount('employees')
+        $query = Project::withCount([
+                'employees',
+                'employees as active_employees_count' => function ($query) {
+                    $query->where('employee_projects.status', 'active');
+                },
+                'employees as inactive_employees_count' => function ($query) {
+                    $query->where('employee_projects.status', 'inactive');
+                },
+            ])
             ->with(['medicalInsuranceRegions', 'otherInsurancePolicies.type', 'largeMedicalInsuranceConfigs']);
         
         if ($currentAccountSetId) {
@@ -78,10 +87,15 @@ class ProjectController extends Controller
         if ($response = $this->checkPermission('projects.create')) {
             return $response;
         }
-        
-        $validator = Validator::make($request->all(), [
+
+        $requestData = $request->all();
+        if (array_key_exists('code', $requestData) && is_string($requestData['code'])) {
+            $requestData['code'] = trim($requestData['code']);
+        }
+
+        $validator = Validator::make($requestData, [
             'name' => 'required|string|max:255',
-            'code' => 'nullable|string|unique:projects,code',  // 改为可选，自动生成
+            'code' => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'social_security_location' => 'nullable|string',
             'insurance_types' => 'nullable|array',
@@ -100,7 +114,7 @@ class ProjectController extends Controller
         }
 
         // 【账套关联】自动关联到当前账套
-        $projectData = $request->all();
+        $projectData = $requestData;
         $currentAccountSetId = $request->input('current_account_set_id');
         if ($currentAccountSetId) {
             $projectData['account_set_id'] = $currentAccountSetId;
@@ -108,7 +122,12 @@ class ProjectController extends Controller
 
         // 自动生成项目编号（如果没有提供）
         if (empty($projectData['code'])) {
-            $projectData['code'] = $this->generateProjectCode($currentAccountSetId);
+            $projectName = $projectData['name'] ?? '';
+            $projectData['code'] = $this->generateProjectCode($projectName);
+        }
+
+        if ($duplicateResponse = $this->validateProjectCodeUnique($currentAccountSetId, $projectData['code'])) {
+            return $duplicateResponse;
         }
 
         $project = Project::create($projectData);
@@ -120,55 +139,80 @@ class ProjectController extends Controller
         ]);
     }
 
+    public function generateCodePreview(Request $request)
+    {
+        if ($response = $this->checkPermission('projects.view')) {
+            return $response;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'code' => $this->generateProjectCode($request->input('name'))
+            ]
+        ]);
+    }
+
     /**
      * 生成项目编号
-     * 格式：AA, AB, AC, ..., AZ, BA, BB, ...
-     * 
-     * @param int $accountSetId 账套ID
+     * 格式：项目名称拼音首字母（如：LRGY）
+     *
+     * @param string $projectName 项目名称
      * @return string 生成的项目编号
      */
-    protected function generateProjectCode($accountSetId)
+    protected function generateProjectCode($projectName = '')
     {
-        // 获取当前账套下所有项目编号
-        $existingCodes = Project::where('account_set_id', $accountSetId)
-            ->whereNotNull('code')
-            ->where('code', 'REGEXP', '^[A-Z]{2}$')  // 只匹配两个字母的编号
-            ->pluck('code')
-            ->toArray();
-        
-        // 将编号转换为数字，找出最大值
-        $maxNum = -1;
-        foreach ($existingCodes as $code) {
-            if (strlen($code) === 2) {
-                // 将两个字母转换为数字：AA=0, AB=1, AC=2, ..., AZ=25, BA=26, ...
-                $firstLetter = ord($code[0]) - 65;  // A=0, B=1, ...
-                $secondLetter = ord($code[1]) - 65;
-                $num = $firstLetter * 26 + $secondLetter;
-                if ($num > $maxNum) {
-                    $maxNum = $num;
-                }
-            }
+        $prefix = $this->getPinYinPrefix($projectName);
+
+        return $prefix ?: 'XM';
+    }
+
+    /**
+     * 获取中文拼音首字母缩写
+     *
+     * @param string $chinese 中文文字
+     * @return string 首字母缩写（大写）
+     */
+    protected function getPinYinPrefix($chinese)
+    {
+        if (empty($chinese)) {
+            return '';
         }
-        
-        // 生成下一个编号
-        $nextNum = $maxNum + 1;
-        
-        // 将数字转换为字母编号
-        $firstLetter = chr(65 + floor($nextNum / 26));
-        $secondLetter = chr(65 + ($nextNum % 26));
-        $code = $firstLetter . $secondLetter;
-        
-        // 再次检查是否存在（双重保险）
-        $exists = Project::where('code', $code)
-            ->where('account_set_id', $accountSetId)
-            ->exists();
-        
-        if ($exists) {
-            // 如果还是冲突，继续递增
-            return $this->generateProjectCode($accountSetId);
+        $result = strtoupper(Pinyin::abbr($chinese)->join(''));
+
+        return $result ?: 'XM';
+    }
+
+    protected function validateProjectCodeUnique($accountSetId, $code, $ignoreProjectId = null)
+    {
+        $query = Project::where('account_set_id', $accountSetId)
+            ->where('code', $code);
+
+        if ($ignoreProjectId) {
+            $query->where('id', '<>', $ignoreProjectId);
         }
-        
-        return $code;
+
+        if (!$query->exists()) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => '已有相同编号，请修改后再保存',
+            'errors' => ['code' => ['项目编号 "' . $code . '" 已存在']]
+        ], 422);
     }
 
     public function show($id)
@@ -200,7 +244,7 @@ class ProjectController extends Controller
 
         $rules = [
             'name' => 'sometimes|required|string|max:255',
-            'code' => ['sometimes', 'required', 'string'],
+            'code' => ['sometimes', 'nullable', 'string', 'max:255'],
             'description' => 'nullable|string',
             'social_security_location' => 'nullable|string',
             'insurance_types' => 'nullable|array',
@@ -213,12 +257,6 @@ class ProjectController extends Controller
             'medical_insurance_regions' => 'nullable|array',
             'housing_fund_regions' => 'nullable|array',
         ];
-
-        $incomingCode = $requestData['code'] ?? null;
-        $currentCode = is_string($project->code) ? trim($project->code) : $project->code;
-        if (array_key_exists('code', $requestData) && $incomingCode !== $currentCode) {
-            $rules['code'][] = Rule::unique('projects', 'code');
-        }
 
         $validator = Validator::make($requestData, $rules);
 
@@ -237,6 +275,23 @@ class ProjectController extends Controller
         }
         if ($request->has('require_attendance')) {
             $updateData['requires_attendance'] = $request->input('require_attendance');
+        }
+
+        if (array_key_exists('code', $requestData) && empty($requestData['code'])) {
+            $projectName = $requestData['name'] ?? $project->name;
+            $updateData['code'] = $this->generateProjectCode($projectName);
+        }
+
+        if (array_key_exists('code', $updateData) && is_string($updateData['code'])) {
+            $updateData['code'] = trim($updateData['code']);
+        }
+
+        $incomingCode = $updateData['code'] ?? $project->code;
+        $currentCode = is_string($project->code) ? trim($project->code) : $project->code;
+        if ($incomingCode !== $currentCode) {
+            if ($duplicateResponse = $this->validateProjectCodeUnique($project->account_set_id, $incomingCode, $project->id)) {
+                return $duplicateResponse;
+            }
         }
 
         $project->update($updateData);

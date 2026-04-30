@@ -72,7 +72,9 @@ export class PdfFillService {
         'bank_account': employeeData.bank_account,
         'bank_account_holder': employeeData.bank_account_holder,
         'hire_date': employeeData.hire_date,
-        'contract_sign_date': employeeData.contract_sign_date,
+        'contract_sign_year': employeeData.contract_sign_year,
+        'contract_sign_month': employeeData.contract_sign_month,
+        'contract_sign_day': employeeData.contract_sign_day,
         'contract_start_date': employeeData.contract_start_date,
         'contract_end_date': employeeData.contract_end_date,
         'contract_start_year': employeeData.contract_start_year,
@@ -93,8 +95,8 @@ export class PdfFillService {
       const renderScale = 1.5
       const namePosition = positionsArray.find((pos) => pos.type === 'name')
       const uniformFontSize = namePosition
-        ? Math.max(Math.min(namePosition.height * 0.9, 20), 14)
-        : 16
+        ? Math.max(Math.min(namePosition.height * 0.9 * 1.2, 24), 17)
+        : 19
       const uniformFontFamily = 'SimSun'
 
       for (const position of positionsArray) {
@@ -112,10 +114,10 @@ export class PdfFillService {
         // 获取字段值
         let fieldValue = employeeData[fieldName] ?? fieldMapping[fieldName]
 
-        // 签订日期兜底为当前日期，避免空白
-        if (fieldName === 'contract_sign_date') {
+        // 签订日期（年月日分离）兜底为当前日期，避免空白
+        if (['contract_sign_year', 'contract_sign_month', 'contract_sign_day'].includes(fieldName)) {
           const normalized = String(fieldValue ?? '').trim()
-          fieldValue = normalized || this.getTodayDateString()
+          fieldValue = normalized || this.getTodayDateString().split('-')[fieldName === 'contract_sign_year' ? 0 : fieldName === 'contract_sign_month' ? 1 : 2]
         }
         
         if (fieldValue === undefined || fieldValue === null || String(fieldValue).trim() === '') {
@@ -316,9 +318,9 @@ export class PdfFillService {
       ctx.fillRect(0, 0, width, height)
     }
 
-    // 设置文字样式（加粗以提高清晰度）
-    const actualFontSize = Math.max(fontSize, 14)
-    ctx.font = `bold ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+    // 设置文字样式（加粗以提高清晰度，字体放大1.2倍）
+    const actualFontSize = Math.max(fontSize * 1.2, 17)
+    ctx.font = `900 ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
     ctx.fillStyle = color
     ctx.textAlign = 'left'
 

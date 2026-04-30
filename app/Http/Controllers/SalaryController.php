@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Traits\ChecksPermission;
 
@@ -1164,15 +1165,16 @@ class SalaryController extends Controller
                 ]);
             }
             
-            // 计算应补（退）税额 = 累计应扣缴税额 - 已扣缴税额
-            $taxPayableOrRefundable = $cumulativeTaxPayable - $taxAlreadyWithheld;
-            $taxPayableOrRefundable = max(0, $taxPayableOrRefundable); // 如果小于0就是0
+            // 应发工资通过Excel导入前为0，税额等导入应发工资后再按新规则重算
+            $taxPayableOrRefundable = 0;
             
             \Log::info('应补（退）税额计算', [
                 'employee_id' => $employee->id,
                 'employee_name' => $employee->name,
-                'cumulative_tax_payable' => $cumulativeTaxPayable,
-                'tax_already_withheld' => $taxAlreadyWithheld,
+                'gross_salary' => 0,
+                'personal_social_security' => $insuranceData['personal_social_security'],
+                'personal_housing_fund' => $insuranceData['personal_housing_fund'],
+                'special_deduction_monthly' => $specialDeductionMonthly,
                 'tax_payable_or_refundable' => $taxPayableOrRefundable,
             ]);
             
@@ -1381,6 +1383,7 @@ class SalaryController extends Controller
                 'cumulative_other_taxable' => $salary->cumulative_other_taxable,    // 累计其他应纳税项
                 'tax_payable_or_refundable' => $salary->tax_payable_or_refundable,  // 应补（退）税额
                 'employee_signature' => $salary->employee_signature,                // 本人签字
+                'import_extra_columns' => $this->normalizeImportExtraColumns($salary->import_extra_columns ?? []),
                 'net_salary' => $salary->net_salary,
                 'paid_salary' => $salary->paid_salary,
                 'status' => $salary->status,
@@ -2045,6 +2048,22 @@ class SalaryController extends Controller
     }
 
     /**
+     * 计算应补（退）税额：应发工资 - 5000 - 个人社保/公积金 - 专项附加扣除。
+     * 大额医疗不参与这个公式。
+     */
+    private function calculateTaxPayableOrRefundable($grossSalary, $personalSocialSecurity, $personalHousingFund, $specialDeduction)
+    {
+        return round(
+            floatval($grossSalary)
+            - 5000
+            - floatval($personalSocialSecurity)
+            - floatval($personalHousingFund)
+            - floatval($specialDeduction),
+            2
+        );
+    }
+
+    /**
      * 计算员工本月补差金额
      */
     private function calculateCompensation($employee, $month)
@@ -2390,84 +2409,30 @@ class SalaryController extends Controller
                 ], 422);
             }
 
-            // 第二行是标题（索引1）
-            $headers = $data[1];
-            
-            \Log::info('Excel导入 - 读取标题行', [
-                'headers' => $headers,
-                'row_index' => 1
-            ]);
-            
-            // 查找"身份证"和"应发工资"列的索引
-            $idCardIndex = null;
-            $grossSalaryIndex = null;
-            
-            foreach ($headers as $index => $header) {
-                $originalHeader = $header;
-                $header = trim($header);
-                // 去除所有空格（包括全角空格）
-                $header = str_replace([' ', '　'], '', $header);
-                
-                // 身份证列的各种可能名称
-                $idCardVariants = ['身份证', '身份证号', '身份证号码', '证件号', '证件号码', 'ID', 'id'];
-                if (in_array($header, $idCardVariants, true)) {
-                    $idCardIndex = $index;
-                    \Log::info('Excel导入 - 找到身份证列', [
-                        'column_index' => $index,
-                        'original_header' => $originalHeader,
-                        'cleaned_header' => $header
-                    ]);
-                }
-                
-                // 应发工资列的各种可能名称
-                $salaryVariants = ['应发工资', '应发', '工资', '金额', '应发金额'];
-                if (in_array($header, $salaryVariants, true)) {
-                    $grossSalaryIndex = $index;
-                    \Log::info('Excel导入 - 找到应发工资列', [
-                        'column_index' => $index,
-                        'original_header' => $originalHeader,
-                        'cleaned_header' => $header
-                    ]);
-                }
-            }
-
-            if ($idCardIndex === null) {
+            $parseResult = $this->parseGrossSalaryImportRows($sheet, $data);
+            if (!$parseResult['success']) {
                 return response()->json([
                     'success' => false,
-                    'message' => '未找到身份证列！支持的列名：身份证、身份证号、身份证号码、证件号、证件号码（标题在第2行）'
+                    'message' => $parseResult['message']
                 ], 422);
             }
 
-            if ($grossSalaryIndex === null) {
+            $excelPersonnel = $parseResult['personnel'];
+            
+            if (empty($excelPersonnel)) {
                 return response()->json([
                     'success' => false,
-                    'message' => '未找到应发工资列！支持的列名：应发工资、应发、工资、金额、应发金额（标题在第2行）'
+                    'message' => 'Excel中未读取到可用人员数据（身份证和姓名至少要有一个）'
                 ], 422);
             }
 
-            // 收集Excel中的所有身份证号和姓名
-            $excelPersonnel = [];
-            for ($i = 2; $i < count($data); $i++) {
-                $row = $data[$i];
-                if (!empty($row[$idCardIndex])) {
-                    $idCard = trim($row[$idCardIndex]);
-                    // 尝试获取姓名（第一列通常是姓名）
-                    $name = isset($row[0]) ? trim($row[0]) : '';
-                    $excelPersonnel[$idCard] = [
-                        'id_card' => $idCard,
-                        'name' => $name,
-                        'gross_salary' => floatval($row[$grossSalaryIndex] ?? 0)
-                    ];
-                }
-            }
-            
-            // 【智能项目识别】尝试从Excel中的身份证找到实际项目
+            // 【智能项目识别】优先用身份证，找不到时回退姓名
             $detectedProjectId = $this->detectProjectFromExcel($excelPersonnel, $accountSetId);
             
             if (!$detectedProjectId) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Excel中的身份证号在系统中均未找到对应员工，请先维护人员档案'
+                    'message' => 'Excel中的身份证/姓名在系统中均未找到对应员工，请先维护人员档案'
                 ], 422);
             }
             
@@ -2486,34 +2451,88 @@ class SalaryController extends Controller
                 ->where('account_set_id', $accountSetId)
                 ->get();
             
-            // 工资表中的身份证号列表
-            $salaryIdCards = $salaries->pluck('id_card')->filter()->toArray();
-            $excelIdCards = array_keys($excelPersonnel);
-            
-            // 对比人员差异
-            $missingInSalary = array_diff($excelIdCards, $salaryIdCards); // Excel有但工资表没有 = 需要新增
-            $missingInExcel = array_diff($salaryIdCards, $excelIdCards);  // 工资表有但Excel没有 = 需要减少
+            $salaryByName = $salaries->groupBy(function ($item) {
+                return trim((string) $item->employee_name);
+            });
+            $matchedSalaryIds = [];
+            $matchedRows = [];
+            $missingInSalary = []; // Excel有但工资表没有匹配到 = 需要新增
+
+            foreach ($excelPersonnel as $person) {
+                $matchedSalary = null;
+                $matchedBy = '';
+
+                if (!empty($person['id_card'])) {
+                    $matchedSalary = $salaries->firstWhere('id_card', $person['id_card']);
+                    if ($matchedSalary) {
+                        $matchedBy = 'id_card';
+                    }
+                }
+
+                // 身份证找不到，回退姓名匹配
+                if (!$matchedSalary && !empty($person['name'])) {
+                    $nameMatches = $salaryByName->get($person['name'], collect());
+                    if ($nameMatches->count() === 1) {
+                        $matchedSalary = $nameMatches->first();
+                        $matchedBy = 'name';
+                    } elseif ($nameMatches->count() > 1) {
+                        $missingInSalary[] = [
+                            'id_card' => $person['id_card'],
+                            'name' => $person['name'],
+                            'reason' => '姓名匹配到多条工资记录，无法唯一定位',
+                            'row_index' => $person['row_index']
+                        ];
+                        continue;
+                    }
+                }
+
+                if (!$matchedSalary) {
+                    $missingInSalary[] = [
+                        'id_card' => $person['id_card'],
+                        'name' => $person['name'],
+                        'reason' => '未在工资表中找到匹配人员',
+                        'row_index' => $person['row_index']
+                    ];
+                    continue;
+                }
+
+                $matchedSalaryIds[] = $matchedSalary->id;
+                $matchedRows[] = [
+                    'salary' => $matchedSalary,
+                    'gross_salary' => $person['gross_salary'],
+                    'import_extra_columns' => $person['import_extra_columns'] ?? [],
+                    'matched_by' => $matchedBy
+                ];
+            }
+
+            // 工资表有但Excel没有 = 需要减少
+            $matchedSalaryIds = array_values(array_unique($matchedSalaryIds));
+            $missingInExcel = $salaries
+                ->filter(function ($salary) use ($matchedSalaryIds) {
+                    return !in_array($salary->id, $matchedSalaryIds, true);
+                })
+                ->values();
             
             \Log::info('Excel导入 - 人员对比', [
                 'project_id' => $projectId,
                 'month' => $month,
-                'salary_count' => count($salaryIdCards),
-                'excel_count' => count($excelIdCards),
+                'salary_count' => $salaries->count(),
+                'excel_count' => count($excelPersonnel),
                 'missing_in_salary_count' => count($missingInSalary),
-                'missing_in_excel_count' => count($missingInExcel)
+                'missing_in_excel_count' => $missingInExcel->count()
             ]);
             
             // 如果发现人员不匹配，拒绝导入并创建变动记录
-            if (!empty($missingInSalary) || !empty($missingInExcel)) {
+            if (!empty($missingInSalary) || $missingInExcel->isNotEmpty()) {
                 $errorMessages = [];
                 
                 // 处理需要新增的人员
                 if (!empty($missingInSalary)) {
                     $addPersonnel = [];
-                    foreach ($missingInSalary as $idCard) {
+                    foreach ($missingInSalary as $person) {
                         $addPersonnel[] = [
-                            'id_card' => $idCard,
-                            'name' => $excelPersonnel[$idCard]['name']
+                            'id_card' => $person['id_card'],
+                            'name' => $person['name']
                         ];
                     }
                     
@@ -2526,19 +2545,18 @@ class SalaryController extends Controller
                             $addPersonnel,
                             $user->id
                         );
-                        $errorMessages[] = "Excel中有" . count($missingInSalary) . "个人员在工资表中不存在（需要新增）";
+                        $errorMessages[] = "Excel中有" . count($missingInSalary) . "个人员在工资表中不存在或无法唯一匹配（需要新增）";
                     } catch (\Exception $e) {
                         $errorMessages[] = $e->getMessage();
                     }
                 }
                 
                 // 处理需要减少的人员
-                if (!empty($missingInExcel)) {
+                if ($missingInExcel->isNotEmpty()) {
                     $removePersonnel = [];
-                    foreach ($missingInExcel as $idCard) {
-                        $salary = $salaries->where('id_card', $idCard)->first();
+                    foreach ($missingInExcel as $salary) {
                         $removePersonnel[] = [
-                            'id_card' => $idCard,
+                            'id_card' => $salary->id_card,
                             'name' => $salary ? $salary->employee_name : ''
                         ];
                     }
@@ -2552,7 +2570,7 @@ class SalaryController extends Controller
                             $removePersonnel,
                             $user->id
                         );
-                        $errorMessages[] = "工资表中有" . count($missingInExcel) . "个人员在Excel中不存在（需要减少）";
+                        $errorMessages[] = "工资表中有" . $missingInExcel->count() . "个人员在Excel中不存在（需要减少）";
                     } catch (\Exception $e) {
                         $errorMessages[] = $e->getMessage();
                     }
@@ -2563,62 +2581,67 @@ class SalaryController extends Controller
                     'success' => false,
                     'message' => "人员信息不匹配，请先维护人员档案！\n\n" . implode("\n", $errorMessages) . "\n\n人员变动记录已保存到【人员汇总申请】模块，请前往查看并提交审批。",
                     'data' => [
-                        'add_personnel' => !empty($missingInSalary) ? array_values(array_map(function($idCard) use ($excelPersonnel) {
+                        'add_personnel' => !empty($missingInSalary) ? array_values(array_map(function($person) {
                             return [
-                                'id_card' => $idCard,
-                                'name' => $excelPersonnel[$idCard]['name']
+                                'id_card' => $person['id_card'],
+                                'name' => $person['name'],
+                                'reason' => $person['reason'] ?? '',
+                                'row_index' => $person['row_index'] ?? null
                             ];
                         }, $missingInSalary)) : [],
-                        'remove_personnel' => !empty($missingInExcel) ? array_values(array_map(function($idCard) use ($salaries) {
-                            $salary = $salaries->where('id_card', $idCard)->first();
+                        'remove_personnel' => $missingInExcel->isNotEmpty() ? array_values($missingInExcel->map(function($salary) {
                             return [
-                                'id_card' => $idCard,
+                                'id_card' => $salary->id_card,
                                 'name' => $salary ? $salary->employee_name : ''
                             ];
-                        }, $missingInExcel)) : []
+                        })->toArray()) : []
                     ]
                 ], 422);
             }
             
             // 人员完全匹配，开始导入
             $successCount = 0;
-            $errors = [];
+            $updatesBySalaryId = [];
+            foreach ($matchedRows as $matchedRow) {
+                $updatesBySalaryId[$matchedRow['salary']->id] = $matchedRow;
+            }
 
-            for ($i = 2; $i < count($data); $i++) {
-                $row = $data[$i];
+            foreach ($updatesBySalaryId as $matchedRow) {
+                /** @var Salary $salary */
+                $salary = $matchedRow['salary'];
+                $grossSalary = $matchedRow['gross_salary'];
+
+                // 更新应发工资
+                $salary->update(['gross_salary' => $grossSalary]);
                 
-                if (empty($row[$idCardIndex])) {
-                    continue; // 跳过身份证号为空的行
+                // 重新计算累计收入（之前月份的应发工资 + 当月应发工资）
+                $previousCumulativeIncome = $this->calculateCumulativeIncome($salary->employee_id, $month, $accountSetId);
+                $newCumulativeIncome = $previousCumulativeIncome + $grossSalary;
+                
+                // 按新规则重新计算应补（退）税额：应发工资 - 5000 - 个人社保/公积金 - 专项附加扣除
+                $taxPayableOrRefundable = $this->calculateTaxPayableOrRefundable(
+                    $grossSalary,
+                    $salary->social_security,
+                    $salary->housing_fund,
+                    $salary->special_deduction_monthly
+                );
+
+                // 重新计算实发工资 = 应发工资 - 个人保险合计 - 应补（退）税额
+                $netSalary = $grossSalary - $salary->personal_insurance_total - $taxPayableOrRefundable;
+                
+                $updateData = [
+                    'cumulative_income' => $newCumulativeIncome,
+                    'tax_payable_or_refundable' => $taxPayableOrRefundable,
+                    'net_salary' => $netSalary,
+                ];
+
+                if (Schema::hasColumn('salaries', 'import_extra_columns')) {
+                    $updateData['import_extra_columns'] = $matchedRow['import_extra_columns'] ?? [];
                 }
 
-                $idCard = trim($row[$idCardIndex]);
-                $grossSalary = floatval($row[$grossSalaryIndex] ?? 0);
-
-                // 根据身份证号、项目ID、月份查找工资记录
-                $salary = Salary::where('id_card', $idCard)
-                    ->where('project_id', $projectId)
-                    ->where('month', $month)
-                    ->where('account_set_id', $accountSetId)
-                    ->first();
-
-                if ($salary) {
-                    // 更新应发工资
-                    $salary->update(['gross_salary' => $grossSalary]);
-                    
-                    // 重新计算累计收入（之前月份的应发工资 + 当月应发工资）
-                    $previousCumulativeIncome = $this->calculateCumulativeIncome($salary->employee_id, $month, $accountSetId);
-                    $newCumulativeIncome = $previousCumulativeIncome + $grossSalary;
-                    
-                    // 重新计算实发工资 = 应发工资 - 个人保险合计 - 应补（退）税额
-                    $netSalary = $grossSalary - $salary->personal_insurance_total - $salary->tax_payable_or_refundable;
-                    
-                    $salary->update([
-                        'cumulative_income' => $newCumulativeIncome,
-                        'net_salary' => $netSalary,
-                    ]);
-                    
-                    $successCount++;
-                }
+                $salary->update($updateData);
+                
+                $successCount++;
             }
 
             return response()->json([
@@ -2641,24 +2664,256 @@ class SalaryController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * 解析应发工资导入表。优先支持新工资模板（第4/5行表头，第6行数据），兼容旧模板（第2行表头，第3行数据）。
+     */
+    private function parseGrossSalaryImportRows($sheet, array $data)
+    {
+        $templateResult = $this->buildGrossSalaryRowsFromHeader($sheet, $data, 3, 4, 5);
+        if ($templateResult['success']) {
+            return $templateResult;
+        }
+
+        return $this->buildGrossSalaryRowsFromHeader($sheet, $data, 1, null, 2);
+    }
+
+    private function buildGrossSalaryRowsFromHeader($sheet, array $data, $primaryHeaderRowIndex, $secondaryHeaderRowIndex, $dataStartRowIndex)
+    {
+        if (count($data) <= $primaryHeaderRowIndex) {
+            return [
+                'success' => false,
+                'message' => 'Excel文件为空或数据不足'
+            ];
+        }
+
+        $headers = $this->buildImportHeaderColumns($sheet, $primaryHeaderRowIndex, $secondaryHeaderRowIndex);
+        $idCardIndex = null;
+        $nameIndex = null;
+        $grossSalaryIndex = null;
+
+        foreach ($headers as $header) {
+            $cleanLabel = $this->cleanImportHeader($header['label']);
+            $cleanFullLabel = $this->cleanImportHeader($header['full_label']);
+
+            if (in_array($cleanLabel, ['身份证', '身份证号', '身份证号码', '证件号', '证件号码', 'ID', 'id'], true)) {
+                $idCardIndex = $header['index'];
+            }
+
+            if (in_array($cleanLabel, ['姓名', '名字', '员工姓名', '员工名称', '人员姓名'], true)) {
+                $nameIndex = $header['index'];
+            }
+
+            if (in_array($cleanLabel, ['应发工资', '应发', '工资', '金额', '应发金额'], true)
+                || in_array($cleanFullLabel, ['应发工资', '应发', '工资', '金额', '应发金额'], true)) {
+                $grossSalaryIndex = $header['index'];
+            }
+        }
+
+        if ($nameIndex === null && $secondaryHeaderRowIndex === null && isset($headers[0])) {
+            $nameIndex = 0;
+        }
+
+        if ($idCardIndex === null && $nameIndex === null) {
+            return [
+                'success' => false,
+                'message' => '未找到身份证列或姓名列'
+            ];
+        }
+
+        if ($grossSalaryIndex === null) {
+            return [
+                'success' => false,
+                'message' => '未找到应发工资列'
+            ];
+        }
+
+        $personnel = [];
+        for ($i = $dataStartRowIndex; $i < count($data); $i++) {
+            $row = $data[$i];
+            $idCard = $idCardIndex !== null && isset($row[$idCardIndex]) ? trim((string) $row[$idCardIndex]) : '';
+            $name = $nameIndex !== null && isset($row[$nameIndex]) ? trim((string) $row[$nameIndex]) : '';
+
+            if ($idCard === '' && $name === '') {
+                continue;
+            }
+
+            if ($this->cleanImportHeader($name) === '合计') {
+                continue;
+            }
+
+            $extraColumns = [];
+            foreach ($headers as $header) {
+                if ($this->isImportExcludedColumn($header)) {
+                    continue;
+                }
+
+                $value = $row[$header['index']] ?? null;
+                $extraColumns[] = [
+                    'key' => 'col_' . $header['column'],
+                    'label' => $header['full_label'],
+                    'short_label' => $header['label'],
+                    'group' => $header['group'],
+                    'column' => $header['column'],
+                    'value' => $value,
+                ];
+            }
+
+            $personnel[] = [
+                'id_card' => $idCard,
+                'name' => $name,
+                'gross_salary' => floatval($row[$grossSalaryIndex] ?? 0),
+                'import_extra_columns' => $extraColumns,
+                'row_index' => $i + 1
+            ];
+        }
+
+        if (empty($personnel)) {
+            return [
+                'success' => false,
+                'message' => 'Excel中未读取到可用人员数据（身份证和姓名至少要有一个）'
+            ];
+        }
+
+        \Log::info('Excel导入 - 解析工资模板成功', [
+            'primary_header_row' => $primaryHeaderRowIndex + 1,
+            'secondary_header_row' => $secondaryHeaderRowIndex !== null ? $secondaryHeaderRowIndex + 1 : null,
+            'data_start_row' => $dataStartRowIndex + 1,
+            'employee_count' => count($personnel),
+            'extra_column_count' => isset($personnel[0]) ? count($personnel[0]['import_extra_columns']) : 0,
+        ]);
+
+        return [
+            'success' => true,
+            'personnel' => $personnel,
+        ];
+    }
+
+    private function buildImportHeaderColumns($sheet, $primaryHeaderRowIndex, $secondaryHeaderRowIndex = null)
+    {
+        $highestColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        $columns = [];
+
+        for ($index = 0; $index < $highestColumn; $index++) {
+            $primary = trim((string) $this->readMergedCellValue($sheet, $primaryHeaderRowIndex, $index));
+            $secondary = $secondaryHeaderRowIndex !== null
+                ? trim((string) $this->readMergedCellValue($sheet, $secondaryHeaderRowIndex, $index))
+                : '';
+
+            $label = $secondary !== '' ? $secondary : $primary;
+            $group = ($secondary !== '' && $primary !== $secondary) ? $primary : '';
+            $fullLabel = $group !== '' ? $group . '-' . $label : $label;
+
+            if ($this->cleanImportHeader($label) === '') {
+                continue;
+            }
+
+            $columns[] = [
+                'index' => $index,
+                'column' => \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1),
+                'label' => preg_replace('/\s+/u', '', $label),
+                'group' => preg_replace('/\s+/u', '', $group),
+                'full_label' => preg_replace('/\s+/u', '', $fullLabel),
+            ];
+        }
+
+        return $columns;
+    }
+
+    private function readMergedCellValue($sheet, $rowIndex, $columnIndex)
+    {
+        $row = $rowIndex + 1;
+        $column = $columnIndex + 1;
+        $coordinate = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column) . $row;
+        $value = $sheet->getCell($coordinate)->getValue();
+
+        if ($value !== null && $value !== '') {
+            return $value;
+        }
+
+        foreach ($sheet->getMergeCells() as $range) {
+            [$start, $end] = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::rangeBoundaries($range);
+            if ($column >= $start[0] && $column <= $end[0] && $row >= $start[1] && $row <= $end[1]) {
+                $startCoordinate = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($start[0]) . $start[1];
+                return $sheet->getCell($startCoordinate)->getValue();
+            }
+        }
+
+        return '';
+    }
+
+    private function cleanImportHeader($value)
+    {
+        return str_replace([' ', '　', "\r", "\n", "\t"], '', trim((string) $value));
+    }
+
+    private function isImportExcludedColumn(array $header)
+    {
+        $label = $this->cleanImportHeader($header['label']);
+        $group = $this->cleanImportHeader($header['group']);
+        $fullLabel = $this->cleanImportHeader($header['full_label']);
+        $excluded = [
+            '序号', '姓名', '身份证', '身份证号', '身份证号码', '证件号', '证件号码', 'ID', 'id', '员工UserID', '员工编号',
+            '应发工资', '缴费基数', '养老保险16%', '医疗保险缴费基数', '医疗保险7%', '工伤失业缴费基数',
+            '工伤保险0.4%', '失业保险0.5%', '大额医疗保险', '社保差额调整', '公积金基数', '公积金',
+            'Administrator上一年度平均工资', '养老保险', '医疗保险', '失业保险', '大额医疗',
+            '单位合计', '个人合计', '累计收入', '累计减除费用', '累计专项扣除', '累计专项附加扣除（6项扣除）',
+            '累计其他应纳税项（合并扣税）', '累计应纳税所得额', '税率', '速算扣除数', '累计应扣缴税额',
+            '已扣缴税额', '本期个税', '个税调整', '应补（退）税额', '实发工资'
+        ];
+        $excludedGroups = [
+            '个人所得税专项附加扣除',
+        ];
+
+        return in_array($label, $excluded, true)
+            || in_array($fullLabel, $excluded, true)
+            || in_array($group, $excludedGroups, true);
+    }
+
+    private function normalizeImportExtraColumns($columns)
+    {
+        if (is_string($columns)) {
+            $decoded = json_decode($columns, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($columns) ? $columns : [];
+    }
     
     /**
-     * 从Excel中的身份证号检测实际项目
+     * 从Excel中的身份证/姓名检测实际项目
      */
     private function detectProjectFromExcel($excelPersonnel, $accountSetId)
     {
-        foreach ($excelPersonnel as $idCard => $person) {
-            // 根据身份证号查找员工
-            $employee = Employee::where('id_number', $idCard)
-                ->where('account_set_id', $accountSetId)
-                ->first();
-            
+        foreach ($excelPersonnel as $person) {
+            $employee = null;
+
+            // 优先根据身份证号查找员工
+            if (!empty($person['id_card'])) {
+                $employee = Employee::where('id_number', $person['id_card'])
+                    ->where('account_set_id', $accountSetId)
+                    ->first();
+            }
+
+            // 身份证找不到时，根据姓名查找（需唯一）
+            if (!$employee && !empty($person['name'])) {
+                $nameMatches = Employee::where('name', $person['name'])
+                    ->where('account_set_id', $accountSetId)
+                    ->limit(2)
+                    ->get();
+
+                if ($nameMatches->count() === 1) {
+                    $employee = $nameMatches->first();
+                }
+            }
+
             if ($employee && !empty($employee->project_ids)) {
                 // 找到员工，返回第一个项目ID
                 $projectIds = is_array($employee->project_ids) ? $employee->project_ids : json_decode($employee->project_ids, true);
                 if (!empty($projectIds) && is_array($projectIds)) {
-                    \Log::info('Excel导入 - 通过身份证识别到项目', [
-                        'id_card' => $idCard,
+                    \Log::info('Excel导入 - 通过身份证/姓名识别到项目', [
+                        'id_card' => $person['id_card'] ?? '',
+                        'name' => $person['name'] ?? '',
                         'employee_name' => $employee->name,
                         'project_ids' => $projectIds,
                         'selected_project_id' => $projectIds[0]

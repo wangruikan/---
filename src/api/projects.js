@@ -1,6 +1,6 @@
 import request from './request'
 
-// 获取项目列表
+// get projects
 export function getProjects(params) {
   return request({
     url: '/projects',
@@ -9,7 +9,7 @@ export function getProjects(params) {
   })
 }
 
-// 创建项目
+// create project
 export function createProject(data) {
   return request({
     url: '/projects',
@@ -18,7 +18,16 @@ export function createProject(data) {
   })
 }
 
-// 获取项目详情
+// preview generated project code
+export function getProjectCodePreview(params) {
+  return request({
+    url: '/projects/generate-code-preview',
+    method: 'get',
+    params
+  })
+}
+
+// get project detail
 export function getProject(id) {
   return request({
     url: `/projects/${id}`,
@@ -26,7 +35,7 @@ export function getProject(id) {
   })
 }
 
-// 更新项目
+// update project
 export function updateProject(id, data) {
   return request({
     url: `/projects/${id}`,
@@ -35,7 +44,7 @@ export function updateProject(id, data) {
   })
 }
 
-// 删除项目
+// delete project
 export function deleteProject(id) {
   return request({
     url: `/projects/${id}`,
@@ -43,7 +52,7 @@ export function deleteProject(id) {
   })
 }
 
-// 获取项目统计
+// get project statistics
 export function getProjectStatistics(id) {
   return request({
     url: `/projects/${id}/statistics`,

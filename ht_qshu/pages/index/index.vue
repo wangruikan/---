@@ -69,13 +69,10 @@
 						</button>
 					</view>
 					
-					<view class="agree-section">
-						<checkbox-group @change="handleAgreeChange">
-							<label class="agree-label">
-								<checkbox value="agree" :checked="hasAgreed" />
-								<text class="agree-text">我已阅读并同意上述须知内容</text>
-							</label>
-						</checkbox-group>
+					<view class="read-tip-section">
+						<text class="read-tip-text" v-if="!hasStartedNoticeRead">请先进入文件阅读，需满 10 秒后才可继续</text>
+						<text class="read-tip-text" v-else-if="!hasCompletedNoticeRead">阅读计时中，还需 {{ noticeReadSecondsRemaining }} 秒</text>
+						<text class="read-tip-text done" v-else>当前文件已完成阅读，可继续下一步</text>
 					</view>
 				</view>
 				
@@ -83,10 +80,11 @@
 					<button class="cancel-btn" @click="closeNoticeModal">取消</button>
 					<button 
 						class="confirm-btn" 
-						:class="{ disabled: !hasAgreed }"
+						:class="{ disabled: !canProceedNotice }"
+						:disabled="!canProceedNotice"
 						@click="handleConfirmSign"
 					>
-						{{ currentNoticeIndex < noticeFiles.length - 1 ? '确认下一份' : '确认签署' }}
+						{{ noticeConfirmButtonText }}
 					</button>
 				</view>
 			</view>
@@ -107,12 +105,17 @@ import request from '@/utils/request.js'
 			pendingContracts: [],
 			// 须知弹窗相关
 			showNoticeModal: false,
-			hasAgreed: false,
 			noticeFileName: '',
 			noticeFileUrl: '',
 			noticeFiles: [],
 			currentNoticeIndex: 0,
-			currentContractId: null
+			currentContractId: null,
+			noticeReadSecondsRequired: 10,
+			noticeReadSecondsRemaining: 10,
+			hasStartedNoticeRead: false,
+			hasCompletedNoticeRead: false,
+			noticeReadSessionStartAt: 0,
+			noticeReadInProgress: false
 		}
 	},
 	
@@ -123,11 +126,24 @@ import request from '@/utils/request.js'
 			if (hour < 12) return '早上好！'
 			if (hour < 18) return '下午好！'
 			return '晚上好！'
+		},
+		canProceedNotice() {
+			return this.hasCompletedNoticeRead
+		},
+		noticeConfirmButtonText() {
+			if (!this.hasCompletedNoticeRead) {
+				if (!this.hasStartedNoticeRead) {
+					return '请先阅读'
+				}
+				return `阅读中 ${this.noticeReadSecondsRemaining}s`
+			}
+			return this.currentNoticeIndex < this.noticeFiles.length - 1 ? '下一步' : '确认签署'
 		}
 	},
 	
 	onShow() {
 		this.checkLogin()
+		this.finalizeNoticeReadSession()
 		this.loadData()
 	},
 	
@@ -167,6 +183,7 @@ import request from '@/utils/request.js'
 			const types = {
 				labor: '劳动合同',
 				termination: '解除协议合同',
+				confidentiality: '保密协议',
 				retirement: '退休解除协议合同',
 				other: '其他合同'
 			}
@@ -301,11 +318,11 @@ import request from '@/utils/request.js'
 			uni.hideLoading()
 
 			this.currentContractId = contractId
-			this.hasAgreed = false
 			this.currentNoticeIndex = 0
 			this.noticeFiles = []
 			this.noticeFileName = ''
 			this.noticeFileUrl = ''
+			this.resetNoticeReadState()
 
 			try {
 				const res = await getContractDetail(contractId)
@@ -329,6 +346,7 @@ import request from '@/utils/request.js'
 				this.currentNoticeIndex = 0
 				this.noticeFileName = noticeFiles[0].name || '劳动合同须知.pdf'
 				this.noticeFileUrl = noticeFiles[0].view_url || ''
+				this.resetNoticeReadState()
 				this.showNoticeModal = true
 				console.log('✅ 弹窗已显示，须知数量:', noticeFiles.length)
 			} catch (error) {
@@ -361,6 +379,7 @@ import request from '@/utils/request.js'
 							fileType: 'pdf',
 							showMenu: true,
 							success: () => {
+								this.startNoticeReadCountdown()
 								console.log('文件打开成功')
 							},
 							fail: (err) => {
@@ -384,16 +403,11 @@ import request from '@/utils/request.js'
 			})
 		},
 		
-		// 勾选同意
-		handleAgreeChange(e) {
-			this.hasAgreed = e.detail.value.length > 0
-		},
-		
-		// 确认签署（需要逐个勾选）
+		// 确认签署（当前文件阅读满10秒后才可继续）
 		handleConfirmSign() {
-			if (!this.hasAgreed) {
+			if (!this.canProceedNotice) {
 				uni.showToast({
-					title: '请先勾选同意',
+					title: this.hasStartedNoticeRead ? '请继续阅读满10秒' : '请先阅读须知文件',
 					icon: 'none'
 				})
 				return
@@ -404,7 +418,7 @@ import request from '@/utils/request.js'
 				const current = this.noticeFiles[this.currentNoticeIndex] || {}
 				this.noticeFileName = current.name || '劳动合同须知.pdf'
 				this.noticeFileUrl = current.view_url || ''
-				this.hasAgreed = false
+				this.resetNoticeReadState()
 				return
 			}
 
@@ -415,12 +429,48 @@ import request from '@/utils/request.js'
 		// 关闭须知弹窗
 		closeNoticeModal() {
 			this.showNoticeModal = false
-			this.hasAgreed = false
 			this.noticeFileName = ''
 			this.noticeFileUrl = ''
 			this.noticeFiles = []
 			this.currentNoticeIndex = 0
 			this.currentContractId = null
+			this.resetNoticeReadState()
+		},
+
+		resetNoticeReadState() {
+			this.noticeReadSecondsRemaining = this.noticeReadSecondsRequired
+			this.hasStartedNoticeRead = false
+			this.hasCompletedNoticeRead = false
+			this.noticeReadSessionStartAt = 0
+			this.noticeReadInProgress = false
+		},
+
+		startNoticeReadCountdown() {
+			if (this.hasCompletedNoticeRead) {
+				return
+			}
+			this.finalizeNoticeReadSession()
+			this.hasStartedNoticeRead = true
+			this.hasCompletedNoticeRead = false
+			this.noticeReadSessionStartAt = Date.now()
+			this.noticeReadInProgress = true
+		},
+
+		finalizeNoticeReadSession() {
+			if (!this.noticeReadInProgress || !this.noticeReadSessionStartAt || this.hasCompletedNoticeRead) {
+				return
+			}
+			const elapsedSeconds = Math.floor((Date.now() - this.noticeReadSessionStartAt) / 1000)
+			if (elapsedSeconds > 0) {
+				const nextRemaining = this.noticeReadSecondsRemaining - elapsedSeconds
+				this.noticeReadSecondsRemaining = nextRemaining > 0 ? nextRemaining : 0
+			}
+			if (this.noticeReadSecondsRemaining <= 0) {
+				this.noticeReadSecondsRemaining = 0
+				this.hasCompletedNoticeRead = true
+			}
+			this.noticeReadSessionStartAt = 0
+			this.noticeReadInProgress = false
 		},
 		
 		// 进入签署页面
@@ -679,23 +729,21 @@ import request from '@/utils/request.js'
 	text-align: center;
 }
 
-.agree-section {
+.read-tip-section {
 	background: #FFF9E6;
 	padding: 24rpx;
 	border-radius: 12rpx;
 	border: 2rpx solid #FFD700;
 }
 
-.agree-label {
-	display: flex;
-	align-items: center;
-}
-
-.agree-text {
-	margin-left: 12rpx;
+.read-tip-text {
 	font-size: 26rpx;
 	color: #666;
 	line-height: 1.6;
+}
+
+.read-tip-text.done {
+	color: #2E7D32;
 }
 
 .modal-footer {

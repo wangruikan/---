@@ -71,20 +71,17 @@
 						📖 阅读文件
 					</button>
 					
-					<view class="agree-section">
-						<checkbox-group @change="handleAgreeChange">
-							<label class="agree-label">
-								<checkbox value="agree" :checked="hasAgreed" color="#667eea" />
-								<text>我已知晓并同意上述须知</text>
-							</label>
-						</checkbox-group>
+					<view class="read-tip-section">
+						<text class="read-tip-text" v-if="!hasStartedNoticeRead">请先进入文件阅读，需满 10 秒后才可继续</text>
+						<text class="read-tip-text" v-else-if="!hasCompletedNoticeRead">阅读计时中，还需 {{ noticeReadSecondsRemaining }} 秒</text>
+						<text class="read-tip-text done" v-else>当前文件已完成阅读，可继续下一步</text>
 					</view>
 				</view>
 				
 				<view class="modal-footer">
 					<button class="cancel-btn" @click="closeNoticeModal">取消</button>
-					<button class="confirm-btn" @click="handleConfirmSign" :disabled="!hasAgreed">
-						{{ currentNoticeIndex < noticeFiles.length - 1 ? '确认下一份' : '确认签署' }}
+					<button class="confirm-btn" @click="handleConfirmSign" :disabled="!canProceedNotice">
+						{{ noticeConfirmButtonText }}
 					</button>
 				</view>
 			</view>
@@ -108,17 +105,38 @@ export default {
 			],
 			// 须知弹窗相关
 			showNoticeModal: false,
-			hasAgreed: false,
 			noticeFileName: '',
 			noticeFileUrl: '',
 			noticeFiles: [],
 			currentNoticeIndex: 0,
-			currentContractId: null
+			currentContractId: null,
+			noticeReadSecondsRequired: 10,
+			noticeReadSecondsRemaining: 10,
+			hasStartedNoticeRead: false,
+			hasCompletedNoticeRead: false,
+			noticeReadSessionStartAt: 0,
+			noticeReadInProgress: false
+		}
+	},
+
+	computed: {
+		canProceedNotice() {
+			return this.hasCompletedNoticeRead
+		},
+		noticeConfirmButtonText() {
+			if (!this.hasCompletedNoticeRead) {
+				if (!this.hasStartedNoticeRead) {
+					return '请先阅读'
+				}
+				return `阅读中 ${this.noticeReadSecondsRemaining}s`
+			}
+			return this.currentNoticeIndex < this.noticeFiles.length - 1 ? '下一步' : '确认签署'
 		}
 	},
 
 	onShow() {
 		this.checkLogin()
+		this.finalizeNoticeReadSession()
 		this.loadContracts()
 	},
 
@@ -165,12 +183,12 @@ export default {
 		// 检查须知并签署
 		async checkNoticeAndSign(contractId) {
 			this.currentContractId = contractId
-			this.hasAgreed = false
 			this.currentNoticeIndex = 0
 			this.noticeFiles = []
 			this.noticeFileName = ''
 			this.noticeFileUrl = ''
 			this.showNoticeModal = false
+			this.resetNoticeReadState()
 
 			try {
 				const res = await getContractDetail(contractId)
@@ -192,6 +210,7 @@ export default {
 				this.currentNoticeIndex = 0
 				this.noticeFileName = noticeFiles[0].name || '劳动合同须知.pdf'
 				this.noticeFileUrl = noticeFiles[0].view_url || ''
+				this.resetNoticeReadState()
 				this.showNoticeModal = true
 			} catch (error) {
 				console.error('加载须知文件失败:', error)
@@ -219,7 +238,9 @@ export default {
 							filePath: res.tempFilePath,
 							fileType: 'pdf',
 							showMenu: true,
-							success: () => {},
+							success: () => {
+								this.startNoticeReadCountdown()
+							},
 							fail: (err) => {
 								console.error('文件打开失败:', err)
 								uni.showToast({
@@ -241,16 +262,11 @@ export default {
 			})
 		},
 
-		// 勾选同意
-		handleAgreeChange(e) {
-			this.hasAgreed = e.detail.value.length > 0
-		},
-
-		// 确认签署（需要逐个勾选）
+		// 确认签署（当前文件阅读满10秒后才可继续）
 		handleConfirmSign() {
-			if (!this.hasAgreed) {
+			if (!this.canProceedNotice) {
 				uni.showToast({
-					title: '请先勾选同意',
+					title: this.hasStartedNoticeRead ? '请继续阅读满10秒' : '请先阅读须知文件',
 					icon: 'none'
 				})
 				return
@@ -261,7 +277,7 @@ export default {
 				const current = this.noticeFiles[this.currentNoticeIndex] || {}
 				this.noticeFileName = current.name || '劳动合同须知.pdf'
 				this.noticeFileUrl = current.view_url || ''
-				this.hasAgreed = false
+				this.resetNoticeReadState()
 				return
 			}
 
@@ -272,12 +288,48 @@ export default {
 		// 关闭须知弹窗
 		closeNoticeModal() {
 			this.showNoticeModal = false
-			this.hasAgreed = false
 			this.noticeFileName = ''
 			this.noticeFileUrl = ''
 			this.noticeFiles = []
 			this.currentNoticeIndex = 0
 			this.currentContractId = null
+			this.resetNoticeReadState()
+		},
+
+		resetNoticeReadState() {
+			this.noticeReadSecondsRemaining = this.noticeReadSecondsRequired
+			this.hasStartedNoticeRead = false
+			this.hasCompletedNoticeRead = false
+			this.noticeReadSessionStartAt = 0
+			this.noticeReadInProgress = false
+		},
+
+		startNoticeReadCountdown() {
+			if (this.hasCompletedNoticeRead) {
+				return
+			}
+			this.finalizeNoticeReadSession()
+			this.hasStartedNoticeRead = true
+			this.hasCompletedNoticeRead = false
+			this.noticeReadSessionStartAt = Date.now()
+			this.noticeReadInProgress = true
+		},
+
+		finalizeNoticeReadSession() {
+			if (!this.noticeReadInProgress || !this.noticeReadSessionStartAt || this.hasCompletedNoticeRead) {
+				return
+			}
+			const elapsedSeconds = Math.floor((Date.now() - this.noticeReadSessionStartAt) / 1000)
+			if (elapsedSeconds > 0) {
+				const nextRemaining = this.noticeReadSecondsRemaining - elapsedSeconds
+				this.noticeReadSecondsRemaining = nextRemaining > 0 ? nextRemaining : 0
+			}
+			if (this.noticeReadSecondsRemaining <= 0) {
+				this.noticeReadSecondsRemaining = 0
+				this.hasCompletedNoticeRead = true
+			}
+			this.noticeReadSessionStartAt = 0
+			this.noticeReadInProgress = false
 		},
 
 		// 进入签署页面
@@ -297,6 +349,7 @@ export default {
 			const types = {
 				labor: '劳动合同',
 				termination: '解除协议合同',
+				confidentiality: '保密协议',
 				retirement: '退休解除协议合同',
 				other: '其他合同'
 			}
@@ -564,15 +617,18 @@ export default {
 	border: none;
 }
 
-.agree-section {
+.read-tip-section {
 	padding: 20rpx 0;
 }
 
-.agree-label {
-	display: flex;
-	align-items: center;
-	font-size: 28rpx;
-	color: #333;
+.read-tip-text {
+	font-size: 26rpx;
+	color: #666;
+	line-height: 1.6;
+}
+
+.read-tip-text.done {
+	color: #2E7D32;
 }
 
 .agree-label checkbox {

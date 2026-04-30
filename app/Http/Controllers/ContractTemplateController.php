@@ -46,7 +46,7 @@ class ContractTemplateController extends Controller
         $this->checkProjectAccess($request, $project);
 
         $validator = Validator::make($request->all(), [
-            'contract_type' => 'required|in:labor,termination,retirement,other',
+            'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'shared_file_id' => 'required|exists:shared_files,id',
             'is_default' => 'boolean',
         ]);

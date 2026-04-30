@@ -55,7 +55,7 @@ class EmployeeContractController extends Controller
         // 简化验证：只验证必填字段，不验证文件类型
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
-            'contract_type' => 'required|in:labor,termination,retirement,other',
+            'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'template_id' => 'nullable|exists:contract_templates,id',
             'notes' => 'nullable|string',
         ]);
@@ -913,7 +913,7 @@ class EmployeeContractController extends Controller
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'template_id' => 'required|exists:contract_templates,id',
-            'contract_type' => 'required|in:labor,termination,retirement,other',
+            'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'notes' => 'nullable|string',
         ]);
 
@@ -1060,7 +1060,7 @@ class EmployeeContractController extends Controller
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'template_id' => 'required|exists:contract_templates,id',
-            'contract_type' => 'required|in:labor,termination,retirement,other',
+            'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'filled_pdf' => 'required|file|mimes:pdf|max:10240', // 10MB限制
             'notes' => 'nullable|string',
         ]);
@@ -1412,7 +1412,7 @@ class EmployeeContractController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
-            'contract_type' => 'required|in:labor,termination,retirement,other',
+            'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'contract_file' => 'required|file|mimes:pdf|max:10240',
             'notes' => 'nullable|string',
         ], [

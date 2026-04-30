@@ -1842,7 +1842,7 @@
                 :precision="2"
                 placeholder="请输入社保基数"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 :controls="false"
               />
               <div class="form-tip">用于社保缴费计算的基数</div>
@@ -1857,7 +1857,7 @@
                 :precision="2"
                 placeholder="请输入医保基数"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 :controls="false"
               />
               <div class="form-tip">用于医保缴费计算的基数</div>
@@ -1875,7 +1875,7 @@
                 :precision="2"
                 placeholder="请输入公积金基数"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 :controls="false"
               />
               <div class="form-tip">用于公积金缴费计算的基数</div>
@@ -1924,7 +1924,7 @@
                 :precision="2"
                 placeholder="请输入大额医疗基数"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 :controls="false"
               />
               <div class="form-tip">用于大额医疗缴费计算的基数</div>
@@ -1943,7 +1943,7 @@
                 type="month"
                 placeholder="请选择社保参保日期"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -1957,7 +1957,7 @@
                 type="month"
                 placeholder="请选择公积金参保日期"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -1971,7 +1971,7 @@
                 type="month"
                 placeholder="请选择医保参保日期"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -1985,7 +1985,7 @@
                 type="month"
                 placeholder="请选择大额参保日期"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isInsuranceFieldsLocked"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -5204,6 +5204,14 @@ const form = reactive({
   
   // 八、备注说明信息
   other_notes: ''
+})
+
+const isInsuranceFieldsLocked = computed(() => {
+  if (isViewMode.value) {
+    return true
+  }
+
+  return !!form.contract_status && form.contract_status !== 'unsigned'
 })
 
 const formRules = {
@@ -9477,4 +9485,3 @@ const getChangeComparison = (detail) => {
   margin-bottom: 20px;
 }
 </style>
-

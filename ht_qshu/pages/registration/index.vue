@@ -766,6 +766,184 @@ export default {
 		validateIdNumber(idNumber) {
 			return !!idNumber && idNumber.length === 18
 		},
+
+		validateRequiredFields() {
+			const idNumber = String(this.formData.id_number || '').trim()
+			if (!this.formData.birth_date && this.validateIdNumber(idNumber)) {
+				this.formData.birth_date = `${idNumber.substring(6, 10)}-${idNumber.substring(10, 12)}-${idNumber.substring(12, 14)}`
+			}
+
+			const requiredFields = [
+				{ key: 'fill_date', label: '填表日期' },
+				{ key: 'entry_position', label: '入职职位' },
+				{ key: 'entry_date', label: '入职日期' },
+				{ key: 'department', label: '部门' },
+				{ key: 'job_title', label: '职务' },
+				{ key: 'housing_fund_account', label: '公积金账户' },
+				{ key: 'bank_account', label: '银行账号' },
+				{ key: 'bank_name', label: '开户支行名称' },
+				{ key: 'name', label: '姓名' },
+				{ key: 'english_name', label: '英文名' },
+				{ key: 'gender', label: '性别' },
+				{ key: 'height', label: '身高' },
+				{ key: 'birth_date', label: '出生日期' },
+				{ key: 'political_status', label: '政治面貌' },
+				{ key: 'education_level', label: '文化程度' },
+				{ key: 'education_type', label: '学历性质' },
+				{ key: 'native_place', label: '籍贯' },
+				{ key: 'marital_status', label: '婚姻状况' },
+				{ key: 'has_children', label: '是否有子女' },
+				{ key: 'id_number', label: '身份证号码' },
+				{ key: 'household_type', label: '户口状态' },
+				{ key: 'current_address', label: '现居住地址' },
+				{ key: 'postal_code', label: '邮编' },
+				{ key: 'household_address', label: '户口地址' },
+				{ key: 'contact_phone', label: '联系电话' },
+				{ key: 'document_address', label: '文书送达地址' },
+				{ key: 'disability_level', label: '残疾证等级' },
+				{ key: 'professional_title', label: '职称' },
+				{ key: 'reference_company', label: '前单位名称' },
+				{ key: 'reference_contact', label: '联系职位/电话' },
+				{ key: 'rewards_punishments', label: '奖惩情况' },
+				{ key: 'emergency_contact1_name', label: '第一紧急联系人姓名' },
+				{ key: 'emergency_contact1_relation', label: '第一紧急联系人关系' },
+				{ key: 'emergency_contact1_phone', label: '第一紧急联系人电话' },
+				{ key: 'emergency_contact2_name', label: '第二紧急联系人姓名' },
+				{ key: 'emergency_contact2_relation', label: '第二紧急联系人关系' },
+				{ key: 'emergency_contact2_phone', label: '第二紧急联系人电话' },
+				{ key: 'mental_illness', label: '精神病史' },
+				{ key: 'other_illness', label: '其他疾病' },
+				{ key: 'hospitalized_recently', label: '近三个月住院记录' },
+				{ key: 'criminal_record', label: '违法犯罪记录' },
+				{ key: 'remarks', label: '其他需要说明情况' },
+				{ key: 'is_pregnant', label: '是否怀孕' },
+				{ key: 'accept_overtime', label: '是否接受加班出差' },
+				{ key: 'need_accommodation', label: '是否需要住宿' },
+				{ key: 'has_driving_license', label: '是否有驾照' },
+				{ key: 'signature_date', label: '签名日期' }
+			]
+
+			const requiredArrayFields = [
+				{ key: 'language_skills', label: '英语水平' },
+				{ key: 'engineering_skills', label: '工程证书' },
+				{ key: 'hobbies', label: '兴趣爱好' },
+				{ key: 'employment_documents', label: '就业证件' }
+			]
+
+			for (const field of requiredFields) {
+				const value = this.formData[field.key]
+				if (value === null || value === undefined || String(value).trim() === '') {
+					uni.showToast({ title: `请填写${field.label}`, icon: 'none' })
+					return false
+				}
+			}
+
+			for (const field of requiredArrayFields) {
+				const value = this.formData[field.key]
+				if (!Array.isArray(value) || value.length === 0) {
+					uni.showToast({ title: `请选择${field.label}`, icon: 'none' })
+					return false
+				}
+			}
+
+			if (!Array.isArray(this.formData.education_history) || this.formData.education_history.length === 0) {
+				uni.showToast({ title: '请至少填写一条教育情况', icon: 'none' })
+				return false
+			}
+
+			for (let i = 0; i < this.formData.education_history.length; i++) {
+				const item = this.formData.education_history[i] || {}
+				if (!String(item.date_range || '').trim() || !String(item.school_major || '').trim() || !String(item.certificate || '').trim()) {
+					uni.showToast({ title: `请完善教育情况第${i + 1}条`, icon: 'none' })
+					return false
+				}
+			}
+
+			if (!Array.isArray(this.formData.work_history) || this.formData.work_history.length === 0) {
+				uni.showToast({ title: '请至少填写一条工作履历', icon: 'none' })
+				return false
+			}
+
+			for (let i = 0; i < this.formData.work_history.length; i++) {
+				const item = this.formData.work_history[i] || {}
+				if (
+					!String(item.date_range || '').trim() ||
+					!String(item.company || '').trim() ||
+					!String(item.position || '').trim() ||
+					!String(item.salary || '').trim() ||
+					!String(item.leave_reason || '').trim()
+				) {
+					uni.showToast({ title: `请完善工作履历第${i + 1}条`, icon: 'none' })
+					return false
+				}
+			}
+
+			if (!Array.isArray(this.formData.family_members) || this.formData.family_members.length === 0) {
+				uni.showToast({ title: '请至少填写一条家庭成员信息', icon: 'none' })
+				return false
+			}
+
+			for (let i = 0; i < this.formData.family_members.length; i++) {
+				const item = this.formData.family_members[i] || {}
+				if (
+					!String(item.name || '').trim() ||
+					!String(item.relation || '').trim() ||
+					!String(item.age || '').trim() ||
+					!String(item.employer || '').trim() ||
+					!String(item.phone || '').trim()
+				) {
+					uni.showToast({ title: `请完善家庭成员第${i + 1}条`, icon: 'none' })
+					return false
+				}
+			}
+
+			if (this.formData.mental_illness === '有' && !String(this.formData.mental_illness_detail || '').trim()) {
+				uni.showToast({ title: '请填写精神病史详情', icon: 'none' })
+				return false
+			}
+
+			if (this.formData.other_illness === '有' && !String(this.formData.other_illness_detail || '').trim()) {
+				uni.showToast({ title: '请填写其他疾病详情', icon: 'none' })
+				return false
+			}
+
+			if (this.formData.hospitalized_recently === '有' && !String(this.formData.hospitalized_reason || '').trim()) {
+				uni.showToast({ title: '请填写住院病因', icon: 'none' })
+				return false
+			}
+
+			if (this.formData.criminal_record === '有' && !String(this.formData.criminal_record_time || '').trim()) {
+				uni.showToast({ title: '请填写违法犯罪时间', icon: 'none' })
+				return false
+			}
+
+			if (this.formData.is_pregnant === '有' && !String(this.formData.pregnant_detail || '').trim()) {
+				uni.showToast({ title: '请填写怀孕详情', icon: 'none' })
+				return false
+			}
+
+			if (this.formData.need_accommodation === '有' && !String(this.formData.accommodation_detail || '').trim()) {
+				uni.showToast({ title: '请填写住宿详情', icon: 'none' })
+				return false
+			}
+
+			if (this.formData.has_driving_license === '有' && !String(this.formData.driving_license_detail || '').trim()) {
+				uni.showToast({ title: '请填写驾照详情', icon: 'none' })
+				return false
+			}
+
+			if (!this.validateIdNumber(idNumber)) {
+				uni.showToast({ title: '请输入正确的身份证号码', icon: 'none' })
+				return false
+			}
+
+			if (!this.formData.signaturePath) {
+				uni.showToast({ title: '请先完成手写签名', icon: 'none' })
+				return false
+			}
+
+			return true
+		},
 		
 		// 多选切换
 		toggleLanguageSkill(item) {
@@ -898,21 +1076,7 @@ export default {
 
 		// 提交表单
 		async submitForm() {
-			// 验证必填字段
-			if (!this.formData.name) {
-				uni.showToast({ title: '请输入姓名', icon: 'none' })
-				return
-			}
-			if (!this.formData.id_number) {
-				uni.showToast({ title: '请输入身份证号码', icon: 'none' })
-				return
-			}
-			if (!this.validateIdNumber(this.formData.id_number)) {
-				uni.showToast({ title: '请输入正确的身份证号码', icon: 'none' })
-				return
-			}
-			if (!this.formData.signaturePath) {
-				uni.showToast({ title: '请先完成手写签名', icon: 'none' })
+			if (!this.validateRequiredFields()) {
 				return
 			}
 			
@@ -922,9 +1086,6 @@ export default {
 				const submitData = { ...this.formData }
 				submitData.signature = this.formData.signaturePath
 				delete submitData.signaturePath
-				if (!submitData.entry_date || !String(submitData.entry_date).trim()) {
-					delete submitData.entry_date
-				}
 				
 				const res = await submitRegistrationForm(submitData)
 				

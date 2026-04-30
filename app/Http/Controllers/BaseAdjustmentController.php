@@ -2,54 +2,49 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AccountSet;
 use App\Models\BaseAdjustment;
 use App\Models\Employee;
-use App\Models\AccountSet;
+use App\Traits\ChecksPermission;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Traits\ChecksPermission;
+use Illuminate\Support\Facades\Validator;
 
 class BaseAdjustmentController extends Controller
 {
     use ChecksPermission;
-    /**
-     * 检查当前是否在允许调整的月份内
-     */
+
     private function canAdjustBase(Request $request): array
     {
         $accountSetId = $request->input('account_set_id') ?: $request->input('current_account_set_id');
         if (!$accountSetId) {
             return [
                 'allowed' => false,
-                'message' => '请先选择账套'
+                'message' => '请先选择账套',
             ];
         }
 
         $accountSet = AccountSet::find($accountSetId);
         if (!$accountSet) {
             Log::error('账套不存在', ['account_set_id' => $accountSetId]);
+
             return [
                 'allowed' => false,
-                'message' => '账套不存在'
+                'message' => '账套不存在',
             ];
         }
 
-        // 获取允许调整的月份
         $adjustmentMonths = [];
         if ($accountSet->base_adjustment_months) {
             try {
-                // 如果已经是数组，直接使用；否则解析JSON
-                if (is_array($accountSet->base_adjustment_months)) {
-                    $adjustmentMonths = $accountSet->base_adjustment_months;
-                } else {
-                    $adjustmentMonths = json_decode($accountSet->base_adjustment_months, true);
-                }
-            } catch (\Exception $e) {
+                $adjustmentMonths = is_array($accountSet->base_adjustment_months)
+                    ? $accountSet->base_adjustment_months
+                    : json_decode($accountSet->base_adjustment_months, true);
+            } catch (\Throwable $exception) {
                 Log::error('解析基数调整月份配置失败', [
                     'account_set_id' => $accountSetId,
-                    'error' => $e->getMessage()
+                    'error' => $exception->getMessage(),
                 ]);
             }
         }
@@ -57,306 +52,278 @@ class BaseAdjustmentController extends Controller
         if (empty($adjustmentMonths)) {
             return [
                 'allowed' => false,
-                'message' => '该账套未配置基数调整月份，请在账套设置中配置'
+                'message' => '该账套未配置基数调整月份，请先在账套设置中配置',
             ];
         }
 
-        $currentMonth = (int) date('n'); // 1-12
-        if (!in_array($currentMonth, $adjustmentMonths)) {
+        $currentMonth = (int) date('n');
+        if (!in_array($currentMonth, $adjustmentMonths, true)) {
             return [
                 'allowed' => false,
-                'message' => '当前月份不允许调整基数，允许调整的月份为：' . implode('、', $adjustmentMonths) . '月'
+                'message' => '当前月份不允许调基，允许调整月份为：' . implode('、', $adjustmentMonths) . '月',
             ];
         }
 
         return [
             'allowed' => true,
-            'message' => '可以调整'
+            'message' => '当前月份允许调基',
         ];
     }
 
-    /**
-     * 获取在职员工列表（带调差记录）
-     */
     public function index(Request $request)
     {
-        // 基数调差查看权限
         if ($response = $this->checkPermission('base_adjustment.view')) {
             return $response;
         }
 
-        // 兼容前端传入的 account_set_id 或请求拦截器添加的 current_account_set_id
         $accountSetId = $request->input('account_set_id') ?: $request->input('current_account_set_id');
         if (!$accountSetId) {
             return response()->json([
                 'success' => false,
-                'message' => '请选择账套'
+                'message' => '请选择账套',
             ], 422);
         }
 
-        // 查询在职员工（合同状态为active或approved）
-        $query = Employee::with(['projects'])
+        $query = Employee::with(['projects', 'largeMedicalInsuranceConfigRelation'])
             ->where('account_set_id', $accountSetId)
             ->whereIn('contract_status', ['active', 'approved']);
 
-        // 员工姓名搜索
-        if ($request->has('employee_name') && $request->employee_name) {
+        if ($request->filled('employee_name')) {
             $query->where('name', 'like', '%' . $request->employee_name . '%');
         }
 
-        // 项目筛选
-        if ($request->has('project_id') && $request->project_id) {
-            $query->where('project_id', $request->project_id);
+        if ($request->filled('project_id')) {
+            $projectId = $request->input('project_id');
+            $query->whereHas('projects', function ($projectQuery) use ($projectId) {
+                $projectQuery->where('projects.id', $projectId);
+            });
         }
 
         $employees = $query->orderBy('created_at', 'desc')->get();
+        $employeeIds = $employees->pluck('id')->all();
 
-        // 为每个员工添加调差记录信息
-        $employeesWithAdjustments = $employees->map(function ($employee) {
-            // 查找该员工最新的调差记录（包括待生效和已生效）
-            $latestAdjustment = BaseAdjustment::where('employee_id', $employee->id)
-                ->whereIn('status', ['pending', 'applied'])
-                ->orderBy('created_at', 'desc')
-                ->first();
+        $adjustmentsByEmployee = BaseAdjustment::with(['creator'])
+            ->whereIn('employee_id', $employeeIds ?: [0])
+            ->whereIn('status', ['pending', 'applied'])
+            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->get()
+            ->groupBy('employee_id');
 
-            // 获取第一个项目（员工可能关联多个项目）
-            $firstProject = $employee->projects->first();
-            
-            // 获取员工的大额配置的基数来源
-            $largeMedicalBaseSource = 'employee'; // 默认普通地区
-            if ($employee->large_medical_insurance_config_id) {
-                $largeMedicalConfig = \App\Models\LargeMedicalInsuranceConfig::find($employee->large_medical_insurance_config_id);
-                if ($largeMedicalConfig) {
-                    $largeMedicalBaseSource = $largeMedicalConfig->base_source ?? 'employee';
-                }
-            }
-            
+        $data = $employees->map(function (Employee $employee) use ($adjustmentsByEmployee) {
+            $project = $employee->projects->first();
+            $typedAdjustments = $this->mapAdjustmentsByType($adjustmentsByEmployee->get($employee->id, collect()));
+
             return [
                 'employee_id' => $employee->id,
                 'employee_name' => $employee->name,
                 'id_number' => $employee->id_number,
-                'project_id' => $firstProject ? $firstProject->id : null,
-                'project_name' => $firstProject ? $firstProject->name : '',
+                'project_id' => $project ? $project->id : null,
+                'project_name' => $project ? $project->name : '',
                 'current_social_security_base' => $employee->social_security_base ?? 0,
                 'current_medical_insurance_base' => $employee->medical_insurance_base ?? 0,
                 'current_housing_fund_base' => $employee->housing_fund_base ?? 0,
-                'current_large_medical_base' => $employee->large_medical_base ?? 0,
-                'current_large_medical_company_base' => $employee->large_medical_company_base ?? 0,
-                'large_medical_base_source' => $largeMedicalBaseSource,
-                'adjustment' => $latestAdjustment ? [
-                    'id' => $latestAdjustment->id,
-                    'status' => $latestAdjustment->status,
-                    'applied_at' => $latestAdjustment->applied_at,
-                    'new_social_security_base' => $latestAdjustment->new_social_security_base,
-                    'new_medical_insurance_base' => $latestAdjustment->new_medical_insurance_base,
-                    'new_housing_fund_base' => $latestAdjustment->new_housing_fund_base,
-                    'new_large_medical_base' => $latestAdjustment->new_large_medical_base,
-                    'new_large_medical_company_base' => $latestAdjustment->new_large_medical_company_base,
-                    'social_security_effective_date' => $latestAdjustment->social_security_effective_date ? $latestAdjustment->social_security_effective_date->format('Y-m-d') : null,
-                    'medical_insurance_effective_date' => $latestAdjustment->medical_insurance_effective_date ? $latestAdjustment->medical_insurance_effective_date->format('Y-m-d') : null,
-                    'housing_fund_effective_date' => $latestAdjustment->housing_fund_effective_date ? $latestAdjustment->housing_fund_effective_date->format('Y-m-d') : null,
-                    'large_medical_effective_date' => $latestAdjustment->large_medical_effective_date ? $latestAdjustment->large_medical_effective_date->format('Y-m-d') : null,
-                    'adjustment_reason' => $latestAdjustment->adjustment_reason,
-                    'created_at' => $latestAdjustment->created_at ? $latestAdjustment->created_at->format('Y-m-d H:i:s') : null
-                ] : null
+                'current_large_medical_base' => $employee->large_medical_base,
+                'current_large_medical_company_base' => $employee->large_medical_company_base,
+                'large_medical_base_source' => optional($employee->largeMedicalInsuranceConfigRelation)->base_source ?? 'employee',
+                'adjustments' => $typedAdjustments,
             ];
         });
 
         return response()->json([
             'success' => true,
-            'data' => $employeesWithAdjustments
+            'data' => $data,
         ]);
     }
 
-    /**
-     * 创建或更新基数调整记录
-     */
     public function store(Request $request)
     {
-        // 基数调差新增/编辑权限
         if ($response = $this->checkPermission('base_adjustment.create')) {
             return $response;
         }
 
-        // 检查权限
         $canAdjust = $this->canAdjustBase($request);
         if (!$canAdjust['allowed']) {
             return response()->json([
                 'success' => false,
-                'message' => $canAdjust['message']
+                'message' => $canAdjust['message'],
             ], 403);
         }
 
-        // 动态验证规则：只有填写了基数的字段才需要验证对应的生效时间
-        $rules = [
+        $validator = Validator::make($request->all(), [
+            'adjustment_id' => 'nullable|exists:base_adjustments,id',
             'employee_id' => 'required|exists:employees,id',
             'account_set_id' => 'required|exists:account_sets,id',
-            'adjustment_reason' => 'nullable|string|max:500'
-        ];
-
-        // 如果填写了社保基数，则验证社保生效时间
-        if ($request->filled('new_social_security_base')) {
-            $rules['new_social_security_base'] = 'numeric|min:0';
-            $rules['social_security_effective_date'] = 'required|date|after_or_equal:today';
-        }
-
-        // 如果填写了医保基数，则验证医保生效时间
-        if ($request->filled('new_medical_insurance_base')) {
-            $rules['new_medical_insurance_base'] = 'numeric|min:0';
-            $rules['medical_insurance_effective_date'] = 'required|date|after_or_equal:today';
-        }
-
-        // 如果填写了公积金基数，则验证公积金生效时间
-        if ($request->filled('new_housing_fund_base')) {
-            $rules['new_housing_fund_base'] = 'numeric|min:0';
-            $rules['housing_fund_effective_date'] = 'required|date|after_or_equal:today';
-        }
-
-        // 如果填写了大额医疗基数（个人基数或公司基数），则验证大额医疗生效时间
-        if ($request->filled('new_large_medical_base') || $request->filled('new_large_medical_company_base')) {
-            $rules['new_large_medical_base'] = 'nullable|numeric|min:0';
-            $rules['new_large_medical_company_base'] = 'nullable|numeric|min:0';
-            $rules['large_medical_effective_date'] = 'required|date|after_or_equal:today';
-        }
-
-        // 检查是否至少填写了一个基数
-        if (!$request->filled('new_social_security_base') && 
-            !$request->filled('new_medical_insurance_base') && 
-            !$request->filled('new_housing_fund_base') && 
-            !$request->filled('new_large_medical_base') &&
-            !$request->filled('new_large_medical_company_base')) {
-            return response()->json([
-                'success' => false,
-                'message' => '请至少填写一个基数'
-            ], 422);
-        }
-
-        $validator = Validator::make($request->all(), $rules);
+            'adjustment_type' => 'required|in:' . implode(',', BaseAdjustment::getSupportedTypes()),
+            'effective_date' => 'required|date|after_or_equal:today',
+            'new_base' => 'nullable|numeric|min:0',
+            'new_company_base' => 'nullable|numeric|min:0',
+            'adjustment_reason' => 'nullable|string|max:500',
+        ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => '验证失败',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        // 检查用户是否已登录（使用sanctum guard）
-        if (!auth('sanctum')->check()) {
+        $type = $request->input('adjustment_type');
+        $newBase = $request->input('new_base');
+        $newCompanyBase = $request->input('new_company_base');
+
+        if (in_array($type, [
+            BaseAdjustment::TYPE_SOCIAL_SECURITY,
+            BaseAdjustment::TYPE_MEDICAL_INSURANCE,
+            BaseAdjustment::TYPE_HOUSING_FUND,
+        ], true) && !$this->hasValue($newBase)) {
             return response()->json([
                 'success' => false,
-                'message' => '用户未登录'
-            ], 401);
+                'message' => '请填写调整后的基数',
+            ], 422);
         }
 
-        $employee = Employee::find($request->employee_id);
+        if ($type === BaseAdjustment::TYPE_LARGE_MEDICAL && !$this->hasValue($newBase) && !$this->hasValue($newCompanyBase)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请至少填写一个大额医疗调整值',
+            ], 422);
+        }
+
+        $employee = Employee::with(['projects', 'socialSecurityRegion', 'medicalInsuranceRegion', 'housingFundConfig', 'largeMedicalInsuranceConfigRelation'])
+            ->find($request->employee_id);
+
         if (!$employee) {
             return response()->json([
                 'success' => false,
-                'message' => '员工不存在'
+                'message' => '员工不存在',
             ], 404);
         }
-        
-        // 检查是否在职（合同状态为active或approved）
-        if (!in_array($employee->contract_status, ['active', 'approved'])) {
+
+        if (!in_array($employee->contract_status, ['active', 'approved'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '员工不是在职状态'
+                'message' => '仅允许在职员工调基',
             ], 403);
         }
 
+        if ($type === BaseAdjustment::TYPE_LARGE_MEDICAL && optional($employee->largeMedicalInsuranceConfigRelation)->base_source === 'config') {
+            return response()->json([
+                'success' => false,
+                'message' => '该员工所属特殊地区，大额医疗请前往大额医疗保险管理中调整',
+            ], 422);
+        }
+
+        if ($this->isSameAsCurrentValue($employee, $type, $newBase, $newCompanyBase)) {
+            return response()->json([
+                'success' => false,
+                'message' => '调整后的基数不能与当前基数一致',
+            ], 422);
+        }
+
         try {
-            // 允许创建多条待生效的调整记录（不同生效日期可以独立管理）
-            $createData = [
-                'employee_id' => $request->employee_id,
-                'account_set_id' => $request->account_set_id,
-                'status' => 'pending',
-                'adjustment_reason' => $request->input('adjustment_reason'),
-                'created_by' => auth('sanctum')->id()
-            ];
+            $adjustment = DB::transaction(function () use ($request, $employee, $type) {
+                $existingAdjustment = $this->findPendingAdjustmentByType(
+                    $employee->id,
+                    $request->account_set_id,
+                    $type,
+                    $request->input('adjustment_id')
+                );
 
-            // 只添加填写了基数的字段
-            if ($request->filled('new_social_security_base')) {
-                $createData['new_social_security_base'] = $request->new_social_security_base;
-                $createData['social_security_effective_date'] = $request->social_security_effective_date;
-                // 保存社保上下限
-                $createData['social_security_min_base'] = $request->input('social_security_min_base');
-                $createData['social_security_max_base'] = $request->input('social_security_max_base');
-            }
-
-            if ($request->filled('new_medical_insurance_base')) {
-                $createData['new_medical_insurance_base'] = $request->new_medical_insurance_base;
-                $createData['medical_insurance_effective_date'] = $request->medical_insurance_effective_date;
-                // 保存医保上下限
-                $createData['medical_insurance_min_base'] = $request->input('medical_insurance_min_base');
-                $createData['medical_insurance_max_base'] = $request->input('medical_insurance_max_base');
-            }
-
-            if ($request->filled('new_housing_fund_base')) {
-                $createData['new_housing_fund_base'] = $request->new_housing_fund_base;
-                $createData['housing_fund_effective_date'] = $request->housing_fund_effective_date;
-                // 保存公积金上下限
-                $createData['housing_fund_min_base'] = $request->input('housing_fund_min_base');
-                $createData['housing_fund_max_base'] = $request->input('housing_fund_max_base');
-            }
-
-            if ($request->filled('new_large_medical_base')) {
-                $createData['new_large_medical_base'] = $request->new_large_medical_base;
-                $createData['large_medical_effective_date'] = $request->large_medical_effective_date;
-            }
-
-            if ($request->filled('new_large_medical_company_base')) {
-                $createData['new_large_medical_company_base'] = $request->new_large_medical_company_base;
-                $createData['old_large_medical_company_base'] = $employee->large_medical_company_base;
-                // 如果没有设置个人基数，确保生效日期已设置
-                if (!isset($createData['large_medical_effective_date'])) {
-                    $createData['large_medical_effective_date'] = $request->large_medical_effective_date;
+                if ($existingAdjustment && $existingAdjustment->isMixedRecord()) {
+                    $existingAdjustment = $existingAdjustment->extractTypeToStandaloneRecord($type, [
+                        'status' => 'pending',
+                        'applied_at' => null,
+                    ]);
                 }
-            }
 
-            $adjustment = BaseAdjustment::create($createData);
+                $project = $employee->projects->first();
+                $payload = array_merge(
+                    BaseAdjustment::emptyTypePayload(),
+                    [
+                        'employee_id' => $employee->id,
+                        'project_id' => $project ? $project->id : null,
+                        'account_set_id' => $request->account_set_id,
+                        'status' => 'pending',
+                        'applied_at' => null,
+                        'adjustment_reason' => $request->input('adjustment_reason'),
+                    ],
+                    $this->buildTypePayload($employee, $request, $type)
+                );
+
+                if ($existingAdjustment) {
+                    $existingAdjustment->update($payload);
+
+                    return $existingAdjustment->fresh(['employee', 'creator']);
+                }
+
+                $payload['created_by'] = auth('sanctum')->id();
+
+                return BaseAdjustment::create($payload)->load(['employee', 'creator']);
+            });
 
             return response()->json([
                 'success' => true,
-                'message' => '基数调整创建成功',
-                'data' => $adjustment->load(['employee', 'creator'])
+                'message' => '基数调整已保存',
+                'data' => $adjustment,
             ]);
-        } catch (\Exception $e) {
-            Log::error('创建基数调整记录失败', [
+        } catch (\Throwable $exception) {
+            Log::error('保存基数调整失败', [
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $request->account_set_id,
-                'user_id' => auth('sanctum')->id(),
-                'request_data' => $request->all(),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'adjustment_type' => $type,
+                'error' => $exception->getMessage(),
+                'trace' => $exception->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => '操作失败：' . $e->getMessage()
+                'message' => '保存失败：' . $exception->getMessage(),
             ], 500);
         }
     }
 
-    /**
-     * 删除基数调整记录
-     */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $adjustment = BaseAdjustment::find($id);
         if (!$adjustment) {
             return response()->json([
                 'success' => false,
-                'message' => '记录不存在'
+                'message' => '记录不存在',
             ], 404);
         }
 
-        // 只有待生效状态可以删除
         if ($adjustment->status !== 'pending') {
             return response()->json([
                 'success' => false,
-                'message' => '只有待生效状态的记录可以删除'
+                'message' => '仅待生效记录允许删除',
             ], 403);
+        }
+
+        $type = $request->input('adjustment_type');
+        if ($type) {
+            if (!$adjustment->hasType($type)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前记录不包含该险种',
+                ], 422);
+            }
+
+            try {
+                $adjustment->removeType($type);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => '删除成功',
+                ]);
+            } catch (\Throwable $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '删除失败：' . $exception->getMessage(),
+                ], 500);
+            }
         }
 
         try {
@@ -364,22 +331,18 @@ class BaseAdjustmentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => '删除成功'
+                'message' => '删除成功',
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $exception) {
             return response()->json([
                 'success' => false,
-                'message' => '删除失败：' . $e->getMessage()
+                'message' => '删除失败：' . $exception->getMessage(),
             ], 500);
         }
     }
 
-    /**
-     * 手动应用基数调整（立即生效）
-     */
     public function applyNow(Request $request, $id)
     {
-        // 基数调差编辑权限
         if ($response = $this->checkPermission('base_adjustment.update')) {
             return $response;
         }
@@ -388,52 +351,60 @@ class BaseAdjustmentController extends Controller
         if (!$adjustment) {
             return response()->json([
                 'success' => false,
-                'message' => '记录不存在'
+                'message' => '记录不存在',
             ], 404);
         }
 
         if ($adjustment->status !== 'pending') {
             return response()->json([
                 'success' => false,
-                'message' => '只有待生效状态的记录可以立即生效'
+                'message' => '仅待生效记录允许立即生效',
             ], 403);
         }
 
+        $type = $request->input('adjustment_type');
+        if ($type && !$adjustment->hasType($type)) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前记录不包含该险种',
+            ], 422);
+        }
+
         try {
-            $result = $adjustment->apply();
-            if ($result) {
-                return response()->json([
-                    'success' => true,
-                    'message' => '基数调整已生效'
-                ]);
-            } else {
+            $result = $adjustment->apply($type, true);
+
+            if (!$result) {
                 return response()->json([
                     'success' => false,
-                    'message' => '应用失败'
+                    'message' => '立即生效失败',
                 ], 500);
             }
-        } catch (\Exception $e) {
-            Log::error('应用基数调整失败', [
+
+            return response()->json([
+                'success' => true,
+                'message' => '基数调整已立即生效',
+            ]);
+        } catch (\Throwable $exception) {
+            Log::error('立即生效失败', [
                 'adjustment_id' => $id,
-                'error' => $e->getMessage()
+                'adjustment_type' => $type,
+                'error' => $exception->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => '应用失败：' . $e->getMessage()
+                'message' => '立即生效失败：' . $exception->getMessage(),
             ], 500);
         }
     }
 
-    /**
-     * 批量应用已到期的基数调整（定时任务调用）
-     */
     public function applyDue(Request $request)
     {
         try {
             $adjustments = BaseAdjustment::pending()
                 ->effective()
                 ->whereNull('applied_at')
+                ->orderBy('id')
                 ->get();
 
             $successCount = 0;
@@ -446,11 +417,11 @@ class BaseAdjustmentController extends Controller
                     } else {
                         $failCount++;
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $exception) {
                     $failCount++;
-                    Log::error('应用基数调整失败', [
+                    Log::error('批量应用基数调整失败', [
                         'adjustment_id' => $adjustment->id,
-                        'error' => $e->getMessage()
+                        'error' => $exception->getMessage(),
                     ]);
                 }
             }
@@ -461,58 +432,179 @@ class BaseAdjustmentController extends Controller
                 'data' => [
                     'total' => count($adjustments),
                     'success' => $successCount,
-                    'fail' => $failCount
-                ]
+                    'fail' => $failCount,
+                ],
             ]);
-        } catch (\Exception $e) {
-            Log::error('批量应用基数调整失败', [
-                'error' => $e->getMessage()
-            ]);
+        } catch (\Throwable $exception) {
+            Log::error('批量应用基数调整失败', ['error' => $exception->getMessage()]);
 
             return response()->json([
                 'success' => false,
-                'message' => '批量应用失败：' . $e->getMessage()
+                'message' => '批量应用失败：' . $exception->getMessage(),
             ], 500);
         }
     }
 
-    /**
-     * 获取调整权限状态（当前月份是否允许调整、提示文案等）
-     * 方法名与 Trait ChecksPermission 的 checkPermission($permission) 区分，避免 index 中调用权限检查时被误解析
-     */
     public function getAdjustStatus(Request $request)
     {
-        $result = $this->canAdjustBase($request);
-
         return response()->json([
             'success' => true,
-            'data' => $result
+            'data' => $this->canAdjustBase($request),
         ]);
     }
 
-    /**
-     * 获取调差记录历史
-     */
     public function history(Request $request, $employeeId)
     {
+        if ($response = $this->checkPermission('base_adjustment.view')) {
+            return $response;
+        }
+
         $accountSetId = $request->input('account_set_id') ?: $request->input('current_account_set_id');
         if (!$accountSetId) {
             return response()->json([
                 'success' => false,
-                'message' => '请选择账套'
+                'message' => '请选择账套',
             ], 422);
         }
 
-        $adjustments = BaseAdjustment::with(['creator'])
+        $records = BaseAdjustment::with(['creator'])
             ->where('employee_id', $employeeId)
             ->where('account_set_id', $accountSetId)
             ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
             ->get();
+
+        $historyItems = [];
+        foreach ($records as $record) {
+            foreach ($record->getPresentTypes() as $type) {
+                $historyItems[] = $this->formatTypeItem($record, $type);
+            }
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $adjustments
+            'data' => $historyItems,
         ]);
     }
-}
 
+    private function mapAdjustmentsByType($adjustments): array
+    {
+        $mapped = [];
+        foreach (BaseAdjustment::getSupportedTypes() as $type) {
+            $mapped[$type] = null;
+        }
+
+        foreach ($adjustments as $adjustment) {
+            foreach ($adjustment->getPresentTypes() as $type) {
+                if (!$mapped[$type]) {
+                    $mapped[$type] = $this->formatTypeItem($adjustment, $type);
+                }
+            }
+        }
+
+        return $mapped;
+    }
+
+    private function formatTypeItem(BaseAdjustment $adjustment, string $type): array
+    {
+        return array_merge($adjustment->toTypeItem($type), [
+            'creator_name' => optional($adjustment->creator)->name,
+        ]);
+    }
+
+    private function findPendingAdjustmentByType(int $employeeId, int $accountSetId, string $type, $adjustmentId = null): ?BaseAdjustment
+    {
+        if ($adjustmentId) {
+            $record = BaseAdjustment::pending()
+                ->where('id', $adjustmentId)
+                ->where('employee_id', $employeeId)
+                ->where('account_set_id', $accountSetId)
+                ->first();
+
+            if ($record && $record->hasType($type)) {
+                return $record;
+            }
+        }
+
+        return BaseAdjustment::pending()
+            ->where('employee_id', $employeeId)
+            ->where('account_set_id', $accountSetId)
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->get()
+            ->first(function (BaseAdjustment $record) use ($type) {
+                return $record->hasType($type);
+            });
+    }
+
+    private function buildTypePayload(Employee $employee, Request $request, string $type): array
+    {
+        $effectiveDate = $request->input('effective_date');
+        $payload = ['effective_date' => $effectiveDate];
+
+        switch ($type) {
+            case BaseAdjustment::TYPE_SOCIAL_SECURITY:
+                $payload['old_social_security_base'] = $employee->social_security_base;
+                $payload['new_social_security_base'] = $request->input('new_base');
+                $payload['social_security_effective_date'] = $effectiveDate;
+                $payload['social_security_min_base'] = optional($employee->socialSecurityRegion)->min_base_amount;
+                $payload['social_security_max_base'] = optional($employee->socialSecurityRegion)->max_base_amount;
+                break;
+
+            case BaseAdjustment::TYPE_MEDICAL_INSURANCE:
+                $payload['old_medical_insurance_base'] = $employee->medical_insurance_base;
+                $payload['new_medical_insurance_base'] = $request->input('new_base');
+                $payload['medical_insurance_effective_date'] = $effectiveDate;
+                $payload['medical_insurance_min_base'] = optional($employee->medicalInsuranceRegion)->min_base_amount;
+                $payload['medical_insurance_max_base'] = optional($employee->medicalInsuranceRegion)->max_base_amount;
+                break;
+
+            case BaseAdjustment::TYPE_HOUSING_FUND:
+                $payload['old_housing_fund_base'] = $employee->housing_fund_base;
+                $payload['new_housing_fund_base'] = $request->input('new_base');
+                $payload['housing_fund_effective_date'] = $effectiveDate;
+                $payload['housing_fund_min_base'] = optional($employee->housingFundConfig)->min_base_amount;
+                $payload['housing_fund_max_base'] = optional($employee->housingFundConfig)->max_base_amount;
+                break;
+
+            case BaseAdjustment::TYPE_LARGE_MEDICAL:
+                $payload['old_large_medical_base'] = $employee->large_medical_base;
+                $payload['new_large_medical_base'] = $this->hasValue($request->input('new_base')) ? $request->input('new_base') : null;
+                $payload['old_large_medical_company_base'] = $employee->large_medical_company_base;
+                $payload['new_large_medical_company_base'] = $this->hasValue($request->input('new_company_base')) ? $request->input('new_company_base') : null;
+                $payload['large_medical_effective_date'] = $effectiveDate;
+                break;
+        }
+
+        return $payload;
+    }
+
+    private function isSameAsCurrentValue(Employee $employee, string $type, $newBase, $newCompanyBase): bool
+    {
+        switch ($type) {
+            case BaseAdjustment::TYPE_SOCIAL_SECURITY:
+                return $this->hasValue($newBase) && (float) $newBase === (float) ($employee->social_security_base ?? 0);
+
+            case BaseAdjustment::TYPE_MEDICAL_INSURANCE:
+                return $this->hasValue($newBase) && (float) $newBase === (float) ($employee->medical_insurance_base ?? 0);
+
+            case BaseAdjustment::TYPE_HOUSING_FUND:
+                return $this->hasValue($newBase) && (float) $newBase === (float) ($employee->housing_fund_base ?? 0);
+
+            case BaseAdjustment::TYPE_LARGE_MEDICAL:
+                $samePersonal = !$this->hasValue($newBase)
+                    || ($this->hasValue($employee->large_medical_base) && (float) $newBase === (float) $employee->large_medical_base);
+                $sameCompany = !$this->hasValue($newCompanyBase)
+                    || ($this->hasValue($employee->large_medical_company_base) && (float) $newCompanyBase === (float) $employee->large_medical_company_base);
+
+                return $samePersonal && $sameCompany;
+        }
+
+        return false;
+    }
+
+    private function hasValue($value): bool
+    {
+        return !is_null($value) && $value !== '';
+    }
+}

@@ -159,20 +159,20 @@
         label-width="120px"
       >
         <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="项目名称" prop="name">
-              <el-input v-model="form.name" placeholder="请输入项目名称" :readonly="form.id && !isEdit" />
+                    <el-col :span="12">
+            <el-form-item label="&#39033;&#30446;&#21517;&#31216;" prop="name">
+              <el-input v-model="form.name" placeholder="&#35831;&#36755;&#20837;&#39033;&#30446;&#21517;&#31216;" :readonly="form.id && !isEdit" @blur="handleProjectNameBlur" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="项目编号">
-              <el-input v-model="form.code" placeholder="自动生成" readonly>
+            <el-form-item label="&#39033;&#30446;&#32534;&#21495;" prop="code">
+              <el-input v-model="form.code" placeholder="&#30041;&#31354;&#21017;&#33258;&#21160;&#29983;&#25104;" :readonly="form.id && !isEdit" @input="handleProjectCodeInput" @blur="handleProjectCodeBlur">
                 <template #prepend>
                   <el-icon><Tickets /></el-icon>
                 </template>
               </el-input>
               <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-                项目编号将自动生成（如：AA, AB, AC...）
+                &#40664;&#35748;&#25353;&#39033;&#30446;&#21517;&#31216;&#25340;&#38899;&#39318;&#23383;&#27597;&#29983;&#25104;&#65292;&#21487;&#25163;&#21160;&#20462;&#25913;&#65307;&#21516;&#36134;&#22871;&#19979;&#32534;&#21495;&#19981;&#33021;&#37325;&#22797;
               </div>
             </el-form-item>
           </el-col>
@@ -630,6 +630,78 @@
                     type="primary" 
                     size="small"
                     @click="openTemplateUploadDialog('retirement')"
+                    :disabled="!form.id || (form.id && !isEdit)"
+                  >
+                    上传模板
+                  </el-button>
+                </el-empty>
+              </div>
+            </div>
+          </div>
+        </el-form-item>
+        
+        <!-- 保密协议模板 -->
+        <el-form-item label="保密协议模板">
+          <div class="template-manager">
+            <div class="template-header">
+              <span class="template-title">保密协议模板</span>
+              <el-button 
+                type="primary" 
+                size="small" 
+                @click="openTemplateUploadDialog('confidentiality')"
+                :disabled="!form.id || (form.id && !isEdit)"
+              >
+                上传模板
+              </el-button>
+            </div>
+            <div class="template-list">
+              <div v-if="contractTemplates.confidentiality && contractTemplates.confidentiality.length > 0" class="template-items">
+                <div 
+                  v-for="template in contractTemplates.confidentiality" 
+                  :key="template.id"
+                  class="template-item"
+                  :class="{ 'is-default': template.is_default }"
+                >
+                  <div class="template-info">
+                    <span class="template-name">{{ template.shared_file?.name || '文件已删除' }}</span>
+                    <el-tag v-if="template.is_default" type="success" size="small">默认</el-tag>
+                  </div>
+                  <div class="template-actions">
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click="openPlaceholderSetup(template, 'confidentiality')"
+                      :disabled="form.id && !isEdit"
+                    >
+                      设置占位符
+                    </el-button>
+                    <el-button 
+                      v-if="!template.is_default"
+                      type="text" 
+                      size="small"
+                      @click="setDefaultTemplateAction(template.id)"
+                      :disabled="form.id && !isEdit"
+                    >
+                      设为默认
+                    </el-button>
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click="deleteTemplate(template.id)"
+                      :disabled="form.id && !isEdit"
+                      style="color: #f56c6c"
+                    >
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="template-empty">
+                <el-empty description="暂无保密协议模板" :image-size="60">
+                  <el-button 
+                    type="primary" 
+                    size="small"
+                    @click="openTemplateUploadDialog('confidentiality')"
                     :disabled="!form.id || (form.id && !isEdit)"
                   >
                     上传模板
@@ -1186,7 +1258,7 @@ import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
-import { getProjects, createProject, updateProject, deleteProject } from '@/api/projects'
+import { getProjects, createProject, updateProject, deleteProject, getProjectCodePreview } from '@/api/projects'
 import { getSharedFiles } from '@/api/sharedFiles'
 import { addContractTemplate, getDefaultTemplates, getContractTemplates, setDefaultTemplate, deleteContractTemplate } from '@/api/contractTemplates'
 import { getAvailableSocialSecurityRegions, getAvailableHousingFundRegions, setProjectSocialSecurityRegions, setProjectHousingFundRegions } from '@/api/projectSocialSecurity'
@@ -1305,6 +1377,7 @@ const contractTemplates = ref({
   labor: [],
   termination: [],
   retirement: [],
+  confidentiality: [],
   other: []
 })
 const showTemplateUploadDialog = ref(false)
@@ -1405,7 +1478,10 @@ const documentForm = reactive({
 
 const documentFormRules = {
   document_name: [
-    { required: true, message: '请输入资料名称', trigger: 'blur' }
+    { required: true, message: '请输入项目名称', trigger: 'blur' }
+  ],
+  code: [
+    { min: 1, max: 255, message: '项目编号长度需在 1 到 255 个字符之间', trigger: 'blur' }
   ],
   document_type: [
     { required: true, message: '请选择文件类型', trigger: 'change' }
@@ -1699,6 +1775,9 @@ const formRules = {
   name: [
     { required: true, message: '请输入项目名称', trigger: 'blur' }
   ],
+  code: [
+    { min: 1, max: 255, message: '项目编号长度需在 1 到 255 个字符之间', trigger: 'blur' }
+  ],
   status: [
     { required: true, message: '请选择状态', trigger: 'change' }
   ],
@@ -1710,6 +1789,47 @@ const formRules = {
   ]
 }
 
+const isProjectCodeManuallyEdited = ref(false)
+const normalizeProjectCode = (value) => {
+  if (typeof value !== 'string') {
+    return ''
+  }
+  return value.trim().toUpperCase()
+}
+const updateProjectCodePreview = async () => {
+  if (form.id || isProjectCodeManuallyEdited.value) {
+    return
+  }
+  const projectName = typeof form.name === 'string' ? form.name.trim() : ''
+  if (!projectName) {
+    form.code = ''
+    return
+  }
+  try {
+    const response = await getProjectCodePreview({
+      name: projectName,
+      current_account_set_id: currentAccountSetId.value
+    })
+    if (response?.success) {
+      form.code = normalizeProjectCode(response.data?.code || '')
+    }
+  } catch (error) {
+    console.error('get project code preview failed:', error)
+  }
+}
+const handleProjectNameBlur = async () => {
+  await updateProjectCodePreview()
+}
+const handleProjectCodeInput = (value) => {
+  const normalized = normalizeProjectCode(value)
+  if (form.code !== normalized) {
+    form.code = normalized
+  }
+  isProjectCodeManuallyEdited.value = normalized !== ''
+}
+const handleProjectCodeBlur = () => {
+  form.code = normalizeProjectCode(form.code)
+}
 const loadProjects = async () => {
   loading.value = true
   try {
@@ -1923,6 +2043,7 @@ const openPolicySelectionDialog = () => {
 
 // 重置表单
 const resetForm = () => {
+  isProjectCodeManuallyEdited.value = false
   Object.assign(form, {
     id: undefined,  // 重置ID，确保新建时不会误用旧ID
     name: '',
@@ -2047,12 +2168,15 @@ const handleCreate = async () => {
   isEdit.value = false  // 新建时设置为false
   currentProject.value = null
   resetForm()
+  isProjectCodeManuallyEdited.value = false
   
   // 重置合同模板数据
   contractTemplates.value = {
     labor: [],
     termination: [],
-    retirement: []
+    retirement: [],
+    confidentiality: [],
+    other: []
   }
   
   // 加载所有地区和保险数据
@@ -2088,6 +2212,7 @@ const handleView = async (row) => {
   // 查看项目详情
   isEdit.value = false
   currentProject.value = row
+  isProjectCodeManuallyEdited.value = true
   
   // 先加载所有可用的地区和保险数据（确保下拉列表有数据）
   await loadAvailableRegions()
@@ -2118,6 +2243,7 @@ const handleView = async (row) => {
 const handleEdit = async (row) => {
   isEdit.value = true
   currentProject.value = row
+  isProjectCodeManuallyEdited.value = true
   
   // 先加载所有可用的地区和保险数据（确保下拉列表有数据）
   await loadAvailableRegions()
@@ -2367,6 +2493,7 @@ const getTemplateTypeName = (type) => {
   const names = {
     labor: '劳动合同',
     termination: '解除协议',
+    confidentiality: '保密协议',
     retirement: '退休解除协议',
     other: '其他合同'
   }
@@ -2462,6 +2589,7 @@ const loadContractTemplates = async () => {
       labor: templates.labor || [],
       termination: templates.termination || [],
       retirement: templates.retirement || [],
+      confidentiality: templates.confidentiality || [],
       other: templates.other || []
     }
   } catch (error) {
@@ -2607,6 +2735,7 @@ const handleSubmit = async () => {
 
 const handleDialogClose = () => {
   isEdit.value = false
+  isProjectCodeManuallyEdited.value = false
   Object.assign(form, {
     name: '',
     code: '',

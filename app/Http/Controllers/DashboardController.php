@@ -521,7 +521,7 @@ class DashboardController extends Controller
         $reminders = [];
         
         // 从通知表中获取通用通知类型的未读通知
-        $query = \App\Models\Notification::whereIn('type', ['invoice_reminder', 'invoice_reason_submitted', 'salary_payment_reminder', 'insurance_summary_reminder'])
+        $query = \App\Models\Notification::whereIn('type', ['invoice_reminder', 'invoice_reason_submitted', 'salary_payment_reminder', 'insurance_summary_reminder', 'project_end_reminder'])
             ->where('is_read', false);
         
         // 只显示发送给当前用户的提醒
@@ -575,6 +575,7 @@ class DashboardController extends Controller
                 'content' => $notification->content,
                 'created_at' => $notification->created_at->toISOString(),
                 'priority' => 'high',
+                'action_url' => $notification->type === 'project_end_reminder' ? '/projects' : null,
                 'data' => array_merge($data, [
                     'has_reason_submitted' => $hasReasonSubmitted,
                     'submitted_reason' => $submittedReason,
@@ -634,6 +635,19 @@ class DashboardController extends Controller
         }
 
         try {
+            if (in_array($source, ['invoice_reminder', 'invoice_reason_submitted', 'salary_payment_reminder', 'insurance_summary_reminder', 'project_end_reminder'], true)) {
+                \App\Models\Notification::where('id', $sourceId)
+                    ->update([
+                        'is_read' => true,
+                        'read_at' => now(),
+                    ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => '宸叉爣璁颁负宸茶'
+                ]);
+            }
+
             switch ($source) {
                 case 'delivery_reminder':
                     DocumentDeliveryReminder::where('id', $sourceId)

@@ -1781,11 +1781,44 @@ const formRules = {
   status: [
     { required: true, message: '请选择状态', trigger: 'change' }
   ],
+  start_date: [
+    { required: true, message: '请选择开始时间', trigger: 'change' }
+  ],
+  end_date: [
+    { required: true, message: '请选择结束时间', trigger: 'change' }
+  ],
+  social_security_regions: [
+    { type: 'array', required: true, min: 1, message: '请至少选择一个社保地区', trigger: 'change' }
+  ],
+  housing_fund_regions: [
+    { type: 'array', required: true, min: 1, message: '请至少选择一个公积金地区', trigger: 'change' }
+  ],
+  medical_insurance_regions: [
+    { type: 'array', required: true, min: 1, message: '请至少选择一个医保参保地区', trigger: 'change' }
+  ],
+  other_insurance_policies: [
+    { type: 'array', required: true, min: 1, message: '请至少选择一个其他保险保单', trigger: 'change' }
+  ],
+  large_medical_insurance_configs: [
+    { type: 'array', required: true, min: 1, message: '请至少选择一个大额医疗保险配置', trigger: 'change' }
+  ],
+  salary_payment_date: [
+    { required: true, message: '请选择工资发放日期', trigger: 'change' }
+  ],
+  salary_payment_month: [
+    { required: true, message: '请选择工资发放设置', trigger: 'change' }
+  ],
+  insurance_import_month: [
+    { required: true, message: '请选择保险导入设置', trigger: 'change' }
+  ],
   delivery_frequency: [
     { required: true, message: '请选择交付频率', trigger: 'change' }
   ],
   delivery_method: [
     { required: true, message: '请选择交付方式', trigger: 'change' }
+  ],
+  registration_form_type: [
+    { required: true, message: '请选择员工登记表类型', trigger: 'change' }
   ]
 }
 

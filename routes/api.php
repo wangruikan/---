@@ -71,7 +71,103 @@ Route::prefix('auth')->group(function () {
 
 // 定时任务触发端点（不需要认证）
 Route::get('/cron/check-insurance-deadlines', [App\Http\Controllers\CronController::class, 'checkInsuranceDeadlines']);
-Route::get('/cron/apply-base-adjustments', [App\Http\Controllers\BaseAdjustmentController::class, 'applyDue']);
+Route::match(['GET', 'POST'], '/cron/apply-base-adjustments', [App\Http\Controllers\BaseAdjustmentController::class, 'applyDue']);
+
+Route::match(['GET', 'POST'], '/cron/process-employee-adjustments', function (\Illuminate\Http\Request $request) {
+    $dateInput = $request->input('date');
+    if ($dateInput) {
+        try {
+            $date = \Carbon\Carbon::createFromFormat('Y-m-d', $dateInput);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => '日期格式错误，请使用 YYYY-MM-DD',
+            ], 422);
+        }
+        if (!$date || $date->format('Y-m-d') !== $dateInput) {
+            return response()->json([
+                'success' => false,
+                'message' => '日期格式错误，请使用 YYYY-MM-DD',
+            ], 422);
+        }
+        $date = $date->toDateString();
+    } else {
+        $date = now()->toDateString();
+    }
+
+    $exitCode = \Artisan::call('base:process-employee-adjustments', ['--date' => $date]);
+
+    return response()->json([
+        'success' => $exitCode === 0,
+        'message' => $exitCode === 0 ? '处理完成' : '处理失败',
+        'output' => \Artisan::output(),
+        'date' => $date
+    ], $exitCode === 0 ? 200 : 500);
+});
+
+Route::match(['GET', 'POST'], '/cron/process-base-compensation', function (\Illuminate\Http\Request $request) {
+    $dateInput = $request->input('date');
+    if ($dateInput) {
+        try {
+            $date = \Carbon\Carbon::createFromFormat('Y-m-d', $dateInput);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => '日期格式错误，请使用 YYYY-MM-DD',
+            ], 422);
+        }
+        if (!$date || $date->format('Y-m-d') !== $dateInput) {
+            return response()->json([
+                'success' => false,
+                'message' => '日期格式错误，请使用 YYYY-MM-DD',
+            ], 422);
+        }
+        $date = $date->toDateString();
+    } else {
+        $date = now()->toDateString();
+    }
+
+    $exitCode = \Artisan::call('base:process-compensation', ['--date' => $date]);
+
+    return response()->json([
+        'success' => $exitCode === 0,
+        'message' => $exitCode === 0 ? '处理完成' : '处理失败',
+        'output' => \Artisan::output(),
+        'date' => $date
+    ], $exitCode === 0 ? 200 : 500);
+});
+
+Route::match(['GET', 'POST'], '/cron/process-limit-effective', function (\Illuminate\Http\Request $request) {
+    $dateInput = $request->input('date');
+    if ($dateInput) {
+        try {
+            $date = \Carbon\Carbon::createFromFormat('Y-m-d', $dateInput);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => '日期格式错误，请使用 YYYY-MM-DD',
+            ], 422);
+        }
+        if (!$date || $date->format('Y-m-d') !== $dateInput) {
+            return response()->json([
+                'success' => false,
+                'message' => '日期格式错误，请使用 YYYY-MM-DD',
+            ], 422);
+        }
+        $date = $date->toDateString();
+    } else {
+        $date = now()->toDateString();
+    }
+
+    $exitCode = \Artisan::call('insurance:process-limit-effective', ['--date' => $date]);
+
+    return response()->json([
+        'success' => $exitCode === 0,
+        'message' => $exitCode === 0 ? '处理完成' : '处理失败',
+        'output' => \Artisan::output(),
+        'date' => $date
+    ], $exitCode === 0 ? 200 : 500);
+});
 
 // 测试PDF生成（不需要认证）
 Route::get('/test-pdf-form', [App\Http\Controllers\EmployeeController::class, 'testOnboardingFormPdf']);

@@ -166,7 +166,7 @@
               </el-table-column>
               <el-table-column label="操作" width="280" fixed="right">
                 <template #default="{ row }">
-                  <!-- 待处理状态或旧状态但有附件时，显示上传和确认处理按钮 -->
+                  <!-- 按需求：仅隐藏“其他保险确认处理”按钮 -->
                   <el-button 
                     v-if="row.status === 'pending'"
                     type="primary" 
@@ -185,16 +185,7 @@
                   >
                     确认处理
                   </el-button>
-                  <el-button 
-                    v-if="!row.fully_confirmed && !row.other_insurance_processed && (row.status === 'pending' || row.status === 'submitted' || row.status === 'completed')"
-                    type="warning" 
-                    size="small" 
-                    :loading="processingOtherInsurance"
-                    :disabled="processingOtherInsurance"
-                    @click="confirmOtherInsuranceOnly(row)"
-                  >
-                    其他保险确认处理
-                  </el-button>
+                  <!-- 按需求临时隐藏：其他保险确认处理 -->
                   <el-button 
                     v-if="row.attachments && row.attachments.length > 0"
                     type="info" 

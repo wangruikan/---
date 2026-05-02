@@ -61,7 +61,11 @@ class ProcessApprovalController extends Controller
         
         // 添加 has_payment_request 字段
         $processes->getCollection()->transform(function ($process) {
-            $process->has_payment_request = \App\Models\PaymentRequest::where('insurance_summary_id', $process->id)->exists();
+            // 仅当已创建审批流时，才视为“已发起付款”。
+            // 避免“付款申请记录已创建但审批流创建失败”导致流程卡住。
+            $process->has_payment_request = \App\Models\PaymentRequest::where('insurance_summary_id', $process->id)
+                ->whereNotNull('approval_instance_id')
+                ->exists();
             return $process;
         });
 

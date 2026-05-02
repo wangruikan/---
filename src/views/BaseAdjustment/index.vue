@@ -115,15 +115,6 @@
                   {{ getActionText(row, type.key) }}
                 </el-button>
                 <el-button
-                  v-if="canApplyNow(row, type.key)"
-                  type="success"
-                  size="small"
-                  @click="handleApplyNow(row, type.key)"
-                >
-                  <el-icon><Check /></el-icon>
-                  立即生效
-                </el-button>
-                <el-button
                   v-if="canDelete(row, type.key)"
                   type="danger"
                   size="small"

@@ -260,7 +260,7 @@ class BaseAdjustment extends Model
             : Carbon::parse($this->{$field});
     }
 
-    public function isTypeDue(string $type, bool $forceNow = false): bool
+    public function isTypeDue(string $type, bool $forceNow = false, ?Carbon $referenceDate = null): bool
     {
         if (!$this->hasType($type)) {
             return false;
@@ -271,21 +271,22 @@ class BaseAdjustment extends Model
         }
 
         $effectiveDate = $this->getTypeEffectiveDate($type);
+        $compareDate = ($referenceDate ? $referenceDate->copy() : now())->startOfDay();
 
-        return $effectiveDate && $effectiveDate->startOfDay()->lte(now()->startOfDay());
+        return $effectiveDate && $effectiveDate->startOfDay()->lte($compareDate);
     }
 
-    public function getDueTypes(bool $forceNow = false): array
+    public function getDueTypes(bool $forceNow = false, ?Carbon $referenceDate = null): array
     {
         return array_values(array_filter(
             $this->getPresentTypes(),
-            fn (string $type) => $this->isTypeDue($type, $forceNow)
+            fn (string $type) => $this->isTypeDue($type, $forceNow, $referenceDate)
         ));
     }
 
-    public function isEffective(): bool
+    public function isEffective(?Carbon $referenceDate = null): bool
     {
-        return !empty($this->getDueTypes());
+        return !empty($this->getDueTypes(false, $referenceDate));
     }
 
     public function toTypeItem(string $type): array
@@ -309,20 +310,20 @@ class BaseAdjustment extends Model
         ];
     }
 
-    public function apply(?string $type = null, bool $forceNow = false): bool
+    public function apply(?string $type = null, bool $forceNow = false, ?Carbon $referenceDate = null): bool
     {
         if ($this->status !== 'pending') {
             return false;
         }
 
-        $targetTypes = $type ? [$type] : $this->getDueTypes($forceNow);
+        $targetTypes = $type ? [$type] : $this->getDueTypes($forceNow, $referenceDate);
         $targetTypes = array_values(array_filter($targetTypes, fn (string $item) => $this->hasType($item)));
 
         if (empty($targetTypes)) {
             return false;
         }
 
-        return DB::transaction(function () use ($targetTypes, $forceNow) {
+        return DB::transaction(function () use ($targetTypes, $forceNow, $referenceDate) {
             $success = false;
 
             foreach ($targetTypes as $targetType) {
@@ -337,14 +338,14 @@ class BaseAdjustment extends Model
                         'applied_at' => null,
                     ]);
 
-                    if ($standalone && $standalone->applySingleType($targetType, $forceNow)) {
+                    if ($standalone && $standalone->applySingleType($targetType, $forceNow, $referenceDate)) {
                         $success = true;
                     }
 
                     continue;
                 }
 
-                if ($current->applySingleType($targetType, $forceNow)) {
+                if ($current->applySingleType($targetType, $forceNow, $referenceDate)) {
                     $success = true;
                 }
             }
@@ -408,9 +409,9 @@ class BaseAdjustment extends Model
         return $query->where('status', 'applied');
     }
 
-    public function scopeEffective($query)
+    public function scopeEffective($query, $date = null)
     {
-        $today = now()->toDateString();
+        $today = $date ?: now()->toDateString();
 
         return $query->where(function ($innerQuery) use ($today) {
             $innerQuery->where(function ($dateQuery) use ($today) {
@@ -450,9 +451,9 @@ class BaseAdjustment extends Model
         });
     }
 
-    protected function applySingleType(string $type, bool $forceNow = false): bool
+    protected function applySingleType(string $type, bool $forceNow = false, ?Carbon $referenceDate = null): bool
     {
-        if ($this->status !== 'pending' || !$this->hasType($type) || !$this->isTypeDue($type, $forceNow)) {
+        if ($this->status !== 'pending' || !$this->hasType($type) || !$this->isTypeDue($type, $forceNow, $referenceDate)) {
             return false;
         }
 
@@ -463,7 +464,7 @@ class BaseAdjustment extends Model
 
         $config = static::getTypeConfig($type);
         $dateField = $config['date_field'];
-        $today = now()->startOfDay();
+        $today = ($referenceDate ? $referenceDate->copy() : now())->startOfDay();
 
         if ($forceNow && (!$this->{$dateField} || Carbon::parse($this->{$dateField})->startOfDay()->gt($today))) {
             $this->{$dateField} = $today->copy();

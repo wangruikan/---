@@ -134,8 +134,8 @@ class InsuranceChangeDetectionService
     {
         $query = Employee::with(['projects']);
         
-        // 只检测在职状态的员工，未入职的员工不检测
-        $query->where('contract_status', 'active');
+        // 只检测在职可参保员工（与调基等模块口径一致）
+        $query->whereIn('contract_status', ['active', 'approved']);
 
         switch ($changeType) {
             case 'social_security':
@@ -302,7 +302,7 @@ class InsuranceChangeDetectionService
                     'change_summary' => $changeSummary
                 ]);
                 
-                $existingRecord->update([
+                $updatePayload = [
                     'status' => 'pending',
                     'change_summary' => $changeSummary,
                     'change_details' => json_encode([
@@ -312,7 +312,14 @@ class InsuranceChangeDetectionService
                         'changes' => $mergedChangeDetails
                     ], JSON_UNESCAPED_UNICODE),
                     'updated_at' => now()
-                ]);
+                ];
+
+                $updatePayload = array_merge(
+                    $updatePayload,
+                    $this->buildEmployeeSnapshotUpdate($employee, $changeType)
+                );
+
+                $existingRecord->update($updatePayload);
 
                 // 只更新当前变更类型的保险配置快照，而不是重新生成所有配置
                 $this->updateSpecificInsuranceConfig($existingRecord, $changeType);
@@ -625,6 +632,39 @@ class InsuranceChangeDetectionService
     }
 
     /**
+     * 同月合并更新时，同步刷新任务中的员工基数快照，避免列表/后续处理读到旧值。
+     */
+    private function buildEmployeeSnapshotUpdate($employee, string $changeType): array
+    {
+        switch ($changeType) {
+            case 'social_security':
+                return [
+                    'social_security_region_id' => $employee->social_security_region_id,
+                    'employee_social_security_base' => $employee->social_security_base,
+                ];
+            case 'medical_insurance':
+                return [
+                    'medical_insurance_region_id' => $employee->medical_insurance_region_id,
+                    'employee_medical_insurance_base' => $employee->medical_insurance_base,
+                ];
+            case 'housing_fund':
+                return [
+                    'housing_fund_region_id' => $employee->housing_fund_region_id,
+                    'housing_fund_config_id' => $employee->housing_fund_config_id,
+                    'employee_housing_fund_base' => $employee->housing_fund_base,
+                ];
+            case 'large_medical_insurance':
+                return [
+                    'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id,
+                    'employee_large_medical_base' => $employee->large_medical_base,
+                    'employee_large_medical_company_base' => $employee->large_medical_company_base,
+                ];
+            default:
+                return [];
+        }
+    }
+
+    /**
      * 合并变更详情
      * @param array $existingChanges 现有的变更详情
      * @param array $newChanges 新的变更详情
@@ -790,8 +830,15 @@ class InsuranceChangeDetectionService
             return $changes;
         }
         
-        // 检查是否是社保类型的变更（包含base_amount, employee_ratio, company_ratio字段）
-        if (isset($oldData['base_amount']) && isset($oldData['employee_ratio']) && isset($oldData['company_ratio']) && !isset($oldData['social_security_types'])) {
+        // 检查是否是社保类型的变更（社保类型表通常仅包含比例，不一定有 base_amount）
+        if (!isset($oldData['social_security_types'])
+            && (
+                isset($oldData['employee_ratio']) ||
+                isset($oldData['company_ratio']) ||
+                isset($oldData['base_amount']) ||
+                isset($oldData['name'])
+            )
+        ) {
             // 这是社保类型的变更
             $typeName = isset($oldData['name']) ? $oldData['name'] : '未知类型';
             
@@ -1239,8 +1286,8 @@ class InsuranceChangeDetectionService
         
         // 检测付款周期变更
         if (isset($oldData['payment_cycle']) && isset($newData['payment_cycle']) && $oldData['payment_cycle'] !== $newData['payment_cycle']) {
-            $oldCycle = $oldData['payment_cycle'] === 'yearly' ? '按年' : '按月';
-            $newCycle = $newData['payment_cycle'] === 'yearly' ? '按年' : '按月';
+            $oldCycle = in_array(strtolower((string) $oldData['payment_cycle']), ['year', 'yearly'], true) ? '按年' : '按月';
+            $newCycle = in_array(strtolower((string) $newData['payment_cycle']), ['year', 'yearly'], true) ? '按年' : '按月';
             $changes[] = [
                 'category' => 'large_medical_insurance',
                 'action' => 'modified',

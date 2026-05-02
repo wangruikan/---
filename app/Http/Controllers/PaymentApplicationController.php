@@ -190,6 +190,90 @@ class PaymentApplicationController extends Controller
             if ($request->filled('status')) {
                 $newQuery->where('status', $request->input('status'));
             }
+            if ($request->filled('month')) {
+                $monthFilter = $request->input('month');
+                $parts = explode('-', $monthFilter);
+                if (count($parts) === 2) {
+                    $year = (int)$parts[0];
+                    $month = (int)$parts[1];
+                    $reimbursementTypes = ['reimbursement', '报销', '差旅', '采购', '项目', '其他'];
+                    $knownTypes = array_merge(['salary', 'insurance'], $reimbursementTypes);
+
+                    $newQuery->where(function ($query) use ($monthFilter, $year, $month, $reimbursementTypes, $knownTypes) {
+                        // 薪资付款：按 salary_approvals.month
+                        $query->where(function ($salaryQuery) use ($monthFilter) {
+                            $salaryQuery->where('payment_type', 'salary')
+                                ->whereHas('salaryApproval', function ($salaryApprovalQuery) use ($monthFilter) {
+                                    $salaryApprovalQuery->where('month', $monthFilter);
+                                });
+                        })
+                        // 保险付款：按 insurance_summaries.month
+                        ->orWhere(function ($insuranceQuery) use ($monthFilter) {
+                            $insuranceQuery->where('payment_type', 'insurance')
+                                ->whereHas('insuranceSummary', function ($insuranceSummaryQuery) use ($monthFilter) {
+                                    $insuranceSummaryQuery->where('month', $monthFilter);
+                                });
+                        })
+                        // 报销付款：按 reimbursement.created_at 月份
+                        ->orWhere(function ($reimbursementQuery) use ($reimbursementTypes, $year, $month) {
+                            $reimbursementQuery->whereIn('payment_type', $reimbursementTypes)
+                                ->whereHas('reimbursement', function ($reimbursementRelationQuery) use ($year, $month) {
+                                    $reimbursementRelationQuery->whereYear('created_at', $year)
+                                        ->whereMonth('created_at', $month);
+                                });
+                        })
+                        // 薪资兜底：缺少关联时，按 selected_month / submitted_at
+                        ->orWhere(function ($salaryFallbackQuery) use ($monthFilter, $year, $month) {
+                            $salaryFallbackQuery->where('payment_type', 'salary')
+                                ->doesntHave('salaryApproval')
+                                ->where(function ($inner) use ($monthFilter, $year, $month) {
+                                    $inner->where('selected_month', $monthFilter)
+                                        ->orWhere(function ($submittedAtQuery) use ($year, $month) {
+                                            $submittedAtQuery->whereYear('submitted_at', $year)
+                                                ->whereMonth('submitted_at', $month);
+                                        });
+                                });
+                        })
+                        // 保险兜底：缺少关联时，按 selected_month / submitted_at
+                        ->orWhere(function ($insuranceFallbackQuery) use ($monthFilter, $year, $month) {
+                            $insuranceFallbackQuery->where('payment_type', 'insurance')
+                                ->doesntHave('insuranceSummary')
+                                ->where(function ($inner) use ($monthFilter, $year, $month) {
+                                    $inner->where('selected_month', $monthFilter)
+                                        ->orWhere(function ($submittedAtQuery) use ($year, $month) {
+                                            $submittedAtQuery->whereYear('submitted_at', $year)
+                                                ->whereMonth('submitted_at', $month);
+                                        });
+                                });
+                        })
+                        // 报销兜底：缺少关联时，按 selected_month / submitted_at
+                        ->orWhere(function ($reimbursementFallbackQuery) use ($reimbursementTypes, $monthFilter, $year, $month) {
+                            $reimbursementFallbackQuery->whereIn('payment_type', $reimbursementTypes)
+                                ->doesntHave('reimbursement')
+                                ->where(function ($inner) use ($monthFilter, $year, $month) {
+                                    $inner->where('selected_month', $monthFilter)
+                                        ->orWhere(function ($submittedAtQuery) use ($year, $month) {
+                                            $submittedAtQuery->whereYear('submitted_at', $year)
+                                                ->whereMonth('submitted_at', $month);
+                                        });
+                                });
+                        })
+                        // 真正兜底：未知类型或空类型，按 selected_month / submitted_at
+                        ->orWhere(function ($genericFallbackQuery) use ($knownTypes, $monthFilter, $year, $month) {
+                            $genericFallbackQuery->where(function ($unknownTypeQuery) use ($knownTypes) {
+                                $unknownTypeQuery->whereNull('payment_type')
+                                    ->orWhereNotIn('payment_type', $knownTypes);
+                            })->where(function ($inner) use ($monthFilter, $year, $month) {
+                                $inner->where('selected_month', $monthFilter)
+                                    ->orWhere(function ($submittedAtQuery) use ($year, $month) {
+                                        $submittedAtQuery->whereYear('submitted_at', $year)
+                                            ->whereMonth('submitted_at', $month);
+                                    });
+                            });
+                        });
+                    });
+                }
+            }
 
             $newRequests = $newQuery->orderBy('created_at', 'desc')->get();
             

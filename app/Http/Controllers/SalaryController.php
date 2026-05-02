@@ -11,6 +11,7 @@ use App\Models\InsuranceCompensationRecord;
 use App\Models\SocialSecurityType;
 use App\Models\HousingFundConfig;
 use App\Models\PersonnelChangeRequest;
+use App\Services\LargeMedicalPaymentCycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -1927,15 +1928,17 @@ class SalaryController extends Controller
                 if ($largeMedicalConfig && is_array($largeMedicalConfig) && ($largeMedicalConfig['is_enabled'] ?? false)) {
                     $largeMedicalBase = $insurancePersonnel->employee_large_medical_base ?? 0;
                     $largeMedicalCompanyBase = $insurancePersonnel->employee_large_medical_company_base ?? $largeMedicalBase;
-                    $paymentCycle = $largeMedicalConfig['payment_cycle'] ?? 'month';
-                    
-                    if ($paymentCycle === 'year') {
-                        // 按年付款：正常数据的大额为0
-                        $largeMedicalCompanyAmount = 0;
-                        $largeMedicalEmployeeAmount = 0;
-                    } else {
-                        // 按月付款：正常计算
-                        if ($largeMedicalConfig['calculation_type'] === 'base') {
+                    $periodDate = \Carbon\Carbon::createFromFormat('Y-m', $month);
+                    $isPaymentMonth = app(LargeMedicalPaymentCycleService::class)->isPaymentMonth(
+                        $insurancePersonnel->employee_id,
+                        (int) $periodDate->year,
+                        (int) $periodDate->month,
+                        $insurancePersonnel->project_id,
+                        $insurancePersonnel->account_set_id
+                    );
+
+                    if ($isPaymentMonth) {
+                        if (($largeMedicalConfig['calculation_type'] ?? 'base') === 'base') {
                             // 按基数计算：公司用公司基数，个人用个人基数
                             $largeMedicalCompanyAmount = $largeMedicalCompanyBase * (floatval($largeMedicalConfig['company_ratio'] ?? 0));
                             $largeMedicalEmployeeAmount = $largeMedicalBase * (floatval($largeMedicalConfig['employee_ratio'] ?? 0));
@@ -1944,12 +1947,16 @@ class SalaryController extends Controller
                             $largeMedicalCompanyAmount = floatval($largeMedicalConfig['company_amount'] ?? 0);
                             $largeMedicalEmployeeAmount = floatval($largeMedicalConfig['employee_amount'] ?? 0);
                         }
+                    } else {
+                        $largeMedicalCompanyAmount = 0;
+                        $largeMedicalEmployeeAmount = 0;
                     }
                     
                     \Log::info('大额医疗计算结果', [
                         'base' => $largeMedicalBase,
                         'calculation_type' => $largeMedicalConfig['calculation_type'] ?? 'unknown',
-                        'payment_cycle' => $paymentCycle,
+                        'payment_cycle' => $largeMedicalConfig['payment_cycle'] ?? 'month',
+                        'is_payment_month' => $isPaymentMonth,
                         'company_amount' => $largeMedicalCompanyAmount,
                         'personal_amount' => $largeMedicalEmployeeAmount,
                     ]);

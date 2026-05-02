@@ -23,6 +23,20 @@ use App\Traits\ChecksPermission;
 class InsuranceChangeController extends ApiController
 {
     use ChecksPermission;
+
+    /**
+     * Runtime cache for other insurance policies to avoid repetitive queries.
+     *
+     * @var array<int, \App\Models\OtherInsurancePolicy|null>
+     */
+    private $otherInsurancePolicyCache = [];
+
+    /**
+     * Runtime cache for historical region name -> region id mapping.
+     *
+     * @var array<string, array{social: array<int>, medical: array<int>}>
+     */
+    private $historicalRegionIdCache = [];
     /**
      * 获取参保增减列表
      */
@@ -71,12 +85,14 @@ class InsuranceChangeController extends ApiController
 
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName) {
-            $query->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
-                $q->where('name', $regionName);
-            })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
-                $q->where('name', $regionName);
-            })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
-                $q->where('region_name', $regionName);
+            $query->where(function($regionQuery) use ($regionName) {
+                $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                    $q->where('name', $regionName);
+                })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                    $q->where('name', $regionName);
+                })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                    $q->where('region_name', $regionName);
+                });
             });
         }
 
@@ -209,6 +225,9 @@ class InsuranceChangeController extends ApiController
         // 从 insurance_personnel 表读取确认后的参保信息
         $query = \App\Models\InsurancePersonnel::where('account_set_id', $accountSetId)
             ->where('status', 'active') // 只显示活跃的参保记录
+            ->where(function ($q) {
+                $q->whereNull('is_compensation')->orWhere('is_compensation', 0);
+            })
             ->with([
                 'employee.socialSecurityRegion.socialSecurityTypes',
                 'employee.medicalInsuranceRegion.medicalInsuranceTypes',
@@ -221,12 +240,14 @@ class InsuranceChangeController extends ApiController
 
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName && $regionName !== '全部') {
-            $query->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
-                $q->where('name', $regionName);
-            })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
-                $q->where('name', $regionName);
-            })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
-                $q->where('region_name', $regionName);
+            $query->where(function($regionQuery) use ($regionName) {
+                $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                    $q->where('name', $regionName);
+                })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                    $q->where('name', $regionName);
+                })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                    $q->where('region_name', $regionName);
+                });
             });
         }
 
@@ -270,12 +291,14 @@ class InsuranceChangeController extends ApiController
 
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName && $regionName !== '全部') {
-            $query->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
-                $q->where('name', $regionName);
-            })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
-                $q->where('name', $regionName);
-            })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
-                $q->where('region_name', $regionName);
+            $query->where(function($regionQuery) use ($regionName) {
+                $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                    $q->where('name', $regionName);
+                })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                    $q->where('name', $regionName);
+                })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                    $q->where('region_name', $regionName);
+                });
             });
         }
 
@@ -892,16 +915,16 @@ class InsuranceChangeController extends ApiController
         
         // 找出最早的参保日期作为补交的起始日期
         $earliestEnrollmentDate = min($enrollmentDates);
-        $earliestEnrollmentMonth = date('Y-m', strtotime($earliestEnrollmentDate));
         
-        // 生成补交数据（从最早参保月份到确认月份的前一个月）
-        $current = $earliestEnrollmentDate;
-        $endDate = date('Y-m-01', strtotime($confirmationMonth . '-01 -1 month')); // 确认月份的前一个月
+        // Build supplementary rows from earliest enrollment month to month before confirmation
+        // Use month-start cursor to avoid date overflow issues (29/30/31)
+        $currentCursor = \Carbon\Carbon::parse($earliestEnrollmentDate)->startOfMonth();
+        $endCursor = \Carbon\Carbon::parse($confirmationMonth . '-01')->subMonth()->startOfMonth();
         
-        while (date('Y-m', strtotime($current)) <= date('Y-m', strtotime($endDate))) {
-            $currentPaymentPeriod = date('Y-m', strtotime($current));
+        while ($currentCursor->lte($endCursor)) {
+            $currentPaymentPeriod = $currentCursor->format('Y-m');
             
-            // 为补交数据生成明细，传入正确的费款所属期和各项参保日期
+            // Generate supplementary detail for this payment period
             $supplementaryDetail = $this->generateSupplementaryDetailWithEnrollmentDates(
                 $personnel, 
                 $currentPaymentPeriod, 
@@ -915,10 +938,9 @@ class InsuranceChangeController extends ApiController
                 $supplementaryDetails[] = $supplementaryDetail;
             }
             
-            // 移动到下一个月
-            $current = date('Y-m-01', strtotime($current . ' +1 month'));
+            // Move to next month
+            $currentCursor->addMonthNoOverflow();
         }
-        
         return $supplementaryDetails;
     }
     
@@ -1055,6 +1077,15 @@ class InsuranceChangeController extends ApiController
         }
 
         // 构建明细数据
+        $periodParts = explode('-', $paymentPeriod);
+        $periodYear = isset($periodParts[0]) ? (int) $periodParts[0] : (int) date('Y');
+        $periodMonth = isset($periodParts[1]) ? (int) $periodParts[1] : (int) date('n');
+        $filteredOtherInsurancePolicies = $this->filterOtherInsurancePoliciesByDate(
+            $personnel->other_insurance_policies,
+            $periodYear,
+            $periodMonth
+        );
+
         $detail = [
             'id' => $personnel->id . '_' . str_replace('-', '', $paymentPeriod), // 生成唯一ID
             'employee_id' => $personnel->employee_id,
@@ -1068,7 +1099,7 @@ class InsuranceChangeController extends ApiController
             'employee_status' => $personnel->employee_status,
             'employee_type' => $employeeType,
             'project_name' => $personnel->project ? $personnel->project->name : '',
-            'other_insurance_policies' => $personnel->other_insurance_policies,
+            'other_insurance_policies' => $filteredOtherInsurancePolicies,
             'payment_period' => $paymentPeriod,
             'social_security_code' => $personnel->social_security_code,
             'medical_insurance_code' => $personnel->medical_insurance_code,
@@ -1782,32 +1813,45 @@ class InsuranceChangeController extends ApiController
      */
     private function syncOtherInsuranceOnly($change)
     {
-        // 获取或创建参保人员记录
-        $personnel = InsurancePersonnel::getOrCreateFromInsuranceChange($change);
-        
-        // 如果是减少记录，personnel 为 null，直接返回
-        if (!$personnel) {
-            \Log::info('减少记录已处理，无需同步其他保险', [
+        // 单独处理其他保险时，decrease 记录不能触发参保删除逻辑
+        if ($change->change_type === 'decrease') {
+            \Log::info('其他保险单独处理：减少记录跳过参保同步', [
                 'insurance_change_id' => $change->id,
                 'employee_name' => $change->employee_name,
                 'change_type' => $change->change_type
             ]);
-            return;
+            return null;
+        }
+
+        // 优先读取当前参保记录，避免覆盖社保/医保/公积金等字段
+        $personnel = $this->getCurrentPersonnelQuery($change)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+
+        // 若不存在当前记录，仅首次创建基础参保记录
+        if (!$personnel) {
+            $personnel = InsurancePersonnel::getOrCreateFromInsuranceChange($change);
+            if (!$personnel) {
+                \Log::warning('其他保险单独处理：未找到且无法创建参保记录', [
+                    'insurance_change_id' => $change->id,
+                    'employee_name' => $change->employee_name
+                ]);
+                return null;
+            }
         }
         
         // 只更新其他保险相关字段
         $otherInsurancePolicies = $change->other_insurance_policies;
-        
-        if ($otherInsurancePolicies && !empty($otherInsurancePolicies) && $otherInsurancePolicies !== '[]') {
-            $personnel->other_insurance_policies = $otherInsurancePolicies;
-            $personnel->save();
-            
-            \Log::info('其他保险数据已同步到参保人员表', [
-                'insurance_personnel_id' => $personnel->id,
-                'employee_name' => $change->employee_name,
-                'other_insurance_policies' => $otherInsurancePolicies
-            ]);
-        }
+        $personnel->other_insurance_policies = $otherInsurancePolicies;
+        $personnel->last_updated_at = now();
+        $personnel->save();
+
+        \Log::info('其他保险数据已同步到参保人员表', [
+            'insurance_personnel_id' => $personnel->id,
+            'employee_name' => $change->employee_name,
+            'other_insurance_policies' => $otherInsurancePolicies
+        ]);
         
         return $personnel;
     }
@@ -2107,7 +2151,31 @@ class InsuranceChangeController extends ApiController
             }
 
             // 更新保险变更记录中的大额医疗保险开关状态
-            $change->large_medical_insurance_enabled = $request->is_enabled;
+            $isEnabled = (bool) $request->boolean('is_enabled');
+            $largeMedicalConfig = [];
+            if (!empty($change->large_medical_insurance_config)) {
+                $decodedConfig = json_decode($change->large_medical_insurance_config, true);
+                if (is_array($decodedConfig)) {
+                    $largeMedicalConfig = $decodedConfig;
+                }
+            }
+
+            $employeeBase = $change->employee_large_medical_base;
+            $companyBase = $change->employee_large_medical_company_base;
+            if (is_null($companyBase) || $companyBase === '') {
+                $companyBase = $employeeBase;
+            }
+
+            $largeMedicalConfig['is_enabled'] = $isEnabled;
+            if (!is_null($employeeBase) && $employeeBase !== '') {
+                $largeMedicalConfig['employee_base'] = (float) $employeeBase;
+            }
+            if (!is_null($companyBase) && $companyBase !== '') {
+                $largeMedicalConfig['company_base'] = (float) $companyBase;
+            }
+
+            $change->large_medical_insurance_enabled = $isEnabled;
+            $change->large_medical_insurance_config = json_encode($largeMedicalConfig, JSON_UNESCAPED_UNICODE);
             $change->save();
 
             DB::commit();
@@ -2115,7 +2183,7 @@ class InsuranceChangeController extends ApiController
             \Log::info('切换大额医疗保险状态成功', [
                 'insurance_change_id' => $change->id,
                 'employee_id' => $change->employee_id,
-                'is_enabled' => $request->is_enabled
+                'is_enabled' => $isEnabled
             ]);
 
             return response()->json([
@@ -3018,6 +3086,7 @@ class InsuranceChangeController extends ApiController
     {
         try {
             $accountSetId = $request->input('account_set_id');
+            $month = $request->input('month');
             
             if (!$accountSetId) {
                 return response()->json([
@@ -3027,12 +3096,18 @@ class InsuranceChangeController extends ApiController
             }
 
             // 查询社保补差记录
-            $compensations = InsurancePersonnel::where('account_set_id', $accountSetId)
+            $query = InsurancePersonnel::where('account_set_id', $accountSetId)
                 ->where('is_compensation', 1)
                 ->whereNotNull('social_security_types')
                 ->with(['employee', 'project'])
-                ->orderBy('created_at', 'desc')
-                ->get();
+                ->orderBy('created_at', 'desc');
+
+            if (!empty($month)) {
+                $query->where('compensation_start_month', '<=', $month)
+                    ->where('compensation_end_month', '>=', $month);
+            }
+
+            $compensations = $query->get();
 
             return response()->json([
                 'success' => true,
@@ -3092,6 +3167,7 @@ class InsuranceChangeController extends ApiController
     {
         try {
             $accountSetId = $request->input('account_set_id');
+            $month = $request->input('month');
             
             if (!$accountSetId) {
                 return response()->json([
@@ -3101,12 +3177,18 @@ class InsuranceChangeController extends ApiController
             }
 
             // 查询公积金补差记录
-            $compensations = InsurancePersonnel::where('account_set_id', $accountSetId)
+            $query = InsurancePersonnel::where('account_set_id', $accountSetId)
                 ->where('is_compensation', 1)
                 ->whereNotNull('housing_fund_params')
                 ->with(['employee', 'project'])
-                ->orderBy('created_at', 'desc')
-                ->get();
+                ->orderBy('created_at', 'desc');
+
+            if (!empty($month)) {
+                $query->where('compensation_start_month', '<=', $month)
+                    ->where('compensation_end_month', '>=', $month);
+            }
+
+            $compensations = $query->get();
 
             return response()->json([
                 'success' => true,

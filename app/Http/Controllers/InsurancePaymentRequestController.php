@@ -58,23 +58,13 @@ class InsurancePaymentRequestController extends Controller
                 ], 422);
             }
 
-            // 检查是否已经发起过付款申请
-            $existingRequest = PaymentRequest::where('insurance_summary_id', $processApproval->id)->first();
-            if ($existingRequest) {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该汇总流程已发起过付款申请'
-                ], 422);
-            }
-
             // 从请求中获取付款金额
             $amount = $request->input('amount');
 
             // 获取报销表单数据（如果前端传了的话）
             $formData = $request->input('reimbursement_form_data', []);
             
-            // 创建付款申请记录
-            $paymentRequest = PaymentRequest::create([
+            $payload = [
                 'payment_type' => 'insurance',
                 'account_set_id' => $currentAccountSetId,
                 'insurance_summary_id' => $processApproval->id,
@@ -109,7 +99,37 @@ class InsurancePaymentRequestController extends Controller
                 'invoice_date' => $formData['invoiceDate'] ?? null,
                 'accounted' => $formData['accounted'] ?? true,
                 'company' => $formData['company'] ?? null,
-            ]);
+            ];
+
+            // 若存在历史付款申请，仅当已生成审批流时才阻止重复提交
+            $existingRequest = PaymentRequest::where('insurance_summary_id', $processApproval->id)->first();
+            if ($existingRequest) {
+                if ($existingRequest->approval_instance_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => '该汇总流程已发起过付款申请'
+                    ], 422);
+                }
+
+                // 复用未完成记录（审批流尚未创建），避免流程卡死
+                $existingRequest->update($payload);
+
+                DB::commit();
+
+                \Log::info('已复用未完成的保险付款申请', [
+                    'payment_request_id' => $existingRequest->id,
+                    'process_approval_id' => $processApproval->id,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => '已继续使用未完成的付款申请',
+                    'data' => $existingRequest->fresh()
+                ]);
+            }
+
+            // 创建付款申请记录
+            $paymentRequest = PaymentRequest::create($payload);
 
             DB::commit();
 

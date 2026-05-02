@@ -13,13 +13,31 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessBaseCompensation extends Command
 {
-    protected $signature = 'base:process-compensation';
+    protected $signature = 'base:process-compensation {--date= : 指定处理日期，格式 YYYY-MM-DD}';
     protected $description = '处理社保基数补差计算';
+    private Carbon $referenceDate;
 
     public function handle()
     {
         $this->info('开始处理基数补差...');
-        $today = Carbon::today();
+        $dateOption = $this->option('date');
+        try {
+            if ($dateOption) {
+                $today = Carbon::createFromFormat('Y-m-d', $dateOption);
+                if (!$today || $today->format('Y-m-d') !== $dateOption) {
+                    throw new \InvalidArgumentException('invalid date');
+                }
+                $today = $today->startOfDay();
+            } else {
+                $today = Carbon::today();
+            }
+        } catch (\Throwable $exception) {
+            $this->error('日期格式错误，请使用 YYYY-MM-DD');
+            return Command::FAILURE;
+        }
+        $this->referenceDate = $today->copy();
+
+        $this->info('处理基数补差日期: ' . $today->toDateString());
         
         try {
             // 查找所有已生效的基数调整记录（已到达生效日期的）
@@ -143,12 +161,12 @@ class ProcessBaseCompensation extends Command
         // ✅ 计算补差月数：只补本年度（从新生效日期所在年的1月到当前月前一个月）
         $newEffectiveDate = Carbon::parse($adjustment->social_security_effective_date);
         $compensationYear = $newEffectiveDate->year;  // 使用新生效日期的年份
-        $currentMonth = Carbon::now();
+        $currentMonth = $this->referenceDate->copy();
         
         // 补差起始月：取 [新生效日期所在年的1月, 旧生效日期] 的较大值
         $oldEffectiveDate = $oldAdjustment 
             ? Carbon::parse($oldAdjustment->social_security_effective_date)
-            : Carbon::parse($employee->insurance_start_date ?? now()->subMonths(1));
+            : Carbon::parse($employee->insurance_start_date ?? $this->referenceDate->copy()->subMonths(1));
         
         $yearStartMonth = Carbon::parse("{$compensationYear}-01-01");
         $startMonth = $oldEffectiveDate->greaterThan($yearStartMonth) ? $oldEffectiveDate : $yearStartMonth;
@@ -326,11 +344,11 @@ class ProcessBaseCompensation extends Command
         // ✅ 计算补差月数：只补本年度（从新生效日期所在年的1月到当前月前一个月）
         $newEffectiveDate = Carbon::parse($adjustment->medical_insurance_effective_date);
         $compensationYear = $newEffectiveDate->year;  // 使用新生效日期的年份
-        $currentMonth = Carbon::now();
+        $currentMonth = $this->referenceDate->copy();
         
         $oldEffectiveDate = $oldAdjustment 
             ? Carbon::parse($oldAdjustment->medical_insurance_effective_date)
-            : Carbon::parse($employee->insurance_start_date ?? now()->subMonths(1));
+            : Carbon::parse($employee->insurance_start_date ?? $this->referenceDate->copy()->subMonths(1));
         
         $yearStartMonth = Carbon::parse("{$compensationYear}-01-01");
         $startMonth = $oldEffectiveDate->greaterThan($yearStartMonth) ? $oldEffectiveDate : $yearStartMonth;
@@ -494,11 +512,11 @@ class ProcessBaseCompensation extends Command
         // ✅ 计算补差月数：只补本年度（从新生效日期所在年的1月到当前月前一个月）
         $newEffectiveDate = Carbon::parse($adjustment->housing_fund_effective_date);
         $compensationYear = $newEffectiveDate->year;  // 使用新生效日期的年份
-        $currentMonth = Carbon::now();
+        $currentMonth = $this->referenceDate->copy();
         
         $oldEffectiveDate = $oldAdjustment 
             ? Carbon::parse($oldAdjustment->housing_fund_effective_date)
-            : Carbon::parse($employee->insurance_start_date ?? now()->subMonths(1));
+            : Carbon::parse($employee->insurance_start_date ?? $this->referenceDate->copy()->subMonths(1));
         
         $yearStartMonth = Carbon::parse("{$compensationYear}-01-01");
         $startMonth = $oldEffectiveDate->greaterThan($yearStartMonth) ? $oldEffectiveDate : $yearStartMonth;
@@ -622,4 +640,3 @@ class ProcessBaseCompensation extends Command
         return $baseAmount;
     }
 }
-

@@ -8,21 +8,40 @@ use App\Models\MedicalInsuranceRegion;
 use App\Models\HousingFundConfig;
 use App\Services\BaseLimitCompensationService;
 use App\Services\InsuranceChangeDetectionService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ProcessInsuranceLimitEffectiveChanges extends Command
 {
-    protected $signature = 'insurance:process-limit-effective';
+    protected $signature = 'insurance:process-limit-effective {--date= : 指定处理日期，格式 YYYY-MM-DD}';
 
     protected $description = '处理社保/医保/公积金上下限待生效变更';
 
     public function handle()
     {
-        $this->info('开始处理上下限待生效变更...');
+        $dateOption = $this->option('date');
+        try {
+            if ($dateOption) {
+                $date = Carbon::createFromFormat('Y-m-d', $dateOption);
+                if (!$date || $date->format('Y-m-d') !== $dateOption) {
+                    throw new \InvalidArgumentException('invalid date');
+                }
+                $date = $date->toDateString();
+            } else {
+                $date = now()->toDateString();
+            }
+        } catch (\Throwable $exception) {
+            $this->error('日期格式错误，请使用 YYYY-MM-DD');
+            return Command::FAILURE;
+        }
 
-        $pendingChanges = InsuranceLimitPendingChange::due()->get();
+        $this->info('开始处理上下限待生效变更... (日期: ' . $date . ')');
+
+        $pendingChanges = InsuranceLimitPendingChange::pending()
+            ->where('effective_date', '<=', $date)
+            ->get();
         if ($pendingChanges->isEmpty()) {
             $this->info('没有需要生效的上下限变更');
             return Command::SUCCESS;

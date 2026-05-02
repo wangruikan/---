@@ -179,20 +179,21 @@ class LargeMedicalInsuranceConfig extends Model
     /**
      * 判断是否到达生效时间
      */
-    public function isEffective(): bool
+    public function isEffective(?\Carbon\Carbon $referenceDate = null): bool
     {
         if (!$this->effective_date) {
             return false;
         }
-        return \Carbon\Carbon::parse($this->effective_date)->startOfDay() <= now()->startOfDay();
+        $compareDate = ($referenceDate ? $referenceDate->copy() : now())->startOfDay();
+        return \Carbon\Carbon::parse($this->effective_date)->startOfDay() <= $compareDate;
     }
 
     /**
      * 应用待生效的变更
      */
-    public function applyPendingChanges(): bool
+    public function applyPendingChanges(?\Carbon\Carbon $referenceDate = null): bool
     {
-        if (!$this->hasPendingChanges() || !$this->isEffective()) {
+        if (!$this->hasPendingChanges() || !$this->isEffective($referenceDate)) {
             return false;
         }
 
@@ -324,10 +325,11 @@ class LargeMedicalInsuranceConfig extends Model
     /**
      * 作用域：查询已到达生效时间的配置
      */
-    public function scopeEffectiveNow($query)
+    public function scopeEffectiveNow($query, $date = null)
     {
+        $effectiveDate = $date ?: now()->toDateString();
         return $query->hasPending()
-            ->where('effective_date', '<=', now()->toDateString());
+            ->where('effective_date', '<=', $effectiveDate);
     }
 }
 

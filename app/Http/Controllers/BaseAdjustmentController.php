@@ -401,8 +401,28 @@ class BaseAdjustmentController extends Controller
     public function applyDue(Request $request)
     {
         try {
+            $dateInput = $request->input('date');
+            try {
+                if ($dateInput) {
+                    $targetDate = \Carbon\Carbon::createFromFormat('Y-m-d', $dateInput);
+                    if (!$targetDate || $targetDate->format('Y-m-d') !== $dateInput) {
+                        throw new \InvalidArgumentException('invalid date');
+                    }
+                    $targetDate = $targetDate->startOfDay();
+                } else {
+                    $targetDate = \Carbon\Carbon::today();
+                }
+            } catch (\Throwable $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '日期格式错误，请使用 YYYY-MM-DD',
+                ], 422);
+            }
+
+            $targetDateString = $targetDate->toDateString();
+
             $adjustments = BaseAdjustment::pending()
-                ->effective()
+                ->effective($targetDateString)
                 ->whereNull('applied_at')
                 ->orderBy('id')
                 ->get();
@@ -412,7 +432,7 @@ class BaseAdjustmentController extends Controller
 
             foreach ($adjustments as $adjustment) {
                 try {
-                    if ($adjustment->apply()) {
+                    if ($adjustment->apply(null, false, $targetDate)) {
                         $successCount++;
                     } else {
                         $failCount++;
@@ -433,6 +453,7 @@ class BaseAdjustmentController extends Controller
                     'total' => count($adjustments),
                     'success' => $successCount,
                     'fail' => $failCount,
+                    'date' => $targetDateString,
                 ],
             ]);
         } catch (\Throwable $exception) {

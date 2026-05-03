@@ -818,6 +818,43 @@ class SalaryController extends Controller
             ], 422);
         }
 
+        // 若账套启用了专项附加扣除项目，则生成工资表前强制校验员工是否已配置专项
+        $enabledDeductionItemCount = \App\Models\SpecialDeductionItem::where('account_set_id', $accountSetId)
+            ->where('is_active', 1)
+            ->count();
+
+        if ($enabledDeductionItemCount > 0) {
+            $targetEmployeeIds = $allEmployees->pluck('id')->unique()->values()->toArray();
+
+            $configuredEmployeeIds = \App\Models\EmployeeDeductionDetail::where('account_set_id', $accountSetId)
+                ->where('is_active', 1)
+                ->whereIn('employee_id', $targetEmployeeIds)
+                ->pluck('employee_id')
+                ->unique()
+                ->values()
+                ->toArray();
+
+            $missingDeductionEmployees = $allEmployees->filter(function ($employee) use ($configuredEmployeeIds) {
+                return !in_array($employee->id, $configuredEmployeeIds, true);
+            })->values();
+
+            if ($missingDeductionEmployees->isNotEmpty()) {
+                $previewNames = $missingDeductionEmployees->pluck('name')->take(10)->implode('、');
+                $suffix = $missingDeductionEmployees->count() > 10 ? ' 等' : '';
+
+                return response()->json([
+                    'success' => false,
+                    'message' => '专项附加扣除未配置完整，请先在专项管理中完成配置后再生成工资表',
+                    'errors' => [
+                        'special_deduction' => [
+                            'missing_count' => $missingDeductionEmployees->count(),
+                            'missing_employees_preview' => $previewNames . $suffix,
+                        ],
+                    ],
+                ], 422);
+            }
+        }
+
         // 根据主项目的保险导入设置，确定使用哪个月的保险数据
         $insuranceImportMonth = $mainProject->insurance_import_month ?? 'current';
         $insuranceMonth = $month; // 默认使用当前月
@@ -2769,7 +2806,7 @@ class SalaryController extends Controller
             $personnel[] = [
                 'id_card' => $idCard,
                 'name' => $name,
-                'gross_salary' => floatval($row[$grossSalaryIndex] ?? 0),
+                'gross_salary' => $this->parseImportedAmount($row[$grossSalaryIndex] ?? 0),
                 'import_extra_columns' => $extraColumns,
                 'row_index' => $i + 1
             ];
@@ -2852,6 +2889,53 @@ class SalaryController extends Controller
     private function cleanImportHeader($value)
     {
         return str_replace([' ', '　', "\r", "\n", "\t"], '', trim((string) $value));
+    }
+
+    /**
+     * 兼容导入金额格式：例如 4,242.00 / ￥4,242 / (4,242.00)
+     */
+    private function parseImportedAmount($value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        if (is_numeric($value)) {
+            return round((float) $value, 2);
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return 0.0;
+        }
+
+        $isNegativeByBracket = false;
+        if (preg_match('/^\((.*)\)$/', $raw, $matches)) {
+            $isNegativeByBracket = true;
+            $raw = $matches[1];
+        }
+
+        // 去除常见货币符号、千分位和空白字符
+        $normalized = str_replace(
+            ['￥', '¥', ',', '，', ' ', "\t", "\r", "\n", "\u{00A0}", "\u{3000}"],
+            '',
+            $raw
+        );
+
+        $amount = 0.0;
+        if (preg_match('/^-?\d+(\.\d+)?$/', $normalized)) {
+            $amount = (float) $normalized;
+        } elseif (preg_match('/-?\d[\d,，]*(\.\d+)?/', $raw, $matches)) {
+            // 兜底：提取数字片段后再去掉千分位
+            $candidate = str_replace([',', '，'], '', $matches[0]);
+            $amount = (float) $candidate;
+        }
+
+        if ($isNegativeByBracket) {
+            $amount *= -1;
+        }
+
+        return round($amount, 2);
     }
 
     private function isImportExcludedColumn(array $header)

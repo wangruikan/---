@@ -1,0 +1,192 @@
+
+
+{
+    "message": "The POST method is not supported for route api/payment-applications/from-process/15. Supported methods: GET, HEAD.",
+    "exception": "Symfony\\Component\\HttpKernel\\Exception\\MethodNotAllowedHttpException",
+    "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/AbstractRouteCollection.php",
+    "line": 122,
+    "trace": [
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/AbstractRouteCollection.php",
+            "line": 107,
+            "function": "requestMethodNotAllowed",
+            "class": "Illuminate\\Routing\\AbstractRouteCollection",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/AbstractRouteCollection.php",
+            "line": 41,
+            "function": "getRouteForMethods",
+            "class": "Illuminate\\Routing\\AbstractRouteCollection",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/RouteCollection.php",
+            "line": 162,
+            "function": "handleMatchedRoute",
+            "class": "Illuminate\\Routing\\AbstractRouteCollection",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/Router.php",
+            "line": 761,
+            "function": "match",
+            "class": "Illuminate\\Routing\\RouteCollection",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/Router.php",
+            "line": 748,
+            "function": "findRoute",
+            "class": "Illuminate\\Routing\\Router",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Routing/Router.php",
+            "line": 737,
+            "function": "dispatchToRoute",
+            "class": "Illuminate\\Routing\\Router",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Kernel.php",
+            "line": 200,
+            "function": "dispatch",
+            "class": "Illuminate\\Routing\\Router",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 144,
+            "function": "Illuminate\\Foundation\\Http\\{closure}",
+            "class": "Illuminate\\Foundation\\Http\\Kernel",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TransformsRequest.php",
+            "line": 21,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/ConvertEmptyStringsToNull.php",
+            "line": 31,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Middleware\\TransformsRequest",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 183,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Middleware\\ConvertEmptyStringsToNull",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TransformsRequest.php",
+            "line": 21,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/TrimStrings.php",
+            "line": 40,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Middleware\\TransformsRequest",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 183,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Middleware\\TrimStrings",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/ValidatePostSize.php",
+            "line": 27,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 183,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Middleware\\ValidatePostSize",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Middleware/PreventRequestsDuringMaintenance.php",
+            "line": 99,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 183,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Middleware\\PreventRequestsDuringMaintenance",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Http/Middleware/HandleCors.php",
+            "line": 62,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 183,
+            "function": "handle",
+            "class": "Illuminate\\Http\\Middleware\\HandleCors",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Http/Middleware/TrustProxies.php",
+            "line": 39,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 183,
+            "function": "handle",
+            "class": "Illuminate\\Http\\Middleware\\TrustProxies",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php",
+            "line": 119,
+            "function": "Illuminate\\Pipeline\\{closure}",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Kernel.php",
+            "line": 175,
+            "function": "then",
+            "class": "Illuminate\\Pipeline\\Pipeline",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/vendor/laravel/framework/src/Illuminate/Foundation/Http/Kernel.php",
+            "line": 144,
+            "function": "sendRequestThroughRouter",
+            "class": "Illuminate\\Foundation\\Http\\Kernel",
+            "type": "->"
+        },
+        {
+            "file": "/www/wwwroot/xypt.cyygg.cn/re_li_zi_yuan/public/index.php",
+            "line": 52,
+            "function": "handle",
+            "class": "Illuminate\\Foundation\\Http\\Kernel",
+            "type": "->"
+        }
+    ]
+}

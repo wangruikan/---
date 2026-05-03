@@ -96,7 +96,7 @@ class ApprovalInstance extends Model
                 return \App\Models\ProcessApproval::with(['initiator', 'attachments'])
                     ->find($this->business_id);
             case '付款申请':
-                return \App\Models\PaymentApplication::with(['initiator', 'attachments', 'processApproval'])
+                return \App\Models\PaymentRequest::with(['submitter', 'attachments'])
                     ->find($this->business_id);
             case '考勤申请':
                 return \App\Models\AttendanceSheet::with(['project', 'creator'])

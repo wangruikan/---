@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Carbon;
 use App\Traits\ChecksPermission;
 
 class BasisRecordController extends Controller
@@ -146,6 +147,110 @@ class BasisRecordController extends Controller
     /**
      * 上传附件
      */
+    public function copyLastMonth(Request $request)
+    {
+        $request->validate([
+            'project_id' => 'required|exists:projects,id',
+            'type' => 'required|in:attendance,salary',
+            'month' => 'required|date_format:Y-m',
+            'description' => 'nullable|string',
+        ]);
+
+        $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
+        $project = Project::findOrFail($request->project_id);
+
+        if ($request->type === 'attendance' && !$project->requires_attendance_basis) {
+            return response()->json([
+                'success' => false,
+                'message' => '该项目未设置需要上传考勤依据'
+            ], 400);
+        }
+
+        if ($request->type === 'salary' && !$project->requires_salary_basis) {
+            return response()->json([
+                'success' => false,
+                'message' => '该项目未设置需要上传工资依据'
+            ], 400);
+        }
+
+        $existing = BasisRecord::where('account_set_id', $accountSetId)
+            ->where('project_id', $request->project_id)
+            ->where('month', $request->month)
+            ->where('type', $request->type)
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'success' => false,
+                'message' => '该项目该月份的依据已存在'
+            ], 400);
+        }
+
+        $previousMonth = Carbon::createFromFormat('Y-m', $request->month)->subMonth()->format('Y-m');
+
+        $sourceRecord = BasisRecord::with('attachments')
+            ->where('account_set_id', $accountSetId)
+            ->where('project_id', $request->project_id)
+            ->where('month', $previousMonth)
+            ->where('type', $request->type)
+            ->first();
+
+        if (!$sourceRecord) {
+            return response()->json([
+                'success' => false,
+                'message' => "未找到{$previousMonth}的依据，无法复制上月"
+            ], 400);
+        }
+
+        if ($sourceRecord->attachments->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => "上月（{$previousMonth}）依据没有附件，无法复制"
+            ], 400);
+        }
+
+        $record = BasisRecord::create([
+            'account_set_id' => $accountSetId,
+            'project_id' => $request->project_id,
+            'type' => $request->type,
+            'month' => $request->month,
+            'description' => $request->description ?: "复制上月({$previousMonth})",
+            'created_by' => Auth::id(),
+        ]);
+
+        foreach ($sourceRecord->attachments as $attachment) {
+            if (!Storage::disk('public')->exists($attachment->file_path)) {
+                continue;
+            }
+
+            $ext = pathinfo($attachment->file_name, PATHINFO_EXTENSION);
+            $newFileName = uniqid('basis_', true) . ($ext ? '.' . $ext : '');
+            $newPath = 'basis_attachments/' . $record->type . '/' . $record->month . '/' . $newFileName;
+
+            Storage::disk('public')->copy($attachment->file_path, $newPath);
+
+            BasisAttachment::create([
+                'basis_record_id' => $record->id,
+                'file_name' => $attachment->file_name,
+                'file_path' => $newPath,
+                'file_type' => $attachment->file_type,
+                'file_size' => $attachment->file_size,
+            ]);
+        }
+
+        if ($request->type === 'salary') {
+            \App\Services\PendingTaskService::checkAndCompleteSalaryBasisTask($record);
+        } elseif ($request->type === 'attendance') {
+            \App\Services\PendingTaskService::checkAndCompleteAttendanceBasisTask($record);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "复制上月成功（{$previousMonth} -> {$request->month}）",
+            'data' => $record->load(['project', 'creator', 'attachments'])
+        ]);
+    }
+
     public function uploadAttachment(Request $request)
     {
         $request->validate([

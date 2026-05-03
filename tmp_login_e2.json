@@ -1,0 +1,17 @@
+﻿{
+    "success":  true,
+    "data":  {
+                 "token":  "1124|bCbqibdw1lnKyDLXP8IJzBFAS8QDXa4D9F7QuTaJ4fac8b73",
+                 "user":  {
+                              "id":  6,
+                              "username":  "e2",
+                              "name":  "e2",
+                              "email":  "331@qq.com",
+                              "phone":  null,
+                              "avatar":  "1",
+                              "role":  "finance",
+                              "is_active":  true
+                          }
+             },
+    "message":  "登录成功"
+}

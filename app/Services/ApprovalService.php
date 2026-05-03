@@ -866,7 +866,7 @@ class ApprovalService
             
             case '付款申请':
                 // 更新付款申请的状态
-                $payment = \App\Models\PaymentApplication::find($businessId);
+                $payment = \App\Models\PaymentRequest::find($businessId);
                 if ($payment) {
                     $data = [];
                     

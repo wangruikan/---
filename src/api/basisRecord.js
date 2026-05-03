@@ -45,6 +45,17 @@ export function createBasisRecord(data) {
 }
 
 /**
+ * 复制上月依据
+ */
+export function copyLastMonthBasisRecord(data) {
+  return request({
+    url: '/basis-records/copy-last-month',
+    method: 'post',
+    data
+  })
+}
+
+/**
  * 获取依据详情
  */
 export function getBasisRecordDetail(id) {

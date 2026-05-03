@@ -1,0 +1,17 @@
+﻿{
+    "success":  true,
+    "data":  {
+                 "token":  "1123|Geh7zYieRmaXpZaJfvyTZgyzE2w4Ku3y0cIbNc7C1d905e87",
+                 "user":  {
+                              "id":  2,
+                              "username":  "admin",
+                              "name":  "admin",
+                              "email":  "admin@example.com",
+                              "phone":  null,
+                              "avatar":  "1",
+                              "role":  "admin",
+                              "is_active":  true
+                          }
+             },
+    "message":  "登录成功"
+}

@@ -1,0 +1,17 @@
+﻿{
+    "success":  true,
+    "data":  {
+                 "token":  "1125|h6tvYF5muA49Vf8uwI3nq4nmjNbRwwzWUEQkMKsx8f7d0051",
+                 "user":  {
+                              "id":  5,
+                              "username":  "e1",
+                              "name":  "e1",
+                              "email":  "33@qq.com",
+                              "phone":  null,
+                              "avatar":  "1",
+                              "role":  "employee",
+                              "is_active":  true
+                          }
+             },
+    "message":  "登录成功"
+}

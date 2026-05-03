@@ -513,6 +513,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('basis-records')->group(function () {
         Route::get('/', [App\Http\Controllers\BasisRecordController::class, 'index']);
         Route::post('/', [App\Http\Controllers\BasisRecordController::class, 'store']);
+        Route::post('/copy-last-month', [App\Http\Controllers\BasisRecordController::class, 'copyLastMonth']);
         Route::get('/available-projects', [App\Http\Controllers\BasisRecordController::class, 'getAvailableProjects']);
         Route::post('/check-exists', [App\Http\Controllers\BasisRecordController::class, 'checkBasisExists']);
         Route::get('/{id}', [App\Http\Controllers\BasisRecordController::class, 'show']);
@@ -1074,7 +1075,6 @@ Route::middleware('auth:sanctum')->group(function () {
     // 付款申请管理
     Route::prefix('payment-applications')->group(function () {
         Route::get('/', [App\Http\Controllers\PaymentApplicationController::class, 'index']);
-        Route::post('/from-process/{processApprovalId}', [App\Http\Controllers\PaymentApplicationController::class, 'createFromProcessApproval']);
         Route::get('/{id}', [App\Http\Controllers\PaymentApplicationController::class, 'show']);
         Route::post('/{id}/upload-attachment', [App\Http\Controllers\PaymentApplicationController::class, 'uploadAttachment']);
         Route::delete('/{id}/attachments/{attachmentId}', [App\Http\Controllers\PaymentApplicationController::class, 'deleteAttachment']);

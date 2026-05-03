@@ -111,6 +111,14 @@
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="创建方式" prop="create_mode" v-if="!isEdit">
+          <el-select v-model="form.create_mode" style="width: 100%">
+            <el-option label="上传附件" value="upload" />
+            <el-option label="复制上月" value="copy_last_month" />
+            <el-option label="无附件" value="none" />
+          </el-select>
+          <div class="form-tip">上传：创建后上传；复制上月：自动复制上月附件；无附件：仅创建记录</div>
+        </el-form-item>
         <el-form-item label="说明" prop="description">
           <el-input
             v-model="form.description"
@@ -160,7 +168,7 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ isEdit ? '保存' : '创建并上传附件' }}
+          {{ isEdit ? '保存' : '创建' }}
         </el-button>
       </template>
     </el-dialog>
@@ -240,6 +248,7 @@ import {
   getBasisRecords,
   getAvailableProjects,
   createBasisRecord,
+  copyLastMonthBasisRecord,
   updateBasisRecord,
   deleteBasisRecord,
   getBasisRecordDetail,
@@ -286,6 +295,7 @@ const pagination = reactive({
 const form = reactive({
   project_id: null,
   month: null,
+  create_mode: 'upload',
   description: ''
 })
 
@@ -297,6 +307,9 @@ const formRules = {
   ],
   month: [
     { required: true, message: '请选择月份', trigger: 'change' }
+  ],
+  create_mode: [
+    { required: true, message: '请选择创建方式', trigger: 'change' }
   ]
 }
 
@@ -377,6 +390,7 @@ const handleCreate = () => {
   Object.assign(form, {
     project_id: null,
     month: null,
+    create_mode: 'upload',
     description: ''
   })
   dialogVisible.value = true
@@ -415,6 +429,19 @@ const handleSubmit = async () => {
       dialogVisible.value = false
       loadRecords()
     } else {
+      if (form.create_mode === 'copy_last_month') {
+        const response = await copyLastMonthBasisRecord({
+          project_id: form.project_id,
+          month: form.month,
+          type: 'attendance',
+          description: form.description
+        })
+        ElMessage.success(response.message || '复制上月成功')
+        dialogVisible.value = false
+        loadRecords()
+        return
+      }
+
       const response = await createBasisRecord({
         project_id: form.project_id,
         month: form.month,
@@ -424,22 +451,20 @@ const handleSubmit = async () => {
       ElMessage.success('创建成功')
       dialogVisible.value = false
       loadRecords()
-      
-      // 创建成功后，提示用户可以上传附件
-      ElMessageBox.confirm(
-        '依据已创建成功，是否立即上传附件？',
-        '提示',
-        {
-          confirmButtonText: '上传附件',
-          cancelButtonText: '稍后上传',
-          type: 'success'
-        }
-      ).then(() => {
-        // 打开编辑对话框，用户可以上传附件
-        handleEdit({ id: response.data.id })
-      }).catch(() => {
-        // 用户选择稍后上传，不做任何操作
-      })
+
+      if (form.create_mode === 'upload') {
+        ElMessageBox.confirm(
+          '依据已创建成功，是否立即上传附件？',
+          '提示',
+          {
+            confirmButtonText: '上传附件',
+            cancelButtonText: '稍后上传',
+            type: 'success'
+          }
+        ).then(() => {
+          handleEdit({ id: response.data.id })
+        }).catch(() => {})
+      }
     }
   } catch (error) {
     console.error('Submit error:', error)

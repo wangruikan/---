@@ -343,7 +343,8 @@ class EmployeeContractController extends Controller
         
         // 读取并缩放签名图片
         $signature = new \Imagick($signatureFullPath);
-        $signature->scaleImage(200, 0);
+        // 签名图片放大到原来的2倍
+        $signature->scaleImage(400, 0);
         
         // 添加签名到PDF
         $imagick->compositeImage($signature, \Imagick::COMPOSITE_OVER, $actualX, $actualY);
@@ -419,7 +420,8 @@ class EmployeeContractController extends Controller
         
         // 读取签名图片
         $signature = new \Imagick($signatureFullPath);
-        $signature->scaleImage(150, 0); // 调整签名大小
+        // 签名图片放大到原来的2倍
+        $signature->scaleImage(300, 0); // 调整签名大小
         
         // 按页码分组签名位置
         $pagePositions = [];
@@ -635,7 +637,8 @@ class EmployeeContractController extends Controller
         $imagick->readImage($templateFullPath);
 
         $signature = new \Imagick($signatureFullPath);
-        $signature->scaleImage(150, 0);
+        // 签名图片放大到原来的2倍
+        $signature->scaleImage(300, 0);
 
         $normalizedPositions = [];
         foreach ($positions as $pos) {

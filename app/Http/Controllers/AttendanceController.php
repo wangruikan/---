@@ -502,30 +502,85 @@ class AttendanceController extends Controller
             }
 
             $attendanceData = $request->input('attendance_data', []);
+            if (is_string($attendanceData)) {
+                $decoded = json_decode($attendanceData, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $attendanceData = $decoded;
+                }
+            }
 
-            DB::transaction(function () use ($sheet, $attendanceData, $user, $accountSetId) {
+            if (!is_array($attendanceData) || empty($attendanceData)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '考勤明细不能为空，请至少填写1天有效考勤状态'
+                ], 422);
+            }
+
+            $recordMap = [];
+            foreach ($attendanceData as $employeeData) {
+                if (!is_array($employeeData)) {
+                    continue;
+                }
+
+                $employeeId = (int)($employeeData['employee_id'] ?? 0);
+                if ($employeeId <= 0) {
+                    continue;
+                }
+
+                $attendance = $employeeData['attendance'] ?? [];
+                if (is_string($attendance)) {
+                    $decoded = json_decode($attendance, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $attendance = $decoded;
+                    }
+                }
+                if (!is_array($attendance)) {
+                    continue;
+                }
+
+                foreach ($attendance as $day => $statusRaw) {
+                    $dayNum = (int)$day;
+                    if ($dayNum < 1 || $dayNum > (int)$sheet->work_days) {
+                        continue;
+                    }
+
+                    $status = $this->normalizeAttendanceStatus($statusRaw);
+                    if ($status === null) {
+                        continue;
+                    }
+
+                    // 同一员工同一天重复值以最后一次为准
+                    $recordMap[$employeeId . '-' . $dayNum] = [
+                        'employee_id' => $employeeId,
+                        'day_of_month' => $dayNum,
+                        'status' => $status,
+                    ];
+                }
+            }
+
+            if (empty($recordMap)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '未检测到有效考勤明细，请至少填写1天有效考勤状态'
+                ], 422);
+            }
+
+            DB::transaction(function () use ($sheet, $recordMap, $user, $accountSetId) {
                 // 删除现有考勤记录
                 AttendanceRecord::where('attendance_sheet_id', $sheet->id)->delete();
 
                 // 创建新的考勤记录
-                foreach ($attendanceData as $employeeData) {
-                    $employeeId = $employeeData['employee_id'];
-                    $attendance = $employeeData['attendance'] ?? [];
-
-                    foreach ($attendance as $day => $status) {
-                        if ($status && $status !== '') {
-                            AttendanceRecord::create([
-                                'account_set_id' => $accountSetId,
-                                'attendance_sheet_id' => $sheet->id,
-                                'employee_id' => $employeeId,
-                                'project_id' => $sheet->project_id,
-                                'date' => $sheet->month . '-' . str_pad($day, 2, '0', STR_PAD_LEFT),
-                                'day_of_month' => $day,
-                                'status' => $status,
-                                'created_by' => $user->id
-                            ]);
-                        }
-                    }
+                foreach ($recordMap as $record) {
+                    AttendanceRecord::create([
+                        'account_set_id' => $accountSetId,
+                        'attendance_sheet_id' => $sheet->id,
+                        'employee_id' => $record['employee_id'],
+                        'project_id' => $sheet->project_id,
+                        'date' => $sheet->month . '-' . str_pad($record['day_of_month'], 2, '0', STR_PAD_LEFT),
+                        'day_of_month' => $record['day_of_month'],
+                        'status' => $record['status'],
+                        'created_by' => $user->id
+                    ]);
                 }
                 
                 // 生成考勤统计
@@ -542,6 +597,43 @@ class AttendanceController extends Controller
                 'message' => '保存失败: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * 兼容前后端不同状态值，统一为系统内部状态
+     */
+    private function normalizeAttendanceStatus($statusRaw): ?string
+    {
+        if ($statusRaw === null) {
+            return null;
+        }
+
+        $raw = trim((string)$statusRaw);
+        if ($raw === '') {
+            return null;
+        }
+
+        $value = mb_strtolower($raw, 'UTF-8');
+
+        $map = [
+            'normal' => 'normal',
+            'late' => 'late',
+            'early' => 'early',
+            'absent' => 'absent',
+            'leave' => 'leave',
+            'off' => 'off',
+            '正常' => 'normal',
+            '出勤' => 'normal',
+            '迟到' => 'late',
+            '早退' => 'early',
+            '缺勤' => 'absent',
+            '请假' => 'leave',
+            '调休' => 'off',
+            '休息' => 'off',
+            '1' => 'normal',
+        ];
+
+        return $map[$value] ?? null;
     }
 
     /**

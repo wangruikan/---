@@ -853,7 +853,7 @@ class ApprovalFlowController extends Controller
             if (!$businessModel) {
                 return response()->json([
                     'success' => false,
-                    'message' => '业务数据不存在'
+                    'message' => json_decode('"\u4e1a\u52a1\u6570\u636e\u4e0d\u5b58\u5728"')
                 ], 404);
             }
             
@@ -973,71 +973,106 @@ class ApprovalFlowController extends Controller
      */
     private function getBusinessModel($businessType, $businessId)
     {
-        $modelMap = [
-            'employee_contract' => \App\Models\EmployeeContract::class,
-            '工资表审批' => \App\Models\SalaryApproval::class,
-            '工资付款申请' => \App\Models\PaymentRequest::class,
-            '报销付款申请' => \App\Models\PaymentRequest::class,
-            '保险汇总付款申请' => \App\Models\PaymentRequest::class,
-            '发票申请' => \App\Models\InvoiceApplication::class,
-            '发票申请（重新提交）' => \App\Models\InvoiceApplication::class,
-            '保险汇总' => \App\Models\ProcessApproval::class,
-            '考勤表审批' => \App\Models\AttendanceSheet::class,
-            '报销申请' => \App\Models\Reimbursement::class,
-        ];
-        
-        $modelClass = $modelMap[$businessType] ?? null;
-        
+        $modelClass = $this->resolveBusinessModelClass($businessType);
         if (!$modelClass) {
             return null;
         }
-        
+
         return $modelClass::find($businessId);
     }
-    
+
+    private function resolveBusinessModelClass($businessType): ?string
+    {
+        $businessTypeKey = $this->normalizeBusinessTypeKey($businessType);
+
+        $modelMap = [
+            'employee_contract' => \App\Models\EmployeeContract::class,
+            'salary_approval' => \App\Models\SalaryApproval::class,
+            'payment_request' => \App\Models\PaymentRequest::class,
+            'invoice_application' => \App\Models\InvoiceApplication::class,
+            'process_approval' => \App\Models\ProcessApproval::class,
+            'attendance_sheet' => \App\Models\AttendanceSheet::class,
+            'reimbursement' => \App\Models\Reimbursement::class,
+        ];
+
+        return $modelMap[$businessTypeKey] ?? null;
+    }
+
+    private function normalizeBusinessTypeKey($businessType): string
+    {
+        if (!is_string($businessType)) {
+            return '';
+        }
+
+        $normalizedType = trim($businessType);
+        if ($normalizedType === '') {
+            return '';
+        }
+
+        if ($normalizedType === 'employee_contract') {
+            return 'employee_contract';
+        }
+
+        $typeHex = strtolower(bin2hex($normalizedType));
+        $hexMap = [
+            'e5b7a5e8b584e8a1a8e5aea1e689b9' => 'salary_approval',
+            'e5b7a5e8b584e4bb98e6acbee794b3e8afb7' => 'payment_request',
+            'e68aa5e99480e4bb98e6acbee794b3e8afb7' => 'payment_request',
+            'e4bf9de999a9e6b187e680bbe4bb98e6acbee794b3e8afb7' => 'payment_request',
+            'e4bb98e6acbee794b3e8afb7' => 'payment_request',
+            'e58f91e7a5a8e794b3e8afb7' => 'invoice_application',
+            'e58f91e7a5a8e794b3e8afb7efbc88e9878de696b0e68f90e4baa4efbc89' => 'invoice_application',
+            'e4bf9de999a9e6b187e680bb' => 'process_approval',
+            'e88083e58ba4e794b3e8afb7' => 'attendance_sheet',
+            'e88083e58ba4e8a1a8e5aea1e689b9' => 'attendance_sheet',
+            'e68aa5e99480e794b3e8afb7' => 'reimbursement',
+        ];
+
+        return $hexMap[$typeHex] ?? $normalizedType;
+    }
+
     /**
-     * 根据业务类型获取创建人字段名
+     * ??????????????
      */
     private function getCreatorField($businessType)
     {
+        $businessTypeKey = $this->normalizeBusinessTypeKey($businessType);
+
         $fieldMap = [
             'employee_contract' => 'created_by',
-            '工资表审批' => 'submitted_by',
-            '工资付款申请' => 'submitted_by',
-            '报销付款申请' => 'submitted_by',
-            '保险汇总付款申请' => 'submitted_by',
-            '发票申请' => 'created_by',
-            '发票申请（重新提交）' => 'created_by',
-            '保险汇总' => 'initiator_id',
-            '考勤表审批' => 'created_by',
-            '报销申请' => 'created_by',
+            'salary_approval' => 'submitted_by',
+            'payment_request' => 'submitted_by',
+            'invoice_application' => 'created_by',
+            'process_approval' => 'initiator_id',
+            'attendance_sheet' => 'created_by',
+            'reimbursement' => 'created_by',
         ];
-        
-        return $fieldMap[$businessType] ?? 'created_by';
+
+        return $fieldMap[$businessTypeKey] ?? 'created_by';
     }
-    
+
     /**
      * 获取业务附件
      */
     private function getBusinessAttachments($businessType, $businessModel)
     {
         $attachments = [];
-        
+        $businessTypeKey = $this->normalizeBusinessTypeKey($businessType);
+
         try {
-            switch ($businessType) {
+            switch ($businessTypeKey) {
                 case 'employee_contract':
                     if ($businessModel->contract_file) {
                         $attachments[] = [
                             'path' => $businessModel->contract_file,
-                            'name' => $businessModel->original_filename ?? '合同文件',
+                            'name' => $businessModel->original_filename ?? 'contract_file',
                             'size' => null,
                             'type' => 'application/pdf'
                         ];
                     }
                     break;
-                    
-                case '工资表审批':
-                    // 工资表审批的附件
+
+                case 'salary_approval':
                     if ($businessModel->attachments) {
                         foreach ($businessModel->attachments as $att) {
                             $attachments[] = [
@@ -1049,10 +1084,8 @@ class ApprovalFlowController extends Controller
                         }
                     }
                     break;
-                    
-                case '发票申请':
-                case '发票申请（重新提交）':
-                    // 发票申请的附件（attachments 是数组）
+
+                case 'invoice_application':
                     if (!empty($businessModel->attachments) && is_array($businessModel->attachments)) {
                         foreach ($businessModel->attachments as $att) {
                             $attachments[] = [
@@ -1064,9 +1097,8 @@ class ApprovalFlowController extends Controller
                         }
                     }
                     break;
-                    
-                case '报销申请':
-                    // 报销申请的附件
+
+                case 'reimbursement':
                     if ($businessModel->attachments) {
                         foreach ($businessModel->attachments as $att) {
                             $attachments[] = [
@@ -1078,9 +1110,8 @@ class ApprovalFlowController extends Controller
                         }
                     }
                     break;
-                    
-                case '保险汇总':
-                    // 保险汇总的附件
+
+                case 'process_approval':
                     if ($businessModel->attachments) {
                         foreach ($businessModel->attachments as $att) {
                             $attachments[] = [
@@ -1092,11 +1123,8 @@ class ApprovalFlowController extends Controller
                         }
                     }
                     break;
-                    
-                case '工资付款申请':
-                case '报销付款申请':
-                case '保险汇总付款申请':
-                    // 付款申请的附件
+
+                case 'payment_request':
                     if ($businessModel->attachments) {
                         foreach ($businessModel->attachments as $att) {
                             $attachments[] = [
@@ -1108,18 +1136,16 @@ class ApprovalFlowController extends Controller
                         }
                     }
                     break;
-                    
-                case '考勤表审批':
-                    // 考勤表的附件（attachments 是 JSON 数组）
+
+                case 'attendance_sheet':
                     if (!empty($businessModel->attachments)) {
-                        $atts = is_array($businessModel->attachments) 
-                            ? $businessModel->attachments 
+                        $atts = is_array($businessModel->attachments)
+                            ? $businessModel->attachments
                             : json_decode($businessModel->attachments, true);
-                        
+
                         if (is_array($atts)) {
                             foreach ($atts as $att) {
                                 if (is_string($att)) {
-                                    // 如果是字符串路径
                                     $attachments[] = [
                                         'path' => $att,
                                         'name' => basename($att),
@@ -1127,7 +1153,6 @@ class ApprovalFlowController extends Controller
                                         'type' => null
                                     ];
                                 } elseif (is_array($att)) {
-                                    // 如果是数组对象
                                     $attachments[] = [
                                         'path' => $att['path'] ?? $att['file_path'] ?? '',
                                         'name' => $att['name'] ?? $att['file_name'] ?? basename($att['path'] ?? ''),
@@ -1141,12 +1166,12 @@ class ApprovalFlowController extends Controller
                     break;
             }
         } catch (\Exception $e) {
-            Log::warning('获取业务附件失败', [
+            Log::warning('get business attachments failed', [
                 'business_type' => $businessType,
                 'error' => $e->getMessage()
             ]);
         }
-        
+
         return $attachments;
     }
 }

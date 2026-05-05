@@ -114,6 +114,8 @@ class EmployeeContract extends Model
             'labor' => '劳动合同',
             'termination' => '解除协议合同',
             'retirement' => '退休解除协议合同',
+            'confidentiality' => '保密协议',
+            'other' => '其他合同',
         ];
         return $types[$this->contract_type] ?? $this->contract_type;
     }

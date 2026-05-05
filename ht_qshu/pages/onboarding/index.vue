@@ -72,8 +72,12 @@
 			<view class="form-item">
 				<text class="label">籍贯</text>
 				<picker mode="region" :value="placeOfOriginArray" @change="onPlaceOfOriginChange">
-					<view class="picker">{{ formData.place_of_origin || '请选择籍贯' }}</view>
+					<view class="picker">{{ formatRegionDisplay(placeOfOriginArray) || '请选择籍贯省市区' }}</view>
 				</picker>
+			</view>
+			<view class="form-item">
+				<text class="label">籍贯详细地址</text>
+				<input type="text" placeholder="请输入籍贯详细地址" v-model="formData.place_of_origin_detail" />
 			</view>
 			
 			<!-- 政治面貌 -->
@@ -295,7 +299,13 @@
 			<!-- 联系地址 -->
 			<view class="form-item">
 				<text class="label">联系地址</text>
-				<input type="text" placeholder="请输入联系地址" v-model="formData.contact_address" />
+				<picker mode="region" :value="formData.contact_address_region" @change="onContactAddressRegionChange">
+					<view class="picker">{{ formatRegionDisplay(formData.contact_address_region) || '请选择省市区' }}</view>
+				</picker>
+			</view>
+			<view class="form-item">
+				<text class="label">详细地址</text>
+				<input type="text" placeholder="请输入详细地址" v-model="formData.contact_address_detail" />
 			</view>
 			
 			<!-- 联系电话 -->
@@ -368,6 +378,7 @@ export default {
 				ethnicity: '',
 				political_status: '',
 				place_of_origin: '',
+				place_of_origin_detail: '',
 				birth_date: '',
 				id_number: '',
 				current_residence: '',
@@ -387,6 +398,8 @@ export default {
 				desired_location: '',
 				accept_assignment: false,
 				contact_address: '',
+				contact_address_region: [],
+				contact_address_detail: '',
 				contact_phone: '',
 				remarks: '',
 				signature: '',
@@ -507,6 +520,30 @@ export default {
 				// 复制其他数据（排除signature和photo，因为已经处理过了）
 				const { signature, photo, ...otherData } = data
 				this.formData = { ...this.formData, ...otherData }
+				this.formData.education_background = Array.isArray(this.formData.education_background) ? this.formData.education_background : []
+				this.formData.work_experience = Array.isArray(this.formData.work_experience) ? this.formData.work_experience : []
+				this.formData.family_info = Array.isArray(this.formData.family_info) ? this.formData.family_info : []
+
+				// 联系地址结构化字段兼容回填
+				const region = [
+					data.contact_province || '',
+					data.contact_city || '',
+					data.contact_district || ''
+				].filter(item => !!item)
+				this.formData.contact_address_region = region.length === 3 ? region : []
+				this.formData.contact_address_detail = data.contact_address_detail || data.contact_address || ''
+
+				const placeRegion = [
+					data.place_of_origin_province || '',
+					data.place_of_origin_city || '',
+					data.place_of_origin_district || ''
+				].filter(item => !!item)
+				this.placeOfOriginArray = placeRegion.length === 3 ? placeRegion : []
+				this.formData.place_of_origin_detail = data.place_of_origin_detail || data.household_address || ''
+				if (!this.formData.place_of_origin) {
+					const fullPlace = [...this.placeOfOriginArray, this.formData.place_of_origin_detail].filter(item => !!item).join('')
+					this.formData.place_of_origin = fullPlace
+				}
 				}
 			} catch (error) {
 				console.error('加载数据失败:', error)
@@ -592,6 +629,105 @@ export default {
 		validateIdNumber(idNumber) {
 			return !!idNumber && idNumber.length === 18
 		},
+
+		isEmptyValue(value) {
+			if (value === null || value === undefined) return true
+			if (typeof value === 'string') return value.trim() === ''
+			return false
+		},
+
+		validateAllRequiredFields() {
+			const requiredFields = [
+				{ key: 'registration_date', label: '登记日期' },
+				{ key: 'name', label: '姓名' },
+				{ key: 'gender', label: '性别' },
+				{ key: 'id_number', label: '身份证号码' },
+				{ key: 'birth_date', label: '出生年月' },
+				{ key: 'ethnicity', label: '民族' },
+				{ key: 'political_status', label: '政治面貌' },
+				{ key: 'current_residence', label: '现居住地' },
+				{ key: 'marital_status', label: '婚姻状况' },
+				{ key: 'health_status', label: '健康状况' },
+				{ key: 'height', label: '身高' },
+				{ key: 'weight', label: '体重' },
+				{ key: 'graduated_school', label: '毕业学校' },
+				{ key: 'graduation_date', label: '毕业时间' },
+				{ key: 'education_level', label: '文化程度' },
+				{ key: 'education_type', label: '学历性质' },
+				{ key: 'major', label: '所学专业' },
+				{ key: 'degree', label: '学位' },
+				{ key: 'technical_title', label: '技术职称' },
+				{ key: 'position', label: '岗位' },
+				{ key: 'desired_location', label: '求职地区' },
+				{ key: 'contact_phone', label: '联系电话' },
+				{ key: 'remarks', label: '备注' }
+			]
+
+			for (const field of requiredFields) {
+				if (this.isEmptyValue(this.formData[field.key])) {
+					return '请填写' + field.label
+				}
+			}
+
+			if (!Array.isArray(this.formData.contact_address_region) || this.formData.contact_address_region.length !== 3) {
+				return '请选择联系地址的省市区'
+			}
+
+			if (this.isEmptyValue(this.formData.contact_address_detail)) {
+				return '请填写联系地址详细信息'
+			}
+
+			if (!Array.isArray(this.placeOfOriginArray) || this.placeOfOriginArray.length !== 3) {
+				return '请选择籍贯省市区'
+			}
+
+			if (this.isEmptyValue(this.formData.place_of_origin_detail)) {
+				return '请填写籍贯详细地址'
+			}
+
+			if (!Array.isArray(this.formData.education_background) || this.formData.education_background.length === 0) {
+				return '请至少添加一条学习简历'
+			}
+
+			for (let i = 0; i < this.formData.education_background.length; i++) {
+				const item = this.formData.education_background[i] || {}
+				if (this.isEmptyValue(item.date_range) || this.isEmptyValue(item.school) || this.isEmptyValue(item.level) || this.isEmptyValue(item.certifier)) {
+					return '请完整填写第' + (i + 1) + '条学习简历'
+				}
+			}
+
+			if (!Array.isArray(this.formData.work_experience) || this.formData.work_experience.length === 0) {
+				return '请至少添加一条工作经历'
+			}
+
+			for (let i = 0; i < this.formData.work_experience.length; i++) {
+				const item = this.formData.work_experience[i] || {}
+				if (this.isEmptyValue(item.date_range) || this.isEmptyValue(item.employer) || this.isEmptyValue(item.job_content) || this.isEmptyValue(item.certifier)) {
+					return '请完整填写第' + (i + 1) + '条工作经历'
+				}
+			}
+
+			if (!Array.isArray(this.formData.family_info) || this.formData.family_info.length === 0) {
+				return '请至少添加一条家庭情况'
+			}
+
+			for (let i = 0; i < this.formData.family_info.length; i++) {
+				const item = this.formData.family_info[i] || {}
+				if (this.isEmptyValue(item.name) || this.isEmptyValue(item.relationship) || this.isEmptyValue(item.employer) || this.isEmptyValue(item.phone)) {
+					return '请完整填写第' + (i + 1) + '条家庭情况'
+				}
+			}
+
+			if (this.isEmptyValue(this.formData.photoPath) && this.isEmptyValue(this.formData.photo)) {
+				return '请上传一寸照片'
+			}
+
+			if (this.isEmptyValue(this.formData.signaturePath)) {
+				return '请先完成手写签名'
+			}
+
+			return ''
+		},
 		
 		// 民族选择
 		onEthnicityChange(e) {
@@ -603,6 +739,17 @@ export default {
 		onPlaceOfOriginChange(e) {
 			this.placeOfOriginArray = e.detail.value
 			this.formData.place_of_origin = e.detail.value.join('')
+		},
+
+		// 联系地址（省/市/区）选择
+		onContactAddressRegionChange(e) {
+			const value = Array.isArray(e.detail.value) ? e.detail.value : []
+			this.formData.contact_address_region = value
+		},
+
+		formatRegionDisplay(region) {
+			if (!Array.isArray(region) || region.length !== 3) return ''
+			return region.join(' ')
 		},
 		
 		// 政治面貌选择
@@ -699,6 +846,9 @@ export default {
 		
 		// 添加学习简历
 		addEducationBackground() {
+			if (!Array.isArray(this.formData.education_background)) {
+				this.formData.education_background = []
+			}
 			this.formData.education_background.push({
 				date_range: '',
 				school: '',
@@ -724,6 +874,9 @@ export default {
 		
 		// 添加工作经历
 		addWorkExperience() {
+			if (!Array.isArray(this.formData.work_experience)) {
+				this.formData.work_experience = []
+			}
 			this.formData.work_experience.push({
 				date_range: '',
 				employer: '',
@@ -749,6 +902,9 @@ export default {
 		
 		// 添加家庭情况
 		addFamilyInfo() {
+			if (!Array.isArray(this.formData.family_info)) {
+				this.formData.family_info = []
+			}
 			this.formData.family_info.push({
 				name: '',
 				relationship: '',
@@ -782,7 +938,8 @@ export default {
 							gender: 'male',
 							ethnicity: '汉',
 							political_status: '群众',
-							place_of_origin: '北京市',
+							place_of_origin: '北京市北京市朝阳区某某街道某某号',
+							place_of_origin_detail: '某某街道某某号',
 							birth_date: `${birthYear}-${String(birthMonth).padStart(2, '0')}`,
 							id_number: '110101199005011234',
 							current_residence: '北京市朝阳区某某街道某某号',
@@ -802,6 +959,8 @@ export default {
 							desired_location: '北京市',
 							accept_assignment: true,
 							contact_address: '北京市朝阳区某某街道某某号',
+							contact_address_region: ['北京市', '北京市', '朝阳区'],
+							contact_address_detail: '某某街道某某号',
 							contact_phone: '13800138000',
 							remarks: '本人具有良好的沟通能力和团队合作精神，熟悉Java、Python等编程语言。',
 							education_background: [
@@ -861,6 +1020,7 @@ export default {
 								}
 							]
 						}
+						this.placeOfOriginArray = ['北京市', '北京市', '朝阳区']
 						
 						uni.showToast({
 							title: '示例数据已填充',
@@ -873,44 +1033,18 @@ export default {
 		
 		// 提交表单
 		async submitForm() {
-			// 验证必填字段
-			if (!this.formData.registration_date) {
+			const validationMessage = this.validateAllRequiredFields()
+			if (validationMessage) {
 				uni.showToast({
-					title: '请选择登记日期',
+					title: validationMessage,
 					icon: 'none'
 				})
 				return
 			}
-			
-			if (!this.formData.name) {
-				uni.showToast({
-					title: '请输入姓名',
-					icon: 'none'
-				})
-				return
-			}
-			
-			if (!this.formData.id_number) {
-				uni.showToast({
-					title: '请输入身份证号码',
-					icon: 'none'
-				})
-				return
-			}
-			
-			// 校验身份证号码格式
+
 			if (!this.validateIdNumber(this.formData.id_number)) {
 				uni.showToast({
 					title: '请输入正确的身份证号码',
-					icon: 'none'
-				})
-				return
-			}
-			
-			// 验证签名（检查signaturePath，因为提交时用的是这个）
-			if (!this.formData.signaturePath) {
-				uni.showToast({
-					title: '请先完成手写签名',
 					icon: 'none'
 				})
 				return
@@ -921,6 +1055,26 @@ export default {
 			try {
 				// 处理提交数据，将日期范围转换为start_date和end_date
 				const submitData = { ...this.formData }
+				const placeRegion = Array.isArray(this.placeOfOriginArray) ? this.placeOfOriginArray : []
+				const placeDetail = (this.formData.place_of_origin_detail || '').trim()
+				const fullPlaceOfOrigin = [...placeRegion, placeDetail].filter(item => !!item).join('')
+				this.formData.place_of_origin = fullPlaceOfOrigin
+				this.formData.household_registration = fullPlaceOfOrigin
+				submitData.place_of_origin = fullPlaceOfOrigin
+				submitData.household_registration = fullPlaceOfOrigin
+				submitData.place_of_origin_province = placeRegion[0] || ''
+				submitData.place_of_origin_city = placeRegion[1] || ''
+				submitData.place_of_origin_district = placeRegion[2] || ''
+				submitData.place_of_origin_detail = placeDetail
+				const contactRegion = Array.isArray(this.formData.contact_address_region) ? this.formData.contact_address_region : []
+				const contactDetail = (this.formData.contact_address_detail || '').trim()
+				const fullContactAddress = [...contactRegion, contactDetail].filter(item => !!item).join('')
+				this.formData.contact_address = fullContactAddress
+				submitData.contact_address = fullContactAddress
+				submitData.contact_province = contactRegion[0] || ''
+				submitData.contact_city = contactRegion[1] || ''
+				submitData.contact_district = contactRegion[2] || ''
+				submitData.contact_address_detail = contactDetail
 				
 				// 提交时使用signaturePath（相对路径），不用signature（URL）
 				submitData.signature = this.formData.signaturePath

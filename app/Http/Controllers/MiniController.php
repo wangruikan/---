@@ -694,7 +694,7 @@ class MiniController extends Controller
             $signature = \Intervention\Image\Facades\Image::make($signatureFullPath);
             
             // 调整签名大小
-            $signature->resize(300, null, function ($constraint) {
+            $signature->resize(600, null, function ($constraint) {
                 $constraint->aspectRatio();
             });
             
@@ -760,7 +760,7 @@ class MiniController extends Controller
         
         // 读取签名图片
         $signature = new \Imagick($signatureFullPath);
-        $signature->scaleImage(200, 0); // 缩放签名图片，宽度200px，高度自适应
+        $signature->scaleImage(400, 0); // 缩放签名图片，宽度200px，高度自适应
         
         // 使用用户点击的坐标（需要根据预览图片分辨率和PDF分辨率进行换算）
         // 预览图片分辨率150dpi，PDF原始分辨率也是150dpi，所以坐标可以直接使用
@@ -1287,6 +1287,35 @@ class MiniController extends Controller
                     }
                 }
                 
+                $formData['contact_province'] = $employee->contact_province ?? ($formData['contact_province'] ?? '');
+                $formData['contact_city'] = $employee->contact_city ?? ($formData['contact_city'] ?? '');
+                $formData['contact_district'] = $employee->contact_district ?? ($formData['contact_district'] ?? '');
+                $formData['contact_address_detail'] = $employee->residence_address ?: ($formData['contact_address_detail'] ?? ($employee->contact_address ?: ($formData['contact_address'] ?? '')));
+                $formData['place_of_origin_province'] = $employee->household_province ?? ($formData['place_of_origin_province'] ?? '');
+                $formData['place_of_origin_city'] = $employee->household_city ?? ($formData['place_of_origin_city'] ?? '');
+                $formData['place_of_origin_district'] = $employee->household_district ?? ($formData['place_of_origin_district'] ?? '');
+                $formData['place_of_origin_detail'] = $employee->household_address ?: ($formData['place_of_origin_detail'] ?? '');
+
+                if (empty($formData['contact_address'])) {
+                    $contactAddressParts = array_filter([
+                        $formData['contact_province'] ?? '',
+                        $formData['contact_city'] ?? '',
+                        $formData['contact_district'] ?? '',
+                        $formData['contact_address_detail'] ?? '',
+                    ], fn($item) => $item !== null && $item !== '');
+                    $formData['contact_address'] = implode(' ', $contactAddressParts);
+                }
+
+                if (empty($formData['place_of_origin'])) {
+                    $placeOfOriginParts = array_filter([
+                        $formData['place_of_origin_province'] ?? '',
+                        $formData['place_of_origin_city'] ?? '',
+                        $formData['place_of_origin_district'] ?? '',
+                        $formData['place_of_origin_detail'] ?? '',
+                    ], fn($item) => $item !== null && $item !== '');
+                    $formData['place_of_origin'] = implode('', $placeOfOriginParts);
+                }
+
                 return response()->json([
                     'success' => true,
                     'data' => $formData
@@ -1318,6 +1347,11 @@ class MiniController extends Controller
             'ethnicity' => 'nullable|string|max:50',
             'political_status' => 'nullable|string|max:50',
             'place_of_origin' => 'nullable|string|max:100',
+            'place_of_origin_province' => 'nullable|string|max:50',
+            'place_of_origin_city' => 'nullable|string|max:50',
+            'place_of_origin_district' => 'nullable|string|max:50',
+            'place_of_origin_detail' => 'nullable|string|max:200',
+            'place_of_origin_region' => 'nullable',
             'birth_date' => 'nullable|date',
             'graduated_school' => 'nullable|string|max:200',
             'graduation_date' => 'nullable|date',
@@ -1337,6 +1371,11 @@ class MiniController extends Controller
             'desired_location' => 'nullable|string|max:100',
             'accept_assignment' => 'nullable|boolean',
             'contact_address' => 'nullable|string|max:200',
+            'contact_address_region' => 'nullable',
+            'contact_province' => 'nullable|string|max:50',
+            'contact_city' => 'nullable|string|max:50',
+            'contact_district' => 'nullable|string|max:50',
+            'contact_address_detail' => 'nullable|string|max:200',
             'contact_phone' => 'nullable|string|max:20',
             'remarks' => 'nullable|string',
             'education_background' => 'nullable|array',
@@ -1378,6 +1417,101 @@ class MiniController extends Controller
         try {
             $employee = Employee::find($request->user()->id);
 
+            $contactProvince = trim((string) $request->input('contact_province', ''));
+            $contactCity = trim((string) $request->input('contact_city', ''));
+            $contactDistrict = trim((string) $request->input('contact_district', ''));
+            $contactAddressDetail = trim((string) $request->input('contact_address_detail', ''));
+            $contactAddress = trim((string) $request->input('contact_address', ''));
+            $contactAddressRegion = $request->input('contact_address_region', []);
+            $contactRegionValues = [];
+            $placeOfOriginProvince = trim((string) $request->input('place_of_origin_province', ''));
+            $placeOfOriginCity = trim((string) $request->input('place_of_origin_city', ''));
+            $placeOfOriginDistrict = trim((string) $request->input('place_of_origin_district', ''));
+            $placeOfOriginDetail = trim((string) $request->input('place_of_origin_detail', ''));
+            $placeOfOrigin = trim((string) $request->input('place_of_origin', ''));
+            $placeOfOriginRegion = $request->input('place_of_origin_region', []);
+            $placeOfOriginRegionValues = [];
+
+            if (is_string($contactAddressRegion)) {
+                $decodedRegion = json_decode($contactAddressRegion, true);
+                $contactRegionValues = is_array($decodedRegion)
+                    ? array_values($decodedRegion)
+                    : preg_split('/[\s,]+/', str_replace("\xEF\xBC\x8C", ',', $contactAddressRegion), -1, PREG_SPLIT_NO_EMPTY);
+            } elseif (is_array($contactAddressRegion)) {
+                $contactRegionValues = array_values($contactAddressRegion);
+            }
+
+            $contactRegionValues = array_values(array_filter(array_map(function ($item) {
+                return is_scalar($item) ? trim((string) $item) : '';
+            }, $contactRegionValues), fn($item) => $item !== ''));
+
+            if (is_string($placeOfOriginRegion)) {
+                $decodedPlaceRegion = json_decode($placeOfOriginRegion, true);
+                $placeOfOriginRegionValues = is_array($decodedPlaceRegion)
+                    ? array_values($decodedPlaceRegion)
+                    : preg_split('/[\s,]+/', str_replace("\xEF\xBC\x8C", ',', $placeOfOriginRegion), -1, PREG_SPLIT_NO_EMPTY);
+            } elseif (is_array($placeOfOriginRegion)) {
+                $placeOfOriginRegionValues = array_values($placeOfOriginRegion);
+            }
+
+            $placeOfOriginRegionValues = array_values(array_filter(array_map(function ($item) {
+                return is_scalar($item) ? trim((string) $item) : '';
+            }, $placeOfOriginRegionValues), fn($item) => $item !== ''));
+
+            if ($contactProvince === '' && isset($contactRegionValues[0])) {
+                $contactProvince = $contactRegionValues[0];
+            }
+
+            if ($contactCity === '' && isset($contactRegionValues[1])) {
+                $contactCity = $contactRegionValues[1];
+            }
+
+            if ($contactDistrict === '' && isset($contactRegionValues[2])) {
+                $contactDistrict = $contactRegionValues[2];
+            }
+
+            if ($placeOfOriginProvince === '' && isset($placeOfOriginRegionValues[0])) {
+                $placeOfOriginProvince = $placeOfOriginRegionValues[0];
+            }
+
+            if ($placeOfOriginCity === '' && isset($placeOfOriginRegionValues[1])) {
+                $placeOfOriginCity = $placeOfOriginRegionValues[1];
+            }
+
+            if ($placeOfOriginDistrict === '' && isset($placeOfOriginRegionValues[2])) {
+                $placeOfOriginDistrict = $placeOfOriginRegionValues[2];
+            }
+
+            if ($contactAddress === '') {
+                $contactAddressParts = array_filter([
+                    $contactProvince,
+                    $contactCity,
+                    $contactDistrict,
+                    $contactAddressDetail,
+                ], fn($item) => $item !== '');
+                $contactAddress = implode(' ', $contactAddressParts);
+            }
+
+            if ($contactAddressDetail === '') {
+                $contactAddressDetail = $contactAddress;
+            }
+
+            if ($placeOfOrigin === '') {
+                $placeOfOriginParts = array_filter([
+                    $placeOfOriginProvince,
+                    $placeOfOriginCity,
+                    $placeOfOriginDistrict,
+                    $placeOfOriginDetail,
+                ], fn($item) => $item !== '');
+                $placeOfOrigin = implode('', $placeOfOriginParts);
+            }
+
+            $hasRegionPayload = $contactProvince !== '' || $contactCity !== '' || $contactDistrict !== '';
+            $hasAddressPayload = $request->has('contact_address_detail') || $request->has('contact_address');
+            $hasPlaceOfOriginRegionPayload = $placeOfOriginProvince !== '' || $placeOfOriginCity !== '' || $placeOfOriginDistrict !== '';
+            $hasPlaceOfOriginDetailPayload = $placeOfOriginDetail !== '' || $request->has('place_of_origin_detail');
+            $hasPlaceOfOriginPayload = $placeOfOrigin !== '' || $hasPlaceOfOriginRegionPayload || $hasPlaceOfOriginDetailPayload;
+
             // 签名已经通过uploadSignature接口上传，这里直接使用路径
             // signature字段现在应该是相对路径，不是base64
 
@@ -1391,7 +1525,7 @@ class MiniController extends Controller
                     'gender' => $request->gender,
                     'ethnicity' => $request->ethnicity,
                     'political_status' => $request->political_status,
-                    'place_of_origin' => $request->place_of_origin,
+                    'place_of_origin' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->place_of_origin,
                     'birth_date' => $request->birth_date,
                     'graduated_school' => $request->graduated_school,
                     'graduation_date' => $request->graduation_date,
@@ -1406,11 +1540,11 @@ class MiniController extends Controller
                     'marital_status' => $request->marital_status,
                     'id_number' => $request->id_number,
                     'current_residence' => $request->current_residence,
-                    'household_registration' => $request->household_registration,
+                    'household_registration' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->household_registration,
                     'position' => $request->position,
                     'desired_location' => $request->desired_location,
                     'accept_assignment' => $request->accept_assignment,
-                    'contact_address' => $request->contact_address,
+                    'contact_address' => $contactAddress,
                     'contact_phone' => $request->contact_phone,
                     'remarks' => $request->remarks,
                     'signature' => $request->signature, // 保存签名图片路径（已经通过uploadSignature上传）
@@ -1433,10 +1567,10 @@ class MiniController extends Controller
                 'education_type' => $request->education_type,
                 'phone' => $request->contact_phone,
                 'address' => $request->current_residence,
-                'household_registration' => $request->household_registration,
-                'contact_address' => $request->contact_address,
+                'household_registration' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->household_registration,
+                'contact_address' => ($hasAddressPayload || $hasRegionPayload) ? $contactAddress : $employee->contact_address,
                 'remarks' => $request->remarks,
-                'native_place' => $request->place_of_origin,
+                'native_place' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->place_of_origin,
                 'ethnicity' => $request->ethnicity,
                 'political_status' => $request->political_status,
                 'health_status' => $request->health_status,
@@ -1448,6 +1582,33 @@ class MiniController extends Controller
                 'degree' => $request->degree,
                 'job_title' => $request->technical_title,
             ];
+
+            if ($hasRegionPayload) {
+                $employeeUpdateData = array_merge($employeeUpdateData, [
+                    'contact_province' => $contactProvince,
+                    'contact_city' => $contactCity,
+                    'contact_district' => $contactDistrict,
+                    'residence_province' => $contactProvince,
+                    'residence_city' => $contactCity,
+                    'residence_district' => $contactDistrict,
+                ]);
+            }
+
+            if ($hasAddressPayload) {
+                $employeeUpdateData['residence_address'] = $contactAddressDetail;
+            }
+
+            if ($hasPlaceOfOriginRegionPayload) {
+                $employeeUpdateData = array_merge($employeeUpdateData, [
+                    'household_province' => $placeOfOriginProvince,
+                    'household_city' => $placeOfOriginCity,
+                    'household_district' => $placeOfOriginDistrict,
+                ]);
+            }
+
+            if ($hasPlaceOfOriginDetailPayload) {
+                $employeeUpdateData['household_address'] = $placeOfOriginDetail;
+            }
 
             $employeeUpdateData = $this->filterEmployeeUpdateData($employeeUpdateData);
 

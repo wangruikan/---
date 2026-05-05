@@ -200,6 +200,54 @@ class Employee extends Model
     /**
      * 模型启动时注册事件
      */
+    /**
+     * 兼容中文/英文婚姻状态写入 employees 枚举字段
+     */
+    public function setMaritalStatusAttribute($value): void
+    {
+        if ($value === null) {
+            $this->attributes['marital_status'] = null;
+            return;
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            $this->attributes['marital_status'] = null;
+            return;
+        }
+
+        $map = [
+            'single' => 'single',
+            '未婚' => 'single',
+            '未婚未育' => 'single',
+            '未婚(未育)' => 'single',
+            '未婚（未育）' => 'single',
+            'married' => 'married',
+            '已婚' => 'married',
+            '已婚已育' => 'married',
+            '已婚未育' => 'married',
+            'divorced' => 'divorced',
+            '离婚' => 'divorced',
+            '离异' => 'divorced',
+            'widowed' => 'widowed',
+            '丧偶' => 'widowed',
+        ];
+
+        $normalizedKey = strtolower($raw);
+        if (array_key_exists($normalizedKey, $map)) {
+            $this->attributes['marital_status'] = $map[$normalizedKey];
+            return;
+        }
+
+        if (array_key_exists($raw, $map)) {
+            $this->attributes['marital_status'] = $map[$raw];
+            return;
+        }
+
+        // 避免 enum 字段写入非法值导致 Data truncated
+        $this->attributes['marital_status'] = null;
+    }
+
     protected static function booted()
     {
         // 保存前自动计算退休日期

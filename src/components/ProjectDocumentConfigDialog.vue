@@ -28,13 +28,6 @@
       >
         <el-table-column prop="sort_order" label="排序" width="80" align="center" />
         <el-table-column prop="document_name" label="资料名称" min-width="150" />
-        <el-table-column label="文件类型" width="120" align="center">
-          <template #default="{ row }">
-            <el-tag :type="getDocumentTypeTagType(row.document_type)" size="small">
-              {{ getDocumentTypeText(row.document_type) }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="是否必填" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.is_required ? 'danger' : 'info'" size="small">
@@ -88,17 +81,6 @@
         />
       </el-form-item>
 
-      <el-form-item label="文件类型" prop="document_type">
-        <el-radio-group v-model="form.document_type">
-          <el-radio label="image">仅图片</el-radio>
-          <el-radio label="pdf">仅PDF</el-radio>
-          <el-radio label="document">文档(Word/Excel/PDF)</el-radio>
-          <el-radio label="all">所有类型</el-radio>
-        </el-radio-group>
-        <div style="font-size: 12px; color: #909399; margin-top: 8px;">
-          建议：身份证、驾驶证等选"仅图片"；合同、证书等选"文档"或"所有类型"
-        </div>
-      </el-form-item>
 
       <el-form-item label="是否必填" prop="is_required">
         <el-switch
@@ -149,16 +131,12 @@ const formRef = ref()
 const form = reactive({
   id: null,
   document_name: '',
-  document_type: 'all',  // 默认所有类型
   is_required: true
 })
 
 const formRules = {
   document_name: [
     { required: true, message: '请输入资料名称', trigger: 'blur' }
-  ],
-  document_type: [
-    { required: true, message: '请选择文件类型', trigger: 'change' }
   ]
 }
 

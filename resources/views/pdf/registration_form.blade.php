@@ -138,6 +138,82 @@
     </style>
 </head>
 <body>
+    @php
+        $checkedSymbol = '☑';
+        $uncheckedSymbol = '□';
+
+        $normalize = function ($value) {
+            if ($value === null) {
+                return '';
+            }
+            $text = mb_strtolower(trim((string) $value), 'UTF-8');
+            return str_replace([' ', '　', "\t", "\r", "\n", '（', '）', '(', ')', '/', '\\', '，', ',', '、', ';', '；', '|'], '', $text);
+        };
+
+        $toNormalizedArray = function ($value) use ($normalize) {
+            if (is_array($value)) {
+                $items = $value;
+            } elseif ($value instanceof \Illuminate\Support\Collection) {
+                $items = $value->all();
+            } elseif (is_string($value)) {
+                $decoded = json_decode($value, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $items = $decoded;
+                } else {
+                    $items = preg_split('/[,\s，、;；|\/]+/u', $value, -1, PREG_SPLIT_NO_EMPTY);
+                }
+            } else {
+                $items = [];
+            }
+
+            $normalized = [];
+            foreach ($items as $item) {
+                if (is_scalar($item)) {
+                    $token = $normalize($item);
+                    if ($token !== '') {
+                        $normalized[] = $token;
+                    }
+                }
+            }
+
+            return array_values(array_unique($normalized));
+        };
+
+        $hasAny = function ($value, array $candidates) use ($toNormalizedArray, $normalize) {
+            $source = $toNormalizedArray($value);
+            if (empty($source) && is_scalar($value)) {
+                $token = $normalize($value);
+                if ($token !== '') {
+                    $source = [$token];
+                }
+            }
+
+            foreach ($candidates as $candidate) {
+                if (in_array($normalize($candidate), $source, true)) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        $isYes = function ($value) use ($hasAny) {
+            return $hasAny($value, ['有', '是', 'yes', 'true', '1', 'y']);
+        };
+
+        $isNo = function ($value) use ($hasAny) {
+            return $hasAny($value, ['无', '否', 'no', 'false', '0', 'n']);
+        };
+
+        $tick = function ($checked, $label = '') use ($checkedSymbol, $uncheckedSymbol) {
+            return ($checked ? $checkedSymbol : $uncheckedSymbol) . $label;
+        };
+
+        $languageSkills = $form->language_skills ?? [];
+        $engineeringSkills = $form->engineering_skills ?? [];
+        $hobbies = $form->hobbies ?? [];
+        $employmentDocuments = $form->employment_documents ?? [];
+    @endphp
     <!-- 第一页：封面 -->
     <div class="page">
         <div style="text-align: center; padding-top: 40px;">
@@ -213,7 +289,7 @@
                 <th>籍贯</th>
                 <td>{{ $form->native_place ?? '' }}</td>
                 <th>婚姻状况</th>
-                <td>□未婚 □已婚 □离婚</td>
+<td>{{ $tick($hasAny($form->marital_status ?? null, ['single', '未婚']), '未婚') }} {{ $tick($hasAny($form->marital_status ?? null, ['married', '已婚']), '已婚') }} {{ $tick($hasAny($form->marital_status ?? null, ['divorced', '离婚']), '离婚') }}</td>
                 <th>是否有子女</th>
                 <td>{{ $form->has_children ?? '' }}</td>
             </tr>
@@ -221,7 +297,7 @@
                 <th>身份证/护照</th>
                 <td colspan="3">{{ $form->id_number ?? '' }}</td>
                 <th>户口状态</th>
-                <td>□城镇 □非城镇</td>
+<td>{{ $tick($hasAny($form->household_type ?? null, ['urban', 'non_agricultural', 'nonagricultural', '城镇', '非农业']), '城镇') }} {{ $tick($hasAny($form->household_type ?? null, ['rural', 'agricultural', '非城镇', '农业', '农村']), '非城镇') }}</td>
             </tr>
             <tr>
                 <th>现居住</th>
@@ -248,15 +324,15 @@
         <table>
             <tr>
                 <th style="width: 70px;">语言</th>
-                <td>英语：□四级 □六级 □托福 □雅思</td>
+<td>英语：{{ $tick($hasAny($languageSkills, ['四级', 'cet4', '英语四级', '4级']), '四级') }} {{ $tick($hasAny($languageSkills, ['六级', 'cet6', '英语六级', '6级']), '六级') }} {{ $tick($hasAny($languageSkills, ['托福', 'toefl']), '托福') }} {{ $tick($hasAny($languageSkills, ['雅思', 'ielts']), '雅思') }}</td>
                 <th style="width: 70px;">工程</th>
-                <td>□电工证 □高压证 □其他____</td>
+<td>{{ $tick($hasAny($engineeringSkills, ['电工证', '电工']), '电工证') }} {{ $tick($hasAny($engineeringSkills, ['高压证', '高压工', '高压']), '高压工') }} {{ $tick($hasAny($engineeringSkills, ['其他', 'other']), '其他') }}___</td>
             </tr>
             <tr>
                 <th>职称</th>
-                <td>□初级 □中级 □高级 □其他____</td>
+<td>{{ $tick($hasAny($form->professional_title ?? null, ['初级']), '初级') }} {{ $tick($hasAny($form->professional_title ?? null, ['中级']), '中级') }} {{ $tick($hasAny($form->professional_title ?? null, ['高级']), '高级') }} {{ $tick($hasAny($form->professional_title ?? null, ['其他', '无', 'none']), '其他') }}___</td>
                 <th>兴趣</th>
-                <td>□唱歌 □棋类 □球类 □其他____</td>
+<td>{{ $tick($hasAny($hobbies, ['唱歌']), '唱歌') }} {{ $tick($hasAny($hobbies, ['棋类']), '棋类') }} {{ $tick($hasAny($hobbies, ['球类']), '球类') }} {{ $tick($hasAny($hobbies, ['其他', 'other']), '其他') }}___</td>
             </tr>
             <tr>
                 <th>其他技能</th>
@@ -379,25 +455,25 @@
         <table>
             <tr class="empty-row">
                 <th style="width: 110px;">精神病</th>
-                <td colspan="2">□有（请注明详情）__________　　□无</td>
+<td colspan="2">{{ $tick($isYes($form->mental_illness ?? null), '有') }}（请注明详情）：{{ $form->mental_illness_detail ?? '' }}　　{{ $tick($isNo($form->mental_illness ?? null), '无') }}</td>
             </tr>
             <tr class="empty-row">
                 <th>其他疾病</th>
-                <td colspan="2">□有（请注明详情）__________　　□无</td>
+<td colspan="2">{{ $tick($isYes($form->other_illness ?? null), '有') }}（请注明详情）：{{ $form->other_illness_detail ?? '' }}　　{{ $tick($isNo($form->other_illness ?? null), '无') }}</td>
             </tr>
             <tr class="empty-row">
                 <th>最近6个月内有无<br/>住院记录</th>
-                <td style="width: 140px;">□有　　□无</td>
+<td style="width: 140px;">{{ $tick($isYes($form->hospitalized_recently ?? null), '有') }}　　{{ $tick($isNo($form->hospitalized_recently ?? null), '无') }}</td>
                 <td>病因：{{ $form->hospitalized_reason ?? '' }}</td>
             </tr>
             <tr class="empty-row">
                 <th>有无违法犯罪记录</th>
-                <td>□有　　□无</td>
+<td>{{ $tick($isYes($form->criminal_record ?? null), '有') }}　　{{ $tick($isNo($form->criminal_record ?? null), '无') }}</td>
                 <td>时间：{{ $form->criminal_record_time ?? '' }}</td>
             </tr>
             <tr class="empty-row">
                 <th>就业证件</th>
-                <td colspan="2">□劳动手册　□离职证明　□应届毕业　□下岗/协保证明　□其他____</td>
+<td colspan="2">{{ $tick($hasAny($employmentDocuments, ['劳动手册']), '劳动手册') }}　{{ $tick($hasAny($employmentDocuments, ['离职证明']), '离职证明') }}　{{ $tick($hasAny($employmentDocuments, ['应届毕业']), '应届毕业') }}　{{ $tick($hasAny($employmentDocuments, ['下岗/协保证明', '下岗', '协保证明']), '下岗/协保证明') }}　{{ $tick($hasAny($employmentDocuments, ['其他', 'other']), '其他') }}___</td>
             </tr>
         </table>
         
@@ -415,19 +491,19 @@
         <table>
             <tr class="empty-row">
                 <th style="width: 140px;">您是否怀孕</th>
-                <td>□有（请注明详情）__________　　□无</td>
+<td>{{ $tick($isYes($form->is_pregnant ?? null), '有') }}（请注明详情）：{{ $form->pregnant_detail ?? '' }}　　{{ $tick($isNo($form->is_pregnant ?? null), '无') }}</td>
             </tr>
             <tr class="empty-row">
                 <th>您是否接受加班、出差</th>
-                <td>□接受　　□不接受</td>
+<td>{{ $tick($hasAny($form->accept_overtime ?? null, ['接受', 'accept', 'yes', '是']), '接受') }}　　{{ $tick($hasAny($form->accept_overtime ?? null, ['不接受', '拒绝', 'no', '否']), '不接受') }}</td>
             </tr>
             <tr class="empty-row">
                 <th>您是否需要提供住宿</th>
-                <td>□有（请注明详情）__________　　□无</td>
+<td>{{ $tick($isYes($form->need_accommodation ?? null), '有') }}（请注明详情）：{{ $form->accommodation_detail ?? '' }}　　{{ $tick($isNo($form->need_accommodation ?? null), '无') }}</td>
             </tr>
             <tr class="empty-row">
                 <th>您是否有驾照</th>
-                <td>□有（请注明详情）__________　　□无</td>
+<td>{{ $tick($isYes($form->has_driving_license ?? null), '有') }}（请注明详情）：{{ $form->driving_license_detail ?? '' }}　　{{ $tick($isNo($form->has_driving_license ?? null), '无') }}</td>
             </tr>
         </table>
         

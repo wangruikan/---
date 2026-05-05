@@ -1643,14 +1643,33 @@ class MiniController extends Controller
             $employee = Employee::find($request->user()->id);
             $form = \App\Models\EmployeeRegistrationForm::where('employee_id', $employee->id)->first();
 
-            if ($form && $form->signature) {
+            if ($form) {
                 $formData = $form->toArray();
-                // 兼容新旧路径格式
-                if (strpos($formData['signature'], 'uploads/') === 0) {
-                    $formData['signature'] = asset($formData['signature']);
-                } else {
-                    $formData['signature'] = asset('storage/' . $formData['signature']);
+
+                if (!empty($formData['signature'])) {
+                    // 兼容新旧路径格式
+                    if (strpos($formData['signature'], 'uploads/') === 0) {
+                        $formData['signature'] = asset($formData['signature']);
+                    } else {
+                        $formData['signature'] = asset('storage/' . $formData['signature']);
+                    }
                 }
+
+                $formData['native_place_province'] = $employee->household_province ?? ($formData['native_place_province'] ?? '');
+                $formData['native_place_city'] = $employee->household_city ?? ($formData['native_place_city'] ?? '');
+                $formData['native_place_district'] = $employee->household_district ?? ($formData['native_place_district'] ?? '');
+                $formData['native_place_detail'] = $employee->household_address ?? ($formData['native_place_detail'] ?? '');
+
+                if (empty($formData['native_place'])) {
+                    $nativePlaceParts = array_filter([
+                        $formData['native_place_province'] ?? '',
+                        $formData['native_place_city'] ?? '',
+                        $formData['native_place_district'] ?? '',
+                        $formData['native_place_detail'] ?? '',
+                    ], fn($item) => $item !== null && $item !== '');
+                    $formData['native_place'] = implode('', $nativePlaceParts);
+                }
+
                 $form = $formData;
             }
 
@@ -1690,6 +1709,11 @@ class MiniController extends Controller
             'education_level' => 'required|string|max:50',
             'education_type' => 'required|string|max:50',
             'native_place' => 'required|string|max:100',
+            'native_place_province' => 'nullable|string|max:50',
+            'native_place_city' => 'nullable|string|max:50',
+            'native_place_district' => 'nullable|string|max:50',
+            'native_place_detail' => 'nullable|string|max:200',
+            'native_place_region' => 'nullable',
             'marital_status' => 'required|string|max:20',
             'has_children' => 'required|string|max:20',
             'id_number' => 'required|string|size:18',
@@ -1851,6 +1875,58 @@ class MiniController extends Controller
 
         try {
             $employee = Employee::find($request->user()->id);
+            $nativePlaceProvince = trim((string) $request->input('native_place_province', ''));
+            $nativePlaceCity = trim((string) $request->input('native_place_city', ''));
+            $nativePlaceDistrict = trim((string) $request->input('native_place_district', ''));
+            $nativePlaceDetail = trim((string) $request->input('native_place_detail', ''));
+            $nativePlace = trim((string) $request->input('native_place', ''));
+            $nativePlaceRegion = $request->input('native_place_region', []);
+            $nativePlaceRegionValues = [];
+
+            if (is_string($nativePlaceRegion)) {
+                $decodedNativePlaceRegion = json_decode($nativePlaceRegion, true);
+                $nativePlaceRegionValues = is_array($decodedNativePlaceRegion)
+                    ? array_values($decodedNativePlaceRegion)
+                    : preg_split('/[\s,]+/', str_replace("\xEF\xBC\x8C", ',', $nativePlaceRegion), -1, PREG_SPLIT_NO_EMPTY);
+            } elseif (is_array($nativePlaceRegion)) {
+                $nativePlaceRegionValues = array_values($nativePlaceRegion);
+            }
+
+            $nativePlaceRegionValues = array_values(array_filter(array_map(function ($item) {
+                return is_scalar($item) ? trim((string) $item) : '';
+            }, $nativePlaceRegionValues), fn($item) => $item !== ''));
+
+            if ($nativePlaceProvince === '' && isset($nativePlaceRegionValues[0])) {
+                $nativePlaceProvince = $nativePlaceRegionValues[0];
+            }
+
+            if ($nativePlaceCity === '' && isset($nativePlaceRegionValues[1])) {
+                $nativePlaceCity = $nativePlaceRegionValues[1];
+            }
+
+            if ($nativePlaceDistrict === '' && isset($nativePlaceRegionValues[2])) {
+                $nativePlaceDistrict = $nativePlaceRegionValues[2];
+            }
+
+            $nativePlaceParts = array_filter([
+                $nativePlaceProvince,
+                $nativePlaceCity,
+                $nativePlaceDistrict,
+                $nativePlaceDetail,
+            ], fn($item) => $item !== '');
+
+            // If region/detail exists, always rebuild native_place from these pieces.
+            if (!empty($nativePlaceParts)) {
+                $nativePlace = implode('', $nativePlaceParts);
+            }
+
+            if ($nativePlaceDetail === '' && $nativePlace !== '') {
+                $nativePlaceDetail = $nativePlace;
+            }
+
+            $hasNativePlaceRegionPayload = $nativePlaceProvince !== '' || $nativePlaceCity !== '' || $nativePlaceDistrict !== '';
+            $hasNativePlaceDetailPayload = $nativePlaceDetail !== '';
+            $hasNativePlacePayload = $nativePlace !== '' || $hasNativePlaceRegionPayload || $hasNativePlaceDetailPayload;
 
             $form = \App\Models\EmployeeRegistrationForm::updateOrCreate(
                 ['employee_id' => $employee->id],
@@ -1872,7 +1948,7 @@ class MiniController extends Controller
                     'political_status' => $request->political_status,
                     'education_level' => $request->education_level,
                     'education_type' => $request->education_type,
-                    'native_place' => $request->native_place,
+                    'native_place' => $hasNativePlacePayload ? $nativePlace : $request->native_place,
                     'marital_status' => $request->marital_status,
                     'has_children' => $request->has_children,
                     'id_number' => $request->id_number,
@@ -1945,18 +2021,41 @@ class MiniController extends Controller
                 'education_type' => $request->education_type,
                 'phone' => $request->contact_phone,
                 'address' => $request->current_address,
-                'household_address' => $request->household_address,
+                'household_address' => $hasNativePlaceDetailPayload ? $nativePlaceDetail : $request->household_address,
                 'household_type' => $normalizedHouseholdType,
-                'contact_address' => $request->document_address,
+                'contact_address' => $hasNativePlaceDetailPayload ? $nativePlaceDetail : $request->document_address,
                 'bank_account' => $request->bank_account,
                 'bank_branch' => $request->bank_name,
                 'emergency_contact' => $request->emergency_contact1_name,
                 'emergency_phone' => $request->emergency_contact1_phone,
                 'remarks' => $request->remarks,
-                'native_place' => $request->native_place,
+                'native_place' => $hasNativePlacePayload ? $nativePlace : $request->native_place,
+                'household_registration' => $hasNativePlacePayload ? $nativePlace : $request->household_address,
                 'political_status' => $request->political_status,
                 'height' => $request->height,
             ];
+
+            if ($hasNativePlaceRegionPayload) {
+                $employeeUpdateData = array_merge($employeeUpdateData, [
+                    'household_province' => $nativePlaceProvince,
+                    'household_city' => $nativePlaceCity,
+                    'household_district' => $nativePlaceDistrict,
+                    'residence_province' => $nativePlaceProvince,
+                    'residence_city' => $nativePlaceCity,
+                    'residence_district' => $nativePlaceDistrict,
+                    'contact_province' => $nativePlaceProvince,
+                    'contact_city' => $nativePlaceCity,
+                    'contact_district' => $nativePlaceDistrict,
+                ]);
+            }
+
+            if ($hasNativePlaceDetailPayload) {
+                $employeeUpdateData = array_merge($employeeUpdateData, [
+                    'household_address' => $nativePlaceDetail,
+                    'residence_address' => $nativePlaceDetail,
+                    'contact_address' => $nativePlaceDetail,
+                ]);
+            }
 
             // The mini-program registration form allows these fields to be omitted,
             // so avoid overwriting required employee columns with null/empty values.

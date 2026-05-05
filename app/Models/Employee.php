@@ -82,6 +82,7 @@ class Employee extends Model
         'marital_status',
         'education',
         'address',
+        'native_place',
         'project_ids',
         'emergency_contact',
         'emergency_phone',

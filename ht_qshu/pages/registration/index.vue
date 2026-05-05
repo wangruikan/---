@@ -133,8 +133,12 @@
 			<view class="form-item">
 				<text class="label">籍贯</text>
 				<picker mode="region" :value="nativePlaceArray" @change="onNativePlaceChange">
-					<view class="picker">{{ formData.native_place || '请选择籍贯' }}</view>
+					<view class="picker">{{ formatRegionDisplay(nativePlaceArray) || '请选择籍贯省市区' }}</view>
 				</picker>
+			</view>
+			<view class="form-item">
+				<text class="label">籍贯详细地址</text>
+				<input type="text" placeholder="请输入籍贯详细地址" v-model="formData.native_place_detail" />
 			</view>
 			
 			<view class="form-item">
@@ -559,6 +563,7 @@ export default {
 				education_level: '',
 				education_type: '',
 				native_place: '',
+				native_place_detail: '',
 				marital_status: '',
 				has_children: '',
 				id_number: '',
@@ -680,6 +685,19 @@ export default {
 					// 复制其他数据
 					const { signature, ...otherData } = data
 					this.formData = { ...this.formData, ...otherData }
+
+					const nativePlaceRegion = [
+						data.native_place_province || '',
+						data.native_place_city || '',
+						data.native_place_district || ''
+					].filter(item => !!item)
+					this.nativePlaceArray = nativePlaceRegion.length === 3 ? nativePlaceRegion : []
+					this.formData.native_place_detail = data.native_place_detail || data.household_address || ''
+
+					if (!this.formData.native_place) {
+						const fullNativePlace = [...this.nativePlaceArray, this.formData.native_place_detail].filter(item => !!item).join('')
+						this.formData.native_place = fullNativePlace
+					}
 				}
 			} catch (error) {
 				console.error('加载数据失败:', error)
@@ -698,6 +716,11 @@ export default {
 			if (dateStr.includes('T')) return dateStr.split('T')[0]
 			return dateStr
 		},
+
+		formatRegionDisplay(region) {
+			if (!Array.isArray(region) || region.length !== 3) return ''
+			return region.join(' ')
+		},
 		
 		// 各种选择器变化处理
 		onFillDateChange(e) { this.formData.fill_date = e.detail.value },
@@ -715,8 +738,10 @@ export default {
 			this.formData.education_type = e.detail.value
 		},
 		onNativePlaceChange(e) {
-			this.nativePlaceArray = e.detail.value
-			this.formData.native_place = e.detail.value.join('')
+			const value = Array.isArray(e.detail.value) ? e.detail.value : []
+			this.nativePlaceArray = value
+			const nativePlaceDetail = String(this.formData.native_place_detail || '').trim()
+			this.formData.native_place = [...value, nativePlaceDetail].filter(item => !!item).join('')
 		},
 		onMaritalChange(e) {
 			this.maritalIndex = e.detail.value
@@ -790,7 +815,6 @@ export default {
 				{ key: 'political_status', label: '政治面貌' },
 				{ key: 'education_level', label: '文化程度' },
 				{ key: 'education_type', label: '学历性质' },
-				{ key: 'native_place', label: '籍贯' },
 				{ key: 'marital_status', label: '婚姻状况' },
 				{ key: 'has_children', label: '是否有子女' },
 				{ key: 'id_number', label: '身份证号码' },
@@ -836,6 +860,16 @@ export default {
 					uni.showToast({ title: `请填写${field.label}`, icon: 'none' })
 					return false
 				}
+			}
+
+			if (!Array.isArray(this.nativePlaceArray) || this.nativePlaceArray.length !== 3) {
+				uni.showToast({ title: '请选择籍贯省市区', icon: 'none' })
+				return false
+			}
+
+			if (!String(this.formData.native_place_detail || '').trim()) {
+				uni.showToast({ title: '请填写籍贯详细地址', icon: 'none' })
+				return false
 			}
 
 			for (const field of requiredArrayFields) {
@@ -1022,7 +1056,8 @@ export default {
 							political_status: '群众',
 							education_level: '本科',
 							education_type: '统招',
-							native_place: '北京市',
+							native_place: '北京市北京市朝阳区某某街道',
+							native_place_detail: '某某街道',
 							marital_status: 'married',
 							has_children: '男孩',
 							household_type: 'urban',
@@ -1068,6 +1103,7 @@ export default {
 							driving_license_detail: 'C1',
 							signature_date: dateStr
 						}
+						this.nativePlaceArray = ['北京市', '北京市', '朝阳区']
 						uni.showToast({ title: '示例数据已填充', icon: 'success' })
 					}
 				}
@@ -1084,6 +1120,16 @@ export default {
 			
 			try {
 				const submitData = { ...this.formData }
+				const nativePlaceRegion = Array.isArray(this.nativePlaceArray) ? this.nativePlaceArray : []
+				const nativePlaceDetail = String(this.formData.native_place_detail || '').trim()
+				const fullNativePlace = [...nativePlaceRegion, nativePlaceDetail].filter(item => !!item).join('')
+				this.formData.native_place = fullNativePlace
+				submitData.native_place = fullNativePlace
+				submitData.native_place_province = nativePlaceRegion[0] || ''
+				submitData.native_place_city = nativePlaceRegion[1] || ''
+				submitData.native_place_district = nativePlaceRegion[2] || ''
+				submitData.native_place_detail = nativePlaceDetail
+				submitData.native_place_region = nativePlaceRegion
 				submitData.signature = this.formData.signaturePath
 				delete submitData.signaturePath
 				

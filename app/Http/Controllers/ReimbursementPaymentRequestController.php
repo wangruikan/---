@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PaymentRequest;
+use App\Models\PaymentRequestAttachment;
 use App\Models\Reimbursement;
 use App\Services\ApprovalService;
 use App\Services\PendingTaskService;
@@ -26,34 +27,29 @@ class ReimbursementPaymentRequestController extends Controller
     {
         $query = PaymentRequest::query();
 
-        // 账套过滤
-        $currentAccountSetId = $request->input('current_account_set_id');
+        $currentAccountSetId = $this->resolveCurrentAccountSetId($request);
         if ($currentAccountSetId) {
             $query->where('account_set_id', $currentAccountSetId);
-        } elseif ($request->user()->role !== 'admin') {
+        } elseif (!$this->isAdmin($request)) {
             $query->whereRaw('1 = 0');
         }
 
-        // 查询报销相关的付款类型（包括报销、差旅、采购、项目、其他等）
-        // payment_type 字段已改为 VARCHAR，支持任意字符串
         $reimbursementTypes = ['reimbursement', '报销', '差旅', '采购', '项目', '其他'];
         $query->whereIn('payment_type', $reimbursementTypes);
 
-        // 筛选条件
         if ($request->has('status') && $request->status) {
             $query->where('status', $request->status);
         }
 
         $requests = $query->with([
-                'reimbursement',
-                'submitter:id,name',
-                'approver:id,name',
-                'approvalInstance.records'
-            ])
+            'reimbursement',
+            'submitter:id,name',
+            'approver:id,name',
+            'approvalInstance.records',
+        ])
             ->orderBy('submitted_at', 'desc')
             ->paginate($request->input('per_page', 50));
 
-        // 添加业务信息
         $requests->getCollection()->transform(function ($item) {
             if ($item->reimbursement) {
                 $item->applicant = $item->reimbursement->applicant;
@@ -66,12 +62,12 @@ class ReimbursementPaymentRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $requests
+            'data' => $requests,
         ]);
     }
 
     /**
-     * 提交报销付款申请
+     * 提交报销付款申请（创建付款申请草稿）
      */
     public function submit(Request $request)
     {
@@ -84,52 +80,54 @@ class ReimbursementPaymentRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '验证失败',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        $currentAccountSetId = $request->input('current_account_set_id');
+        $currentAccountSetId = $this->resolveCurrentAccountSetId($request);
         if (!$currentAccountSetId) {
             return response()->json([
                 'success' => false,
-                'message' => '请先选择账套'
+                'message' => '请先选择账套',
+            ], 422);
+        }
+
+        $reimbursement = Reimbursement::where('id', $request->reimbursement_id)
+            ->where('account_set_id', $currentAccountSetId)
+            ->first();
+        if (!$reimbursement) {
+            return response()->json([
+                'success' => false,
+                'message' => '报销申请不存在或不属于当前账套',
+            ], 404);
+        }
+
+        if ($reimbursement->status !== 'approved') {
+            return response()->json([
+                'success' => false,
+                'message' => '该报销申请尚未审批通过，无法发起付款申请',
+            ], 422);
+        }
+
+        $existingRequest = PaymentRequest::where('reimbursement_id', $reimbursement->id)
+            ->where('account_set_id', $currentAccountSetId)
+            ->first();
+        if ($existingRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => '该报销申请已发起过付款申请',
             ], 422);
         }
 
         DB::beginTransaction();
         try {
-            $reimbursement = Reimbursement::find($request->reimbursement_id);
-
-            // 检查审批状态
-            if ($reimbursement->status !== 'approved') {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该报销申请尚未审批通过，无法发起付款申请'
-                ], 422);
-            }
-
-            // 检查是否已经发起过付款申请
-            $existingRequest = PaymentRequest::where('reimbursement_id', $reimbursement->id)->first();
-            if ($existingRequest) {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该报销申请已发起过付款申请'
-                ], 422);
-            }
-
-            // 创建付款申请记录
-            // 付款类型使用报销的类目（category），如果类目为空则使用 'reimbursement'
             $paymentType = $reimbursement->category ?: 'reimbursement';
-            
-            // 获取报销表单数据（如果前端传了的话）
             $formData = $request->input('reimbursement_form_data', []);
-            
-            // 获取稍后上传状态
             $uploadLater = $request->input('upload_later', false);
-            
+
             $paymentRequest = PaymentRequest::create([
                 'payment_type' => $paymentType,
-                'category' => $formData['category'] ?? $reimbursement->category ?? null, // 保存类目
+                'category' => $formData['category'] ?? $reimbursement->category ?? null,
                 'account_set_id' => $currentAccountSetId,
                 'reimbursement_id' => $reimbursement->id,
                 'amount' => $reimbursement->amount,
@@ -137,7 +135,7 @@ class ReimbursementPaymentRequestController extends Controller
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
                 'remarks' => $request->remarks ?? ($paymentType . '付款申请 - ' . $reimbursement->applicant . ($reimbursement->reason ? ' - ' . $reimbursement->reason : '')),
-                'upload_later' => $uploadLater, // 保存稍后上传状态
+                'upload_later' => $uploadLater,
                 // 报销表单字段
                 'project' => $formData['project'] ?? null,
                 'apply_date' => $formData['applyDate'] ?? null,
@@ -164,7 +162,6 @@ class ReimbursementPaymentRequestController extends Controller
                 'company' => $formData['company'] ?? null,
             ]);
 
-            // 开启候补资料时，给发起人生成待办
             PendingTaskService::createPaymentSupplementTask($paymentRequest);
 
             DB::commit();
@@ -172,22 +169,21 @@ class ReimbursementPaymentRequestController extends Controller
             \Log::info('报销付款申请已创建', [
                 'payment_request_id' => $paymentRequest->id,
                 'reimbursement_id' => $reimbursement->id,
-                'amount' => $reimbursement->amount
+                'amount' => $reimbursement->amount,
             ]);
 
-            // 返回付款申请ID，前端会继续上传附件
             return response()->json([
                 'success' => true,
                 'message' => '报销付款申请已创建',
-                'data' => $paymentRequest
+                'data' => $paymentRequest,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('创建报销付款申请失败', ['error' => $e->getMessage()]);
-            
+
             return response()->json([
                 'success' => false,
-                'message' => '创建付款申请失败：' . $e->getMessage()
+                'message' => '创建付款申请失败: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -205,23 +201,39 @@ class ReimbursementPaymentRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '验证失败',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        DB::beginTransaction();
-        try {
-            $paymentRequest = PaymentRequest::with(['reimbursement.attachments', 'attachments'])->find($request->payment_request_id);
+        $currentAccountSetId = $this->resolveCurrentAccountSetId($request);
+        if (!$currentAccountSetId && !$this->isAdmin($request)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套',
+            ], 422);
+        }
 
-            // 检查是否已经创建过审批流程
+        try {
+            $paymentRequestQuery = PaymentRequest::with(['reimbursement.attachments', 'attachments'])
+                ->where('id', $request->payment_request_id);
+            if ($currentAccountSetId) {
+                $paymentRequestQuery->where('account_set_id', $currentAccountSetId);
+            }
+            $paymentRequest = $paymentRequestQuery->first();
+            if (!$paymentRequest) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '付款申请不存在或不属于当前账套',
+                ], 404);
+            }
+
             if ($paymentRequest->approval_instance_id) {
                 return response()->json([
                     'success' => false,
-                    'message' => '该付款申请已经创建了审批流程'
+                    'message' => '该付款申请已经创建了审批流程',
                 ], 422);
             }
 
-            // 获取付款申请新上传的附件
             $attachments = $paymentRequest->attachments->map(function ($att) {
                 return [
                     'path' => $att->file_path,
@@ -230,8 +242,7 @@ class ReimbursementPaymentRequestController extends Controller
                     'type' => $att->mime_type,
                 ];
             })->toArray();
-            
-            // 自动合并原报销申请的附件
+
             if ($paymentRequest->reimbursement && $paymentRequest->reimbursement->attachments) {
                 $reimbursementAttachments = $paymentRequest->reimbursement->attachments->map(function ($att) {
                     return [
@@ -241,34 +252,25 @@ class ReimbursementPaymentRequestController extends Controller
                         'type' => $att->file_type,
                     ];
                 })->toArray();
-                
-                // 合并附件，原报销附件放在前面
+
                 $attachments = array_merge($reimbursementAttachments, $attachments);
-                
-                \Log::info('已合并原报销附件', [
-                    'reimbursement_id' => $paymentRequest->reimbursement_id,
-                    'reimbursement_attachments_count' => count($reimbursementAttachments),
-                    'total_attachments_count' => count($attachments)
-                ]);
             }
 
-            // 获取盖章方式，默认线上
+            DB::beginTransaction();
+
             $stampMethod = $request->input('stamp_method', 'online');
-            
-            // 创建审批流程实例
             $instance = $this->approvalService->createApprovalInstance(
                 $paymentRequest->account_set_id,
-                '报销付款申请',  // 业务类型
-                $paymentRequest->id, // 业务ID
+                '报销付款申请',
+                $paymentRequest->id,
                 $paymentRequest->submitted_by,
                 $attachments,
-                true, // 跳过发起人
-                $stampMethod // 盖章方式
+                true,
+                $stampMethod
             );
 
-            // 更新付款申请，关联审批实例
             $paymentRequest->update([
-                'approval_instance_id' => $instance->id
+                'approval_instance_id' => $instance->id,
             ]);
 
             DB::commit();
@@ -283,19 +285,19 @@ class ReimbursementPaymentRequestController extends Controller
                 'message' => '付款审批流程已创建',
                 'data' => [
                     'payment_request' => $paymentRequest,
-                    'instance' => $instance
-                ]
+                    'instance' => $instance,
+                ],
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('创建报销付款审批流程失败', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
-                'message' => '创建审批流程失败：' . $e->getMessage()
+                'message' => '创建审批流程失败: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -307,7 +309,7 @@ class ReimbursementPaymentRequestController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'payment_request_id' => 'required|exists:payment_requests,id',
-            'file' => 'required|file|max:51200', // Max 50MB
+            'file' => 'required|file|max:51200',
         ], [
             'payment_request_id.required' => '付款申请ID不能为空',
             'payment_request_id.exists' => '付款申请不存在',
@@ -320,23 +322,40 @@ class ReimbursementPaymentRequestController extends Controller
             \Log::error('上传报销付款附件验证失败', [
                 'errors' => $validator->errors()->toArray(),
                 'request_data' => $request->except('file'),
-                'has_file' => $request->hasFile('file')
+                'has_file' => $request->hasFile('file'),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '验证失败',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        $paymentRequest = PaymentRequest::find($request->payment_request_id);
+        $currentAccountSetId = $this->resolveCurrentAccountSetId($request);
+        if (!$currentAccountSetId && !$this->isAdmin($request)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套',
+            ], 422);
+        }
 
-        // 只有待审批状态才能上传附件
+        $paymentRequestQuery = PaymentRequest::query()->where('id', $request->payment_request_id);
+        if ($currentAccountSetId) {
+            $paymentRequestQuery->where('account_set_id', $currentAccountSetId);
+        }
+        $paymentRequest = $paymentRequestQuery->first();
+        if (!$paymentRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => '付款申请不存在或不属于当前账套',
+            ], 404);
+        }
+
         if ($paymentRequest->status !== 'pending') {
             return response()->json([
                 'success' => false,
-                'message' => '只有待审批状态才能上传附件'
+                'message' => '只有待审批状态才能上传附件',
             ], 400);
         }
 
@@ -345,12 +364,10 @@ class ReimbursementPaymentRequestController extends Controller
             $originalName = $file->getClientOriginalName();
             $extension = $file->getClientOriginalExtension();
             $filename = time() . '_' . uniqid() . '.' . $extension;
-            
-            // 获取文件信息
+
             $fileSize = $file->getSize();
             $mimeType = $file->getMimeType();
 
-            // 保存文件到 public/payment_requests/{id}/ 目录
             $directory = public_path('payment_requests/' . $paymentRequest->id);
             if (!file_exists($directory)) {
                 mkdir($directory, 0755, true);
@@ -358,38 +375,28 @@ class ReimbursementPaymentRequestController extends Controller
             $file->move($directory, $filename);
             $path = 'payment_requests/' . $paymentRequest->id . '/' . $filename;
 
-            // 获取附件类型
             $attachmentType = $request->input('attachment_type', 'attachment');
-            
-            \Log::info('【报销付款】上传附件', [
-                'payment_request_id' => $paymentRequest->id,
-                'filename' => $originalName,
-                'attachment_type_from_request' => $request->input('attachment_type'),
-                'attachment_type_final' => $attachmentType,
-            ]);
-            
-            // 创建附件记录
-            $attachment = \App\Models\PaymentRequestAttachment::create([
+            $attachment = PaymentRequestAttachment::create([
                 'payment_request_id' => $paymentRequest->id,
                 'filename' => $originalName,
                 'file_path' => $path,
                 'file_size' => $fileSize,
                 'mime_type' => $mimeType,
-                'attachment_type' => $attachmentType, // 保存附件类型：invoice=发票, attachment=普通附件
+                'attachment_type' => $attachmentType,
                 'uploaded_by' => $request->user()->id,
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => '附件上传成功',
-                'data' => $attachment->load('uploader')
+                'data' => $attachment->load('uploader'),
             ]);
         } catch (\Exception $e) {
             \Log::error('上传付款申请附件失败', ['error' => $e->getMessage()]);
-            
+
             return response()->json([
                 'success' => false,
-                'message' => '附件上传失败：' . $e->getMessage()
+                'message' => '附件上传失败: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -407,42 +414,75 @@ class ReimbursementPaymentRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '验证失败',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        $attachment = \App\Models\PaymentRequestAttachment::with('paymentRequest')->find($request->id);
+        $currentAccountSetId = $this->resolveCurrentAccountSetId($request);
+        if (!$currentAccountSetId && !$this->isAdmin($request)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套',
+            ], 422);
+        }
 
-        // 只有待审批状态才能删除附件
+        $attachment = PaymentRequestAttachment::with('paymentRequest')->find($request->id);
+        if (!$attachment || !$attachment->paymentRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => '附件不存在',
+            ], 404);
+        }
+
+        if ($currentAccountSetId && (int) $attachment->paymentRequest->account_set_id !== (int) $currentAccountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '附件不属于当前账套',
+            ], 404);
+        }
+
         if ($attachment->paymentRequest->status !== 'pending') {
             return response()->json([
                 'success' => false,
-                'message' => '只有待审批状态才能删除附件'
+                'message' => '只有待审批状态才能删除附件',
             ], 400);
         }
 
         try {
-            // 删除文件
             $filePath = public_path($attachment->file_path);
             if (file_exists($filePath)) {
                 unlink($filePath);
             }
 
-            // 删除记录
             $attachment->delete();
 
             return response()->json([
                 'success' => true,
-                'message' => '附件删除成功'
+                'message' => '附件删除成功',
             ]);
         } catch (\Exception $e) {
             \Log::error('删除付款申请附件失败', ['error' => $e->getMessage()]);
-            
+
             return response()->json([
                 'success' => false,
-                'message' => '附件删除失败：' . $e->getMessage()
+                'message' => '附件删除失败: ' . $e->getMessage(),
             ], 500);
         }
     }
-}
 
+    private function resolveCurrentAccountSetId(Request $request): ?int
+    {
+        $accountSetId = $request->input('current_account_set_id');
+        if (!$accountSetId) {
+            $accountSetId = $request->header('X-Account-Set-Id');
+        }
+
+        return $accountSetId ? (int) $accountSetId : null;
+    }
+
+    private function isAdmin(Request $request): bool
+    {
+        $user = $request->user();
+        return $user && $user->role === 'admin';
+    }
+}

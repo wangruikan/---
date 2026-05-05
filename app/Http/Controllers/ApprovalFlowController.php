@@ -875,8 +875,9 @@ class ApprovalFlowController extends Controller
             }
             
             // 删除旧的审批实例（如果存在）
-            if ($businessModel->approval_instance_id) {
-                $oldInstance = ApprovalInstance::find($businessModel->approval_instance_id);
+            $oldInstanceId = $this->getBusinessApprovalInstanceId($businessModel);
+            if ($oldInstanceId) {
+                $oldInstance = ApprovalInstance::find($oldInstanceId);
                 if ($oldInstance) {
                     // 删除审批记录
                     ApprovalRecord::where('instance_id', $oldInstance->id)->delete();
@@ -950,6 +951,23 @@ class ApprovalFlowController extends Controller
         }
     }
     
+    private function getBusinessApprovalInstanceId($businessModel): ?int
+    {
+        if (!$businessModel) {
+            return null;
+        }
+
+        if (isset($businessModel->approval_instance_id) && $businessModel->approval_instance_id) {
+            return (int) $businessModel->approval_instance_id;
+        }
+
+        if (isset($businessModel->approval_flow_id) && $businessModel->approval_flow_id) {
+            return (int) $businessModel->approval_flow_id;
+        }
+
+        return null;
+    }
+
     /**
      * 根据业务类型获取业务模型
      */
@@ -1026,7 +1044,7 @@ class ApprovalFlowController extends Controller
                                 'path' => $att->file_path,
                                 'name' => $att->file_name,
                                 'size' => $att->file_size,
-                                'type' => $att->mime_type
+                                'type' => $att->file_type ?? $att->mime_type
                             ];
                         }
                     }
@@ -1055,7 +1073,7 @@ class ApprovalFlowController extends Controller
                                 'path' => $att->file_path,
                                 'name' => $att->file_name,
                                 'size' => $att->file_size,
-                                'type' => $att->mime_type
+                                'type' => $att->file_type ?? $att->mime_type
                             ];
                         }
                     }

@@ -399,8 +399,20 @@ class PaymentApplicationController extends Controller
             if (empty($projectIds) && $paymentRequest->salaryApproval && $paymentRequest->salaryApproval->project) {
                 $projectIds[] = $paymentRequest->salaryApproval->project->id;
             }
-            if (empty($projectIds) && $paymentRequest->reimbursement && $paymentRequest->reimbursement->project_id) {
-                $projectIds[] = $paymentRequest->reimbursement->project_id;
+            if (empty($projectIds) && $paymentRequest->reimbursement) {
+                if (!empty($paymentRequest->reimbursement->project_id)) {
+                    // 兼容历史数据中存在 project_id 的情况
+                    $projectIds[] = (int) $paymentRequest->reimbursement->project_id;
+                } elseif (!empty($paymentRequest->reimbursement->project)) {
+                    // 现有报销结构仅保存项目名称，按账套+名称回查项目ID
+                    $projectId = \App\Models\Project::query()
+                        ->where('account_set_id', $paymentRequest->account_set_id)
+                        ->where('name', $paymentRequest->reimbursement->project)
+                        ->value('id');
+                    if ($projectId) {
+                        $projectIds[] = (int) $projectId;
+                    }
+                }
             }
 
             $data = [

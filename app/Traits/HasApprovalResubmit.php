@@ -80,6 +80,11 @@ trait HasApprovalResubmit
         if (Schema::hasColumn($this->getTable(), 'approval_instance_id')) {
             $updateData['approval_instance_id'] = null;
         }
+
+        // 兼容报销等使用 approval_flow_id 的业务
+        if (Schema::hasColumn($this->getTable(), 'approval_flow_id')) {
+            $updateData['approval_flow_id'] = null;
+        }
         
         // 特殊处理：InvoiceApplication 重新发起时状态改为正常
         if ($this->getTable() === 'invoice_applications') {

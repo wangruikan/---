@@ -37,7 +37,6 @@
 						<view class="tags">
 							<text v-if="item.is_required" class="tag required">必填</text>
 							<text v-else class="tag optional">选填</text>
-							<text class="tag type">{{ getDocumentTypeText(item.document_type) }}</text>
 						</view>
 					</view>
 					<text class="status" :class="item.uploaded ? 'uploaded' : 'pending'">
@@ -64,7 +63,7 @@
 				<view class="upload-action">
 					<button class="upload-btn" @click="handleUpload(item)">
 						<text class="icon">📤</text>
-						{{ item.uploaded ? '继续上传' : getUploadButtonText(item.document_type) }}
+						{{ item.uploaded ? '继续上传' : '拍照/选择文件' }}
 					</button>
 				</view>
 			</view>
@@ -160,21 +159,8 @@ export default {
 
 		async handleUpload(item) {
 			try {
-				// 根据文件类型设置可选扩展名
-				let extension = []
-
-				if (item.document_type === 'image') {
-					extension = ['jpg', 'jpeg', 'png', 'gif', 'webp']
-				} else if (item.document_type === 'pdf') {
-					extension = ['pdf']
-				} else if (item.document_type === 'document') {
-					extension = ['pdf', 'doc', 'docx', 'xls', 'xlsx']
-				} else {
-					extension = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx']
-				}
-
-				// 选择文件（拍照 / 相册 / 文件夹）
-				const chooseResult = await this.chooseFiles(extension)
+				// 选择文件（拍照 / 相册 / 文件夹），支持所有类型
+				const chooseResult = await this.chooseFiles()
 				
 				if (!chooseResult || chooseResult.length === 0) {
 					return
@@ -235,7 +221,7 @@ export default {
 		},
 
 		// 选择多个文件：拍照 / 相册 / 文件管理器
-		chooseFiles(extension) {
+		chooseFiles() {
 			return new Promise((resolve, reject) => {
 				uni.showActionSheet({
 					itemList: ['拍照', '从相册选择', '从微信会话文件选择'],
@@ -267,7 +253,6 @@ export default {
 						uni.chooseMessageFile({
 							count: 9,
 							type: 'file',
-							extension,
 							success: (res) => {
 								const files = (res.tempFiles || []).map(file => ({ tempFilePath: file.path || file.tempFilePath }))
 								resolve(files)
@@ -306,16 +291,8 @@ export default {
 			})
 		},
 
-		getDocumentTypeText(type) {
-			const texts = { image: '仅图片', pdf: '仅PDF', document: '文档', all: '所有类型' }
-			return texts[type] || type
-		},
-
 		getUploadButtonText(type) {
-			if (type === 'image') return '拍照/选择图片'
-			else if (type === 'pdf') return '选择PDF文件'
-			else if (type === 'document') return '选择文档'
-			else return '拍照/选择文件'
+			return '拍照/选择文件'
 		},
 
 		formatDateTime(dateTime) {

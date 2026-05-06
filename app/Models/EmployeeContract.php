@@ -48,6 +48,7 @@ class EmployeeContract extends Model
         'contract_file',
         'original_filename',
         'status',
+        'source_type',
         'approval_instance_id',
         'created_by',
         'uploaded_at',

@@ -31,14 +31,27 @@ class EmployeeContractController extends Controller
             $query->whereRaw('1 = 0');
         }
         
-        $contracts = $query->with(['creator'])
+        $contracts = $query->with(['creator', 'approvalInstance'])
             ->orderBy('created_at', 'desc')
             ->get();
 
         $contracts->each(function ($contract) {
-            $isOffline = $contract->status === 'completed' && is_null($contract->employee_signed_at);
-            $contract->source_type = $isOffline ? 'offline' : 'online';
-            $contract->source_text = $isOffline ? '线下' : '线上';
+            $sourceType = null;
+
+            if (in_array($contract->source_type, ['online', 'offline'], true)) {
+                $sourceType = $contract->source_type;
+            } elseif (
+                $contract->approvalInstance &&
+                in_array($contract->approvalInstance->stamp_method, ['online', 'offline'], true)
+            ) {
+                $sourceType = $contract->approvalInstance->stamp_method;
+            } else {
+                $isOffline = $contract->status === 'completed' && is_null($contract->employee_signed_at);
+                $sourceType = $isOffline ? 'offline' : 'online';
+            }
+
+            $contract->source_type = $sourceType;
+            $contract->source_text = $sourceType === 'offline' ? '线下' : '线上';
         });
 
         return response()->json([

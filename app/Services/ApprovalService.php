@@ -494,6 +494,12 @@ class ApprovalService
                 if ($instanceId) {
                     $data['approval_instance_id'] = $instanceId;
                 }
+                if ($instanceId && Schema::hasColumn('employee_contracts', 'source_type')) {
+                    $instance = \App\Models\ApprovalInstance::find($instanceId);
+                    if ($instance && in_array($instance->stamp_method, ['online', 'offline'], true)) {
+                        $data['source_type'] = $instance->stamp_method;
+                    }
+                }
                 
                 // 更新合同状态
                 $contract = EmployeeContract::find($businessId);

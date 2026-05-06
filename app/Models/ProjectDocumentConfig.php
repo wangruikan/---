@@ -12,7 +12,6 @@ class ProjectDocumentConfig extends Model
     protected $fillable = [
         'project_id',
         'document_name',
-        'document_type',
         'is_required',
         'sort_order',
     ];
@@ -36,20 +35,6 @@ class ProjectDocumentConfig extends Model
     public function employeeDocuments()
     {
         return $this->hasMany(EmployeeDocument::class, 'document_config_id');
-    }
-
-    /**
-     * 获取文件类型的中文显示
-     */
-    public function getDocumentTypeTextAttribute()
-    {
-        $types = [
-            'image' => '仅图片',
-            'pdf' => '仅PDF',
-            'document' => '文档(Word/Excel/PDF)',
-            'all' => '所有类型'
-        ];
-        return $types[$this->document_type] ?? $this->document_type;
     }
 }
 

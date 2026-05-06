@@ -170,7 +170,6 @@ const handleAdd = () => {
   formMode.value = 'add'
   form.id = null
   form.document_name = ''
-  form.document_type = 'all'  // 默认所有类型
   form.is_required = true
   showFormDialog.value = true
 }
@@ -179,7 +178,6 @@ const handleEdit = (row) => {
   formMode.value = 'edit'
   form.id = row.id
   form.document_name = row.document_name
-  form.document_type = row.document_type
   form.is_required = row.is_required
   showFormDialog.value = true
 }
@@ -195,14 +193,12 @@ const handleSubmitForm = async () => {
       if (formMode.value === 'add') {
         await createProjectDocumentConfig(props.projectId, {
           document_name: form.document_name,
-          document_type: form.document_type,
           is_required: form.is_required
         })
         ElMessage.success('添加成功')
       } else {
         await updateProjectDocumentConfig(props.projectId, form.id, {
           document_name: form.document_name,
-          document_type: form.document_type,
           is_required: form.is_required
         })
         ElMessage.success('更新成功')
@@ -269,26 +265,6 @@ const updateSort = async () => {
     ElMessage.error('更新排序失败')
     loadConfigs() // 重新加载
   }
-}
-
-const getDocumentTypeText = (type) => {
-  const texts = {
-    image: '仅图片',
-    pdf: '仅PDF',
-    document: '文档',
-    all: '所有类型'
-  }
-  return texts[type] || type
-}
-
-const getDocumentTypeTagType = (type) => {
-  const types = {
-    image: 'success',
-    pdf: 'warning',
-    document: 'primary',
-    all: 'info'
-  }
-  return types[type] || 'info'
 }
 
 const handleClose = () => {

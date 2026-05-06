@@ -13,14 +13,6 @@
             <el-icon><Plus /></el-icon>
             新建社保地区
           </el-button>
-          <el-button 
-            v-if="selectedRegions.length > 0" 
-            type="success" 
-            @click="batchCreateTemplate"
-          >
-            <el-icon><Plus /></el-icon>
-            批量创建模板 ({{ selectedRegions.length }})
-          </el-button>
         </div>
 
         <!-- 社保地区列表 -->
@@ -74,30 +66,6 @@
             >
               历史
             </el-button>
-            <el-button
-              v-if="!row.has_template"
-              type="success"
-              size="small"
-              @click="createTemplate(row)"
-            >
-              创建模板
-            </el-button>
-            <!-- <el-button
-              v-else
-              type="warning"
-              size="small"
-              @click="editTemplate(row)"
-            >
-              编辑模板
-            </el-button>
-            <el-button
-              v-if="row.has_template"
-              type="info"
-              size="small"
-              @click="openCopyTemplateDialog(row, 'social_security')"
-            >
-              复制模板
-            </el-button> -->
             <el-button type="warning" size="small" @click="editRegion(row)">
               编辑
             </el-button>
@@ -283,14 +251,6 @@
             <el-icon><Plus /></el-icon>
             新建医保地区
           </el-button>
-          <el-button 
-            v-if="selectedMedicalRegions.length > 0" 
-            type="success" 
-            @click="batchCreateMedicalTemplate"
-          >
-            <el-icon><Plus /></el-icon>
-            批量创建模板 ({{ selectedMedicalRegions.length }})
-          </el-button>
         </div>
 
         <!-- 医保地区列表 -->
@@ -337,37 +297,9 @@
                 <el-button type="primary" size="small" @click="viewMedicalTypes(row)">
                   查看类型
                 </el-button>
-                <el-button
-                  type="info"
-                  size="small"
-                  @click="showMedicalRegionHistory(row)"
-                >
+                <el-button type="info" size="small" @click="showMedicalRegionHistory(row)">
                   历史
                 </el-button>
-                <el-button
-                  v-if="!row.has_template"
-                  type="success"
-                  size="small"
-                  @click="createMedicalTemplate(row)"
-                >
-                  创建模板
-                </el-button>
-                <!-- <el-button
-                  v-else
-                  type="warning"
-                  size="small"
-                  @click="editMedicalTemplate(row)"
-                >
-                  编辑模板
-                </el-button>
-                <el-button
-                  v-if="row.has_template"
-                  type="info"
-                  size="small"
-                  @click="openCopyTemplateDialog(row, 'medical_insurance')"
-                >
-                  复制模板
-                </el-button> -->
                 <el-button type="warning" size="small" @click="editMedicalRegion(row)">
                   编辑
                 </el-button>
@@ -1281,6 +1213,7 @@ const handleSubmitType = async () => {
     }
 
     showAddTypeDialog.value = false
+    showTypesDialog.value = false
     resetTypeForm()
     loadRegions() // 重新加载以更新类型列表
   } catch (error) {
@@ -1561,6 +1494,7 @@ const handleSubmitMedicalType = async () => {
     }
 
     showAddMedicalTypeDialog.value = false
+    showMedicalTypesDialog.value = false
     resetMedicalTypeForm()
     loadMedicalRegions() // 重新加载以更新类型列表
   } catch (error) {

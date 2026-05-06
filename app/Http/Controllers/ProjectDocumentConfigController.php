@@ -39,7 +39,6 @@ class ProjectDocumentConfigController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'document_name' => 'required|string|max:100',
-            'document_type' => 'required|in:image,pdf,document,all',
             'is_required' => 'boolean',
             'sort_order' => 'integer|min:0',
         ]);
@@ -66,7 +65,6 @@ class ProjectDocumentConfigController extends Controller
             $config = ProjectDocumentConfig::create([
                 'project_id' => $projectId,
                 'document_name' => $request->document_name,
-                'document_type' => $request->document_type,
                 'is_required' => $request->input('is_required', true),
                 'sort_order' => $sortOrder,
             ]);
@@ -91,7 +89,6 @@ class ProjectDocumentConfigController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'document_name' => 'sometimes|required|string|max:100',
-            'document_type' => 'sometimes|required|in:image,pdf,document,all',
             'is_required' => 'sometimes|boolean',
             'sort_order' => 'sometimes|integer|min:0',
         ]);
@@ -111,7 +108,6 @@ class ProjectDocumentConfigController extends Controller
 
             $config->update($request->only([
                 'document_name',
-                'document_type',
                 'is_required',
                 'sort_order'
             ]));

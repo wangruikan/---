@@ -1,0 +1,6 @@
+﻿"seq","local","remote","status","error","started_at","finished_at","duration_ms"
+"1","E:\project\re_li_zi_yuan\re_li_zi_yuan(1)\re_li_zi_yuan\app\Http\Controllers\AttendanceController.php","/app/Http/Controllers/AttendanceController.php","OK","","2026-05-07 13:03:44.409","2026-05-07 13:03:45.519","1110"
+"2","E:\project\re_li_zi_yuan\re_li_zi_yuan(1)\re_li_zi_yuan\app\Http\Controllers\SalaryApprovalController.php","/app/Http/Controllers/SalaryApprovalController.php","OK","","2026-05-07 13:03:45.531","2026-05-07 13:03:46.579","1048"
+"3","E:\project\re_li_zi_yuan\re_li_zi_yuan(1)\re_li_zi_yuan\app\Http\Controllers\SalaryController.php","/app/Http/Controllers/SalaryController.php","OK","","2026-05-07 13:03:46.580","2026-05-07 13:03:47.946","1367"
+"4","E:\project\re_li_zi_yuan\re_li_zi_yuan(1)\re_li_zi_yuan\app\Models\ApprovalRecord.php","/app/Models/ApprovalRecord.php","OK","","2026-05-07 13:03:47.947","2026-05-07 13:03:48.926","978"
+"5","E:\project\re_li_zi_yuan\re_li_zi_yuan(1)\re_li_zi_yuan\app\Services\ApprovalService.php","/app/Services/ApprovalService.php","OK","","2026-05-07 13:03:48.927","2026-05-07 13:03:50.191","1264"

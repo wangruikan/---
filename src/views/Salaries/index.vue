@@ -1527,6 +1527,9 @@ const handleGrossSalaryFileChange = async (file) => {
     formData.append('project_id', currentSheet.value.project_id)
     formData.append('month', currentSheet.value.month)
     formData.append('current_account_set_id', accountSetStore.currentAccountSetId)
+    if (currentSheet.value.draft_batch_id) {
+      formData.append('draft_batch_id', currentSheet.value.draft_batch_id)
+    }
 
     const response = await importGrossSalary(formData)
     
@@ -1571,7 +1574,10 @@ const loadSalaryDetails = async (row) => {
   try {
     const response = await getSalaryDetails({
       project_id: row.project_id,
-      month: row.month
+      month: row.month,
+      has_approval: !!row.has_approval,
+      salary_approval_id: row.salary_approval_id,
+      draft_batch_id: row.draft_batch_id
     })
     if (response && response.success) {
       salaryDetails.value = response.data.details || []
@@ -1591,6 +1597,7 @@ const submitApprovalForm = reactive({
   project_id: null,
   project_name: '',
   month: null,
+  draft_batch_id: null,
   approval_type: 'online',
   remarks: '',
   approval_id: null  // 审批ID，用于上传附件
@@ -1624,7 +1631,8 @@ const handleSubmit = async (row) => {
   try {
     const validateResponse = await validateBeforeSubmit({
       project_id: row.project_id,
-      month: row.month
+      month: row.month,
+      draft_batch_id: row.draft_batch_id
     })
     
     if (validateResponse.success && validateResponse.data.has_warnings) {
@@ -1722,6 +1730,7 @@ const handleSubmit = async (row) => {
   submitApprovalForm.project_id = row.project_id
   submitApprovalForm.project_name = row.project_name
   submitApprovalForm.month = row.month
+  submitApprovalForm.draft_batch_id = row.draft_batch_id || null
   submitApprovalForm.approval_type = 'online'
   submitApprovalForm.remarks = ''
   submitApprovalForm.approval_id = null
@@ -1796,6 +1805,7 @@ const handleConfirmSubmitApproval = async () => {
     const response = await submitSalaryApproval({
       project_id: submitApprovalForm.project_id,
       month: submitApprovalForm.month,
+      draft_batch_id: submitApprovalForm.draft_batch_id,
       approval_type: submitApprovalForm.approval_type,
       remarks: submitApprovalForm.remarks
     })
@@ -2122,7 +2132,8 @@ const handleDelete = (row) => {
     try {
       await deleteSalary({
         project_id: row.project_id,
-        month: row.month
+        month: row.month,
+        draft_batch_id: row.draft_batch_id
       })
       ElMessage.success('删除成功')
       handleSearch()

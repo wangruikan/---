@@ -53,11 +53,21 @@ class SalaryController extends Controller
         if ($request->has('status') && $request->status) {
             $query->where('status', $request->status);
         }
+
+        // 兼容历史数据：为旧草稿记录补充批次号，避免重复创建后仍被聚合成一条
+        if ($currentAccountSetId) {
+            $this->backfillLegacyDraftBatchIds(
+                intval($currentAccountSetId),
+                $request->input('project_id'),
+                $request->input('month')
+            );
+        }
         
-        // 按项目+月份+审批ID分组，返回汇总数据
-        // 注意：必须按 salary_approval_id 分组，否则多次创建的工资表会被合并
+        // 按项目+月份+审批ID+草稿批次分组
+        // 草稿工资表（salary_approval_id = NULL）通过 seq_number 拆分，确保可重复创建并独立显示
         $salaries = $query->with(['project:id,name'])
-                          ->selectRaw('project_id, month, status, salary_approval_id,
+                          ->selectRaw('project_id, month, status, salary_approval_id, seq_number,
+                                      MAX(seq_number) as draft_batch_id,
                                       MIN(period_start) as period_start,
                                       MIN(period_end) as period_end,
                                       COUNT(DISTINCT employee_id) as employee_count,
@@ -65,7 +75,7 @@ class SalaryController extends Controller
                                       SUM(net_salary) as total_net_salary,
                                       MIN(created_at) as created_at,
                                       MAX(approved_at) as approved_at')
-                          ->groupBy('project_id', 'month', 'status', 'salary_approval_id')
+                          ->groupBy('project_id', 'month', 'status', 'salary_approval_id', 'seq_number')
                           ->orderBy('month', 'desc')
                           ->orderBy('created_at', 'desc')
                           ->get();
@@ -79,6 +89,7 @@ class SalaryController extends Controller
                     'status' => $s->status,
                     'employee_count' => $s->employee_count,
                     'salary_approval_id' => $s->salary_approval_id,
+                    'draft_batch_id' => $s->draft_batch_id,
                 ];
             })->toArray()
         ]);
@@ -90,6 +101,7 @@ class SalaryController extends Controller
                 'month' => $item->month,
                 'status' => $item->status,
                 'salary_approval_id' => $item->salary_approval_id,
+                'draft_batch_id' => $item->draft_batch_id,
                 'has_approval_id' => $item->salary_approval_id ? true : false,
             ]);
             \Log::info('处理工资表记录', [
@@ -97,6 +109,7 @@ class SalaryController extends Controller
                 'month' => $item->month,
                 'status' => $item->status,
                 'salary_approval_id' => $item->salary_approval_id,
+                'draft_batch_id' => $item->draft_batch_id,
             ]);
             
             // 获取该项目+月份的所有员工的部门字段，提取项目名称
@@ -108,6 +121,11 @@ class SalaryController extends Controller
                                          $q->where('salary_approval_id', $item->salary_approval_id);
                                      } else {
                                          $q->whereNull('salary_approval_id');
+                                         if ($item->draft_batch_id !== null) {
+                                             $q->where('seq_number', intval($item->draft_batch_id));
+                                         } else {
+                                             $q->whereNull('seq_number');
+                                         }
                                      }
                                  })
                                  ->pluck('department')
@@ -135,6 +153,8 @@ class SalaryController extends Controller
                 $item->project_name = implode('、', $allProjectNames);
             }
             
+            $item->draft_batch_id = $item->draft_batch_id !== null ? intval($item->draft_batch_id) : null;
+
             // 如果有 salary_approval_id，查找对应的审批记录
             if ($item->salary_approval_id) {
                 $approval = \App\Models\SalaryApproval::find($item->salary_approval_id);
@@ -201,6 +221,62 @@ class SalaryController extends Controller
                 'last_page' => ceil($total / $perPage)
             ]
         ]);
+    }
+
+    private function backfillLegacyDraftBatchIds(int $accountSetId, $projectId = null, $month = null): void
+    {
+        $legacyDrafts = Salary::query()
+            ->where('account_set_id', $accountSetId)
+            ->where('status', 'draft')
+            ->whereNull('salary_approval_id')
+            ->whereNull('seq_number')
+            ->when($projectId, function ($query) use ($projectId) {
+                $query->where('project_id', $projectId);
+            })
+            ->when($month, function ($query) use ($month) {
+                $query->where('month', $month);
+            })
+            ->orderBy('project_id')
+            ->orderBy('month')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get(['id', 'project_id', 'month', 'created_at']);
+
+        if ($legacyDrafts->isEmpty()) {
+            return;
+        }
+
+        $groups = $legacyDrafts->groupBy(function ($item) {
+            $createdAt = $item->created_at
+                ? Carbon::parse($item->created_at)->format('Y-m-d H:i:s')
+                : '1970-01-01 00:00:00';
+            return $item->project_id . '|' . $item->month . '|' . $createdAt;
+        });
+
+        $nextBatchByScope = [];
+        foreach ($groups as $group) {
+            $first = $group->first();
+            if (!$first) {
+                continue;
+            }
+
+            $scopeKey = $first->project_id . '|' . $first->month;
+            if (!array_key_exists($scopeKey, $nextBatchByScope)) {
+                $maxSeq = Salary::where('account_set_id', $accountSetId)
+                    ->where('project_id', $first->project_id)
+                    ->where('month', $first->month)
+                    ->max('seq_number');
+                $nextBatchByScope[$scopeKey] = intval($maxSeq) > 0 ? intval($maxSeq) : 0;
+            }
+
+            $nextBatchByScope[$scopeKey]++;
+            $batchId = $nextBatchByScope[$scopeKey];
+
+            $ids = $group->pluck('id')->filter()->values()->toArray();
+            if (!empty($ids)) {
+                Salary::whereIn('id', $ids)->update(['seq_number' => $batchId]);
+            }
+        }
     }
 
     public function store(Request $request)
@@ -874,6 +950,13 @@ class SalaryController extends Controller
             ]);
         }
 
+        // 为本次生成分配草稿批次号（不改表结构，复用 seq_number 字段）
+        $latestDraftBatchId = Salary::where('project_id', $mainProjectId)
+            ->where('account_set_id', $accountSetId)
+            ->where('month', $month)
+            ->max('seq_number');
+        $draftBatchId = (intval($latestDraftBatchId) > 0 ? intval($latestDraftBatchId) : 0) + 1;
+
         // 批量创建工资记录
         $created = [];
         
@@ -884,6 +967,7 @@ class SalaryController extends Controller
             'main_project_name' => $mainProject->name,
             'all_projects' => $projectNames,
             'month' => $month,
+            'draft_batch_id' => $draftBatchId,
             'insurance_import_month' => $insuranceImportMonth,
             'insurance_month' => $insuranceMonth,
             'employee_count' => $allEmployees->count(),
@@ -1218,6 +1302,7 @@ class SalaryController extends Controller
             ]);
             
             $salary = Salary::create([
+                'seq_number' => $draftBatchId,
                 'account_set_id' => $accountSetId,
                 'employee_id' => $employee->id,
                 'id_card' => $employee->id_number,    // 身份证号（员工表字段是id_number）
@@ -1266,6 +1351,7 @@ class SalaryController extends Controller
             'message' => "成功生成 {$month} 的工资表，共 " . count($created) . " 条记录（来自 " . count($projectIds) . " 个项目）",
             'data' => [
                 'count' => count($created),
+                'draft_batch_id' => $draftBatchId,
                 'project_id' => $mainProjectId,
                 'project_ids' => $projectIds,
                 'project_names' => $projectNames,
@@ -1282,6 +1368,16 @@ class SalaryController extends Controller
         $validator = Validator::make($request->all(), [
             'month' => 'required|date_format:Y-m',
             'project_id' => 'required|exists:projects,id',
+            'salary_approval_id' => 'nullable|integer',
+            'draft_batch_id' => 'nullable|integer|min:1',
+            'has_approval' => [
+                'nullable',
+                function ($attribute, $value, $fail) {
+                    if (!in_array($value, [true, false, 1, 0, '1', '0', 'true', 'false'], true)) {
+                        $fail('The ' . $attribute . ' field must be true or false.');
+                    }
+                },
+            ],
         ]);
 
         if ($validator->fails()) {
@@ -1295,11 +1391,36 @@ class SalaryController extends Controller
         $user = Auth::user();
         $accountSetId = $user->account_set_id;
 
-        $salaries = Salary::with(['employee:id,name,id_number,account_set_id', 'project:id,name'])
+        $salaryQuery = Salary::with(['employee:id,name,id_number,account_set_id', 'project:id,name'])
             ->where('project_id', $request->project_id)
             ->where('account_set_id', $accountSetId)
-            ->where('month', $request->month)
-            ->get();
+            ->where('month', $request->month);
+
+        // 精确到当前工资表批次：已审批按 salary_approval_id，未审批按 NULL 分组
+        $isDraftGroup = false;
+        if ($request->filled('salary_approval_id')) {
+            $salaryQuery->where('salary_approval_id', $request->salary_approval_id);
+        } elseif ($request->has('has_approval')) {
+            if ($request->boolean('has_approval')) {
+                $salaryQuery->whereNotNull('salary_approval_id');
+            } else {
+                $salaryQuery->whereNull('salary_approval_id');
+                if ($request->filled('draft_batch_id')) {
+                    $salaryQuery->where('seq_number', intval($request->draft_batch_id));
+                }
+                $isDraftGroup = true;
+            }
+        }
+
+        $salaries = $salaryQuery->orderByDesc('id')->get();
+
+        // 草稿支持重复创建后，同员工可能出现多条历史草稿，这里仅保留最新一条
+        if ($isDraftGroup) {
+            $salaries = $salaries->unique('employee_id')->values();
+            foreach ($salaries as $salary) {
+                $this->syncSalaryTaxFields($salary, $request->month, $accountSetId);
+            }
+        }
 
         // 格式化数据，包含保险详细明细和补差明细
         $month = $request->month; // 提取变量
@@ -1422,6 +1543,7 @@ class SalaryController extends Controller
         $validator = Validator::make($request->all(), [
             'month' => 'required|date_format:Y-m',
             'project_id' => 'required|exists:projects,id',
+            'draft_batch_id' => 'nullable|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -1439,6 +1561,10 @@ class SalaryController extends Controller
             ->where('account_set_id', $accountSetId)
             ->where('month', $request->month)
             ->where('status', 'draft')
+            ->whereNull('salary_approval_id')
+            ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                $query->where('seq_number', intval($request->draft_batch_id));
+            })
             ->update([
                 'status' => 'submitted',
                 'submitted_by' => $user->id,
@@ -1618,7 +1744,19 @@ class SalaryController extends Controller
             ->where('project_id', $projectId)
             ->where('account_set_id', $accountSetId)
             ->where('month', $month)
-            ->get();
+            ->where('status', 'draft')
+            ->whereNull('salary_approval_id')
+            ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                $query->where('seq_number', intval($request->draft_batch_id));
+            })
+            ->orderByDesc('id')
+            ->get()
+            ->unique('employee_id')
+            ->values();
+
+        foreach ($salaries as $salary) {
+            $this->syncSalaryTaxFields($salary, $month, $accountSetId);
+        }
 
         $warnings = [];
 
@@ -1716,6 +1854,7 @@ class SalaryController extends Controller
         $validator = Validator::make($request->all(), [
             'month' => 'required|date_format:Y-m',
             'project_id' => 'required|exists:projects,id',
+            'draft_batch_id' => 'nullable|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -1733,6 +1872,10 @@ class SalaryController extends Controller
             ->where('account_set_id', $accountSetId)
             ->where('month', $request->month)
             ->where('status', 'draft')
+            ->whereNull('salary_approval_id')
+            ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                $query->where('seq_number', intval($request->draft_batch_id));
+            })
             ->delete();
 
         if ($deleted === 0) {
@@ -2226,6 +2369,122 @@ class SalaryController extends Controller
         return round($cumulativeIncome, 2);
     }
 
+    private function resolveCumulativeBasicDeduction($employee, int $year, int $monthNum): float
+    {
+        $actualMonthCount = $monthNum;
+
+        if ($employee && $employee->hire_date) {
+            $hireDate = Carbon::parse($employee->hire_date);
+
+            if ($hireDate->year === $year && $hireDate->month > 1) {
+                $actualMonthCount = $monthNum - $hireDate->month + 1;
+            } elseif ($hireDate->year > $year) {
+                $actualMonthCount = 0;
+            }
+        }
+
+        return round(5000 * max(0, $actualMonthCount), 2);
+    }
+
+    private function buildSalaryTaxFields(Salary $salary, string $month, int $accountSetId): array
+    {
+        [$year, $monthNum] = explode('-', $month);
+        $year = intval($year);
+        $monthNum = intval($monthNum);
+
+        $previousSalaries = Salary::where('employee_id', $salary->employee_id)
+            ->where('account_set_id', $accountSetId)
+            ->where('month', '>=', sprintf('%04d-01', $year))
+            ->where('month', '<', $month)
+            ->get();
+
+        $grossSalary = round(floatval($salary->gross_salary), 2);
+        $socialSecurity = round(floatval($salary->social_security), 2);
+        $housingFund = round(floatval($salary->housing_fund), 2);
+        $personalInsuranceTotal = round(floatval($salary->personal_insurance_total), 2);
+        $cumulativeOtherTaxable = round(floatval($salary->cumulative_other_taxable), 2);
+
+        $cumulativeIncome = round(floatval($previousSalaries->sum('gross_salary')) + $grossSalary, 2);
+        $cumulativeSocialSecurity = round(floatval($previousSalaries->sum('social_security')) + $socialSecurity, 2);
+        $cumulativeHousingFund = round(floatval($previousSalaries->sum('housing_fund')) + $housingFund, 2);
+        $cumulativeSpecialDeductionInsurance = round($cumulativeSocialSecurity + $cumulativeHousingFund, 2);
+
+        $employee = $salary->relationLoaded('employee') ? $salary->employee : null;
+        if (!$employee && $salary->employee_id) {
+            $employee = Employee::find($salary->employee_id);
+        }
+
+        $specialDeductionMonthly = round(floatval($salary->special_deduction_monthly), 2);
+        if ($employee) {
+            $specialDeductionData = $this->calculateSpecialDeduction($employee, $month);
+            $specialDeductionMonthly = round(floatval($specialDeductionData['total'] ?? 0), 2);
+        }
+
+        $previousCumulativeSpecialDeduction = round(floatval($previousSalaries->sum('special_deduction_monthly')), 2);
+        $cumulativeSpecialDeduction = round($previousCumulativeSpecialDeduction + $specialDeductionMonthly, 2);
+
+        $cumulativeBasicDeduction = $this->resolveCumulativeBasicDeduction($employee, $year, $monthNum);
+        $cumulativeTaxableIncome = round(max(
+            0,
+            $cumulativeIncome
+            - $cumulativeBasicDeduction
+            - $cumulativeSpecialDeductionInsurance
+            - $cumulativeSpecialDeduction
+            + $cumulativeOtherTaxable
+        ), 2);
+
+        $taxData = $this->calculateTaxRateAndQuickDeduction($cumulativeTaxableIncome);
+        $cumulativeTaxPayable = round(max(
+            0,
+            ($cumulativeTaxableIncome * $taxData['tax_rate'] / 100) - $taxData['quick_deduction']
+        ), 2);
+
+        $taxAlreadyWithheld = 0.0;
+        if ($monthNum > 1) {
+            $lastMonth = sprintf('%04d-%02d', $year, $monthNum - 1);
+            $lastMonthSalary = Salary::where('employee_id', $salary->employee_id)
+                ->where('account_set_id', $accountSetId)
+                ->where('month', $lastMonth)
+                ->orderByDesc('id')
+                ->first();
+            $taxAlreadyWithheld = $lastMonthSalary ? round(floatval($lastMonthSalary->cumulative_tax_payable), 2) : 0.0;
+        }
+
+        $taxPayableOrRefundable = round($this->calculateTaxPayableOrRefundable(
+            $grossSalary,
+            $socialSecurity,
+            $housingFund,
+            $specialDeductionMonthly
+        ), 2);
+
+        $netSalary = round($grossSalary - $personalInsuranceTotal - $taxPayableOrRefundable, 2);
+
+        return [
+            'cumulative_income' => $cumulativeIncome,
+            'cumulative_basic_deduction' => $cumulativeBasicDeduction,
+            'cumulative_special_deduction_insurance' => $cumulativeSpecialDeductionInsurance,
+            'special_deduction_monthly' => $specialDeductionMonthly,
+            'special_deduction' => $cumulativeSpecialDeduction,
+            'taxable_income' => $cumulativeTaxableIncome,
+            'tax_rate' => $taxData['tax_rate'],
+            'quick_deduction' => $taxData['quick_deduction'],
+            'cumulative_tax_payable' => $cumulativeTaxPayable,
+            'tax_already_withheld' => $taxAlreadyWithheld,
+            'tax_payable_or_refundable' => $taxPayableOrRefundable,
+            'net_salary' => $netSalary,
+        ];
+    }
+
+    private function syncSalaryTaxFields(Salary $salary, string $month, int $accountSetId): void
+    {
+        $updatedFields = $this->buildSalaryTaxFields($salary, $month, $accountSetId);
+        $salary->fill($updatedFields);
+
+        if ($salary->isDirty(array_keys($updatedFields))) {
+            $salary->save();
+        }
+    }
+
     /**
      * 根据考勤统计计算应发工资和缺勤扣款
      */
@@ -2306,6 +2565,7 @@ class SalaryController extends Controller
         $validator = Validator::make($request->all(), [
             'project_id' => 'required|exists:projects,id',
             'month' => 'required|date_format:Y-m',
+            'salary_approval_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -2325,6 +2585,10 @@ class SalaryController extends Controller
                                            ->where('month', $request->month)
                                            ->where('account_set_id', $currentAccountSetId)
                                            ->where('status', 'approved')
+                                           ->when($request->filled('salary_approval_id'), function ($query) use ($request) {
+                                               $query->where('id', intval($request->salary_approval_id));
+                                           })
+                                           ->orderByDesc('id')
                                            ->first();
 
             if (!$salaryApproval) {
@@ -2347,6 +2611,7 @@ class SalaryController extends Controller
             $totalAmount = Salary::where('project_id', $request->project_id)
                                 ->where('month', $request->month)
                                 ->where('account_set_id', $currentAccountSetId)
+                                ->where('salary_approval_id', $salaryApproval->id)
                                 ->sum('net_salary');
 
             // 4. 创建付款申请
@@ -2394,7 +2659,8 @@ class SalaryController extends Controller
             'file' => 'required|file|mimes:xlsx,xls',
             'project_id' => 'required|exists:projects,id',
             'month' => 'required|date_format:Y-m',
-            'current_account_set_id' => 'required|exists:account_sets,id'
+            'current_account_set_id' => 'required|exists:account_sets,id',
+            'draft_batch_id' => 'nullable|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -2464,7 +2730,15 @@ class SalaryController extends Controller
             $salaries = Salary::where('project_id', $projectId)
                 ->where('month', $month)
                 ->where('account_set_id', $accountSetId)
-                ->get();
+                ->where('status', 'draft')
+                ->whereNull('salary_approval_id')
+                ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                    $query->where('seq_number', intval($request->draft_batch_id));
+                })
+                ->orderByDesc('id')
+                ->get()
+                ->unique('employee_id')
+                ->values();
             
             $salaryByName = $salaries->groupBy(function ($item) {
                 return trim((string) $item->employee_name);
@@ -2624,31 +2898,13 @@ class SalaryController extends Controller
             foreach ($updatesBySalaryId as $matchedRow) {
                 /** @var Salary $salary */
                 $salary = $matchedRow['salary'];
-                $grossSalary = $matchedRow['gross_salary'];
+                $grossSalary = round(floatval($matchedRow['gross_salary']), 2);
+                $salary->gross_salary = $grossSalary;
 
-                // 更新应发工资
-                $salary->update(['gross_salary' => $grossSalary]);
-                
-                // 重新计算累计收入（之前月份的应发工资 + 当月应发工资）
-                $previousCumulativeIncome = $this->calculateCumulativeIncome($salary->employee_id, $month, $accountSetId);
-                $newCumulativeIncome = $previousCumulativeIncome + $grossSalary;
-                
-                // 按新规则重新计算应补（退）税额：应发工资 - 5000 - 个人社保/公积金 - 专项附加扣除
-                $taxPayableOrRefundable = $this->calculateTaxPayableOrRefundable(
-                    $grossSalary,
-                    $salary->social_security,
-                    $salary->housing_fund,
-                    $salary->special_deduction_monthly
-                );
-
-                // 重新计算实发工资 = 应发工资 - 个人保险合计 - 应补（退）税额
-                $netSalary = $grossSalary - $salary->personal_insurance_total - $taxPayableOrRefundable;
-                
                 $updateData = [
-                    'cumulative_income' => $newCumulativeIncome,
-                    'tax_payable_or_refundable' => $taxPayableOrRefundable,
-                    'net_salary' => $netSalary,
+                    'gross_salary' => $grossSalary,
                 ];
+                $updateData = array_merge($updateData, $this->buildSalaryTaxFields($salary, $month, $accountSetId));
 
                 if (Schema::hasColumn('salaries', 'import_extra_columns')) {
                     $updateData['import_extra_columns'] = $matchedRow['import_extra_columns'] ?? [];

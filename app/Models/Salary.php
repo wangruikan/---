@@ -49,6 +49,7 @@ class Salary extends Model
     }
 
     protected $fillable = [
+        'seq_number',        // 草稿工资表批次号
         'employee_id',
         'id_card',           // 身份证号
         'employee_name',     // 员工姓名
@@ -99,6 +100,7 @@ class Salary extends Model
     ];
 
     protected $casts = [
+        'seq_number' => 'integer',
         'work_days' => 'integer',
         'actual_work_days' => 'decimal:1',
         'absent_days' => 'decimal:1',

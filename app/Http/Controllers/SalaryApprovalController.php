@@ -68,6 +68,8 @@ class SalaryApprovalController extends Controller
             // 获取工资表汇总数据
             $salaries = Salary::where('project_id', $item->project_id)
                              ->where('month', $item->month)
+                             ->where('account_set_id', $item->account_set_id)
+                             ->where('salary_approval_id', $item->id)
                              ->get();
             
             $item->employee_count = $salaries->count();
@@ -91,6 +93,7 @@ class SalaryApprovalController extends Controller
         $validator = Validator::make($request->all(), [
             'project_id' => 'required|exists:projects,id',
             'month' => 'required|date_format:Y-m',
+            'draft_batch_id' => 'nullable|integer|min:1',
             'approval_type' => 'required|in:online,offline',
             'remarks' => 'nullable|string',
         ]);
@@ -115,6 +118,10 @@ class SalaryApprovalController extends Controller
         $salariesCount = Salary::where('project_id', $request->project_id)
                               ->where('month', $request->month)
                               ->where('account_set_id', $currentAccountSetId)
+                              ->whereNull('salary_approval_id')
+                              ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                                  $query->where('seq_number', intval($request->draft_batch_id));
+                              })
                               ->count();
 
         if ($salariesCount === 0) {
@@ -198,6 +205,9 @@ class SalaryApprovalController extends Controller
                  ->where('month', $request->month)
                  ->where('account_set_id', $currentAccountSetId)
                  ->whereNull('salary_approval_id')  // 只更新没有审批ID的记录
+                 ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                     $query->where('seq_number', intval($request->draft_batch_id));
+                 })
                  ->update(['salary_approval_id' => $approval->id]);
             
             \Log::info('✅ 工资记录审批ID更新完成', [

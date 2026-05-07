@@ -787,19 +787,18 @@ const loadEmployeeDeductions = async () => {
   console.log('开始加载员工专项扣除数据...')
   console.log('当前账套ID:', currentAccountSetId.value)
   
-  if (!currentAccountSetId.value) {
-    console.log('账套ID不存在，跳过加载员工数据')
-    employeeDeductions.value = []
-    return
-  }
-  
   employeesLoading.value = true
   try {
     const params = {
-      ...employeeSearchForm,
       page: employeePagination.currentPage,
       per_page: employeePagination.pageSize,
-      current_account_set_id: currentAccountSetId.value
+      current_account_set_id: currentAccountSetId.value || undefined
+    }
+    if (employeeSearchForm.project_id) {
+      params.project_id = employeeSearchForm.project_id
+    }
+    if (employeeSearchForm.search) {
+      params.search = employeeSearchForm.search
     }
     console.log('请求参数:', params)
     const res = await getEmployeeDeductions(params)
@@ -1109,6 +1108,18 @@ watch(showBatchSetDialog, (newValue) => {
     batchForm.project_id = employeeSearchForm.project_id
   }
 })
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'employees') {
+    loadEmployeeDeductions()
+  }
+})
+
+watch(currentAccountSetId, (newId) => {
+  if (newId) {
+    loadEmployeeDeductions()
+  }
+}, { immediate: true })
 
 // 初始化
 onMounted(async () => {

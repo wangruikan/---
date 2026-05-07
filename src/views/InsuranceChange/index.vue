@@ -289,14 +289,22 @@
                         <template v-if="row.isTitleRow">
                           <div class="table-title">{{ row.title }}</div>
                         </template>
+                        <template v-else-if="row.isSummaryRow || row.isTotalRow">
+                          {{ '' }}
+                        </template>
                         <template v-else>
-                          {{ $index }}
+                          {{ row.serial_number || $index }}
                         </template>
                       </template>
                     </el-table-column>
                     <el-table-column prop="employee_name" label="姓名" width="100">
                       <template #default="{ row }">
-                        {{ row.employee_name === 'NaN' || !row.employee_name ? '小计' : row.employee_name }}
+                        <template v-if="row.isSummaryRow || row.isTotalRow">
+                          {{ row.employee_name }}
+                        </template>
+                        <template v-else>
+                          {{ row.employee_name === 'NaN' || !row.employee_name ? '-' : row.employee_name }}
+                        </template>
                       </template>
                     </el-table-column>
                     <el-table-column prop="id_number" label="身份证号" width="180" />
@@ -567,14 +575,22 @@
                         <template v-if="row.isTitleRow">
                           <div class="table-title">{{ row.title }}</div>
                         </template>
+                        <template v-else-if="row.isSummaryRow || row.isTotalRow">
+                          {{ '' }}
+                        </template>
                         <template v-else>
-                          {{ $index }}
+                          {{ row.serial_number || $index }}
                         </template>
                       </template>
                     </el-table-column>
                     <el-table-column prop="employee_name" label="姓名" width="100">
                       <template #default="{ row }">
-                        {{ row.employee_name === 'NaN' || !row.employee_name ? '小计' : row.employee_name }}
+                        <template v-if="row.isSummaryRow || row.isTotalRow">
+                          {{ row.employee_name }}
+                        </template>
+                        <template v-else>
+                          {{ row.employee_name === 'NaN' || !row.employee_name ? '-' : row.employee_name }}
+                        </template>
                       </template>
                     </el-table-column>
                     <el-table-column prop="id_number" label="身份证号" width="180" />
@@ -1306,12 +1322,7 @@
             </el-table-column>
             <el-table-column prop="type" label="保险类型">
               <template #default="{ row }">
-                {{ typeof row.type === 'object' ? JSON.stringify(row.type) : row.type }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="coverage" label="保障内容">
-              <template #default="{ row }">
-                {{ formatCoverageContent(row.coverage) }}
+                {{ row.type || '其他保险' }}
               </template>
             </el-table-column>
             <el-table-column prop="endorsement_number" label="批单号" width="150">
@@ -2728,6 +2739,15 @@ const housingFundDetailsWithTitle = computed(() => {
 })
 
 // 计算小计行
+const isInsuranceDynamicAmountColumn = (key) => {
+  return key.startsWith('company_社保_') ||
+    key.startsWith('employee_社保_') ||
+    key.startsWith('company_医保_') ||
+    key.startsWith('employee_医保_') ||
+    key === 'company_大额医疗' ||
+    key === 'employee_大额医疗'
+}
+
 const calculateSummaryRow = (data, summaryType = '小计') => {
   if (!data || data.length === 0) {
     return {
@@ -2767,7 +2787,7 @@ const calculateSummaryRow = (data, summaryType = '小计') => {
   const dynamicTotals = {}
   data.forEach(row => {
     Object.keys(row).forEach(key => {
-      if (key.startsWith('company_') || key.startsWith('employee_')) {
+      if (isInsuranceDynamicAmountColumn(key)) {
         if (!dynamicTotals[key]) {
           dynamicTotals[key] = 0
         }
@@ -2944,7 +2964,7 @@ const calculateTotalFromSummaries = (summaryRows) => {
   const dynamicTotals = {}
   summaryRows.forEach(row => {
     Object.keys(row).forEach(key => {
-      if (key.startsWith('company_') || key.startsWith('employee_')) {
+      if (isInsuranceDynamicAmountColumn(key)) {
         if (!dynamicTotals[key]) {
           dynamicTotals[key] = 0
         }
@@ -3017,7 +3037,7 @@ const calculateTotalRow = (data) => {
   const dynamicTotals = {}
   data.forEach(row => {
     Object.keys(row).forEach(key => {
-      if (key.startsWith('company_') || key.startsWith('employee_')) {
+      if (isInsuranceDynamicAmountColumn(key)) {
         if (!dynamicTotals[key]) {
           dynamicTotals[key] = 0
         }
@@ -4880,6 +4900,45 @@ const getLargeMedicalInsuranceDetails = () => {
   return null
 }
 
+const normalizeOtherInsuranceTypeValue = (value) => {
+  if (value === null || value === undefined) return ''
+
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+
+  if (typeof value === 'number') {
+    return String(value)
+  }
+
+  if (typeof value === 'object') {
+    return (value.name || value.type_name || value.insurance_type_name || value.label || value.title || value.value || '').toString().trim()
+  }
+
+  return ''
+}
+
+const resolveOtherInsuranceTypeName = (policy = {}) => {
+  const candidates = [
+    policy.type_name,
+    policy.insurance_type_name,
+    policy.insurance_type_text,
+    policy.policy_type_name,
+    policy.type,
+    policy.insurance_type,
+    policy.policy_type
+  ]
+
+  for (const candidate of candidates) {
+    const name = normalizeOtherInsuranceTypeValue(candidate)
+    if (name && name !== '[object Object]') {
+      return name
+    }
+  }
+
+  return '其他保险'
+}
+
 // 获取其他保险详情
 const getOtherInsuranceDetails = () => {
   console.log('=== getOtherInsuranceDetails 函数被调用 ===')
@@ -4896,7 +4955,11 @@ const getOtherInsuranceDetails = () => {
     console.log('是InsuranceChangeDetail数据，返回单个保险')
     return [{
       name: currentChange.value.insurance_name,
-      type: currentChange.value.insurance_type,
+      type: resolveOtherInsuranceTypeName({
+        insurance_type_name: currentChange.value.insurance_type_name,
+        type_name: currentChange.value.type_name,
+        type: currentChange.value.insurance_type
+      }),
       coverage: currentChange.value.coverage,
       employee_per_capita_cost: currentChange.value.employee_per_capita_cost
     }]
@@ -4930,7 +4993,7 @@ const getOtherInsuranceDetails = () => {
           ...policy,
           // 映射字段名
           name: policy.name || policy.policy_name || policy.type_name || '未知保险',
-          type: policy.type || policy.type_name || '-',
+          type: resolveOtherInsuranceTypeName(policy),
           coverage: policy.coverage || policy.description || '-',
           policy_end_date: policy.policy_end_date || policy.end_date,
         }
@@ -4949,31 +5012,6 @@ const getOtherInsuranceDetails = () => {
   console.log('currentChange对象:', currentChange.value)
   console.log('other_insurance_policies字段:', currentChange.value.other_insurance_policies)
   return []
-}
-
-// 格式化保障内容
-const formatCoverageContent = (coverage) => {
-  if (!coverage) return '-'
-  
-  // 如果是布尔值
-  if (typeof coverage === 'boolean') {
-    return coverage ? '已保障' : '未保障'
-  }
-  
-  // 如果是对象，尝试提取有意义的信息
-  if (typeof coverage === 'object') {
-    if (coverage.description) return coverage.description
-    if (coverage.content) return coverage.content
-    if (coverage.details) return coverage.details
-    return '详见保单条款'
-  }
-  
-  // 如果是字符串，直接返回
-  if (typeof coverage === 'string') {
-    return coverage
-  }
-  
-  return String(coverage)
 }
 
 // 格式化日期时间 - 显示完整时间

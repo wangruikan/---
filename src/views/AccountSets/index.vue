@@ -187,9 +187,9 @@
               </template>
             </el-table-column>
             <el-table-column prop="email" label="邮箱" width="200" />
-            <el-table-column prop="role" label="系统角色" width="100">
+            <el-table-column prop="system_role" label="系统角色" width="100">
               <template #default="{ row }">
-                <el-tag size="small">{{ getRoleText(row.role) }}</el-tag>
+                <el-tag size="small">{{ getRoleText(row.system_role) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="审批级别" width="240">
@@ -808,9 +808,11 @@ const handleRemoveUser = async (userId) => {
 
 const getRoleText = (role) => {
   const texts = {
+    super_admin: '超级管理员',
     admin: '管理员',
     manager: '经理',
-    employee: '员工'
+    employee: '员工',
+    finance: '财务'
   }
   return texts[role] || role
 }

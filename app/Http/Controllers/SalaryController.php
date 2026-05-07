@@ -1166,7 +1166,7 @@ class SalaryController extends Controller
             $actualMonthCount = $monthCount; // 默认从1月开始
             
             if ($employee->hire_date) {
-                $hireDate = \Carbon\Carbon::parse($employee->hire_date);
+                $hireDate = \Carbon\Carbon::parse($employee->hire_date)->timezone('Asia/Shanghai');
                 $currentYear = intval($year);
                 
                 // 如果入职年份是当年，且入职月份在1月之后
@@ -2374,7 +2374,7 @@ class SalaryController extends Controller
         $actualMonthCount = $monthNum;
 
         if ($employee && $employee->hire_date) {
-            $hireDate = Carbon::parse($employee->hire_date);
+            $hireDate = Carbon::parse($employee->hire_date)->timezone('Asia/Shanghai');
 
             if ($hireDate->year === $year && $hireDate->month > 1) {
                 $actualMonthCount = $monthNum - $hireDate->month + 1;

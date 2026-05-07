@@ -527,6 +527,7 @@ class MiniController extends Controller
             
             // 1. 保存签名图片
             $signatureImage = $this->saveSignatureImage($request->signature_image);
+            $signedAt = now();
             
             // 2. 根据是否有预设位置决定处理方式
             if ($request->hasFile('signed_pdf')) {
@@ -553,6 +554,9 @@ class MiniController extends Controller
             $noticeSignedFiles = [];
             if ($request->hasFile('notice_signed_pdfs')) {
                 $noticeSignedPdfs = $request->file('notice_signed_pdfs');
+                if (!is_array($noticeSignedPdfs)) {
+                    $noticeSignedPdfs = [$noticeSignedPdfs];
+                }
                 $noticeFileIds = $request->input('notice_signed_file_ids', []);
                 $noticeFileNames = $request->input('notice_signed_file_names', []);
 
@@ -561,11 +565,12 @@ class MiniController extends Controller
                         continue;
                     }
 
+                    $noticeFileId = $noticeFileIds[$index] ?? null;
                     $noticeSignedPath = 'contracts/notices/signed_notice_' . time() . '_' . uniqid() . '_' . $index . '.pdf';
                     $noticePdf->storeAs('', $noticeSignedPath, 'public');
 
                     $noticeSignedFiles[] = [
-                        'notice_file_id' => isset($noticeFileIds[$index]) ? (int) $noticeFileIds[$index] : null,
+                        'notice_file_id' => $noticeFileId !== null && $noticeFileId !== '' ? (int) $noticeFileId : null,
                         'template_path' => null,
                         'signed_path' => $noticeSignedPath,
                         'name' => $noticeFileNames[$index] ?? ('须知签名副本_' . ($index + 1) . '.pdf'),
@@ -590,7 +595,7 @@ class MiniController extends Controller
             $contract->signature_image = $signatureImage;
             $contract->notice_signed_files = $noticeSignedFiles;
             $contract->status = 'employee_signed'; // 签署完成，等待HR确认
-            $contract->employee_signed_at = now();
+            $contract->employee_signed_at = $signedAt;
             $contract->sign_ip = $request->ip();
             $contract->sign_device = 'WeChat MiniProgram';
             $contract->save();

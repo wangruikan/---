@@ -104,18 +104,7 @@ class AttendanceController extends Controller
 
             $user = Auth::user();
             $accountSetId = $this->getAccountSetId($request);
-            $existingSheet = AttendanceSheet::where('account_set_id', $accountSetId)
-                ->where('project_id', $request->project_id)
-                ->where('month', $request->month)
-                ->where('status', '!=', 'rejected')  // 排除驳回状态
-                ->first();
-
-            if ($existingSheet) {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该项目的该月份考勤表已存在'
-                ], 422);
-            }
+            // 允许同项目同月份重复创建考勤申请（每次创建视为新的申请批次）
 
             // 获取项目信息
             $project = Project::find($request->project_id);

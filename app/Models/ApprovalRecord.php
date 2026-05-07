@@ -16,6 +16,8 @@ class ApprovalRecord extends Model
         'comment',
         'signature_image',
         'seal_image',
+        'returned_to_step',
+        'returned_at',
         'approved_at',
     ];
 

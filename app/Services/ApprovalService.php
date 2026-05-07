@@ -299,7 +299,7 @@ class ApprovalService
             
             $previousStep = $record->step_order - 1;
             
-            // 更新当前审批记录为已退回
+            // 1) 标记当前步骤为退回，保留退回痕迹
             $record->update([
                 'status' => 'returned',
                 'comment' => $comment,
@@ -307,18 +307,47 @@ class ApprovalService
                 'returned_at' => now(),
             ]);
             
-            // 更新审批实例，回退到上一步
-            $instance->update(['current_step' => $previousStep]);
+            // 2) 回退流程主状态，确保不会仍然显示“已完成”
+            $instance->update([
+                'current_step' => $previousStep,
+                'status' => 'pending',
+                'completed_at' => null,
+            ]);
             
-            // 重新激活上一步的审批记录
+            // 3) 重新激活上一步审批人，清理旧审批痕迹
             ApprovalRecord::where('instance_id', $instance->id)
                 ->where('step_order', $previousStep)
-                ->update(['status' => 'pending']);
+                ->update([
+                    'status' => 'pending',
+                    'approved_at' => null,
+                    'comment' => null,
+                    'signature_image' => null,
+                    'seal_image' => null,
+                    'returned_to_step' => null,
+                    'returned_at' => null,
+                ]);
             
-            // 将当前步骤之后的所有步骤重置为 waiting
+            // 4) 当前步骤之后的所有步骤重置为 waiting
+            // 注意：不要覆盖当前这条 returned 记录，否则前端看不到“已退回”
             ApprovalRecord::where('instance_id', $instance->id)
-                ->where('step_order', '>', $previousStep)
-                ->update(['status' => 'waiting']);
+                ->where('step_order', '>', $record->step_order)
+                ->update([
+                    'status' => 'waiting',
+                    'approved_at' => null,
+                    'comment' => null,
+                    'signature_image' => null,
+                    'seal_image' => null,
+                    'returned_to_step' => null,
+                    'returned_at' => null,
+                ]);
+
+            // 5) 同步业务状态回到审批中（兜底避免业务侧仍显示已完成）
+            $this->updateBusinessStatus(
+                $instance->business_type,
+                $instance->business_id,
+                'in_approval',
+                $instance->id
+            );
             
             Log::info('审批已退回上一级', [
                 'instance_id' => $instance->id,
@@ -633,7 +662,13 @@ class ApprovalService
                 // 更新工资表审批状态
                 $salaryApproval = \App\Models\SalaryApproval::find($businessId);
                 if ($salaryApproval) {
-                    if ($status === 'completed') {
+                    if ($status === 'in_approval') {
+                        $salaryApproval->update([
+                            'status' => 'pending',
+                            'approved_by' => null,
+                            'approved_at' => null,
+                        ]);
+                    } elseif ($status === 'completed') {
                         $salaryApproval->update([
                             'status' => 'approved',
                             'approved_at' => now(),

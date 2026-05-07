@@ -727,11 +727,9 @@ class SalaryController extends Controller
         ]);
         
         if ($unsubmittedSalaries->isNotEmpty()) {
-            \Log::warning('❌ 存在未提交审批的工资数据，不允许创建');
-            return response()->json([
-                'success' => false,
-                'message' => '该期间的工资表已存在（未提交审批）'
-            ], 422);
+            \Log::info('ℹ️ 检测到未提交审批工资数据，当前已允许重复创建，不拦截', [
+                'count' => $unsubmittedSalaries->count()
+            ]);
         }
         
         // 再检查是否有已提交但未被驳回的审批记录
@@ -764,11 +762,9 @@ class SalaryController extends Controller
         ]);
 
         if ($nonRejectedApprovals->isNotEmpty()) {
-            \Log::warning('❌ 存在非驳回状态的审批记录，不允许创建');
-            return response()->json([
-                'success' => false,
-                'message' => '该期间的工资表已存在'
-            ], 422);
+            \Log::info('ℹ️ 检测到非驳回审批记录，当前已允许重复创建，不拦截', [
+                'count' => $nonRejectedApprovals->count()
+            ]);
         }
         
         \Log::info('✅ 重复检查通过，可以创建新的工资表');
@@ -902,32 +898,7 @@ class SalaryController extends Controller
                 'will_use_main_project_id' => $mainProjectId,
             ]);
             
-            // 检查该员工在该月份是否已经有"有效"的工资记录
-            // 只检查未提交审批的记录，或者已提交但未被驳回的记录
-            // 被驳回的记录不算"有效"，可以被新记录替代
-            $existingSalary = Salary::where('employee_id', $employee->id)
-                ->where('project_id', $mainProjectId)
-                ->where('month', $month)
-                ->where('account_set_id', $accountSetId)
-                ->where(function($q) {
-                    // 未提交审批的记录（salary_approval_id = NULL）
-                    $q->whereNull('salary_approval_id')
-                      // 或者已提交但审批未被驳回的记录
-                      ->orWhereHas('salaryApproval', function($subQ) {
-                          $subQ->where('status', '!=', 'rejected');
-                      });
-                })
-                ->first();
-            
-            if ($existingSalary) {
-                \Log::info('⏭️ 跳过已存在有效工资记录的员工', [
-                    'employee_id' => $employee->id,
-                    'employee_name' => $employee->name,
-                    'existing_salary_id' => $existingSalary->id,
-                    'salary_approval_id' => $existingSalary->salary_approval_id,
-                ]);
-                continue;  // 跳过这个员工
-            }
+            // 允许重复创建：不再按员工做"已存在工资记录"拦截
             
             // 如果存在被驳回的记录，先删除它们，为新记录腾出空间
             $rejectedSalaries = Salary::where('employee_id', $employee->id)

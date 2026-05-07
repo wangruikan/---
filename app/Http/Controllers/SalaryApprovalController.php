@@ -150,12 +150,7 @@ class SalaryApprovalController extends Controller
             'has_existing' => $existingApproval ? true : false
         ]);
 
-        if ($existingApproval) {
-            return response()->json([
-                'success' => false,
-                'message' => '工资表已经提交过审批，不能重复提交'
-            ], 422);
-        }
+        // 允许同项目同月份重复发起工资审批，不再拦截历史审批记录
 
         // 【提前检查】检查离职/退休员工是否上传了离职证明
         // 创建一个临时的审批对象用于检查
@@ -783,4 +778,3 @@ class SalaryApprovalController extends Controller
         ]);
     }
 }
-

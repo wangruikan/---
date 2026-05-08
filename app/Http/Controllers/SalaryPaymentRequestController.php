@@ -124,8 +124,12 @@ class SalaryPaymentRequestController extends Controller
 
             // 获取报销表单数据（如果前端传了的话）
             $formData = $request->input('reimbursement_form_data', []);
-            
-            // 记录接收到的表单数据（用于调试）
+
+            // Fallback to salary project when form does not provide project fields.
+            $fallbackProjectName = $salaryApproval->project ? $salaryApproval->project->name : null;
+            $resolvedProject = !empty($formData['project']) ? $formData['project'] : $fallbackProjectName;
+            $resolvedProjectName = !empty($formData['projectName']) ? $formData['projectName'] : $resolvedProject;
+
             \Illuminate\Support\Facades\Log::info('工资付款申请 - 接收到的报销表单数据', [
                 'form_data' => $formData,
                 'project' => $formData['project'] ?? '未设置',
@@ -145,17 +149,18 @@ class SalaryPaymentRequestController extends Controller
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
                 'remarks' => $request->remarks ?? ('工资付款申请 - ' . $salaryApproval->project->name . ' ' . $salaryApproval->month),
+                'project_ids' => $salaryApproval->project_id ? [$salaryApproval->project_id] : [], // 继承工资表的项目
                 'upload_later' => $uploadLater, // 保存稍后上传状态
                 // 报销表单字段
                 'category' => $formData['category'] ?? null, // 保存类目
-                'project' => $formData['project'] ?? null,
+                'project' => $resolvedProject,
                 'apply_date' => $formData['applyDate'] ?? null,
                 'unit_name' => $formData['unitName'] ?? null,
                 'invoice_number' => $formData['invoiceNumber'] ?? null,
                 'verified' => $formData['verified'] ?? true,
                 'payment_date' => $formData['paymentDate'] ?? null,
                 'expenditure_amount' => $formData['expenditureAmount'] ?? null,
-                'project_name' => $formData['projectName'] ?? null,
+                'project_name' => $resolvedProjectName,
                 'summary' => $formData['summary'] ?? null,
                 'invoice_received' => $formData['invoiceReceived'] ?? false,
                 'invoice_type' => $formData['invoiceType'] ?? null,

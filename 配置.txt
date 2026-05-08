@@ -1,0 +1,13 @@
+【数据库配置】
+DB_CONNECTION=mysql
+DB_HOST=43.139.90.164
+DB_PORT=3306
+DB_DATABASE=weiqing
+DB_USERNAME=weiqing
+DB_PASSWORD=GWyfAmALwDxXdGZ7
+
+【FTP配置】
+Host=43.139.90.164
+Port=21
+Username=dy_cyygkj_cn
+Password=cBTLCj4EacDc5rDL

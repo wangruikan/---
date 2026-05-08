@@ -156,11 +156,10 @@
         <el-form-item label="流程标题" prop="title">
           <el-input v-model="form.title" placeholder="请输入流程标题" />
         </el-form-item>
-        <el-form-item label="关联项目" prop="project_ids">
-          <el-select 
-            v-model="form.project_ids" 
-            multiple 
-            placeholder="请选择项目" 
+        <el-form-item label="关联项目" prop="project_id">
+          <el-select
+            v-model="form.project_id"
+            placeholder="请选择项目"
             style="width: 100%;"
             @change="handleProjectChange"
           >
@@ -171,25 +170,6 @@
               :value="project.id"
             />
           </el-select>
-          <div style="margin-top: 8px;">
-            <el-button 
-              size="small" 
-              @click="selectAllProjects"
-              :disabled="projectList.length === 0"
-            >
-              全选
-            </el-button>
-            <el-button 
-              size="small" 
-              @click="clearAllProjects"
-              :disabled="form.project_ids.length === 0"
-            >
-              清空
-            </el-button>
-            <span style="margin-left: 10px; color: #909399; font-size: 12px;">
-              已选 {{ form.project_ids.length }} 个项目
-            </span>
-          </div>
         </el-form-item>
         <el-form-item label="流程描述" prop="description">
           <el-input
@@ -559,7 +539,7 @@ const formRef = ref(null)
 const form = reactive({
   category: 'social_insurance',
   title: '',
-  project_ids: [],
+  project_id: null,
   description: ''
 })
 const rules = {
@@ -667,16 +647,6 @@ const loadProjects = async () => {
   }
 }
 
-// 全选项目
-const selectAllProjects = () => {
-  form.project_ids = projectList.value.filter(p => p && p.id).map(p => p.id)
-}
-
-// 清空项目
-const clearAllProjects = () => {
-  form.project_ids = []
-}
-
 // 项目选择改变
 const handleProjectChange = (value) => {
   // 可以在这里添加额外逻辑
@@ -706,7 +676,7 @@ const handleCreate = () => {
   Object.assign(form, {
     category: 'social_insurance',
     title: '',
-    project_ids: [],
+    project_id: null,
     description: ''
   })
   dialogVisible.value = true

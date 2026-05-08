@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\PaymentRequest;
 use App\Models\ProcessApproval;
+use App\Models\Project;
 use App\Services\ApprovalService;
-use App\Services\AttachmentPlaceholderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -63,7 +63,30 @@ class InsurancePaymentRequestController extends Controller
 
             // 获取报销表单数据（如果前端传了的话）
             $formData = $request->input('reimbursement_form_data', []);
-            
+
+            // Fallback to related projects when form does not provide project fields.
+            $projectIds = collect($processApproval->project_ids ?? [])
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+
+            $fallbackProjectName = null;
+            if (!empty($projectIds)) {
+                $fallbackProjectNames = Project::query()
+                    ->whereIn('id', $projectIds)
+                    ->pluck('name')
+                    ->filter()
+                    ->values();
+
+                if ($fallbackProjectNames->isNotEmpty()) {
+                    $fallbackProjectName = $fallbackProjectNames->implode(', ');
+                }
+            }
+
+            $resolvedProject = !empty($formData['project']) ? $formData['project'] : $fallbackProjectName;
+            $resolvedProjectName = !empty($formData['projectName']) ? $formData['projectName'] : $resolvedProject;
+
             $payload = [
                 'payment_type' => 'insurance',
                 'account_set_id' => $currentAccountSetId,
@@ -76,14 +99,14 @@ class InsurancePaymentRequestController extends Controller
                 'remarks' => $request->remarks ?? ('保险汇总付款申请 - ' . $processApproval->title),
                 // 报销表单字段
                 'category' => $formData['category'] ?? null, // 保存类目
-                'project' => $formData['project'] ?? null,
+                'project' => $resolvedProject,
                 'apply_date' => $formData['applyDate'] ?? null,
                 'unit_name' => $formData['unitName'] ?? null,
                 'invoice_number' => $formData['invoiceNumber'] ?? null,
                 'verified' => $formData['verified'] ?? true,
                 'payment_date' => $formData['paymentDate'] ?? null,
                 'expenditure_amount' => $formData['expenditureAmount'] ?? null,
-                'project_name' => $formData['projectName'] ?? null,
+                'project_name' => $resolvedProjectName,
                 'summary' => $formData['summary'] ?? null,
                 'invoice_received' => $formData['invoiceReceived'] ?? false,
                 'invoice_type' => $formData['invoiceType'] ?? null,
@@ -229,33 +252,10 @@ class InsurancePaymentRequestController extends Controller
                 ]);
             }
 
-            // 如果没有附件，生成占位附件
+            // 如果没有附件，跳过（不再生成占位附件）
             if (empty($attachments)) {
-                \Log::info('保险付款申请没有附件，生成占位附件', [
+                \Log::info('保险付款申请没有附件', [
                     'payment_request_id' => $paymentRequest->id
-                ]);
-                
-                $placeholder = AttachmentPlaceholderService::generatePlaceholder(
-                    '保险汇总付款申请',
-                    $paymentRequest->id,
-                    "保险汇总付款申请 - {$paymentRequest->insuranceSummary->title}"
-                );
-                
-                // 保存占位附件记录
-                \App\Models\PaymentRequestAttachment::create([
-                    'payment_request_id' => $paymentRequest->id,
-                    'filename' => $placeholder['name'],
-                    'file_path' => $placeholder['path'],
-                    'file_size' => $placeholder['size'],
-                    'mime_type' => $placeholder['type'],
-                    'uploaded_by' => $paymentRequest->submitted_by,
-                ]);
-                
-                $attachments[] = $placeholder;
-                
-                \Log::info('占位附件已生成', [
-                    'path' => $placeholder['path'],
-                    'name' => $placeholder['name']
                 ]);
             }
 

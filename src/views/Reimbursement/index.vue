@@ -437,6 +437,7 @@
         title="选择盖章方式"
         width="400px"
         :close-on-click-modal="false"
+        @close="handleCancelPaymentStampSelection"
       >
         <el-form :model="paymentStampForm" label-width="100px">
           <el-form-item label="盖章方式" required>
@@ -447,7 +448,7 @@
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="paymentStampDialogVisible = false">取消</el-button>
+          <el-button @click="handleCancelPaymentStampSelection">取消</el-button>
           <el-button type="primary" @click="confirmPaymentStampAndSubmit" :loading="creatingPayment">
             确认提交
           </el-button>
@@ -562,7 +563,7 @@ const paymentStampDialogVisible = ref(false)
 const paymentStampForm = reactive({
   stamp_method: 'online'
 })
-const pendingPaymentRequestId = ref(null)
+const pendingPaymentSubmissionData = ref(null)
 
 // 表单验证规则
 const rules = {
@@ -928,42 +929,62 @@ const confirmCreatePayment = async () => {
   try {
     creatingPayment.value = true
 
-    // 获取稍后上传状态
     const uploadLater = paymentAttachmentUploaderRef.value?.getUploadLater() || false
 
-    // 1. 校验：如果没有勾选稍后上传，且没有发票，必须有情况说明单附件
     if (!uploadLater && invoiceFileList.value.length === 0) {
-      // 检查其他附件中是否有情况说明单（文件名包含"情况说明单"）
-      const hasSituationReport = paymentFileList.value.some(file => 
+      const hasSituationReport = paymentFileList.value.some(file =>
         file.name && file.name.includes('情况说明单')
       )
-      
+
       if (!hasSituationReport) {
         ElMessage.error('未上传发票时，必须填写情况说明单并生成附件！')
-        creatingPayment.value = false
         return
       }
     }
 
-    // 2. 先创建付款申请记录
-    const response = await submitReimbursementPaymentRequest({
+    pendingPaymentSubmissionData.value = {
       reimbursement_id: paymentForm.reimbursement_id,
       remarks: paymentForm.remarks,
-      reimbursement_form_data: paymentForm.reimbursementFormData, // 传递报销表单数据
+      reimbursement_form_data: { ...(paymentForm.reimbursementFormData || {}) },
       current_account_set_id: accountSetStore.currentAccountSetId,
-      upload_later: uploadLater // 传递稍后上传状态
+      upload_later: uploadLater
+    }
+
+    paymentStampForm.stamp_method = 'online'
+    paymentStampDialogVisible.value = true
+  } catch (error) {
+    console.error('Prepare payment submission error:', error)
+    ElMessage.error(error.response?.data?.message || error.message || '发起付款失败')
+  } finally {
+    creatingPayment.value = false
+  }
+}
+
+const handleCancelPaymentStampSelection = () => {
+  paymentStampDialogVisible.value = false
+  pendingPaymentSubmissionData.value = null
+}
+
+const confirmPaymentStampAndSubmit = async () => {
+  if (!pendingPaymentSubmissionData.value) {
+    ElMessage.warning('请先填写付款申请信息后再提交')
+    return
+  }
+
+  try {
+    creatingPayment.value = true
+
+    const response = await submitReimbursementPaymentRequest({
+      ...pendingPaymentSubmissionData.value
     })
-    
+
     if (!response.data || !response.data.id) {
       throw new Error('创建付款申请失败：未返回付款申请ID')
     }
-    
+
     const paymentRequestId = response.data.id
-    
-    // 3. 合并发票和其他附件
     const allFiles = [...invoiceFileList.value, ...paymentFileList.value]
-    
-    // 4. 如果有文件，则上传所有文件
+
     let uploadCount = 0
     if (allFiles.length > 0) {
       ElMessage.info('正在上传附件...')
@@ -973,44 +994,27 @@ const confirmCreatePayment = async () => {
           uploadCount++
         }
       }
-      
+
       if (uploadCount === 0 && allFiles.length > 0) {
         ElMessage.error('所有文件上传失败，请重试')
-        creatingPayment.value = false
         return
       }
     }
-    
-    // 5. 完成提交，打开盖章方式选择对话框
-    pendingPaymentRequestId.value = paymentRequestId
-    paymentStampForm.stamp_method = 'online'
-    paymentStampDialogVisible.value = true
-    creatingPayment.value = false
-  } catch (error) {
-    console.error('Create payment error:', error)
-    ElMessage.error(error.response?.data?.message || error.message || '发起付款失败')
-    creatingPayment.value = false
-  }
-}
 
-// 确认付款申请盖章方式并完成提交
-const confirmPaymentStampAndSubmit = async () => {
-  try {
-    creatingPayment.value = true
-    
     const completeResponse = await completeReimbursementPaymentSubmission({
-      payment_request_id: pendingPaymentRequestId.value,
+      payment_request_id: paymentRequestId,
       stamp_method: paymentStampForm.stamp_method
     })
-    
+
     if (completeResponse.success) {
       ElMessage.success('付款申请已提交！审批流程已创建')
     } else {
-      ElMessage.warning(`创建审批流程失败: ${completeResponse.message}`)
+      ElMessage.warning('创建审批流程失败: ' + (completeResponse.message || ''))
     }
 
     paymentStampDialogVisible.value = false
     paymentDialogVisible.value = false
+    pendingPaymentSubmissionData.value = null
     handleSearch()
   } catch (error) {
     console.error('Complete payment submission error:', error)
@@ -1019,8 +1023,6 @@ const confirmPaymentStampAndSubmit = async () => {
     creatingPayment.value = false
   }
 }
-
-// 上传付款文件到服务器
 const uploadPaymentFileToServer = async (file, paymentRequestId) => {
   try {
     const formData = new FormData()

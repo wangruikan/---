@@ -57,6 +57,23 @@
             {{ getCurrentApproverName(row) }}
           </template>
         </el-table-column>
+        <el-table-column label="盖章方式" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.approval_instance?.stamp_method === 'offline'"
+              type="warning"
+            >
+              线下
+            </el-tag>
+            <el-tag
+              v-else-if="row.approval_instance?.stamp_method === 'online'"
+              type="success"
+            >
+              线上
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.status === 'draft'" type="info">草稿</el-tag>
@@ -195,8 +212,8 @@
             <span style="margin-left: 10px; color: #f56c6c; font-size: 12px;">* 必须至少上传1个附件</span>
           </div>
           <el-upload
-            :action="uploadUrl"
-            :headers="uploadHeaders"
+            action="#"
+            :http-request="handleUploadRequest"
             :on-success="handleUploadSuccess"
             :on-error="handleUploadError"
             :before-upload="beforeUpload"
@@ -299,9 +316,8 @@
         <!-- 草稿状态下显示上传按钮和填写表格按钮 -->
         <div v-if="detailData.status === 'draft'" style="margin-bottom: 10px;">
           <el-upload
-            :action="getUploadUrl(detailData.id)"
-            :headers="uploadHeaders"
-            name="file"
+            action="#"
+            :http-request="handleUploadRequest"
             :on-success="handleUploadSuccess"
             :on-error="handleUploadError"
             :show-file-list="false"
@@ -466,7 +482,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Plus, View, Promotion, CircleCheck, Delete, UploadFilled, Download, Paperclip, Document, DocumentAdd
@@ -475,10 +491,11 @@ import { useAccountSetStore } from '@/stores/accountSet'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
-import { useUserStore } from '@/stores/user'
 import {
   getProcessList, getProcessDetail, createProcess, uploadAttachment,
-  deleteAttachment, submitProcess as submitProcessApi,
+  deleteAttachment as deleteProcessAttachment,
+  downloadAttachment as downloadProcessAttachment,
+  submitProcess as submitProcessApi,
   deleteProcess as deleteProcessApi
 } from '@/api/processApproval'
 import { getProjects } from '@/api/projects'
@@ -486,7 +503,6 @@ import { createFromProcessApproval } from '@/api/paymentApplication'
 import { useRouter } from 'vue-router'
 
 const accountSetStore = useAccountSetStore()
-const userStore = useUserStore()
 const router = useRouter()
 
 // 项目列表
@@ -557,25 +573,26 @@ const currentProcessId = ref(null)
 // 文件列表
 const fileList = ref([])
 
-// 上传配置
-const uploadUrl = computed(() => {
-  if (!currentProcessId.value) return ''
-  return `http://localhost:8000/api/process-approvals/${currentProcessId.value}/upload-attachment`
-})
-const uploadHeaders = computed(() => {
-  const token = localStorage.getItem('token')
-  return {
-    Authorization: `Bearer ${token}`
-  }
-})
-
 // 详情对话框
 const detailVisible = ref(false)
 const detailData = ref({})
 
-// 获取详情弹窗的上传URL
-const getUploadUrl = (processId) => {
-  return `http://localhost:8000/api/process-approvals/${processId}/upload-attachment`
+// 统一附件上传：走 request 拦截器，确保鉴权头与账套参数和其他接口一致
+const handleUploadRequest = (uploadOptions) => {
+  const processId = detailVisible.value && detailData.value?.id
+    ? detailData.value.id
+    : currentProcessId.value
+
+  if (!processId) {
+    return Promise.reject(new Error('请先保存流程后再上传附件'))
+  }
+
+  const formData = new FormData()
+  const uploadFile = uploadOptions.file?.raw || uploadOptions.file
+  formData.append('file', uploadFile, uploadOptions.file?.name || uploadFile?.name || 'upload-file')
+
+  // 返回 Promise 给 el-upload，由组件内部统一触发 onSuccess/onError，避免重复回调
+  return uploadAttachment(processId, formData)
 }
 
 // 删除详情弹窗中的附件
@@ -585,7 +602,7 @@ const handleDeleteAttachment = async (attachment) => {
       type: 'warning'
     })
     
-    await deleteAttachment(detailData.value.id, attachment.id)
+    await deleteProcessAttachment(detailData.value.id, attachment.id)
     ElMessage.success('附件删除成功')
     
     // 重新加载详情
@@ -733,7 +750,7 @@ const beforeUpload = (file) => {
 
 // 上传成功
 const handleUploadSuccess = (response, file) => {
-  if (response.success) {
+  if (response && response.success) {
     ElMessage.success('附件上传成功')
     
     // 如果是在编辑表单中上传
@@ -758,7 +775,7 @@ const handleUploadSuccess = (response, file) => {
     // 刷新流程列表，确保附件数据同步
     loadProcessList()
   } else {
-    ElMessage.error(response.message || '上传失败')
+    ElMessage.error(response?.message || '上传失败')
   }
 }
 
@@ -774,7 +791,7 @@ const deleteAttachmentFile = async (file) => {
       type: 'warning'
     })
     
-    await deleteAttachment(currentProcessId.value, file.id)
+    await deleteProcessAttachment(currentProcessId.value, file.id)
     ElMessage.success('附件删除成功')
     fileList.value = fileList.value.filter(f => f.id !== file.id)
   } catch (error) {
@@ -785,9 +802,33 @@ const deleteAttachmentFile = async (file) => {
 }
 
 // 下载附件
-const downloadAttachment = (attachment) => {
-  const url = `http://localhost:8000/${attachment.file_path}`
-  window.open(url, '_blank')
+const downloadAttachment = async (attachment) => {
+  try {
+    const processId = detailVisible.value && detailData.value?.id
+      ? detailData.value.id
+      : currentProcessId.value
+
+    if (!processId || !attachment?.id) {
+      ElMessage.error('下载失败：缺少流程或附件信息')
+      return
+    }
+
+    const response = await downloadProcessAttachment(processId, attachment.id)
+    const blob = response instanceof Blob
+      ? response
+      : new Blob([response], { type: attachment.mime_type || 'application/octet-stream' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.filename || attachment.name || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error('下载失败')
+  }
 }
 
 // 格式化文件大小
@@ -1141,4 +1182,3 @@ onMounted(() => {
   justify-content: flex-end;
 }
 </style>
-

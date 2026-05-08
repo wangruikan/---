@@ -1066,6 +1066,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [App\Http\Controllers\ProcessApprovalController::class, 'store']);
         Route::get('/{id}', [App\Http\Controllers\ProcessApprovalController::class, 'show']);
         Route::post('/{id}/upload-attachment', [App\Http\Controllers\ProcessApprovalController::class, 'uploadAttachment']);
+        Route::get('/{id}/attachments/{attachmentId}/download', [App\Http\Controllers\ProcessApprovalController::class, 'downloadAttachment']);
         Route::delete('/{id}/attachments/{attachmentId}', [App\Http\Controllers\ProcessApprovalController::class, 'deleteAttachment']);
         Route::post('/{id}/submit', [App\Http\Controllers\ProcessApprovalController::class, 'submit']);
         Route::post('/{id}/withdraw', [App\Http\Controllers\ProcessApprovalController::class, 'withdraw']); // 撤回审批

@@ -257,6 +257,58 @@ class ProcessApprovalController extends Controller
     }
 
     /**
+     * 下载附件
+     */
+    public function downloadAttachment(Request $request, $id, $attachmentId)
+    {
+        // 汇总申请查看权限
+        if ($response = $this->checkPermission('process_approval.view_details')) {
+            return $response;
+        }
+
+        $attachment = ProcessAttachment::where('process_approval_id', $id)
+            ->where('id', $attachmentId)
+            ->firstOrFail();
+
+        $filePath = public_path($attachment->file_path);
+        if (!file_exists($filePath)) {
+            return response()->json([
+                'success' => false,
+                'message' => '文件不存在'
+            ], 404);
+        }
+
+        $contentType = $attachment->mime_type ?: 'application/octet-stream';
+        $fileSize = @filesize($filePath) ?: null;
+        $downloadName = $attachment->filename ?: basename($filePath);
+
+        if (function_exists('ob_get_level')) {
+            while (ob_get_level() > 0) {
+                @ob_end_clean();
+            }
+        }
+
+        return response()->stream(function () use ($filePath) {
+            $handle = fopen($filePath, 'rb');
+            if ($handle) {
+                while (!feof($handle)) {
+                    echo fread($handle, 8192);
+                    flush();
+                }
+                fclose($handle);
+            }
+        }, 200, array_filter([
+            'Content-Type' => $contentType,
+            'Content-Disposition' => 'attachment; filename="' . $downloadName . '"',
+            'Content-Length' => $fileSize,
+            'Cache-Control' => 'private, max-age=0, no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'Accept-Ranges' => 'bytes',
+        ]));
+    }
+
+    /**
      * 提交流程（发起审批）
      */
     public function submit(Request $request, $id)

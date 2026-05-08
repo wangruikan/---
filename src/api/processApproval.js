@@ -57,6 +57,17 @@ export function deleteAttachment(id, attachmentId) {
 }
 
 /**
+ * 下载附件
+ */
+export function downloadAttachment(id, attachmentId) {
+  return request({
+    url: `/process-approvals/${id}/attachments/${attachmentId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+/**
  * 提交流程
  */
 export function submitProcess(id, data) {

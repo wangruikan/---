@@ -80,12 +80,23 @@ request.interceptors.response.use(
   async (response) => {
     // 如果是 blob 响应（文件下载）
     if (response.config.responseType === 'blob') {
+      const blobType = (response.data?.type || '').toLowerCase()
+
       // 检查是否是错误响应（JSON格式）
-      if (response.data.type === 'application/json') {
+      if (
+        blobType.includes('application/json') ||
+        blobType.includes('text/html')
+      ) {
         const text = await response.data.text()
-        const errorData = JSON.parse(text)
-        ElMessage.error(errorData.message || '下载失败')
-        return Promise.reject(new Error(errorData.message || '下载失败'))
+        try {
+          const errorData = JSON.parse(text)
+          ElMessage.error(errorData.message || '下载失败')
+          return Promise.reject(new Error(errorData.message || '下载失败'))
+        } catch (e) {
+          const fallbackMsg = text && text.length < 200 ? text : '下载失败'
+          ElMessage.error(fallbackMsg)
+          return Promise.reject(new Error(fallbackMsg))
+        }
       }
       // 正常的文件 blob
       return response.data

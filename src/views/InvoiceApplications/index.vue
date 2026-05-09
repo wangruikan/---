@@ -360,11 +360,11 @@
         <!-- 开票详情 -->
         <el-tab-pane label="开票详情" name="invoice_details">
           <div class="invoice-details-section">
-            <el-form :model="invoiceDetailsForm" label-width="120px" :disabled="!canEdit">
+            <el-form ref="invoiceDetailsFormRef" :model="invoiceDetailsForm" :rules="invoiceDetailsFormRules" label-width="120px" :disabled="!canEdit">
               <el-row :gutter="20">
                 <!-- 所属期-年份 -->
                 <el-col :span="12">
-                  <el-form-item label="所属期-年份">
+                  <el-form-item label="所属期-年份" prop="period_year">
                     <el-select v-model="invoiceDetailsForm.period_year" placeholder="请选择年份" style="width: 100%">
                       <el-option
                         v-for="year in years"
@@ -378,7 +378,7 @@
 
                 <!-- 所属期-月份 -->
                 <el-col :span="12">
-                  <el-form-item label="所属期-月份">
+                  <el-form-item label="所属期-月份" prop="period_month">
                     <el-select v-model="invoiceDetailsForm.period_month" placeholder="请选择月份" style="width: 100%">
                       <el-option
                         v-for="month in 12"
@@ -392,14 +392,14 @@
 
                 <!-- 单位名称 -->
                 <el-col :span="12">
-                  <el-form-item label="单位名称">
+                  <el-form-item label="单位名称" prop="company_name">
                     <el-input v-model="invoiceDetailsForm.company_name" placeholder="请输入单位名称" />
                   </el-form-item>
                 </el-col>
 
                 <!-- 申请日期 -->
                 <el-col :span="12">
-                  <el-form-item label="申请日期">
+                  <el-form-item label="申请日期" prop="application_date">
                     <el-date-picker
                       v-model="invoiceDetailsForm.application_date"
                       type="date"
@@ -413,10 +413,10 @@
 
                 <!-- 开票方式 -->
                 <el-col :span="12">
-                  <el-form-item label="开票方式">
-                    <el-select 
-                      v-model="invoiceDetailsForm.invoice_method" 
-                      placeholder="请选择" 
+                  <el-form-item label="开票方式" prop="invoice_method">
+                    <el-select
+                      v-model="invoiceDetailsForm.invoice_method"
+                      placeholder="请选择"
                       style="width: 100%"
                     >
                       <el-option label="全额" value="full" />
@@ -428,14 +428,14 @@
 
                 <!-- 开票种类 -->
                 <el-col :span="12">
-                  <el-form-item label="开票种类">
+                  <el-form-item label="开票种类" prop="invoice_type">
                     <el-input v-model="invoiceDetailsForm.invoice_type" placeholder="默认：普票" />
                   </el-form-item>
                 </el-col>
 
                 <!-- 扣除额 -->
                 <el-col :span="12">
-                  <el-form-item label="扣除额">
+                  <el-form-item label="扣除额" prop="deduction_amount">
                     <el-input-number
                       v-model="invoiceDetailsForm.deduction_amount"
                       :precision="2"
@@ -450,7 +450,7 @@
 
                 <!-- 税率 -->
                 <el-col :span="12">
-                  <el-form-item label="税率">
+                  <el-form-item label="税率" prop="tax_rate">
                     <el-select
                       v-model="invoiceDetailsForm.tax_rate"
                       placeholder="请选择税率"
@@ -475,7 +475,7 @@
 
                 <!-- 不含税金额 -->
                 <el-col :span="12">
-                  <el-form-item label="不含税金额">
+                  <el-form-item label="不含税金额" prop="amount_excluding_tax">
                     <el-input-number
                       v-model="invoiceDetailsForm.amount_excluding_tax"
                       :precision="2"
@@ -488,7 +488,7 @@
 
                 <!-- 开票税额 -->
                 <el-col :span="12">
-                  <el-form-item label="开票税额">
+                  <el-form-item label="开票税额" prop="invoice_tax_amount">
                     <el-input-number
                       v-model="invoiceDetailsForm.invoice_tax_amount"
                       :precision="2"
@@ -501,7 +501,7 @@
 
                 <!-- 开票金额 -->
                 <el-col :span="12">
-                  <el-form-item label="开票金额">
+                  <el-form-item label="开票金额" prop="invoice_amount">
                     <el-input-number
                       v-model="invoiceDetailsForm.invoice_amount"
                       :precision="2"
@@ -514,7 +514,7 @@
 
                 <!-- 税金 -->
                 <el-col :span="12">
-                  <el-form-item label="税金">
+                  <el-form-item label="税金" prop="tax_amount">
                     <el-input-number
                       v-model="invoiceDetailsForm.tax_amount"
                       :precision="2"
@@ -527,7 +527,7 @@
 
                 <!-- 开票日期 -->
                 <el-col :span="12">
-                  <el-form-item label="开票日期">
+                  <el-form-item label="开票日期" prop="invoice_date">
                     <el-date-picker
                       v-model="invoiceDetailsForm.invoice_date"
                       type="date"
@@ -541,14 +541,14 @@
 
                 <!-- 开票人 -->
                 <el-col :span="12">
-                  <el-form-item label="开票人">
+                  <el-form-item label="开票人" prop="invoicer">
                     <el-input v-model="invoiceDetailsForm.invoicer" placeholder="请输入开票人" />
                   </el-form-item>
                 </el-col>
 
                 <!-- 发票号码 -->
                 <el-col :span="12">
-                  <el-form-item label="发票号码">
+                  <el-form-item label="发票号码" prop="invoice_number">
                     <el-input v-model="invoiceDetailsForm.invoice_number" placeholder="请输入发票号码" />
                   </el-form-item>
                 </el-col>
@@ -840,6 +840,27 @@ const invoiceDetailsForm = reactive({
   invoice_number: '',
   invoice_remark: ''
 })
+
+// 开票详情表单验证规则
+const invoiceDetailsFormRules = {
+  period_year: [{ required: true, message: '请选择年份', trigger: 'change' }],
+  period_month: [{ required: true, message: '请选择月份', trigger: 'change' }],
+  company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
+  application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
+  invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
+  invoice_type: [{ required: true, message: '请输入开票种类', trigger: 'blur' }],
+  tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
+  amount_excluding_tax: [{ required: true, message: '请输入不含税金额', trigger: 'blur' }],
+  invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
+  invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
+  tax_amount: [{ required: true, message: '请输入税金', trigger: 'blur' }],
+  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }],
+  invoicer: [{ required: true, message: '请输入开票人', trigger: 'blur' }],
+  invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
+}
+
+// 开票详情表单ref
+const invoiceDetailsFormRef = ref(null)
 
 // Excel生成
 const generatingExcel = ref(false)
@@ -1260,6 +1281,11 @@ const loadInvoiceDetailsForm = (data) => {
 // 保存开票详情
 const handleSaveInvoiceDetails = async () => {
   try {
+    // 校验表单
+    if (invoiceDetailsFormRef.value) {
+      await invoiceDetailsFormRef.value.validate()
+    }
+
     const response = await request({
       url: `/invoice-applications/${currentApplication.value.id}/update-invoice-details`,
       method: 'put',

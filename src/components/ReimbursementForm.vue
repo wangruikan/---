@@ -42,7 +42,7 @@
     <el-divider content-position="left">发票信息</el-divider>
 
     <!-- 单位名称 -->
-    <el-form-item label="单位名称">
+    <el-form-item label="单位名称" prop="unitName">
       <el-input v-model="formData.unitName" placeholder="请输入单位名称" style="width: 100%" />
     </el-form-item>
 
@@ -57,7 +57,7 @@
     </el-form-item>
 
     <!-- 打款日期 -->
-    <el-form-item label="打款日期">
+    <el-form-item label="打款日期" prop="paymentDate">
       <el-date-picker
         v-model="formData.paymentDate"
         type="date"
@@ -69,7 +69,7 @@
     </el-form-item>
 
     <!-- 支出金额 -->
-    <el-form-item label="支出金额">
+    <el-form-item label="支出金额" prop="expenditureAmount">
       <el-input-number
         v-model="formData.expenditureAmount"
         :precision="2"
@@ -80,7 +80,7 @@
     </el-form-item>
 
     <!-- 类目 -->
-    <el-form-item label="类目">
+    <el-form-item label="类目" prop="category">
       <el-select v-model="formData.category" placeholder="请选择类目" style="width: 100%">
         <el-option label="报销" value="报销" />
         <el-option label="差旅" value="差旅" />
@@ -91,12 +91,12 @@
     </el-form-item>
 
     <!-- 项目 -->
-    <el-form-item label="项目">
+    <el-form-item label="项目" prop="projectName">
       <el-input v-model="formData.projectName" placeholder="请输入项目名称" style="width: 100%" />
     </el-form-item>
 
     <!-- 摘要 -->
-    <el-form-item label="摘要">
+    <el-form-item label="摘要" prop="summary">
       <el-input
         v-model="formData.summary"
         type="textarea"
@@ -111,7 +111,7 @@
     </el-form-item>
 
     <!-- 发票类型 -->
-    <el-form-item label="发票类型">
+    <el-form-item label="发票类型" prop="invoiceType">
       <el-select v-model="formData.invoiceType" placeholder="请选择发票类型" style="width: 100%">
         <el-option label="专票" value="专票" />
         <el-option label="普票" value="普票" />
@@ -123,7 +123,7 @@
     </el-form-item>
 
     <!-- 开票金额 -->
-    <el-form-item label="开票金额">
+    <el-form-item label="开票金额" prop="invoiceAmount">
       <el-input-number
         v-model="formData.invoiceAmount"
         :precision="2"
@@ -134,7 +134,7 @@
     </el-form-item>
 
     <!-- 税率 -->
-    <el-form-item label="税率">
+    <el-form-item label="税率" prop="taxRate">
       <el-select v-model="formData.taxRate" placeholder="请选择税率" style="width: 100%">
         <el-option label="1%" value="1%" />
         <el-option label="3%" value="3%" />
@@ -147,7 +147,7 @@
     </el-form-item>
 
     <!-- 扣除额 -->
-    <el-form-item label="扣除额">
+    <el-form-item label="扣除额" prop="deductionAmount">
       <el-input-number
         v-model="formData.deductionAmount"
         :precision="2"
@@ -158,7 +158,7 @@
     </el-form-item>
 
     <!-- 不含税金额 -->
-    <el-form-item label="不含税金额">
+    <el-form-item label="不含税金额" prop="amountExcludingTax">
       <el-input-number
         v-model="formData.amountExcludingTax"
         :precision="2"
@@ -169,7 +169,7 @@
     </el-form-item>
 
     <!-- 税金 -->
-    <el-form-item label="税金">
+    <el-form-item label="税金" prop="taxAmount">
       <el-input-number
         v-model="formData.taxAmount"
         :precision="2"
@@ -202,7 +202,7 @@
     </el-form-item>
 
     <!-- 报销人 -->
-    <el-form-item label="报销人">
+    <el-form-item label="报销人" prop="reimburser">
       <el-input v-model="formData.reimburser" placeholder="请输入报销人" style="width: 100%" />
     </el-form-item>
 
@@ -296,8 +296,41 @@ const rules = {
   applyDate: [
     { required: true, message: '请选择申请日期', trigger: 'change' }
   ],
+  unitName: [
+    { required: true, message: '请输入单位名称', trigger: 'blur' }
+  ],
+  reimburser: [
+    { required: true, message: '请输入报销人', trigger: 'blur' }
+  ],
   invoiceNumber: [
     { required: true, message: '请输入发票号码', trigger: 'blur' }
+  ],
+  invoiceType: [
+    { required: true, message: '请选择发票类型', trigger: 'change' }
+  ],
+  invoiceAmount: [
+    { required: true, message: '请输入开票金额', trigger: 'blur' }
+  ],
+  taxRate: [
+    { required: true, message: '请选择税率', trigger: 'change' }
+  ],
+  taxAmount: [
+    { required: true, message: '请输入税金', trigger: 'blur' }
+  ],
+  deductionAmount: [
+    { required: true, message: '请输入扣除额', trigger: 'blur' }
+  ],
+  amountExcludingTax: [
+    { required: true, message: '请输入不含税金额', trigger: 'blur' }
+  ],
+  paymentDate: [
+    { required: true, message: '请选择打款日期', trigger: 'change' }
+  ],
+  expenditureAmount: [
+    { required: true, message: '请输入支出金额', trigger: 'blur' }
+  ],
+  summary: [
+    { required: true, message: '请输入摘要', trigger: 'blur' }
   ]
 }
 

@@ -929,6 +929,15 @@ const confirmCreatePayment = async () => {
   try {
     creatingPayment.value = true
 
+    // 校验报销表单字段必填
+    if (reimbursementFormRef.value) {
+      const valid = await reimbursementFormRef.value.validate()
+      if (!valid) {
+        creatingPayment.value = false
+        return
+      }
+    }
+
     const uploadLater = paymentAttachmentUploaderRef.value?.getUploadLater() || false
 
     if (!uploadLater && invoiceFileList.value.length === 0) {

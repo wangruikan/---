@@ -313,8 +313,7 @@
               <span>附件列表（必须上传）</span>
               <el-upload
                 v-if="canEdit"
-                :action="uploadAction"
-                :headers="uploadHeaders"
+                :http-request="handleUploadRequest"
                 :on-success="handleUploadSuccess"
                 :on-error="handleUploadError"
                 :show-file-list="false"
@@ -709,6 +708,7 @@ import {
   updateInvoiceItem,
   deleteInvoiceItem,
   generateExcel,
+  uploadAttachment,
   deleteAttachment,
   submitInvoiceApplication,
   resubmitInvoiceApplication
@@ -864,19 +864,6 @@ const invoiceDetailsFormRef = ref(null)
 
 // Excel生成
 const generatingExcel = ref(false)
-
-// 上传配置
-const uploadAction = computed(() => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-  return `${baseURL}/api/invoice-applications/${currentApplication.value.id}/attachments`
-})
-
-const uploadHeaders = computed(() => {
-  const token = localStorage.getItem('token')
-  return {
-    'Authorization': `Bearer ${token}`
-  }
-})
 
 // 计算属性
 const canEdit = computed(() => {
@@ -1483,6 +1470,24 @@ const beforeUpload = (file) => {
   return isLt10M
 }
 
+// 自定义上传请求
+const handleUploadRequest = async (options) => {
+  try {
+    const response = await uploadAttachment(currentApplication.value.id, options.file)
+    if (response.success) {
+      ElMessage.success('上传成功')
+      await loadApplicationDetail(currentApplication.value.id)
+      options.onSuccess(response)
+    } else {
+      ElMessage.error(response.message || '上传失败')
+      options.onError(response)
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '上传失败')
+    options.onError(error)
+  }
+}
+
 // 上传成功
 const handleUploadSuccess = async (response) => {
   if (response.success) {
@@ -1500,9 +1505,47 @@ const handleUploadError = (error) => {
 }
 
 // 下载附件
-const handleDownload = (attachment) => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-  window.open(`${baseURL}/storage/${attachment.path}`, '_blank')
+const handleDownload = async (attachment) => {
+  try {
+    ElMessage.info('正在下载，请稍候...')
+
+    const attachmentPath = String(attachment?.path || '').trim()
+    if (!attachmentPath) {
+      ElMessage.error('附件路径无效')
+      return
+    }
+
+    const encodedPath = attachmentPath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/')
+
+    // 直接读取静态文件，避免后端下载链路对二进制流造成影响
+    const response = await fetch(`/storage/${encodedPath}`, { method: 'GET' })
+    if (!response.ok) {
+      throw new Error(`下载失败: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.filename || '附件'
+    link.style.display = 'none'
+
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+
+    ElMessage.success('下载成功')
+  } catch (error) {
+    ElMessage.error('下载失败')
+  }
 }
 
 // 删除附件

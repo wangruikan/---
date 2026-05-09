@@ -145,8 +145,8 @@
         <el-table-column prop="created_at" label="上传时间" width="180" />
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button type="primary" size="small" link @click="handlePreviewAttachment(row)">
-              预览
+            <el-button type="primary" size="small" link @click="handleDownloadAttachment(row)">
+              下载
             </el-button>
             <el-button
               v-if="currentTask.status === 'pending'"
@@ -315,10 +315,82 @@ const customUpload = async (options) => {
   }
 }
 
-// 预览附件
-const handlePreviewAttachment = (attachment) => {
-  // 使用后端返回的完整 URL
-  window.open(attachment.file_url, '_blank')
+const resolveAttachmentRequestUrl = (attachment) => {
+  let filePath = String(
+    attachment?.file_path ||
+    attachment?.path ||
+    attachment?.file_url ||
+    attachment?.url ||
+    ''
+  ).trim()
+
+  if (!filePath) return ''
+
+  if (/^https?:\/\//i.test(filePath)) {
+    try {
+      const urlObj = new URL(filePath)
+      filePath = `${urlObj.pathname}${urlObj.search}`
+    } catch (error) {
+      console.warn('Parse attachment url failed:', error)
+    }
+  }
+
+  if (filePath.startsWith('/api/') || filePath.startsWith('api/')) {
+    return filePath.startsWith('/') ? filePath : `/${filePath}`
+  }
+
+  if (filePath.startsWith('/storage/')) {
+    filePath = filePath.slice('/storage/'.length)
+  } else if (filePath.startsWith('storage/')) {
+    filePath = filePath.slice('storage/'.length)
+  } else {
+    filePath = filePath.replace(/^\/+/, '')
+  }
+
+  const [pathOnly, queryString = ''] = filePath.split('?')
+  const encodedPath = pathOnly
+    .split('/')
+    .filter(Boolean)
+    .map(segment => encodeURIComponent(segment))
+    .join('/')
+
+  if (!encodedPath) return ''
+  return queryString ? `/storage/${encodedPath}?${queryString}` : `/storage/${encodedPath}`
+}
+
+// 下载附件（仅下载，不预览）
+const handleDownloadAttachment = async (attachment) => {
+  const requestUrl = resolveAttachmentRequestUrl(attachment)
+  if (!requestUrl) {
+    ElMessage.warning('附件路径不存在')
+    return
+  }
+
+  try {
+    const token = localStorage.getItem('token')
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const response = await fetch(requestUrl, { method: 'GET', headers })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.file_name || attachment.filename || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+  } catch (error) {
+    console.error('Download tax declaration attachment error:', error)
+    ElMessage.error('下载失败')
+  }
 }
 
 // 删除附件

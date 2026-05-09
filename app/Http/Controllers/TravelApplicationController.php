@@ -191,7 +191,8 @@ class TravelApplicationController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'travel_application_id' => 'required|exists:travel_applications,id',
-                'current_account_set_id' => 'required|exists:account_sets,id'
+                'current_account_set_id' => 'required|exists:account_sets,id',
+                'stamp_method' => 'required|in:online,offline'
             ]);
 
             if ($validator->fails()) {
@@ -218,7 +219,7 @@ class TravelApplicationController extends Controller
 
             // 创建审批流程
             $approvalService = new ApprovalService();
-            $stampMethod = $request->input('stamp_method', 'online'); // 盖章方式
+            $stampMethod = $request->input('stamp_method'); // 盖章方式
             $approvalInstance = $approvalService->createApprovalInstance(
                 $request->current_account_set_id,  // accountSetId
                 'travel_application',               // businessType
@@ -316,4 +317,3 @@ class TravelApplicationController extends Controller
         }
     }
 }
-

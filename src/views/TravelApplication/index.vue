@@ -353,9 +353,7 @@
             <el-table-column type="index" label="序号" width="60" align="center" />
             <el-table-column prop="file_name" label="文件名" show-overflow-tooltip>
               <template #default="{ row }">
-                <el-link :href="getFileUrl(row.file_path)" target="_blank" :underline="false">
-                  <span style="color: #409EFF;">{{ row.file_name }}</span>
-                </el-link>
+                <span style="color: #409EFF;">{{ row.file_name }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="file_type" label="文件类型" width="120" align="center">
@@ -369,14 +367,6 @@
             </el-table-column>
             <el-table-column label="操作" width="150" align="center">
               <template #default="{ row }">
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  text
-                  @click="handlePreviewAttachment(row)"
-                >
-                  预览
-                </el-button>
                 <el-button 
                   type="primary" 
                   size="small" 
@@ -793,39 +783,60 @@ const getFileUrl = (filePath) => {
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     return filePath
   }
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
-  return `${baseUrl}/storage/${filePath}`
-}
-
-// 预览附件
-const handlePreviewAttachment = (attachment) => {
-  const fileUrl = getFileUrl(attachment.file_path)
-  const fileName = attachment.file_name
-  const fileExt = fileName.split('.').pop().toLowerCase()
-  
-  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']
-  const pdfExts = ['pdf']
-  
-  if (imageExts.includes(fileExt) || pdfExts.includes(fileExt)) {
-    window.open(fileUrl, '_blank')
-  } else {
-    ElMessage.info('该文件类型不支持预览，请下载后查看')
-    handleDownloadAttachment(attachment)
+  const envBase = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+  let origin = window.location.origin
+  if (envBase) {
+    try {
+      origin = new URL(envBase, window.location.origin).origin
+    } catch (error) {
+      origin = window.location.origin
+    }
   }
+
+  const normalizedPath = String(filePath).replace(/^\/+/, '')
+  if (normalizedPath.startsWith('storage/')) {
+    return `${origin}/${normalizedPath}`
+  }
+  return `${origin}/storage/${normalizedPath}`
 }
 
 // 下载附件
-const handleDownloadAttachment = (attachment) => {
-  const fileUrl = getFileUrl(attachment.file_path)
-  
-  const link = document.createElement('a')
-  link.href = fileUrl
-  link.download = attachment.file_name
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  ElMessage.success('开始下载文件')
+const handleDownloadAttachment = async (attachment) => {
+  try {
+    const fileUrl = getFileUrl(attachment.file_path)
+    if (!fileUrl) {
+      ElMessage.warning('附件路径不存在')
+      return
+    }
+
+    const response = await fetch(fileUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = attachment.file_name || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(downloadUrl)
+    }, 100)
+  } catch (error) {
+    console.error('Download attachment error:', error)
+    ElMessage.error('下载失败')
+  }
 }
 
 // 审批

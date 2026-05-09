@@ -168,8 +168,8 @@
             <el-table-column prop="file_name" label="文件名" min-width="150" show-overflow-tooltip />
             <el-table-column label="操作" width="120">
               <template #default="{ row }">
-                <el-button type="primary" size="small" @click="handlePreview(row)" link>
-                  预览
+                <el-button type="primary" size="small" @click="handleDownload(row)" link>
+                  下载
                 </el-button>
                 <el-button type="danger" size="small" @click="handleDeleteAttachment(row)" link>
                   删除
@@ -221,8 +221,8 @@
         <el-table-column prop="file_name" label="文件名" min-width="200" show-overflow-tooltip />
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handlePreview(row)" link>
-              预览
+            <el-button type="primary" size="small" @click="handleDownload(row)" link>
+              下载
             </el-button>
           </template>
         </el-table-column>
@@ -258,7 +258,6 @@ import { useUserStore } from '@/stores/user'
 
 const accountSetStore = useAccountSetStore()
 const userStore = useUserStore()
-const apiBaseUrl = window.location.origin
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -540,10 +539,82 @@ const handleDeleteAttachment = async (attachment) => {
   }
 }
 
-// 预览附件
-const handlePreview = (attachment) => {
-  const url = attachment.file_url || `${apiBaseUrl}/storage/${attachment.file_path}`
-  window.open(url, '_blank')
+const resolveAttachmentRequestUrl = (attachment) => {
+  let filePath = String(
+    attachment?.file_path ||
+    attachment?.path ||
+    attachment?.file_url ||
+    attachment?.url ||
+    ''
+  ).trim()
+
+  if (!filePath) return ''
+
+  if (/^https?:\/\//i.test(filePath)) {
+    try {
+      const urlObj = new URL(filePath)
+      filePath = `${urlObj.pathname}${urlObj.search}`
+    } catch (error) {
+      console.warn('Parse attachment url failed:', error)
+    }
+  }
+
+  if (filePath.startsWith('/api/') || filePath.startsWith('api/')) {
+    return filePath.startsWith('/') ? filePath : `/${filePath}`
+  }
+
+  if (filePath.startsWith('/storage/')) {
+    filePath = filePath.slice('/storage/'.length)
+  } else if (filePath.startsWith('storage/')) {
+    filePath = filePath.slice('storage/'.length)
+  } else {
+    filePath = filePath.replace(/^\/+/, '')
+  }
+
+  const [pathOnly, queryString = ''] = filePath.split('?')
+  const encodedPath = pathOnly
+    .split('/')
+    .filter(Boolean)
+    .map(segment => encodeURIComponent(segment))
+    .join('/')
+
+  if (!encodedPath) return ''
+  return queryString ? `/storage/${encodedPath}?${queryString}` : `/storage/${encodedPath}`
+}
+
+// 下载附件（仅下载，不预览）
+const handleDownload = async (attachment) => {
+  const requestUrl = resolveAttachmentRequestUrl(attachment)
+  if (!requestUrl) {
+    ElMessage.warning('附件路径不存在')
+    return
+  }
+
+  try {
+    const token = localStorage.getItem('token')
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const response = await fetch(requestUrl, { method: 'GET', headers })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.file_name || attachment.filename || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+  } catch (error) {
+    console.error('Download commercial insurance attachment error:', error)
+    ElMessage.error('下载失败')
+  }
 }
 
 // 状态类型

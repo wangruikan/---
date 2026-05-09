@@ -365,9 +365,7 @@
             <el-table-column type="index" label="序号" width="60" align="center" />
             <el-table-column prop="file_name" label="文件名" show-overflow-tooltip>
               <template #default="{ row }">
-                <el-link :href="getFileUrl(row.file_path)" target="_blank" :underline="false">
-                  <span style="color: #409EFF;">{{ row.file_name }}</span>
-                </el-link>
+                <span style="color: #409EFF;">{{ row.file_name }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="file_type" label="文件类型" width="120" align="center">
@@ -379,16 +377,8 @@
                 <el-tag v-else type="info" size="small">其他</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" align="center">
+            <el-table-column label="操作" width="90" align="center">
               <template #default="{ row }">
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  text
-                  @click="handlePreviewAttachment(row)"
-                >
-                  预览
-                </el-button>
                 <el-button 
                   type="primary" 
                   size="small" 
@@ -832,18 +822,54 @@ const handlePreviewAttachment = (attachment) => {
 }
 
 // 下载附件
-const handleDownloadAttachment = (attachment) => {
-  const fileUrl = getFileUrl(attachment.file_path)
-  
-  // 创建一个隐藏的 a 标签来触发下载
-  const link = document.createElement('a')
-  link.href = fileUrl
-  link.download = attachment.file_name
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  ElMessage.success('开始下载文件')
+const handleDownloadAttachment = async (attachment) => {
+  try {
+    let filePath = String(attachment?.file_path || attachment?.path || '').trim()
+    if (!filePath) {
+      ElMessage.warning('附件路径不存在')
+      return
+    }
+
+    if (/^https?:\/\//i.test(filePath)) {
+      const urlObj = new URL(filePath, window.location.origin)
+      filePath = `${urlObj.pathname}${urlObj.search}`.replace(/^\/+/, '')
+    }
+
+    if (filePath.startsWith('/storage/')) {
+      filePath = filePath.slice('/storage/'.length)
+    } else if (filePath.startsWith('storage/')) {
+      filePath = filePath.slice('storage/'.length)
+    }
+
+    const [pathOnly, queryString = ''] = filePath.split('?')
+    const encodedPath = pathOnly
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/')
+    const requestUrl = queryString ? `/storage/${encodedPath}?${queryString}` : `/storage/${encodedPath}`
+
+    const response = await fetch(requestUrl, { method: 'GET' })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.file_name || attachment.filename || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+  } catch (error) {
+    console.error('Download reimbursement attachment error:', error)
+    ElMessage.error('下载失败')
+  }
 }
 
 // 审批

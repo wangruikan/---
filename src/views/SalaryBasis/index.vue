@@ -154,6 +154,9 @@
                 <el-button type="primary" size="small" @click="handlePreview(row)" link>
                   预览
                 </el-button>
+                <el-button type="primary" size="small" @click="handleDownloadAttachment(row)" link>
+                  下载
+                </el-button>
                 <el-button type="danger" size="small" @click="handleDeleteAttachment(row)" link>
                   删除
                 </el-button>
@@ -225,6 +228,9 @@
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handlePreview(row)" link>
               预览
+            </el-button>
+            <el-button type="primary" size="small" @click="handleDownloadAttachment(row)" link>
+              下载
             </el-button>
             <el-button type="danger" size="small" @click="handleDeleteAttachment(row)" link>
               删除
@@ -550,6 +556,45 @@ const handleDeleteAttachment = async (attachment) => {
 const handlePreview = (attachment) => {
   const url = `${apiBaseUrl}/storage/${attachment.file_path}`
   window.open(url, '_blank')
+}
+
+// Download attachment
+const handleDownloadAttachment = async (attachment) => {
+  try {
+    const attachmentPath = String(attachment?.file_path || attachment?.path || '').trim()
+    if (!attachmentPath) {
+      ElMessage.error('Invalid attachment path')
+      return
+    }
+
+    const encodedPath = attachmentPath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/')
+
+    const response = await fetch(`/storage/${encodedPath}`, { method: 'GET' })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.file_name || attachment.filename || 'attachment'
+    link.style.display = 'none'
+
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+  } catch (error) {
+    console.error('Download attachment error:', error)
+    ElMessage.error('Download failed')
+  }
 }
 
 // 文件类型标签

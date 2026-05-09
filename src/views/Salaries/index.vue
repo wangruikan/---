@@ -928,10 +928,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="上传时间" width="180" />
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handlePreviewBasisFile(row)" link>
               预览
+            </el-button>
+            <el-button type="primary" size="small" @click="handleDownloadBasisFile(row)" link>
+              下载
             </el-button>
           </template>
         </el-table-column>
@@ -1490,6 +1493,50 @@ const handleViewSalaryBasis = async (row) => {
 const handlePreviewBasisFile = (file) => {
   const url = `${apiBaseUrl}/storage/${file.file_path}`
   window.open(url, '_blank')
+}
+
+const handleDownloadBasisFile = async (file) => {
+  try {
+    let filePath = String(file?.file_path || file?.path || '').trim()
+    if (!filePath) {
+      ElMessage.warning('附件路径不存在')
+      return
+    }
+
+    if (filePath.startsWith('/storage/')) {
+      filePath = filePath.slice('/storage/'.length)
+    } else if (filePath.startsWith('storage/')) {
+      filePath = filePath.slice('storage/'.length)
+    }
+
+    const encodedPath = filePath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/')
+
+    const response = await fetch(`/storage/${encodedPath}`, { method: 'GET' })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = file.file_name || file.filename || '附件'
+    link.style.display = 'none'
+
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+  } catch (error) {
+    console.error('Download basis file error:', error)
+    ElMessage.error('下载失败')
+  }
 }
 
 // 文件类型标签

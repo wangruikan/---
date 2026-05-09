@@ -295,6 +295,29 @@
         </div>
         
         <!-- 考勤数据录入 -->
+        <div v-if="currentSheetAttachments.length > 0" style="margin: 16px 0 20px;">
+          <el-divider content-position="left">审批附件</el-divider>
+          <el-table :data="currentSheetAttachments" border stripe>
+            <el-table-column prop="file_name" label="文件名" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ getAttendanceAttachmentName(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="大小" width="120">
+              <template #default="{ row }">
+                {{ getAttendanceAttachmentSize(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" align="center">
+              <template #default="{ row }">
+                <el-button type="primary" size="small" link @click="handleDownloadAttendanceAttachment(row)">
+                  下载
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
         <div class="attendance-data" v-if="currentSheet.status === 'draft' && canCreateAttendance">
           <div class="data-header">
             <h3>考勤数据录入</h3>
@@ -701,6 +724,106 @@ const currentSheet = ref(null)
 const attendanceData = ref([])
 const attendanceStats = ref([])
 const projectEmployees = ref([])
+
+const normalizeSheetAttachments = (value) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return parsed
+      if (typeof parsed === 'string') {
+        const parsedTwice = JSON.parse(parsed)
+        if (Array.isArray(parsedTwice)) return parsedTwice
+      }
+    } catch (error) {
+      console.warn('Parse attendance sheet attachments failed:', error)
+    }
+  }
+
+  return []
+}
+
+const currentSheetAttachments = computed(() => normalizeSheetAttachments(currentSheet.value?.attachments))
+
+const getAttendanceAttachmentName = (attachment) => {
+  return attachment?.original_name || attachment?.file_name || attachment?.filename || attachment?.name || '附件'
+}
+
+const getAttendanceAttachmentSize = (attachment) => {
+  const rawSize = Number(attachment?.file_size ?? attachment?.size ?? 0)
+  if (!rawSize || rawSize < 0) {
+    return '-'
+  }
+  return formatFileSize(rawSize)
+}
+
+const buildAttendanceAttachmentUrl = (attachment) => {
+  const rawPath = String(
+    attachment?.url ||
+    attachment?.file_url ||
+    attachment?.download_url ||
+    attachment?.file_path ||
+    attachment?.path ||
+    ''
+  ).trim()
+
+  if (!rawPath) return ''
+  if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) {
+    return rawPath
+  }
+
+  const normalizedPath = rawPath.replace(/^\/+/, '')
+  const encodedPath = normalizedPath
+    .split('/')
+    .map(segment => encodeURIComponent(segment))
+    .join('/')
+
+  if (normalizedPath.startsWith('storage/')) {
+    return `/${encodedPath}`
+  }
+
+  if (normalizedPath.startsWith('attendance-attachments/')) {
+    return `/${encodedPath}`
+  }
+
+  return `/storage/${encodedPath}`
+}
+
+const handleDownloadAttendanceAttachment = async (attachment) => {
+  try {
+    const fileUrl = buildAttendanceAttachmentUrl(attachment)
+    if (!fileUrl) {
+      ElMessage.warning('附件路径不存在')
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const response = await fetch(fileUrl, { method: 'GET', headers })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = getAttendanceAttachmentName(attachment)
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+  } catch (error) {
+    console.error('Download attendance attachment error:', error)
+    ElMessage.error('下载失败')
+  }
+}
 
 const searchForm = reactive({
   project_id: '',

@@ -1039,7 +1039,7 @@ class InvoiceApplicationController extends Controller
             'period_month' => 'nullable|integer|min:1|max:12',
             'company_name' => 'nullable|string|max:200',
             'application_date' => 'nullable|date',
-            'invoice_method' => 'nullable|in:full,diff,none',
+            'invoice_method' => 'nullable|string|max:20',
             'invoice_type' => 'nullable|string|max:50',
             'deduction_amount' => 'nullable|numeric|min:0',
             'tax_rate' => 'nullable|numeric|min:0|max:1',
@@ -1073,7 +1073,7 @@ class InvoiceApplicationController extends Controller
             ], 422);
         }
 
-        $application->update($request->only([
+        $updateData = $request->only([
             'period_year',
             'period_month',
             'company_name',
@@ -1091,7 +1091,32 @@ class InvoiceApplicationController extends Controller
             'invoicer',
             'invoice_number',
             'invoice_remark',
-        ]));
+        ]);
+
+        if (array_key_exists('invoice_method', $updateData)) {
+            $rawInvoiceMethod = trim((string)($updateData['invoice_method'] ?? ''));
+            $normalizedKey = mb_strtolower($rawInvoiceMethod);
+            $invoiceMethodMap = [
+                'full' => 'full',
+                '全额' => 'full',
+                'diff' => 'diff',
+                '差额' => 'diff',
+                'partial' => 'diff',
+                '缺额' => 'diff',
+                'none' => 'none',
+                '无' => 'none',
+            ];
+
+            if ($rawInvoiceMethod === '') {
+                $updateData['invoice_method'] = null;
+            } elseif (isset($invoiceMethodMap[$normalizedKey])) {
+                $updateData['invoice_method'] = $invoiceMethodMap[$normalizedKey];
+            } else {
+                $updateData['invoice_method'] = $rawInvoiceMethod;
+            }
+        }
+
+        $application->update($updateData);
 
         return response()->json([
             'success' => true,

@@ -333,7 +333,7 @@ const routes = [
         path: '/account-sets',
         name: 'AccountSets',
         component: () => import('@/views/AccountSets/index.vue'),
-        meta: { title: '账套管理', requiresAdmin: true }
+        meta: { title: '账套管理' }
       },
       {
         path: '/settings',

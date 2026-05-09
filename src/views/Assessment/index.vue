@@ -37,7 +37,11 @@
 
     <el-card class="table-card">
       <el-table :data="records" v-loading="loading" border stripe>
-        <el-table-column prop="business_type_text" label="业务类型" width="120" />
+        <el-table-column label="业务类型" width="140">
+          <template #default="{ row }">
+            {{ getBusinessTypeText(row) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="business_name" label="业务描述" min-width="180" />
         <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
         <el-table-column label="申诉状态" width="120">
@@ -154,6 +158,57 @@ const appealForm = ref({
   description: '',
   images: []
 })
+
+const BUSINESS_TYPE_TEXT_MAP = {
+  insurance_enrollment: '参保入职',
+  contract_signing: '合同签订',
+  salary_payment: '工资发放',
+  invoice_processing: '发票处理',
+  document_upload: '资料收集',
+  contract_management: '合同管理',
+  document_delivery: '资料交付',
+  payment_request_missing: '付款申请缺失',
+  resignation_contract: '离职合同',
+  probation_management: '试用期管理',
+  material_request: '资料申请',
+  approval_request: '审批申请',
+  reimbursement_request: '报销申请',
+  travel_request: '差旅申请',
+  invoice_request: '发票申请',
+  payment_application: '付款申请',
+  approval_rejection: '审批驳回',
+  appeal_api_test: '申诉接口测试',
+  employee_contract: '员工合同审批',
+  employee_salary_adjustment: '员工工资调整审批',
+  reimbursement: '报销申请'
+}
+
+const hasChinese = (text) => typeof text === 'string' && /[\u4e00-\u9fff]/.test(text)
+
+const getBusinessTypeText = (row) => {
+  if (!row) {
+    return '-'
+  }
+
+  const rawText = row.business_type_text
+  const rawType = row.business_type
+
+  if (hasChinese(rawText)) {
+    return rawText
+  }
+
+  const keys = [rawText, rawType]
+    .filter(Boolean)
+    .map(item => String(item).trim())
+
+  for (const key of keys) {
+    if (BUSINESS_TYPE_TEXT_MAP[key]) {
+      return BUSINESS_TYPE_TEXT_MAP[key]
+    }
+  }
+
+  return rawText || rawType || '-'
+}
 
 const loadRecords = async () => {
   if (!currentAccountSetId.value) {

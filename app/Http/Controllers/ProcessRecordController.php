@@ -141,7 +141,7 @@ class ProcessRecordController extends Controller
             $approver = \DB::table('account_set_users')
                 ->where('account_set_id', $accountSetId)
                 ->where('user_id', $user->id)
-                ->whereIn('approval_level', [2, 3, 4])
+                ->whereIn('approval_level', [1, 2, 3, 4])
                 ->first();
             
             if ($approver) {
@@ -151,7 +151,7 @@ class ProcessRecordController extends Controller
             // 没有账套ID时，检查用户在任意账套中是否有2/3/4级别权限
             $approver = \DB::table('account_set_users')
                 ->where('user_id', $user->id)
-                ->whereIn('approval_level', [2, 3, 4])
+                ->whereIn('approval_level', [1, 2, 3, 4])
                 ->first();
             
             if ($approver) {
@@ -181,7 +181,7 @@ class ProcessRecordController extends Controller
         $approver = \DB::table('account_set_users')
             ->where('account_set_id', $accountSetId)
             ->where('user_id', $user->id)
-            ->whereIn('approval_level', [2, 3, 4])
+            ->whereIn('approval_level', [1, 2, 3, 4])
             ->first();
 
         return response()->json([

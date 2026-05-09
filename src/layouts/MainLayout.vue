@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="main-layout">
     <el-container>
       <!-- 悬浮菜单 -->
@@ -29,12 +29,12 @@
           </div>
           
           <div class="header-right">
-            <!-- 通知 - 已隐藏 -->
-            <!-- <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="notification-badge">
+            <!-- 通知 -->
+            <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="notification-badge">
               <el-button type="text" @click="showNotifications = true">
                 <el-icon size="20"><Bell /></el-icon>
               </el-button>
-            </el-badge> -->
+            </el-badge>
             
             <!-- 用户菜单 -->
             <el-dropdown @command="handleUserCommand">
@@ -83,7 +83,7 @@
             :key="notification.id"
             class="notification-item"
             :class="{ unread: !notification.is_read }"
-            @click="markAsRead(notification.id)"
+            @click="handleNotificationClick(notification)"
           >
             <div class="notification-content">
               <div class="notification-title">{{ notification.title }}</div>
@@ -147,6 +147,7 @@ import { usePermissionStore } from '@/stores/permission'
 import request from '@/api/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
+import { getDashboardData, markReminderAsRead } from '@/api/dashboard'
 import AccountSetSelector from '@/components/AccountSetSelector.vue'
 import HoverMenu from '@/components/HoverMenu.vue'
 // import OperationBarrage from '@/components/OperationBarrage.vue' // 已隐藏弹幕功能
@@ -308,25 +309,74 @@ const handleChangePassword = async () => {
   })
 }
 
-const markAsRead = async (notificationId) => {
-  // 这里应该调用API标记为已读
-  const notification = notifications.value.find(n => n.id === notificationId)
-  if (notification) {
-    notification.is_read = true
-  }
-}
-
 const formatTime = (time) => {
   return dayjs(time).format('MM-DD HH:mm')
 }
 
+const normalizeReminderToNotification = (reminder) => ({
+  id: reminder.id,
+  title: reminder.title || '提醒事项',
+  content: reminder.content || reminder.description || '',
+  created_at: reminder.created_at,
+  is_read: Boolean(reminder.is_read),
+  source: reminder.source || '',
+  source_id: reminder.source_id || '',
+  action_url: reminder.action_url || ''
+})
+
 const loadNotifications = async () => {
   try {
-    // 这里应该调用API获取通知
-    // const response = await getNotifications()
-    // notifications.value = response.data
+    if (!accountSetStore.currentAccountSet?.id) {
+      notifications.value = []
+      return
+    }
+
+    const response = await getDashboardData({
+      account_set_id: accountSetStore.currentAccountSet.id
+    })
+
+    if (response?.success) {
+      notifications.value = (response.data?.reminders || []).map(normalizeReminderToNotification)
+    } else {
+      notifications.value = []
+    }
   } catch (error) {
-    console.error('Load notifications error:', error)
+    notifications.value = []
+  }
+}
+
+const handleNotificationClick = async (notification) => {
+  try {
+    if (notification.source && notification.source_id) {
+      await markReminderAsRead({
+        source: notification.source,
+        source_id: notification.source_id
+      })
+    }
+
+    notification.is_read = true
+
+    if (notification.action_url) {
+      router.push(notification.action_url)
+      showNotifications.value = false
+      return
+    }
+
+    switch (notification.source) {
+      case 'contract_reminder':
+      case 'assessment_record':
+        router.push('/assessment')
+        break
+      case 'delivery_reminder':
+        router.push('/document-delivery')
+        break
+      default:
+        break
+    }
+
+    showNotifications.value = false
+  } catch (error) {
+    ElMessage.error('操作失败')
   }
 }
 
@@ -344,6 +394,20 @@ onMounted(async () => {
     } catch (error) {
       console.error('加载账套数据失败:', error)
     }
+  }
+})
+
+watch(() => accountSetStore.currentAccountSet?.id, (accountSetId) => {
+  if (accountSetId) {
+    loadNotifications()
+  } else {
+    notifications.value = []
+  }
+}, { immediate: true })
+
+watch(showNotifications, (visible) => {
+  if (visible) {
+    loadNotifications()
   }
 })
 </script>

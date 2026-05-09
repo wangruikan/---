@@ -188,33 +188,32 @@
       <!-- 查看模式 -->
       <template v-if="dialogMode === 'view'">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="申请标题">{{ detailData.title }}</el-descriptions-item>
-          <el-descriptions-item label="月份">{{ detailData.month }}</el-descriptions-item>
-          <el-descriptions-item label="发起人">{{ detailData.initiator?.name }}</el-descriptions-item>
-          <el-descriptions-item label="当前审批人">
+          <el-descriptions-item v-if="detailData.title" label="申请标题">{{ detailData.title }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.month" label="月份">{{ detailData.month }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.initiator?.name" label="发起人">{{ detailData.initiator?.name }}</el-descriptions-item>
+          <el-descriptions-item v-if="getCurrentApproverName(detailData) !== '-'" label="当前审批人">
             {{ getCurrentApproverName(detailData) }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item v-if="detailData.status" label="状态">
             <el-tag v-if="detailData.status === 'draft'" type="info">草稿</el-tag>
             <el-tag v-else-if="detailData.status === 'pending'" type="warning">待审批</el-tag>
             <el-tag v-else-if="detailData.status === 'approved'" type="success">已通过</el-tag>
             <el-tag v-else-if="detailData.status === 'rejected'" type="danger">已驳回</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间">
+          <el-descriptions-item v-if="detailData.created_at" label="创建时间">
             {{ formatDateTime(detailData.created_at) }}
           </el-descriptions-item>
-          <el-descriptions-item label="关联项目" :span="2">
-            <el-tag 
-              v-for="projectId in detailData.project_ids" 
+          <el-descriptions-item v-if="detailData.project_ids && detailData.project_ids.length > 0" label="关联项目" :span="2">
+            <el-tag
+              v-for="projectId in detailData.project_ids"
               :key="projectId"
               style="margin-right: 8px;"
             >
               {{ getProjectName(projectId) }}
             </el-tag>
-            <span v-if="!detailData.project_ids || detailData.project_ids.length === 0">-</span>
           </el-descriptions-item>
-          <el-descriptions-item label="申请说明" :span="2">
-            {{ detailData.description || '-' }}
+          <el-descriptions-item v-if="detailData.description" label="申请说明" :span="2">
+            {{ detailData.description }}
           </el-descriptions-item>
         </el-descriptions>
       </template>
@@ -263,78 +262,62 @@
 
       <!-- 报销表单信息 -->
       <el-divider v-if="detailData.reimbursement_form" content-position="left">报销表单信息</el-divider>
-      
+
       <!-- 查看模式：只读显示 -->
       <el-descriptions v-if="detailData.reimbursement_form && dialogMode === 'view'" :column="2" border>
-        <el-descriptions-item label="项目">{{ detailData.reimbursement_form.project || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请日期">
-          {{ detailData.reimbursement_form.apply_date ? formatDateTime(detailData.reimbursement_form.apply_date).substring(0, 10) : '-' }}
+        <el-descriptions-item v-if="detailData.reimbursement_form.project" label="项目">{{ detailData.reimbursement_form.project }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.apply_date" label="申请日期">
+          {{ formatDateTime(detailData.reimbursement_form.apply_date).substring(0, 10) }}
         </el-descriptions-item>
-        <el-descriptions-item label="单位名称">{{ detailData.reimbursement_form.unit_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="发票号码">{{ detailData.reimbursement_form.invoice_number || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="查验">
+        <el-descriptions-item v-if="detailData.reimbursement_form.unit_name" label="单位名称">{{ detailData.reimbursement_form.unit_name }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.invoice_number" label="发票号码">{{ detailData.reimbursement_form.invoice_number }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.verified !== undefined && detailData.reimbursement_form.verified !== null" label="查验">
           <el-tag v-if="detailData.reimbursement_form.verified" type="success" size="small">已查验</el-tag>
-          <span v-else>-</span>
+          <span v-else>未查验</span>
         </el-descriptions-item>
-        <el-descriptions-item label="打款日期">
-          {{ detailData.reimbursement_form.payment_date ? formatDateTime(detailData.reimbursement_form.payment_date).substring(0, 10) : '-' }}
+        <el-descriptions-item v-if="detailData.reimbursement_form.payment_date" label="打款日期">
+          {{ formatDateTime(detailData.reimbursement_form.payment_date).substring(0, 10) }}
         </el-descriptions-item>
-        <el-descriptions-item label="支出金额">
-          <span v-if="detailData.reimbursement_form.expenditure_amount">
-            ¥{{ Number(detailData.reimbursement_form.expenditure_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-          </span>
-          <span v-else>-</span>
+        <el-descriptions-item v-if="detailData.reimbursement_form.expenditure_amount" label="支出金额">
+          ¥{{ Number(detailData.reimbursement_form.expenditure_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </el-descriptions-item>
-        <!-- <el-descriptions-item label="项目名称">{{ detailData.reimbursement_form.project_name || '-' }}</el-descriptions-item> -->
-        <el-descriptions-item label="摘要" :span="2">{{ detailData.reimbursement_form.summary || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="收到发票">
+        <el-descriptions-item v-if="detailData.reimbursement_form.summary" label="摘要" :span="2">{{ detailData.reimbursement_form.summary }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.invoice_received !== undefined && detailData.reimbursement_form.invoice_received !== null" label="收到发票">
           <el-tag v-if="detailData.reimbursement_form.invoice_received" type="success" size="small">已收到</el-tag>
-          <span v-else>-</span>
+          <span v-else>未收到</span>
         </el-descriptions-item>
-        <el-descriptions-item label="发票类型">{{ detailData.reimbursement_form.invoice_type || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="开票金额">
-          <span v-if="detailData.reimbursement_form.invoice_amount">
-            ¥{{ Number(detailData.reimbursement_form.invoice_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-          </span>
-          <span v-else>-</span>
+        <el-descriptions-item v-if="detailData.reimbursement_form.invoice_type" label="发票类型">{{ detailData.reimbursement_form.invoice_type }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.invoice_amount" label="开票金额">
+          ¥{{ Number(detailData.reimbursement_form.invoice_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </el-descriptions-item>
-        <el-descriptions-item label="税率">{{ detailData.reimbursement_form.tax_rate || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="扣除额">
-          <span v-if="detailData.reimbursement_form.deduction_amount">
-            ¥{{ Number(detailData.reimbursement_form.deduction_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-          </span>
-          <span v-else>-</span>
+        <el-descriptions-item v-if="detailData.reimbursement_form.tax_rate" label="税率">{{ detailData.reimbursement_form.tax_rate }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.deduction_amount" label="扣除额">
+          ¥{{ Number(detailData.reimbursement_form.deduction_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </el-descriptions-item>
-        <el-descriptions-item label="不含税金额">
-          <span v-if="detailData.reimbursement_form.amount_excluding_tax">
-            ¥{{ Number(detailData.reimbursement_form.amount_excluding_tax).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-          </span>
-          <span v-else>-</span>
+        <el-descriptions-item v-if="detailData.reimbursement_form.amount_excluding_tax" label="不含税金额">
+          ¥{{ Number(detailData.reimbursement_form.amount_excluding_tax).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </el-descriptions-item>
-        <el-descriptions-item label="税金">
-          <span v-if="detailData.reimbursement_form.tax_amount">
-            ¥{{ Number(detailData.reimbursement_form.tax_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-          </span>
-          <span v-else>-</span>
+        <el-descriptions-item v-if="detailData.reimbursement_form.tax_amount" label="税金">
+          ¥{{ Number(detailData.reimbursement_form.tax_amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </el-descriptions-item>
-        <el-descriptions-item label="是否一致">
+        <el-descriptions-item v-if="detailData.reimbursement_form.is_consistent !== undefined && detailData.reimbursement_form.is_consistent !== null" label="是否一致">
           <el-tag v-if="detailData.reimbursement_form.is_consistent" type="success" size="small">一致</el-tag>
-          <span v-else>-</span>
+          <span v-else>不一致</span>
         </el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item v-if="detailData.reimbursement_form.status_checked !== undefined && detailData.reimbursement_form.status_checked !== null" label="状态">
           <el-tag v-if="detailData.reimbursement_form.status_checked" type="success" size="small">已确认</el-tag>
-          <span v-else>-</span>
+          <span v-else>未确认</span>
         </el-descriptions-item>
-        <el-descriptions-item label="勾选月份">{{ detailData.reimbursement_form.selected_month || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="报销人">{{ detailData.reimbursement_form.reimburser || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="开票日期">
-          {{ detailData.reimbursement_form.invoice_date ? formatDateTime(detailData.reimbursement_form.invoice_date).substring(0, 10) : '-' }}
+        <el-descriptions-item v-if="detailData.reimbursement_form.selected_month" label="勾选月份">{{ detailData.reimbursement_form.selected_month }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.reimburser" label="报销人">{{ detailData.reimbursement_form.reimburser }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.invoice_date" label="开票日期">
+          {{ formatDateTime(detailData.reimbursement_form.invoice_date).substring(0, 10) }}
         </el-descriptions-item>
-        <el-descriptions-item label="入账">
+        <el-descriptions-item v-if="detailData.reimbursement_form.accounted !== undefined && detailData.reimbursement_form.accounted !== null" label="入账">
           <el-tag v-if="detailData.reimbursement_form.accounted" type="success" size="small">已入账</el-tag>
-          <span v-else>-</span>
+          <span v-else>未入账</span>
         </el-descriptions-item>
-        <el-descriptions-item label="公司">{{ detailData.reimbursement_form.company || '-' }}</el-descriptions-item>
+        <el-descriptions-item v-if="detailData.reimbursement_form.company" label="公司">{{ detailData.reimbursement_form.company }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 编辑模式：可编辑表单 -->

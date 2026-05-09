@@ -505,6 +505,8 @@ const paymentRequestData = reactive({
   processTitle: '',
   amount: '',
   remarks: '',
+  projectIds: [],
+  projectName: '',
   stamp_method: 'online' // 默认线上盖章
 })
 
@@ -659,6 +661,66 @@ const getProjectName = (projectId) => {
   return project ? project.name : `项目${projectId}`
 }
 
+const parseProjectIds = (value) => {
+  if (Array.isArray(value)) {
+    return value.filter(item => item !== null && item !== undefined && String(item).trim() !== '')
+  }
+  if (typeof value === 'number') {
+    return [value]
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return []
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        return parsed.filter(item => item !== null && item !== undefined && String(item).trim() !== '')
+      }
+    } catch (error) {
+      // ignore invalid JSON and fallback to comma-separated mode
+    }
+    return trimmed
+      .split(',')
+      .map(item => item.trim())
+      .filter(item => item !== '')
+  }
+  return []
+}
+
+const validatePaymentRequestForm = (formData) => {
+  const fieldMap = {
+    applyDate: '申请日期',
+    unitName: '单位名称',
+    reimburser: '报销人',
+    invoiceNumber: '发票号码',
+    invoiceType: '发票类型',
+    invoiceAmount: '开票金额',
+    taxRate: '税率',
+    taxAmount: '税金',
+    deductionAmount: '扣除额',
+    amountExcludingTax: '不含税金额',
+    paymentDate: '打款日期',
+    expenditureAmount: '支出金额',
+    summary: '摘要',
+    project: '项目',
+    projectName: '项目名称'
+  }
+
+  const missingFields = Object.entries(fieldMap)
+    .filter(([key]) => {
+      const value = formData[key]
+      return value === undefined || value === null || String(value).trim() === ''
+    })
+    .map(([, label]) => label)
+
+  if (missingFields.length > 0) {
+    ElMessage.error(`请完整填写付款信息：${missingFields.join('、')}`)
+    return false
+  }
+
+  return true
+}
+
 // 获取当前审批人名称
 const getCurrentApproverName = (row) => {
   if (!row.approval_instance || !row.approval_instance.records) {
@@ -692,7 +754,10 @@ const handleSave = async () => {
     try {
       if (!currentProcessId.value) {
         // 创建新流程
-        const res = await createProcess(form)
+        const res = await createProcess({
+          ...form,
+          project_ids: form.project_id ? [form.project_id] : []
+        })
         currentProcessId.value = res.data.id
         ElMessage.success('流程创建成功，现在可以上传附件了')
         // 不关闭对话框，让用户上传附件
@@ -956,8 +1021,12 @@ const openPaymentRequestDialog = async (processApprovalId) => {
     // 先加载流程详情
     const response = await getProcessDetail(processApprovalId)
     const detail = response.data || response // 兼容不同的返回格式
-    
-    console.log('流程详情数据:', detail) // 调试日志
+
+    const projectIds = parseProjectIds(detail.project_ids)
+    if (projectIds.length === 0 && detail.project_id) {
+      projectIds.push(detail.project_id)
+    }
+    const resolvedProjectName = detail.project_name || detail.projectName || (projectIds.length > 0 ? getProjectName(projectIds[0]) : '')
     
     paymentRequestData.processApprovalId = processApprovalId
     paymentRequestData.category = detail.category || 'social_insurance'
@@ -965,8 +1034,8 @@ const openPaymentRequestDialog = async (processApprovalId) => {
     paymentRequestData.amount = '' // 清空金额，让用户手动输入
     const categoryName = paymentRequestData.category === 'housing_fund' ? '公积金' : '社保'
     paymentRequestData.remarks = `${categoryName}汇总付款申请 - ${detail.title}`
-    
-    console.log('付款申请数据:', paymentRequestData) // 调试日志
+    paymentRequestData.projectIds = projectIds
+    paymentRequestData.projectName = resolvedProjectName
     
     // 重置付款表单字段组件
     paymentFormFields.value = {}
@@ -1008,11 +1077,23 @@ const confirmCreatePaymentRequest = async () => {
       creatingPayment.value = false
       return
     }
+
+    const resolvedProjectName = paymentRequestData.projectName || ''
+    if (resolvedProjectName) {
+      formFieldsData.project = formFieldsData.project || resolvedProjectName
+      formFieldsData.projectName = formFieldsData.projectName || resolvedProjectName
+    }
+
+    if (!validatePaymentRequestForm(formFieldsData)) {
+      creatingPayment.value = false
+      return
+    }
     
     const response = await submitInsurancePaymentRequest({
       process_approval_id: paymentRequestData.processApprovalId,
       amount: paymentRequestData.amount, // 添加付款金额
       remarks: paymentRequestData.remarks,
+      project_ids: paymentRequestData.projectIds,
       current_account_set_id: accountSetStore.currentAccountSetId,
       upload_later: paymentAttachmentUploaderRef.value ? paymentAttachmentUploaderRef.value.getUploadLater() : false, // 传递稍后上传状态
       // 付款表单字段

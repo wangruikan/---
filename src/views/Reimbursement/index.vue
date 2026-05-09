@@ -352,7 +352,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="申请时间">{{ currentRow.created_at }}</el-descriptions-item>
           <el-descriptions-item label="报销事由" :span="2">{{ currentRow.reason }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ currentRow.remarks || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="currentRow.remarks" label="备注" :span="2">{{ currentRow.remarks }}</el-descriptions-item>
         </el-descriptions>
 
         <!-- 附件列表 -->

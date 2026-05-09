@@ -11,8 +11,6 @@
             v-model="formData.apply_date"
             type="date"
             placeholder="选择申请日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
             style="width: 100%"
           />
         </el-form-item>
@@ -106,14 +104,16 @@
             v-model="formData.payment_date"
             type="date"
             placeholder="选择打款日期"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
             style="width: 100%"
           />
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <!-- 空白占位 -->
+        <el-form-item label="支出金额">
+          <el-input v-model="formData.expenditure_amount" placeholder="请输入支出金额">
+            <template #append>元</template>
+          </el-input>
+        </el-form-item>
       </el-col>
     </el-row>
 
@@ -129,7 +129,8 @@
 </template>
 
 <script setup>
-import { reactive, watch } from 'vue'
+import { reactive, watch, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 const props = defineProps({
   modelValue: {
@@ -153,6 +154,7 @@ const formData = reactive({
   deduction_amount: '',
   amount_excluding_tax: '',
   payment_date: '',
+  expenditure_amount: '',
   summary: ''
 })
 
@@ -170,7 +172,7 @@ watch(formData, (newVal) => {
 
 // 填写测试数据
 const fillTestData = () => {
-  formData.apply_date = new Date().toISOString().split('T')[0]
+  formData.apply_date = new Date()  // 使用Date对象，与日期选择器行为一致
   formData.unit_name = '测试单位有限公司'
   formData.reimburser = '张三'
   formData.invoice_number = 'FP' + Date.now().toString().slice(-8)
@@ -180,7 +182,8 @@ const fillTestData = () => {
   formData.tax_amount = '56.60'
   formData.deduction_amount = '0.00'
   formData.amount_excluding_tax = '943.40'
-  formData.payment_date = new Date().toISOString().split('T')[0]
+  formData.payment_date = new Date()  // 使用Date对象
+  formData.expenditure_amount = '1056.60'
   formData.summary = '测试付款摘要'
 }
 
@@ -197,13 +200,24 @@ const resetForm = () => {
   formData.deduction_amount = ''
   formData.amount_excluding_tax = ''
   formData.payment_date = ''
+  formData.expenditure_amount = ''
   formData.summary = ''
 }
 
 // 获取表单数据（用于提交）
 const getFormData = () => {
-  return {
-    applyDate: formData.apply_date,
+  // 日期格式化函数：将Date对象或字符串转为 YYYY-MM-DD 格式
+  const formatDate = (date) => {
+    if (!date) return ''
+    if (typeof date === 'string') return date
+    if (date instanceof Date) {
+      return date.toISOString().split('T')[0]
+    }
+    return ''
+  }
+
+  const data = {
+    applyDate: formatDate(formData.apply_date),
     unitName: formData.unit_name,
     reimburser: formData.reimburser,
     invoiceNumber: formData.invoice_number,
@@ -213,15 +227,54 @@ const getFormData = () => {
     taxAmount: formData.tax_amount,
     deductionAmount: formData.deduction_amount,
     amountExcludingTax: formData.amount_excluding_tax,
-    paymentDate: formData.payment_date,
+    paymentDate: formatDate(formData.payment_date),
+    expenditureAmount: formData.expenditure_amount,
     summary: formData.summary
   }
+  console.log('getFormData returning:', JSON.stringify(data))
+  return data
+}
+
+// 校验表单
+const requiredFields = [
+  { key: 'apply_date', label: '申请日期' },
+  { key: 'unit_name', label: '单位名称' },
+  { key: 'reimburser', label: '报销人' },
+  { key: 'invoice_number', label: '发票号码' },
+  { key: 'invoice_type', label: '发票类型' },
+  { key: 'invoice_amount', label: '开票金额' },
+  { key: 'tax_rate', label: '税率' },
+  { key: 'tax_amount', label: '税金' },
+  { key: 'deduction_amount', label: '扣除额' },
+  { key: 'amount_excluding_tax', label: '不含税金额' },
+  { key: 'payment_date', label: '打款日期' },
+  { key: 'expenditure_amount', label: '支出金额' },
+  { key: 'summary', label: '摘要' }
+]
+
+const validate = async () => {
+  console.log('=== validate called ===')
+  console.log('formData.apply_date:', formData.apply_date, 'type:', typeof formData.apply_date)
+  console.log('formData.unit_name:', formData.unit_name)
+
+  // 检查所有必填字段
+  for (const field of requiredFields) {
+    const value = formData[field.key]
+    console.log(`checking ${field.key}:`, value, 'truthy:', !!value)
+    // 更加宽松的检查：只要有值就行
+    if (!value) {
+      ElMessage.error(`请填写${field.label}`)
+      return false
+    }
+  }
+  return true
 }
 
 // 暴露方法给父组件
 defineExpose({
   resetForm,
-  getFormData
+  getFormData,
+  validate
 })
 </script>
 

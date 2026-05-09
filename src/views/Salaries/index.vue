@@ -2000,6 +2000,17 @@ const confirmCreatePayment = async () => {
   try {
     creatingPayment.value = true
 
+    // 0. 校验表单字段必填
+    if (paymentFormFieldsRef.value) {
+      console.log('=== calling paymentFormFieldsRef.value.validate() ===')
+      const valid = await paymentFormFieldsRef.value.validate()
+      console.log('validate result:', valid)
+      if (!valid) {
+        creatingPayment.value = false
+        return
+      }
+    }
+
     // 获取稍后上传状态
     const uploadLater = paymentAttachmentUploaderRef.value?.getUploadLater() || false
 
@@ -2019,6 +2030,20 @@ const confirmCreatePayment = async () => {
 
     // 2. 先创建付款申请记录
     const formFieldsData = paymentFormFieldsRef.value ? paymentFormFieldsRef.value.getFormData() : {}
+    console.log('=== formFieldsData from getFormData() ===', JSON.stringify(formFieldsData))
+
+    const resolvedProjectName = paymentForm.project_name || ''
+    if (resolvedProjectName) {
+      formFieldsData.project = formFieldsData.project || resolvedProjectName
+      formFieldsData.projectName = formFieldsData.projectName || resolvedProjectName
+    }
+
+    if (!paymentForm.remarks || !String(paymentForm.remarks).trim()) {
+      ElMessage.error('请填写付款备注')
+      creatingPayment.value = false
+      return
+    }
+
     const response = await submitSalaryPaymentRequest({
       salary_approval_id: paymentForm.salary_approval_id,
       remarks: paymentForm.remarks,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\PaymentRequest;
 use App\Models\PaymentRequestAttachment;
+use App\Models\Project;
 use App\Services\ApprovalService;
 use App\Services\PendingTaskService;
 use App\Traits\ChecksPermission;
@@ -399,6 +400,18 @@ class PaymentApplicationController extends Controller
             if (empty($projectIds) && $paymentRequest->salaryApproval && $paymentRequest->salaryApproval->project) {
                 $projectIds[] = $paymentRequest->salaryApproval->project->id;
             }
+            if (empty($projectIds) && $paymentRequest->insuranceSummary && !empty($paymentRequest->insuranceSummary->project_ids)) {
+                $summaryProjectIds = $paymentRequest->insuranceSummary->project_ids;
+                if (!is_array($summaryProjectIds)) {
+                    $decodedProjectIds = json_decode($summaryProjectIds, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decodedProjectIds)) {
+                        $summaryProjectIds = $decodedProjectIds;
+                    } else {
+                        $summaryProjectIds = array_filter(array_map('trim', explode(',', trim((string) $summaryProjectIds, '[]'))));
+                    }
+                }
+                $projectIds = is_array($summaryProjectIds) ? $summaryProjectIds : [];
+            }
             if (empty($projectIds) && $paymentRequest->reimbursement) {
                 if (!empty($paymentRequest->reimbursement->project_id)) {
                     // 兼容历史数据中存在 project_id 的情况
@@ -412,6 +425,30 @@ class PaymentApplicationController extends Controller
                     if ($projectId) {
                         $projectIds[] = (int) $projectId;
                     }
+                }
+            }
+
+            $projectIds = collect($projectIds)
+                ->filter(fn($id) => is_numeric($id) && (int)$id > 0)
+                ->map(fn($id) => (int)$id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $resolvedProject = $paymentRequest->project;
+            $resolvedProjectName = $paymentRequest->project_name;
+
+            if ((empty($resolvedProject) || empty($resolvedProjectName)) && !empty($projectIds)) {
+                $projectNames = Project::query()
+                    ->whereIn('id', $projectIds)
+                    ->pluck('name')
+                    ->filter()
+                    ->values();
+
+                if ($projectNames->isNotEmpty()) {
+                    $fallbackProjectName = $projectNames->implode('、');
+                    $resolvedProject = $resolvedProject ?: $fallbackProjectName;
+                    $resolvedProjectName = $resolvedProjectName ?: $fallbackProjectName;
                 }
             }
 
@@ -435,16 +472,16 @@ class PaymentApplicationController extends Controller
                 'description' => $paymentRequest->remarks,
             ];
 
-            if ($paymentRequest->project || $paymentRequest->apply_date || $paymentRequest->unit_name) {
+            if ($resolvedProject || $resolvedProjectName || $paymentRequest->apply_date || $paymentRequest->unit_name) {
                 $data['reimbursement_form'] = [
-                    'project' => $paymentRequest->project,
+                    'project' => $resolvedProject,
                     'apply_date' => $paymentRequest->apply_date,
                     'unit_name' => $paymentRequest->unit_name,
                     'invoice_number' => $paymentRequest->invoice_number,
                     'verified' => $paymentRequest->verified,
                     'payment_date' => $paymentRequest->payment_date,
                     'expenditure_amount' => $paymentRequest->expenditure_amount,
-                    'project_name' => $paymentRequest->project_name,
+                    'project_name' => $resolvedProjectName,
                     'summary' => $paymentRequest->summary,
                     'invoice_received' => $paymentRequest->invoice_received,
                     'invoice_type' => $paymentRequest->invoice_type,

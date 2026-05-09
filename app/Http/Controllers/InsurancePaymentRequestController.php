@@ -28,6 +28,20 @@ class InsurancePaymentRequestController extends Controller
             'process_approval_id' => 'required|exists:process_approvals,id',
             'amount' => 'required|numeric|min:0', // 添加金额验证
             'remarks' => 'nullable|string',
+            'reimbursement_form_data' => 'required|array',
+            'reimbursement_form_data.applyDate' => 'required|date',
+            'reimbursement_form_data.unitName' => 'required|string',
+            'reimbursement_form_data.reimburser' => 'required|string',
+            'reimbursement_form_data.invoiceNumber' => 'required|string',
+            'reimbursement_form_data.invoiceType' => 'required|string',
+            'reimbursement_form_data.invoiceAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.taxRate' => 'required|string',
+            'reimbursement_form_data.taxAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.deductionAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.amountExcludingTax' => 'required|numeric|min:0',
+            'reimbursement_form_data.paymentDate' => 'required|date',
+            'reimbursement_form_data.expenditureAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.summary' => 'required|string',
         ]);
 
         if ($validator->fails()) {
@@ -65,7 +79,17 @@ class InsurancePaymentRequestController extends Controller
             $formData = $request->input('reimbursement_form_data', []);
 
             // Fallback to related projects when form does not provide project fields.
-            $projectIds = collect($processApproval->project_ids ?? [])
+            $rawProjectIds = $processApproval->project_ids ?? [];
+            if (is_string($rawProjectIds)) {
+                $decoded = json_decode($rawProjectIds, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $rawProjectIds = $decoded;
+                } else {
+                    $rawProjectIds = array_filter(array_map('trim', explode(',', trim($rawProjectIds, '[]'))));
+                }
+            }
+
+            $projectIds = collect($rawProjectIds)
                 ->filter()
                 ->map(fn ($id) => (int) $id)
                 ->values()
@@ -91,7 +115,7 @@ class InsurancePaymentRequestController extends Controller
                 'payment_type' => 'insurance',
                 'account_set_id' => $currentAccountSetId,
                 'insurance_summary_id' => $processApproval->id,
-                'project_ids' => $processApproval->project_ids, // 继承汇总申请的项目ID
+                'project_ids' => $projectIds, // 继承汇总申请的项目ID
                 'amount' => $amount, // 使用用户输入的金额
                 'status' => 'pending',
                 'submitted_by' => $request->user()->id,

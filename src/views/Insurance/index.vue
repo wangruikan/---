@@ -317,7 +317,7 @@
           </el-col>
         </el-row>
         
-        <el-form-item label="备注" prop="notes">
+        <el-form-item v-if="!isView" label="备注" prop="notes">
           <el-input
             v-model="form.notes"
             type="textarea"

@@ -74,9 +74,25 @@ class SalaryPaymentRequestController extends Controller
      */
     public function submit(Request $request)
     {
+        \Log::info('SalaryPaymentRequest submit data:', $request->all());
+        \Log::info('reimbursement_form_data:', $request->input('reimbursement_form_data', []));
         $validator = Validator::make($request->all(), [
             'salary_approval_id' => 'required|exists:salary_approvals,id',
             'remarks' => 'nullable|string',
+            'reimbursement_form_data' => 'required|array',
+            'reimbursement_form_data.applyDate' => 'required|date',
+            'reimbursement_form_data.unitName' => 'required|string',
+            'reimbursement_form_data.reimburser' => 'required|string',
+            'reimbursement_form_data.invoiceNumber' => 'required|string',
+            'reimbursement_form_data.invoiceType' => 'required|string',
+            'reimbursement_form_data.invoiceAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.taxRate' => 'required|string',
+            'reimbursement_form_data.taxAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.deductionAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.amountExcludingTax' => 'required|numeric|min:0',
+            'reimbursement_form_data.paymentDate' => 'required|date',
+            'reimbursement_form_data.expenditureAmount' => 'required|numeric|min:0',
+            'reimbursement_form_data.summary' => 'required|string',
         ]);
 
         if ($validator->fails()) {
@@ -125,6 +141,11 @@ class SalaryPaymentRequestController extends Controller
             // 获取报销表单数据（如果前端传了的话）
             $formData = $request->input('reimbursement_form_data', []);
 
+            // 如果前端传了支出金额，使用前端传入的值；否则使用计算的值
+            $paymentAmount = isset($formData['expenditureAmount']) && is_numeric($formData['expenditureAmount'])
+                ? floatval($formData['expenditureAmount'])
+                : $totalAmount;
+
             // Fallback to salary project when form does not provide project fields.
             $fallbackProjectName = $salaryApproval->project ? $salaryApproval->project->name : null;
             $resolvedProject = !empty($formData['project']) ? $formData['project'] : $fallbackProjectName;
@@ -144,7 +165,7 @@ class SalaryPaymentRequestController extends Controller
                 'payment_type' => 'salary',
                 'account_set_id' => $currentAccountSetId,
                 'salary_approval_id' => $salaryApproval->id,
-                'amount' => $totalAmount,
+                'amount' => $paymentAmount,
                 'status' => 'pending',
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),

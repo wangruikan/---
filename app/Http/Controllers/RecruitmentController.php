@@ -119,7 +119,7 @@ class RecruitmentController extends Controller
             'department' => $request->department,
             'salary_range' => $request->salary_range,
             'work_location' => $request->work_location,
-            'education' => $request->education,
+            'education' => $this->normalizeRecruitmentEducation($request->education),
             'experience' => $request->experience,
             'description' => $request->description,
             'start_date' => $request->start_date,
@@ -174,7 +174,7 @@ class RecruitmentController extends Controller
             ], 422);
         }
 
-        $recruitment->update($request->only([
+        $updateData = $request->only([
             'project_id',
             'position',
             'required_count',
@@ -191,7 +191,13 @@ class RecruitmentController extends Controller
             'description',
             'start_date',
             'end_date',
-        ]));
+        ]);
+
+        if ($request->has('education')) {
+            $updateData['education'] = $this->normalizeRecruitmentEducation($request->input('education'));
+        }
+
+        $recruitment->update($updateData);
 
         return response()->json([
             'success' => true,
@@ -263,6 +269,42 @@ class RecruitmentController extends Controller
             ->first();
 
         return $setting ? $setting->value : null;
+    }
+
+    private function normalizeRecruitmentEducation($education): ?string
+    {
+        if ($education === null) {
+            return null;
+        }
+
+        $value = trim((string) $education);
+        if ($value === '') {
+            return null;
+        }
+
+        $normalized = strtolower($value);
+        $map = [
+            'none' => null,
+            '无' => null,
+            '不限' => null,
+            'high_school' => 'high_school',
+            'highschool' => 'high_school',
+            '高中' => 'high_school',
+            '高中及以下' => 'high_school',
+            'college' => 'college',
+            '中专' => 'college',
+            '大专' => 'college',
+            '专科' => 'college',
+            '中专/大专' => 'college',
+            'bachelor' => 'bachelor',
+            '本科' => 'bachelor',
+            'master' => 'master',
+            '硕士' => 'master',
+            'doctor' => 'doctor',
+            '博士' => 'doctor',
+        ];
+
+        return $map[$normalized] ?? null;
     }
 
     /**

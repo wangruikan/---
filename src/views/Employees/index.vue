@@ -937,7 +937,7 @@
                 v-model="form.project_ids[0]"
                 placeholder="请选择所属项目"
                 style="width: 100%"
-                :disabled="isViewMode"
+                :disabled="isViewMode || form.contract_status === 'active'"
                 @change="handleSingleProjectChange"
               >
                 <el-option
@@ -3400,6 +3400,7 @@
                 v-model="form.project_ids[0]"
                 placeholder="请选择所属项目"
                 style="width: 100%"
+                :disabled="isViewMode || form.contract_status === 'active'"
                 @change="handleSingleProjectChange"
               >
                 <el-option
@@ -4694,7 +4695,7 @@
         <div v-if="currentChangeDetail.old_values && currentChangeDetail.new_values" style="margin-top: 20px;">
           <h4 style="margin-bottom: 10px;">字段变更对比：</h4>
           <el-table :data="getChangeComparison(currentChangeDetail)" border size="small">
-            <el-table-column prop="field" label="字段" width="150" />
+            <el-table-column prop="fieldLabel" label="字段" width="150" />
             <el-table-column prop="oldValue" label="修改前" min-width="200">
               <template #default="{ row }">
                 <el-text type="danger">{{ row.oldValue }}</el-text>
@@ -5807,7 +5808,7 @@ const handleDownloadTemplate = async () => {
     ElMessage.warning('请先选择账套')
     return
   }
-  
+
   try {
     const response = await request({
       url: '/employees/download-import-template',
@@ -5817,10 +5818,24 @@ const handleDownloadTemplate = async () => {
       },
       responseType: 'blob'
     })
-    
-    // 创建下载链接
-    const blob = new Blob([response], { 
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+
+    // 检查响应是否是错误（blob中的文本内容包含success:false）
+    const text = await response.data.text()
+    let errorData
+    try {
+      errorData = JSON.parse(text)
+    } catch (e) {
+      // 不是JSON，说明是正常的文件流
+    }
+
+    if (errorData && errorData.success === false) {
+      ElMessage.error(errorData.message || '下载模板失败')
+      return
+    }
+
+    // 正常文件流，创建下载链接
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -5830,11 +5845,26 @@ const handleDownloadTemplate = async () => {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
-    
+
     ElMessage.success('模板下载成功')
   } catch (error) {
     console.error('下载模板失败:', error)
-    ElMessage.error('下载模板失败: ' + (error.message || '未知错误'))
+
+    // 尝试解析错误信息
+    let errorMessage = '下载模板失败'
+    if (error.response && error.response.data) {
+      try {
+        const text = await error.response.data.text()
+        const data = JSON.parse(text)
+        if (data.message) {
+          errorMessage = data.message
+        }
+      } catch (e) {
+        // 解析失败，使用默认消息
+      }
+    }
+
+    ElMessage.error(errorMessage)
   }
 }
 
@@ -9179,21 +9209,84 @@ const showChangeDetail = (row) => {
 // 获取变更对比数据
 const getChangeComparison = (detail) => {
   if (!detail.old_values || !detail.new_values) return []
-  
+
+  // 字段名称映射
+  const fieldLabels = {
+    name: '姓名',
+    id_number: '身份证号',
+    gender: '性别',
+    phone: '手机号',
+    birth_date: '出生日期',
+    position: '岗位',
+    department: '部门',
+    hire_date: '入职日期',
+    contract_start_date: '合同开始日期',
+    contract_end_date: '合同结束日期',
+    probation_end_date: '试用期结束日期',
+    signing_location: '签署地',
+    household_type: '户口类型',
+    household_province: '户籍所在地（省）',
+    household_city: '户籍所在地（市）',
+    household_district: '户籍所在地（区县）',
+    household_address: '户籍所在地（详细地址）',
+    residence_province: '经常居住地（省）',
+    residence_city: '经常居住地（市）',
+    residence_district: '经常居住地（区县）',
+    residence_address: '经常居住地（详细地址）',
+    contact_province: '联系地址（省）',
+    contact_city: '联系地址（市）',
+    contact_district: '联系地址（区县）',
+    contact_address: '联系地址（详细地址）',
+    native_place: '籍贯',
+    bank_account: '银行账号',
+    bank_account_holder: '户名',
+    bank_branch: '开户行',
+    bank_province: '开户行省份',
+    basic_salary: '基本工资',
+    project_name: '项目名称',
+    social_security_region: '社保地区',
+    medical_insurance_region: '医保地区',
+    housing_fund_region: '公积金地区',
+    large_medical_insurance_config: '大额医疗地区',
+    social_security_base: '社保基数',
+    medical_insurance_base: '医保基数',
+    housing_fund_base: '公积金基数',
+    large_medical_base: '大额医疗基数',
+    social_insurance_enrollment_date: '社保参保日期',
+    medical_insurance_enrollment_date: '医保参保日期',
+    provident_fund_enrollment_date: '公积金参保日期',
+    large_medical_enrollment_date: '大额医疗参保日期',
+    education: '学历',
+    marital_status: '婚姻状况',
+    emergency_contact: '紧急联系人',
+    emergency_phone: '紧急联系电话',
+    email: '邮箱',
+    job_title: '职务',
+    retirement_date: '退休日期',
+    retirement_category: '退休类别',
+    is_disabled: '是否残疾',
+    is_martyr_family: '是否烈属',
+    is_elderly_alone: '是否孤老',
+    employment_type: '从业类型',
+    nationality: '国籍',
+    country_region: '国家/地区',
+  }
+
   const oldValues = detail.old_values
   const newValues = detail.new_values
   const comparison = []
-  
+
   // 遍历新值，与旧值对比
   for (const [field, newValue] of Object.entries(newValues)) {
     const oldValue = oldValues[field]
     comparison.push({
       field: field,
+      fieldLabel: fieldLabels[field] || field,
       oldValue: oldValue !== undefined && oldValue !== null ? String(oldValue) : '-',
       newValue: newValue !== undefined && newValue !== null ? String(newValue) : '-'
     })
   }
-  
+
   return comparison
 }
 </script>

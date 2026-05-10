@@ -931,11 +931,41 @@ const typeForm = ref({
   only_company_pay: false
 })
 
+// 基数组自定义验证器：最低基数、最高基数、生效时间必须同时填写或同时为空
+const validateBaseAmountGroup = (rule, value, callback) => {
+  // 新建模式不验证
+  if (!editingRegion.value) {
+    callback()
+    return
+  }
+
+  const { min_base_amount, max_base_amount, limit_effective_date } = regionForm.value
+
+  // 三个都为空或都填写，通过验证
+  const allEmpty = !min_base_amount && !max_base_amount && !limit_effective_date
+  const allFilled = min_base_amount && max_base_amount && limit_effective_date
+
+  if (allEmpty || allFilled) {
+    callback()
+  } else {
+    callback(new Error('最低基数、最高基数、生效时间必须同时填写，或同时为空'))
+  }
+}
+
 // 表单验证规则
 const regionRules = {
   name: [
     { required: true, message: '请输入地区名称', trigger: 'blur' },
     { min: 2, max: 100, message: '地区名称长度在 2 到 100 个字符', trigger: 'blur' }
+  ],
+  min_base_amount: [
+    { validator: validateBaseAmountGroup, trigger: 'change' }
+  ],
+  max_base_amount: [
+    { validator: validateBaseAmountGroup, trigger: 'change' }
+  ],
+  limit_effective_date: [
+    { validator: validateBaseAmountGroup, trigger: 'change' }
   ]
 }
 

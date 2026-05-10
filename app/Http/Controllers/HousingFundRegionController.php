@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\HousingFundRegion;
 use App\Models\HousingFundConfig;
+use App\Models\InsuranceLimitPendingChange;
 use App\Models\OperationLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -240,6 +241,28 @@ class HousingFundRegionController extends Controller
             ->orderBy('is_default', 'desc')
             ->orderBy('created_at', 'asc')
             ->get();
+
+        $pendingMap = InsuranceLimitPendingChange::where('target_type', 'housing_fund_config')
+            ->where('status', 'pending')
+            ->whereIn('target_id', $configs->pluck('id')->all())
+            ->get()
+            ->keyBy('target_id');
+
+        $configs->each(function ($config) use ($pendingMap) {
+            $config->current_limits = [
+                'min_base_amount' => $config->min_base_amount,
+                'max_base_amount' => $config->max_base_amount,
+            ];
+
+            $pending = $pendingMap->get($config->id);
+            $config->pending_limits = $pending ? [
+                'id' => $pending->id,
+                'min_base_amount' => $pending->pending_min_base_amount,
+                'max_base_amount' => $pending->pending_max_base_amount,
+                'effective_date' => optional($pending->effective_date)->toDateString(),
+                'status' => $pending->status,
+            ] : null;
+        });
 
         return response()->json([
             'success' => true,

@@ -49,6 +49,11 @@ class HousingFundConfigController extends Controller
             ->get()
             ->keyBy('target_id');
 
+        Log::info('HousingFund configs pending check', [
+            'config_ids' => $configs->pluck('id')->all(),
+            'pending_records' => $pendingMap->toArray()
+        ]);
+
         $configs->each(function ($config) use ($pendingMap) {
             $config->current_limits = [
                 'min_base_amount' => $config->min_base_amount,
@@ -202,6 +207,17 @@ class HousingFundConfigController extends Controller
 
         if ($hasLimitChange) {
             if ($request->filled('limit_effective_date')) {
+                Log::info('HousingFund pending change check', [
+                    'config_id' => $config->id,
+                    'hasLimitInput' => $hasLimitInput,
+                    'hasLimitValueDiff' => $hasLimitValueDiff,
+                    'hasEffectiveDate' => $request->filled('limit_effective_date'),
+                    'requestedMin' => $requestedMin,
+                    'requestedMax' => $requestedMax,
+                    'dbMin' => $config->min_base_amount,
+                    'dbMax' => $config->max_base_amount,
+                    'effectiveDate' => $request->input('limit_effective_date'),
+                ]);
                 $pendingService = app(InsuranceLimitPendingService::class);
                 $pending = $pendingService->savePendingChange(
                     'housing_fund_config',

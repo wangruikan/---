@@ -17,13 +17,6 @@
     >
       <el-table-column prop="project_name" label="所属项目" width="120" />
       <el-table-column prop="document_name" label="资料名称" width="120" />
-      <el-table-column label="文件类型" width="90" align="center">
-        <template #default="{ row }">
-          <el-tag :type="getDocumentTypeTagType(row.document_type)" size="small">
-            {{ row.document_type_text }}
-          </el-tag>
-        </template>
-      </el-table-column>
       <el-table-column label="是否必填" width="80" align="center">
         <template #default="{ row }">
           <el-tag :type="row.is_required ? 'danger' : 'info'" size="small">

@@ -140,33 +140,6 @@
           stripe
           border
         >
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <div class="expand-content">
-              <el-descriptions :column="2" border>
-                <el-descriptions-item label="职位描述">
-                  {{ row.description || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="任职要求">
-                  {{ row.requirements || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="工作地点">
-                  {{ row.work_location || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="工作经验">
-                  {{ row.experience || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="业务员">
-                  {{ row.assigned_user_name || '未分配' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="分配时间">
-                  {{ row.assigned_at ? formatDateTime(row.assigned_at) : '-' }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-          </template>
-        </el-table-column>
-        
           <el-table-column prop="position" label="职位名称" width="150" />
           <el-table-column prop="project_name" label="项目名称" width="150" />
           <el-table-column prop="department" label="部门" width="120" />
@@ -214,21 +187,13 @@
             >
               分配
             </el-button>
-            <el-button 
-              v-if="['pending', 'active'].includes(row.status)" 
-                type="warning" 
-                size="small" 
-                @click="handleEdit(row)"
-              >
-                编辑
-              </el-button>
-              <el-button 
-                type="info" 
-                size="small" 
-                @click="handleViewCandidates(row)"
-              >
-                查看候选人
-              </el-button>
+            <el-button
+              type="info"
+              size="small"
+              @click="handleViewCandidates(row)"
+            >
+              查看候选人
+            </el-button>
               <el-button 
                 v-if="row.status === 'active'" 
                 type="success" 
@@ -603,10 +568,9 @@
     >
       <div class="candidates-header">
         <h3>{{ currentRecruitment?.position }} - 候选人列表</h3>
-        <el-button 
-          v-if="permissions.can_manage_candidates"
-          type="primary" 
-          size="small" 
+        <el-button
+          type="primary"
+          size="small"
           @click="handleAddCandidate"
         >
           <el-icon><Plus /></el-icon>
@@ -634,18 +598,16 @@
             <el-button type="primary" size="small" @click="handleViewCandidate(row)">
               查看
             </el-button>
-            <el-button 
-              v-if="permissions.can_manage_candidates"
-              type="warning" 
-              size="small" 
+            <el-button
+              type="warning"
+              size="small"
               @click="handleEditCandidate(row)"
             >
               编辑
             </el-button>
-            <el-button 
-              v-if="permissions.can_manage_candidates"
-              type="danger" 
-              size="small" 
+            <el-button
+              type="danger"
+              size="small"
               @click="handleDeleteCandidate(row)"
             >
               删除

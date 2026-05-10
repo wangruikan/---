@@ -3440,15 +3440,10 @@ class EmployeeController extends ApiController
             $sheet->setCellValue('AE2', '8000');
 
             // 设置示例行样式（浅灰色背景）
-            $sheet->getStyle('A2:AE2')->applyFromArray([
-                'fill' => [
-                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                    'startColor' => ['rgb' => 'F2F2F2']
-                ],
-            ]);
+            // 删除示例数据行，从第2行开始就是空白数据行
 
-            // 添加性别下拉列表（C列，从第3行开始到第500行）
-            for ($row = 3; $row <= 500; $row++) {
+            // 添加性别下拉列表（C列，从第2行开始到第500行）
+            for ($row = 2; $row <= 500; $row++) {
                 $validation = $sheet->getCell('C' . $row)->getDataValidation();
                 $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
                 $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
@@ -3463,8 +3458,8 @@ class EmployeeController extends ApiController
                 $validation->setFormula1('"男,女"');
             }
 
-            // 添加户口类型下拉列表（L列，从第3行开始到第500行）
-            for ($row = 3; $row <= 500; $row++) {
+            // 添加户口类型下拉列表（L列，从第2行开始到第500行）
+            for ($row = 2; $row <= 500; $row++) {
                 $validation = $sheet->getCell('L' . $row)->getDataValidation();
                 $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
                 $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_INFORMATION);
@@ -3565,8 +3560,43 @@ class EmployeeController extends ApiController
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray();
 
-            // 移除表头行
-            array_shift($rows);
+            // 移除表头行和填写说明行
+            // PhpSpreadsheet toArray() 返回的数组：索引0 = Excel第1行（表头）
+            $dataRows = [];
+            $currentExcelRow = 0; // toArray() 索引从0开始
+
+            foreach ($rows as $row) {
+                $currentExcelRow++; // 第1次循环=1，处理Excel第1行
+                $firstCell = trim($row[0] ?? '');
+
+                // 跳过空行
+                if (empty(array_filter($row))) {
+                    continue;
+                }
+
+                // 第1行是表头，直接跳过
+                if ($currentExcelRow === 1) {
+                    continue;
+                }
+
+                // 剩余的是数据行，记录原始行号
+                $row['__excel_row'] = $currentExcelRow;
+                $dataRows[] = $row;
+            }
+
+            // 调试：返回读取到的行数
+            if (empty($dataRows)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Excel文件中没有数据 - 读取到' . count($rows) . '行，跳过表头后剩余' . count($dataRows) . '行',
+                    'debug' => [
+                        'total_rows' => count($rows),
+                        'first_row' => $rows[0] ?? null,
+                    ]
+                ], 400);
+            }
+
+            $rows = $dataRows;
 
             if (empty($rows)) {
                 return response()->json([
@@ -3582,11 +3612,12 @@ class EmployeeController extends ApiController
             DB::beginTransaction();
 
             try {
-                foreach ($rows as $index => $row) {
-                    $rowNumber = $index + 2; // Excel行号（从2开始，因为第1行是表头）
+                foreach ($rows as $row) {
+                    $rowNumber = $row['__excel_row'] ?? 0;
 
                     // 跳过空行
-                    if (empty(array_filter($row))) {
+                    $rowWithoutMeta = array_diff_key($row, ['__excel_row' => '']);
+                    if (empty(array_filter($rowWithoutMeta))) {
                         continue;
                     }
 
@@ -3622,6 +3653,14 @@ class EmployeeController extends ApiController
                     $bankProvince = trim($row[28] ?? '');  // AC: 开户地
                     $remittanceRemark = trim($row[29] ?? '');  // AD: 汇款备注
                     $basicSalary = trim($row[30] ?? '');  // AE: 基本工资
+
+                    // 修复科学计数法问题（Excel导出的长数字会被转成科学计数法如1.1010119900101E+17）
+                    if (preg_match('/^\d+\.?\d*[eE]\+?\d+$/', $idNumber)) {
+                        $idNumber = strval(intval(floatval($idNumber)));
+                    }
+                    if (preg_match('/^\d+\.?\d*[eE]\+?\d+$/', $bankAccount)) {
+                        $bankAccount = strval(intval(floatval($bankAccount)));
+                    }
 
                     // 验证必填字段
                     if (empty($name)) {

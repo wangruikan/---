@@ -668,15 +668,39 @@ const regionRules = {
   ]
 }
 
+// 基数组自定义验证器：最低基数、最高基数、生效时间必须同时填写或同时为空
+const validateBaseAmountGroup = (rule, value, callback) => {
+  // 新建模式不验证
+  if (!editingConfig.value) {
+    callback()
+    return
+  }
+
+  const { min_base_amount, max_base_amount, limit_effective_date } = configForm
+
+  // 三个都为空或都填写，通过验证
+  const allEmpty = !min_base_amount && !max_base_amount && !limit_effective_date
+  const allFilled = min_base_amount && max_base_amount && limit_effective_date
+
+  if (allEmpty || allFilled) {
+    callback()
+  } else {
+    callback(new Error('最低基数、最高基数、生效时间必须同时填写，或同时为空'))
+  }
+}
+
 const configRules = {
   config_name: [
     { required: true, message: '请输入配置名称', trigger: 'blur' }
   ],
   min_base_amount: [
-    { required: true, message: '请输入下限基数', trigger: 'blur' }
+    { validator: validateBaseAmountGroup, trigger: 'change' }
   ],
   max_base_amount: [
-    { required: true, message: '请输入上限基数', trigger: 'blur' }
+    { validator: validateBaseAmountGroup, trigger: 'change' }
+  ],
+  limit_effective_date: [
+    { validator: validateBaseAmountGroup, trigger: 'change' }
   ],
   employee_ratio: [
     { required: true, message: '请输入员工缴纳比例', trigger: 'blur' }

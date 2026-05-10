@@ -120,12 +120,12 @@
 			
 			<view class="form-item">
 				<text class="label">学历性质</text>
-				<radio-group @change="onEducationTypeChange">
+				<radio-group :value="normalizeEducationType(formData.education_type)" @change="onEducationTypeChange">
 					<label class="radio-label">
-						<radio value="统招" :checked="formData.education_type === '统招'" />统招
+						<radio value="统招" :checked="normalizeEducationType(formData.education_type) === '统招'" />统招
 					</label>
 					<label class="radio-label">
-						<radio value="非统招" :checked="formData.education_type === '非统招'" />非统招
+						<radio value="非统招" :checked="normalizeEducationType(formData.education_type) === '非统招'" />非统招
 					</label>
 				</radio-group>
 			</view>
@@ -685,6 +685,7 @@ export default {
 					// 复制其他数据
 					const { signature, ...otherData } = data
 					this.formData = { ...this.formData, ...otherData }
+					this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
 
 					const nativePlaceRegion = [
 						data.native_place_province || '',
@@ -734,8 +735,45 @@ export default {
 			this.educationIndex = e.detail.value
 			this.formData.education_level = this.educationOptions[e.detail.value]
 		},
+		normalizeEducationType(value) {
+			const rawValue = value === null || value === undefined ? '' : String(value)
+			const normalized = rawValue.trim().replace(/\s+/g, '')
+			if (!normalized) {
+				return ''
+			}
+
+			const directMap = {
+				'统招': '统招',
+				'統招': '统招',
+				'全日制': '统招',
+				'普通全日制': '统招',
+				'全日制统招': '统招',
+				'非统招': '非统招',
+				'非統招': '非统招',
+				'非全日制': '非统招',
+				'成人教育': '非统招',
+				'自考': '非统招',
+				'函授': '非统招',
+				'网络教育': '非统招',
+				'开放教育': '非统招'
+			}
+
+			if (directMap[normalized]) {
+				return directMap[normalized]
+			}
+
+			if (normalized.includes('非')) {
+				return '非统招'
+			}
+
+			if (normalized.includes('统')) {
+				return '统招'
+			}
+
+			return ''
+		},
 		onEducationTypeChange(e) {
-			this.formData.education_type = e.detail.value
+			this.formData.education_type = this.normalizeEducationType(e.detail.value)
 		},
 		onNativePlaceChange(e) {
 			const value = Array.isArray(e.detail.value) ? e.detail.value : []
@@ -793,6 +831,8 @@ export default {
 		},
 
 		validateRequiredFields() {
+			this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
+
 			const idNumber = String(this.formData.id_number || '').trim()
 			if (!this.formData.birth_date && this.validateIdNumber(idNumber)) {
 				this.formData.birth_date = `${idNumber.substring(6, 10)}-${idNumber.substring(10, 12)}-${idNumber.substring(12, 14)}`
@@ -1120,6 +1160,9 @@ export default {
 			
 			try {
 				const submitData = { ...this.formData }
+				const normalizedEducationType = this.normalizeEducationType(this.formData.education_type)
+				this.formData.education_type = normalizedEducationType
+				submitData.education_type = normalizedEducationType
 				const nativePlaceRegion = Array.isArray(this.nativePlaceArray) ? this.nativePlaceArray : []
 				const nativePlaceDetail = String(this.formData.native_place_detail || '').trim()
 				const fullNativePlace = [...nativePlaceRegion, nativePlaceDetail].filter(item => !!item).join('')

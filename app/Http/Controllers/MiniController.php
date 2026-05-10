@@ -59,6 +59,47 @@ class MiniController extends Controller
     }
 
     /**
+     * 标准化学历性质，统一为：统招 / 非统招
+     */
+    private function normalizeEducationTypeValue($value): string
+    {
+        $normalized = preg_replace('/\s+/u', '', trim((string) ($value ?? '')));
+        if ($normalized === '') {
+            return '';
+        }
+
+        $directMap = [
+            '统招' => '统招',
+            '統招' => '统招',
+            '全日制' => '统招',
+            '普通全日制' => '统招',
+            '全日制统招' => '统招',
+            '非统招' => '非统招',
+            '非統招' => '非统招',
+            '非全日制' => '非统招',
+            '成人教育' => '非统招',
+            '自考' => '非统招',
+            '函授' => '非统招',
+            '网络教育' => '非统招',
+            '开放教育' => '非统招',
+        ];
+
+        if (isset($directMap[$normalized])) {
+            return $directMap[$normalized];
+        }
+
+        if (strpos($normalized, '非') !== false) {
+            return '非统招';
+        }
+
+        if (strpos($normalized, '统') !== false || strpos($normalized, '全日制') !== false) {
+            return '统招';
+        }
+
+        return '';
+    }
+
+    /**
      * 小程序登录（简化版）
      */
     public function login(Request $request)
@@ -1664,6 +1705,7 @@ class MiniController extends Controller
                 $formData['native_place_city'] = $employee->household_city ?? ($formData['native_place_city'] ?? '');
                 $formData['native_place_district'] = $employee->household_district ?? ($formData['native_place_district'] ?? '');
                 $formData['native_place_detail'] = $employee->household_address ?? ($formData['native_place_detail'] ?? '');
+                $formData['education_type'] = $this->normalizeEducationTypeValue($formData['education_type'] ?? '');
 
                 if (empty($formData['native_place'])) {
                     $nativePlaceParts = array_filter([
@@ -1696,6 +1738,10 @@ class MiniController extends Controller
      */
     public function submitRegistrationForm(Request $request)
     {
+        $request->merge([
+            'education_type' => $this->normalizeEducationTypeValue($request->input('education_type')),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'fill_date' => 'required|date',
             'entry_position' => 'required|string|max:100',
@@ -1712,7 +1758,7 @@ class MiniController extends Controller
             'birth_date' => 'required|date',
             'political_status' => 'required|string|max:50',
             'education_level' => 'required|string|max:50',
-            'education_type' => 'required|string|max:50',
+            'education_type' => 'required|in:统招,非统招',
             'native_place' => 'required|string|max:100',
             'native_place_province' => 'nullable|string|max:50',
             'native_place_city' => 'nullable|string|max:50',
@@ -1880,6 +1926,7 @@ class MiniController extends Controller
 
         try {
             $employee = Employee::find($request->user()->id);
+            $educationType = $this->normalizeEducationTypeValue($request->input('education_type'));
             $nativePlaceProvince = trim((string) $request->input('native_place_province', ''));
             $nativePlaceCity = trim((string) $request->input('native_place_city', ''));
             $nativePlaceDistrict = trim((string) $request->input('native_place_district', ''));
@@ -1952,7 +1999,7 @@ class MiniController extends Controller
                     'birth_date' => $request->birth_date,
                     'political_status' => $request->political_status,
                     'education_level' => $request->education_level,
-                    'education_type' => $request->education_type,
+                    'education_type' => $educationType,
                     'native_place' => $hasNativePlacePayload ? $nativePlace : $request->native_place,
                     'marital_status' => $request->marital_status,
                     'has_children' => $request->has_children,
@@ -2023,7 +2070,7 @@ class MiniController extends Controller
                 'job_title' => $request->job_title,
                 'hire_date' => $normalizedEntryDate !== '' ? $normalizedEntryDate : null,
                 'education' => $request->education_level,
-                'education_type' => $request->education_type,
+                'education_type' => $educationType,
                 'phone' => $request->contact_phone,
                 'address' => $request->current_address,
                 'household_address' => $hasNativePlaceDetailPayload ? $nativePlaceDetail : $request->household_address,
@@ -2068,7 +2115,7 @@ class MiniController extends Controller
                 unset($employeeUpdateData['hire_date']);
             }
 
-            if (!$request->filled('education_type')) {
+            if ($educationType === '') {
                 unset($employeeUpdateData['education_type']);
             }
 

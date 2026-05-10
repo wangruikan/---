@@ -8298,7 +8298,64 @@ const loadRegistrationForm = async (employeeId) => {
     })
 
     if (response.success && response.data) {
-      registrationForm.value = response.data
+      const parseArrayValue = (value) => {
+        if (Array.isArray(value)) return value
+        if (typeof value === 'string' && value.trim()) {
+          try {
+            const parsed = JSON.parse(value)
+            return Array.isArray(parsed) ? parsed : []
+          } catch (error) {
+            return []
+          }
+        }
+        return []
+      }
+
+      const sourceData = response.data || {}
+      const normalizedEducationHistory = parseArrayValue(sourceData.education_history).map((item = {}) => ({
+        ...item,
+        period: item.period || item.date_range || '',
+        school: item.school || item.school_major || ''
+      }))
+      const normalizedWorkHistory = parseArrayValue(sourceData.work_history).map((item = {}) => ({
+        ...item,
+        period: item.period || item.date_range || ''
+      }))
+      const normalizedFamilyMembers = parseArrayValue(sourceData.family_members).map((item = {}) => ({
+        ...item,
+        relationship: item.relationship || item.relation || '',
+        workplace: item.workplace || item.employer || ''
+      }))
+
+      registrationForm.value = {
+        ...sourceData,
+        // 兼容旧字段 -> 新字段
+        job_title: sourceData.job_title || sourceData.position || '',
+        bank_name: sourceData.bank_name || sourceData.bank_branch || '',
+        document_address: sourceData.document_address || sourceData.document_delivery_address || '',
+        disability_level: sourceData.disability_level || sourceData.disability_certificate || '',
+        engineering_skills: sourceData.engineering_skills || sourceData.engineering_certificates || '',
+        reference_company: sourceData.reference_company || sourceData.previous_company || '',
+        other_illness: sourceData.other_illness || sourceData.other_diseases || '',
+        hospitalized_recently: sourceData.hospitalized_recently || sourceData.hospitalization_record || '',
+        remarks: sourceData.remarks || sourceData.additional_notes || '',
+        is_pregnant: sourceData.is_pregnant || sourceData.pregnancy_status || '',
+        education_type: sourceData.education_type || sourceData.education_nature || sourceData.education_property || '',
+        // 兼容页面历史字段命名
+        position: sourceData.position || sourceData.job_title || '',
+        bank_branch: sourceData.bank_branch || sourceData.bank_name || '',
+        document_delivery_address: sourceData.document_delivery_address || sourceData.document_address || '',
+        disability_certificate: sourceData.disability_certificate || sourceData.disability_level || '',
+        engineering_certificates: sourceData.engineering_certificates || sourceData.engineering_skills || '',
+        previous_company: sourceData.previous_company || sourceData.reference_company || '',
+        other_diseases: sourceData.other_diseases || sourceData.other_illness || '',
+        hospitalization_record: sourceData.hospitalization_record || sourceData.hospitalized_recently || '',
+        additional_notes: sourceData.additional_notes || sourceData.remarks || '',
+        pregnancy_status: sourceData.pregnancy_status || sourceData.is_pregnant || '',
+        education_history: normalizedEducationHistory,
+        work_history: normalizedWorkHistory,
+        family_members: normalizedFamilyMembers
+      }
     } else {
       registrationForm.value = null
     }

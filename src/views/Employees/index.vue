@@ -8649,11 +8649,17 @@ const mergePDFAndUpload = async (contractId, filePath, signature, seal, stepOrde
       }
       const sealBytes = await sealResponse.arrayBuffer()
       const sealImage = await pdfDoc.embedPng(sealBytes)
+
+      // 印章放大3倍（原60 -> 180），并确保不会超出页面范围
+      const sealSize = 60 * 3
+      const sealX = Math.max(0, Math.min(width - sealSize - 10, pos.x + 130))
+      const sealY = Math.max(0, Math.min(height - sealSize - 10, pos.y))
+
       lastPage.drawImage(sealImage, {
-        x: pos.x + 130,
-        y: pos.y,
-        width: 60,
-        height: 60,
+        x: sealX,
+        y: sealY,
+        width: sealSize,
+        height: sealSize,
       })
     }
     

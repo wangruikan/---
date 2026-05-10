@@ -206,17 +206,38 @@ class ApprovalService
             ]);
             
             
-            // 添加抄送人
-            foreach ($ccUsers as $userId) {
-                $user = \App\Models\User::find($userId);
-                if ($user) {
-                    ApprovalCCUser::create([
-                        'instance_id' => $instance->id,
-                        'user_id' => $userId,
-                        'user_name' => $user->name,
-                        'added_by' => $approverId,
-                        'added_at_step' => $record->step_order,
-                    ]);
+            // 添加抄送人（仅允许当前账套成员）
+            $ccUserIds = collect($ccUsers)
+                ->map(fn($id) => (int) $id)
+                ->filter(fn($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($ccUserIds)) {
+                $validCcUserIds = DB::table('account_set_users')
+                    ->where('account_set_id', $instance->account_set_id)
+                    ->whereIn('user_id', $ccUserIds)
+                    ->pluck('user_id')
+                    ->map(fn($id) => (int) $id)
+                    ->all();
+
+                $invalidCcUserIds = array_values(array_diff($ccUserIds, $validCcUserIds));
+                if (!empty($invalidCcUserIds)) {
+                    throw new \Exception('抄送人员必须为当前账套成员');
+                }
+
+                foreach ($validCcUserIds as $userId) {
+                    $user = \App\Models\User::find($userId);
+                    if ($user) {
+                        ApprovalCCUser::create([
+                            'instance_id' => $instance->id,
+                            'user_id' => $userId,
+                            'user_name' => $user->name,
+                            'added_by' => $approverId,
+                            'added_at_step' => $record->step_order,
+                        ]);
+                    }
                 }
             }
             

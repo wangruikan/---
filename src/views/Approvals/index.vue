@@ -1051,14 +1051,25 @@ const handleActionDialogClose = () => {
 // 加载可用用户（用于抄送）
 const loadAvailableUsers = async () => {
   try {
+    const accountSetId = accountSetStore.currentAccountSetId
+    if (!accountSetId) {
+      availableUsers.value = []
+      return
+    }
+
     const response = await request({
-      url: '/users',
-      method: 'get',
-      params: { all: 'true', is_active: 1 }
+      url: `/account-sets/${accountSetId}/users`,
+      method: 'get'
     })
-    availableUsers.value = response.data || []
+
+    const users = Array.isArray(response?.data) ? response.data : []
+    availableUsers.value = users.map(user => ({
+      id: user.id,
+      name: user.name || user.nickname || `用户${user.id}`
+    }))
   } catch (error) {
     console.error('Load users error:', error)
+    availableUsers.value = []
   }
 }
 

@@ -3915,16 +3915,8 @@
               {{ isViewMode ? '关闭' : '取消' }}
             </el-button>
             
-            <!-- 新增模式：添加到列表 + 批量创建 -->
+            <!-- 新增模式：批量创建 -->
             <template v-if="!isEdit && !isViewMode">
-              <el-button 
-                type="success" 
-                @click="handleAddToBatch"
-                :loading="submitting"
-              >
-                <el-icon><Plus /></el-icon>
-                添加到列表并继续
-              </el-button>
               <el-button 
                 v-if="batchEmployees.length > 0"
                 type="primary" 

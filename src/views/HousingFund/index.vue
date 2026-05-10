@@ -7,14 +7,6 @@
           <el-icon><Plus /></el-icon>
           新建地区
         </el-button>
-        <el-button 
-          v-if="selectedRegions.length > 0" 
-          type="success" 
-          @click="batchCreateTemplate"
-        >
-          <el-icon><Plus /></el-icon>
-          批量创建模板 ({{ selectedRegions.length }})
-        </el-button>
       </div>
     </div>
 
@@ -41,21 +33,13 @@
             <span v-date-time="row.created_at"></span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="450">
+        <el-table-column label="操作" width="320">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewConfigs(row)">
               查看配置
             </el-button>
             <el-button type="info" size="small" @click="showRegionHistory(row)">
               历史
-            </el-button>
-            <el-button
-              v-if="!row.has_template"
-              type="success"
-              size="small"
-              @click="createTemplate(row)"
-            >
-              创建模板
             </el-button>
             <!-- <el-button
               v-else
@@ -144,10 +128,13 @@
             <span v-date-time="row.created_at"></span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="230">
           <template #default="{ row }">
             <el-button type="warning" size="small" @click="editConfig(row)">
               编辑
+            </el-button>
+            <el-button type="success" size="small" @click="openConfigLimitDialog(row)">
+              设置上下限
             </el-button>
             <el-button type="danger" size="small" @click="deleteConfig(row)">
               删除
@@ -193,7 +180,12 @@
         <el-form-item label="配置名称" prop="config_name">
           <el-input v-model="configForm.config_name" placeholder="请输入配置名称，如：标准配置" />
         </el-form-item>
-        <el-form-item label="下限基数" prop="min_base_amount">
+        <el-form-item
+          v-if="!editingConfig"
+          label="下限基数"
+          prop="min_base_amount"
+          :rules="[{ required: true, message: '请输入下限基数', trigger: 'change' }]"
+        >
           <el-input-number
             v-model="configForm.min_base_amount"
             :min="0"
@@ -202,7 +194,12 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="上限基数" prop="max_base_amount">
+        <el-form-item
+          v-if="!editingConfig"
+          label="上限基数"
+          prop="max_base_amount"
+          :rules="[{ required: true, message: '请输入上限基数', trigger: 'change' }]"
+        >
           <el-input-number
             v-model="configForm.max_base_amount"
             :min="0"
@@ -211,20 +208,7 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingConfig">
-          <el-date-picker
-            v-model="configForm.limit_effective_date"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="请选择上下限生效日期"
-            style="width: 100%"
-          />
-          <div class="form-tip" v-if="editingConfig?.pending_limits">
-            当前待生效：¥{{ Number(editingConfig.pending_limits.min_base_amount || 0).toFixed(2) }} -
-            ¥{{ Number(editingConfig.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ editingConfig.pending_limits.effective_date }}
-          </div>
-          <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
-        </el-form-item>
+
         <el-form-item label="员工缴纳比例" prop="employee_ratio">
           <el-input-number
             v-model="configForm.employee_ratio"
@@ -254,6 +238,53 @@
         <el-button @click="showCreateConfigDialog = false">取消</el-button>
         <el-button type="primary" @click="saveConfig" :loading="saving">
           {{ editingConfig ? '更新' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="showConfigLimitDialog"
+      title="设置公积金上下限"
+      width="500px"
+      @closed="resetConfigLimitForm"
+    >
+      <el-form :model="configLimitForm" :rules="configLimitRules" ref="configLimitFormRef" label-width="120px">
+        <el-form-item label="下限基数" prop="min_base_amount">
+          <el-input-number
+            v-model="configLimitForm.min_base_amount"
+            :min="0"
+            :precision="2"
+            placeholder="请输入下限基数"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="上限基数" prop="max_base_amount">
+          <el-input-number
+            v-model="configLimitForm.max_base_amount"
+            :min="0"
+            :precision="2"
+            placeholder="请输入上限基数"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="生效日期" prop="limit_effective_date">
+          <el-date-picker
+            v-model="configLimitForm.limit_effective_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择生效日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <div class="form-tip" v-if="currentConfigForLimit?.pending_limits">
+          当前待生效：¥{{ Number(currentConfigForLimit.pending_limits.min_base_amount || 0).toFixed(2) }} -
+          ¥{{ Number(currentConfigForLimit.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ currentConfigForLimit.pending_limits.effective_date }}
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="showConfigLimitDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitConfigLimit" :loading="saving">
+          保存
         </el-button>
       </template>
     </el-dialog>
@@ -635,14 +666,17 @@ const configs = ref([])
 const selectedRegion = ref(null)
 const showCreateRegionDialog = ref(false)
 const showCreateConfigDialog = ref(false)
+const showConfigLimitDialog = ref(false)
 const editingRegion = ref(null)
 const editingConfig = ref(null)
 const regionFormRef = ref()
 const configFormRef = ref()
+const configLimitFormRef = ref()
 const showHistoryDialog = ref(false)
 const historyLoading = ref(false)
 const regionHistories = ref([])
 const historyTitle = ref('')
+const currentConfigForLimit = ref(null)
 
 // 地区表单
 const regionForm = reactive({
@@ -654,53 +688,39 @@ const regionForm = reactive({
 // 配置表单
 const configForm = reactive({
   config_name: '',
-  min_base_amount: 0,
-  max_base_amount: 0,
-  limit_effective_date: '',
+  min_base_amount: null,
+  max_base_amount: null,
   employee_ratio: 12,
   company_ratio: 12
 })
 
-// 表单验证规则
+const configLimitForm = reactive({
+  min_base_amount: null,
+  max_base_amount: null,
+  limit_effective_date: ''
+})
+
+const configLimitRules = {
+  min_base_amount: [
+    { required: true, message: '请输入下限基数', trigger: 'change' }
+  ],
+  max_base_amount: [
+    { required: true, message: '请输入上限基数', trigger: 'change' }
+  ],
+  limit_effective_date: [
+    { required: true, message: '请选择生效日期', trigger: 'change' }
+  ]
+}
+
 const regionRules = {
   region_name: [
     { required: true, message: '请输入地区名称', trigger: 'blur' }
   ]
 }
 
-// 基数组自定义验证器：最低基数、最高基数、生效时间必须同时填写或同时为空
-const validateBaseAmountGroup = (rule, value, callback) => {
-  // 新建模式不验证
-  if (!editingConfig.value) {
-    callback()
-    return
-  }
-
-  const { min_base_amount, max_base_amount, limit_effective_date } = configForm
-
-  // 三个都为空或都填写，通过验证
-  const allEmpty = !min_base_amount && !max_base_amount && !limit_effective_date
-  const allFilled = min_base_amount && max_base_amount && limit_effective_date
-
-  if (allEmpty || allFilled) {
-    callback()
-  } else {
-    callback(new Error('最低基数、最高基数、生效时间必须同时填写，或同时为空'))
-  }
-}
-
 const configRules = {
   config_name: [
     { required: true, message: '请输入配置名称', trigger: 'blur' }
-  ],
-  min_base_amount: [
-    { validator: validateBaseAmountGroup, trigger: 'change' }
-  ],
-  max_base_amount: [
-    { validator: validateBaseAmountGroup, trigger: 'change' }
-  ],
-  limit_effective_date: [
-    { validator: validateBaseAmountGroup, trigger: 'change' }
   ],
   employee_ratio: [
     { required: true, message: '请输入员工缴纳比例', trigger: 'blur' }
@@ -710,8 +730,6 @@ const configRules = {
   ]
 }
 
-// 表格计算方法
-// 加载地区列表
 const loadRegions = async () => {
   loading.value = true
   try {
@@ -852,13 +870,71 @@ const percentToDecimal = (value) => {
 }
 
 // 编辑配置
+const openConfigLimitDialog = (config) => {
+  currentConfigForLimit.value = config
+  Object.assign(configLimitForm, {
+    min_base_amount: config.min_base_amount ?? null,
+    max_base_amount: config.max_base_amount ?? null,
+    limit_effective_date: ''
+  })
+  showConfigLimitDialog.value = true
+}
+
+const submitConfigLimit = async () => {
+  if (!configLimitFormRef.value || !currentConfigForLimit.value) return
+
+  await configLimitFormRef.value.validate(async (valid) => {
+    if (!valid) return
+
+    saving.value = true
+    try {
+      const response = await updateHousingFundConfig(currentConfigForLimit.value.id, {
+        region_id: currentConfigForLimit.value.region_id || selectedRegion.value?.id,
+        config_name: currentConfigForLimit.value.config_name,
+        min_base_amount: configLimitForm.min_base_amount,
+        max_base_amount: configLimitForm.max_base_amount,
+        limit_effective_date: configLimitForm.limit_effective_date,
+        employee_ratio: Number(currentConfigForLimit.value.employee_ratio || 0),
+        company_ratio: Number(currentConfigForLimit.value.company_ratio || 0),
+        account_set_id: currentAccountSetId.value
+      })
+
+      if (response.success) {
+        ElMessage.success('上下限设置成功')
+        showConfigLimitDialog.value = false
+        resetConfigLimitForm()
+        if (selectedRegion.value) {
+          viewConfigs(selectedRegion.value)
+        }
+        loadRegions()
+      } else {
+        ElMessage.error(response.message || '设置上下限失败')
+      }
+    } catch (error) {
+      console.error('设置公积金上下限失败:', error)
+      ElMessage.error('设置上下限失败')
+    } finally {
+      saving.value = false
+    }
+  })
+}
+
+const resetConfigLimitForm = () => {
+  currentConfigForLimit.value = null
+  Object.assign(configLimitForm, {
+    min_base_amount: null,
+    max_base_amount: null,
+    limit_effective_date: ''
+  })
+  configLimitFormRef.value?.resetFields()
+}
+
 const editConfig = (config) => {
   editingConfig.value = config
   Object.assign(configForm, {
     config_name: config.config_name,
-    min_base_amount: null,
-    max_base_amount: null,
-    limit_effective_date: '',
+    min_base_amount: config.min_base_amount ?? 0,
+    max_base_amount: config.max_base_amount ?? 0,
     employee_ratio: decimalToPercent(config.employee_ratio),
     company_ratio: decimalToPercent(config.company_ratio)
   })
@@ -879,8 +955,7 @@ const saveConfig = async () => {
           employee_ratio: percentToDecimal(configForm.employee_ratio),
           company_ratio: percentToDecimal(configForm.company_ratio),
           region_id: selectedRegion.value.id,
-          account_set_id: currentAccountSetId.value,
-          limit_effective_date: configForm.limit_effective_date || null
+          account_set_id: currentAccountSetId.value
         }
         if (editingConfig.value) {
           response = await updateHousingFundConfig(editingConfig.value.id, dataToSave)
@@ -949,9 +1024,8 @@ const resetConfigForm = () => {
   editingConfig.value = null
   Object.assign(configForm, {
     config_name: '',
-    min_base_amount: 0,
-    max_base_amount: 0,
-    limit_effective_date: '',
+    min_base_amount: null,
+    max_base_amount: null,
     employee_ratio: 12,
     company_ratio: 12
   })

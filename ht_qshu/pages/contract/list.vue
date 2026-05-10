@@ -91,6 +91,9 @@
 
 <script>
 import { getMyContracts, getContractDetail } from '@/api/contract.js'
+import { getMyRegistrationForm } from '@/api/registration.js'
+import { getMyOnboardingForm } from '@/api/onboarding.js'
+import request from '@/utils/request.js'
 
 export default {
 	data() {
@@ -172,11 +175,93 @@ export default {
 		async goToDetail(id) {
 			const contract = this.contracts.find(c => c.id === id)
 			if (contract && contract.status === 'pending_sign') {
+				const canSign = await this.checkBeforeSign()
+				if (!canSign) {
+					return
+				}
 				await this.checkNoticeAndSign(id)
 			} else {
 				uni.navigateTo({
 					url: `/pages/contract/detail?id=${id}`
 				})
+			}
+		},
+
+		// 签署前检查登记表和资料
+		async checkBeforeSign() {
+			try {
+				uni.showLoading({ title: '检查中...' })
+
+				// 1. 检查从业人员登记表是否已提交
+				let hasRegistrationForm = false
+				try {
+					const regRes = await getMyRegistrationForm()
+					if (regRes.success && regRes.data) {
+						hasRegistrationForm = true
+					}
+				} catch (error) {
+					console.log('未找到从业人员登记表')
+				}
+
+				// 2. 检查入职登记表是否已提交
+				let hasOnboardingForm = false
+				try {
+					const onbRes = await getMyOnboardingForm()
+					if (onbRes.success && onbRes.data) {
+						hasOnboardingForm = true
+					}
+				} catch (error) {
+					console.log('未找到入职登记表')
+				}
+
+				uni.hideLoading()
+
+				// 3. 只需要提交其中一个登记表即可
+				if (!hasRegistrationForm && !hasOnboardingForm) {
+					uni.showModal({
+						title: '提示',
+						content: '请先填写从业人员登记表或入职登记表',
+						showCancel: false,
+						confirmText: '知道了'
+					})
+					return false
+				}
+
+				// 4. 检查资料是否上传完成
+				const documentsComplete = await this.checkDocumentsComplete()
+				if (!documentsComplete) {
+					uni.showModal({
+						title: '提示',
+						content: '请先上传完整资料',
+						showCancel: false,
+						confirmText: '知道了'
+					})
+					return false
+				}
+
+				return true
+			} catch (error) {
+				uni.hideLoading()
+				console.error('检查失败:', error)
+				uni.showToast({
+					title: '检查失败，请重试',
+					icon: 'none'
+				})
+				return false
+			}
+		},
+
+		// 检查资料是否上传完成
+		async checkDocumentsComplete() {
+			try {
+				const res = await request.get('/check-documents')
+				if (res && res.success) {
+					return res.data.complete || false
+				}
+				return true
+			} catch (error) {
+				console.error('检查资料失败:', error)
+				return true
 			}
 		},
 

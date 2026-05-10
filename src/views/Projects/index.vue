@@ -73,7 +73,7 @@
           </el-table-column>
           <el-table-column prop="salary_payment_date" label="工资发放日期" width="120">
             <template #default="{ row }">
-              {{ row.salary_payment_date ? `每月${row.salary_payment_date}号` : '-' }}
+              {{ row.salary_payment_date ? `${row.salary_payment_date}号` : '-' }}
             </template>
           </el-table-column>
           <el-table-column prop="delivery_frequency" label="交付频率" width="100">
@@ -334,7 +334,7 @@
             <el-form-item label="工资发放日期" prop="salary_payment_date">
               <el-select
                 v-model="form.salary_payment_date"
-                placeholder="请选择每月发放日期"
+                placeholder="请选择发放日期"
                 style="width: 100%"
                 :disabled="form.id && !isEdit"
                 clearable
@@ -342,11 +342,11 @@
                 <el-option
                   v-for="day in 31"
                   :key="day"
-                  :label="`每月${day}号`"
+                  :label="`${day}号`"
                   :value="day"
                 />
               </el-select>
-              <div class="form-tip">选择每月的发放日期（1-31号），设置后每月沿用</div>
+              <div class="form-tip">选择发放日期（1-31号）</div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -784,84 +784,7 @@
           </div>
         </el-form-item>
         
-        <!-- 资料配置管理（仅编辑模式） -->
-        <div v-if="form.id" class="section-divider">
-          <el-divider content-position="left">员工资料配置</el-divider>
-        </div>
-        
-        <el-form-item v-if="form.id" label="需要上传的资料">
-          <div class="document-config-inline">
-            <el-alert type="info" :closable="false" show-icon style="margin-bottom: 15px;">
-              <template #title>
-                配置员工需要在小程序中上传的资料类型，员工将在小程序中看到这些资料并进行上传
-              </template>
-            </el-alert>
-            
-            <div class="document-toolbar">
-              <el-button 
-                type="primary" 
-                size="small" 
-                @click="handleAddDocument"
-                :disabled="!isEdit"
-              >
-                <el-icon><Plus /></el-icon>
-                添加资料项
-              </el-button>
-            </div>
-            
-            <el-table
-              :data="documentConfigs"
-              v-loading="loadingDocumentConfigs"
-              border
-              size="small"
-              max-height="400"
-            >
-              <el-table-column prop="sort_order" label="排序" width="60" align="center" />
-              <el-table-column prop="document_name" label="资料名称" min-width="150" />
-              <el-table-column label="文件类型" width="100" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="getDocumentTypeTagType(row.document_type)" size="small">
-                    {{ getDocumentTypeText(row.document_type) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="必填" width="70" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="row.is_required ? 'danger' : 'info'" size="small">
-                    {{ row.is_required ? '是' : '否' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="180" align="center">
-                <template #default="{ row, $index }">
-                  <el-button type="text" size="small" @click="handleEditDocument(row)" :disabled="!isEdit">
-                    编辑
-                  </el-button>
-                  <el-button type="text" size="small" @click="handleMoveDocUp($index)" :disabled="!isEdit || $index === 0">
-                    上移
-                  </el-button>
-                  <el-button type="text" size="small" @click="handleMoveDocDown($index)" :disabled="!isEdit || $index === documentConfigs.length - 1">
-                    下移
-                  </el-button>
-                  <el-button type="text" size="small" @click="handleDeleteDocument(row)" :disabled="!isEdit" style="color: #f56c6c;">
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            
-            <el-empty v-if="!loadingDocumentConfigs && documentConfigs.length === 0" description="暂无资料配置" :image-size="60">
-              <el-button 
-                v-if="isEdit"
-                type="primary" 
-                size="small"
-                @click="handleAddDocument"
-              >
-                添加资料项
-              </el-button>
-            </el-empty>
-          </div>
-        </el-form-item>
+
       </el-form>
       
       <template #footer>

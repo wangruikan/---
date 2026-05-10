@@ -54,7 +54,7 @@
             <el-tag type="info">{{ row.social_security_types?.length || 0 }} 种</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="500">
+        <el-table-column label="操作" width="600">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="viewTypes(row)">
               查看类型
@@ -68,6 +68,9 @@
             </el-button>
             <el-button type="warning" size="small" @click="editRegion(row)">
               编辑
+            </el-button>
+            <el-button type="success" size="small" @click="openSocialLimitDialog(row)">
+              设置上下限
             </el-button>
             <el-button
               v-if="row.adjustment_base && row.effective_date"
@@ -101,7 +104,12 @@
         <el-form-item label="单位" prop="company">
           <el-input v-model="regionForm.company" placeholder="请输入单位/公司名称" />
         </el-form-item>
-        <el-form-item label="最低基数" prop="min_base_amount">
+        <el-form-item
+          v-if="!editingRegion"
+          label="最低基数"
+          prop="min_base_amount"
+          :rules="[{ required: true, message: '请输入最低基数', trigger: 'change' }]"
+        >
           <el-input-number
             v-model="regionForm.min_base_amount"
             :min="0"
@@ -109,9 +117,13 @@
             placeholder="请输入最低基数"
             style="width: 100%"
           />
-          <div class="form-tip">该地区所有社保类型共用此基数下限</div>
         </el-form-item>
-        <el-form-item label="最高基数" prop="max_base_amount">
+        <el-form-item
+          v-if="!editingRegion"
+          label="最高基数"
+          prop="max_base_amount"
+          :rules="[{ required: true, message: '请输入最高基数', trigger: 'change' }]"
+        >
           <el-input-number
             v-model="regionForm.max_base_amount"
             :min="0"
@@ -119,27 +131,59 @@
             placeholder="请输入最高基数"
             style="width: 100%"
           />
-          <div class="form-tip">该地区所有社保类型共用此基数上限</div>
-        </el-form-item>
-        <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingRegion">
-          <el-date-picker
-            v-model="regionForm.limit_effective_date"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="请选择上下限生效日期"
-            style="width: 100%"
-          />
-          <div class="form-tip" v-if="editingRegion?.pending_limits">
-            当前待生效：¥{{ Number(editingRegion.pending_limits.min_base_amount || 0).toFixed(2) }} -
-            ¥{{ Number(editingRegion.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ editingRegion.pending_limits.effective_date }}
-          </div>
-          <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmitRegion" :loading="submitting">
           {{ editingRegion ? '更新' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="showSocialLimitDialog"
+      title="设置社保上下限"
+      width="500px"
+      @closed="resetSocialLimitForm"
+    >
+      <el-form :model="socialLimitForm" :rules="socialLimitRules" ref="socialLimitFormRef" label-width="120px">
+        <el-form-item label="最低基数" prop="min_base_amount">
+          <el-input-number
+            v-model="socialLimitForm.min_base_amount"
+            :min="0"
+            :precision="2"
+            placeholder="请输入最低基数"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="最高基数" prop="max_base_amount">
+          <el-input-number
+            v-model="socialLimitForm.max_base_amount"
+            :min="0"
+            :precision="2"
+            placeholder="请输入最高基数"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="生效日期" prop="limit_effective_date">
+          <el-date-picker
+            v-model="socialLimitForm.limit_effective_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择生效日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <div class="form-tip" v-if="currentSocialLimitRegion?.pending_limits">
+          当前待生效：¥{{ Number(currentSocialLimitRegion.pending_limits.min_base_amount || 0).toFixed(2) }} -
+          ¥{{ Number(currentSocialLimitRegion.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ currentSocialLimitRegion.pending_limits.effective_date }}
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="showSocialLimitDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitSocialLimit" :loading="submitting">
+          保存
         </el-button>
       </template>
     </el-dialog>
@@ -303,13 +347,16 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="260">
+            <el-table-column label="操作" width="360">
               <template #default="{ row }">
                 <el-button type="info" size="small" @click="showMedicalRegionHistory(row)">
                   历史
                 </el-button>
                 <el-button type="warning" size="small" @click="editMedicalRegion(row)">
                   编辑
+                </el-button>
+                <el-button type="success" size="small" @click="openMedicalLimitDialog(row)">
+                  设置上下限
                 </el-button>
                 <el-button type="danger" size="small" @click="deleteMedicalRegion(row)">
                   删除
@@ -335,7 +382,12 @@
             <el-form-item label="单位" prop="company">
               <el-input v-model="medicalRegionForm.company" placeholder="请输入单位/公司名称" />
             </el-form-item>
-            <el-form-item label="最低基数" prop="min_base_amount">
+            <el-form-item
+              v-if="!editingMedicalRegion"
+              label="最低基数"
+              prop="min_base_amount"
+              :rules="[{ required: true, message: '请输入最低基数', trigger: 'change' }]"
+            >
               <el-input-number
                 v-model="medicalRegionForm.min_base_amount"
                 :min="0"
@@ -343,9 +395,13 @@
                 placeholder="请输入最低基数"
                 style="width: 100%"
               />
-              <div class="form-tip">该地区所有医保类型共用此基数下限</div>
             </el-form-item>
-            <el-form-item label="最高基数" prop="max_base_amount">
+            <el-form-item
+              v-if="!editingMedicalRegion"
+              label="最高基数"
+              prop="max_base_amount"
+              :rules="[{ required: true, message: '请输入最高基数', trigger: 'change' }]"
+            >
               <el-input-number
                 v-model="medicalRegionForm.max_base_amount"
                 :min="0"
@@ -353,7 +409,6 @@
                 placeholder="请输入最高基数"
                 style="width: 100%"
               />
-              <div class="form-tip">该地区所有医保类型共用此基数上限</div>
             </el-form-item>
             <el-form-item label="员工缴纳比例">
               <el-input-number
@@ -377,25 +432,58 @@
                 style="width: 100%"
               />
             </el-form-item>
-            <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingMedicalRegion">
-              <el-date-picker
-                v-model="medicalRegionForm.limit_effective_date"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="请选择上下限生效日期"
-                style="width: 100%"
-              />
-              <div class="form-tip" v-if="editingMedicalRegion?.pending_limits">
-                当前待生效：¥{{ Number(editingMedicalRegion.pending_limits.min_base_amount || 0).toFixed(2) }} -
-                ¥{{ Number(editingMedicalRegion.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ editingMedicalRegion.pending_limits.effective_date }}
-              </div>
-              <div class="form-tip">仅修改上下限时必填，生效前 current 不变</div>
-            </el-form-item>
           </el-form>
           <template #footer>
             <el-button @click="showCreateMedicalDialog = false">取消</el-button>
             <el-button type="primary" @click="handleSubmitMedicalRegion" :loading="submitting">
               {{ editingMedicalRegion ? '更新' : '创建' }}
+            </el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog
+          v-model="showMedicalLimitDialog"
+          title="设置医保上下限"
+          width="500px"
+          @closed="resetMedicalLimitForm"
+        >
+          <el-form :model="medicalLimitForm" :rules="medicalLimitRules" ref="medicalLimitFormRef" label-width="120px">
+            <el-form-item label="最低基数" prop="min_base_amount">
+              <el-input-number
+                v-model="medicalLimitForm.min_base_amount"
+                :min="0"
+                :precision="2"
+                placeholder="请输入最低基数"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="最高基数" prop="max_base_amount">
+              <el-input-number
+                v-model="medicalLimitForm.max_base_amount"
+                :min="0"
+                :precision="2"
+                placeholder="请输入最高基数"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="生效日期" prop="limit_effective_date">
+              <el-date-picker
+                v-model="medicalLimitForm.limit_effective_date"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="请选择生效日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <div class="form-tip" v-if="currentMedicalLimitRegion?.pending_limits">
+              当前待生效：¥{{ Number(currentMedicalLimitRegion.pending_limits.min_base_amount || 0).toFixed(2) }} -
+              ¥{{ Number(currentMedicalLimitRegion.pending_limits.max_base_amount || 0).toFixed(2) }}，生效日：{{ currentMedicalLimitRegion.pending_limits.effective_date }}
+            </div>
+          </el-form>
+          <template #footer>
+            <el-button @click="showMedicalLimitDialog = false">取消</el-button>
+            <el-button type="primary" @click="submitMedicalLimit" :loading="submitting">
+              保存
             </el-button>
           </template>
         </el-dialog>
@@ -918,11 +1006,13 @@ const submitting = ref(false)
 const regions = ref([])
 const selectedRegions = ref([])
 const showCreateDialog = ref(false)
+const showSocialLimitDialog = ref(false)
 const showTypesDialog = ref(false)
 const showAddTypeDialog = ref(false)
 const editingRegion = ref(null)
 const editingType = ref(null)
 const currentRegion = ref(null)
+const currentSocialLimitRegion = ref(null)
 const showRegionHistoryDialog = ref(false)
 const regionHistoryLoading = ref(false)
 const regionHistories = ref([])
@@ -942,11 +1032,13 @@ const medicalLoading = ref(false)
 const medicalRegions = ref([])
 const selectedMedicalRegions = ref([])
 const showCreateMedicalDialog = ref(false)
+const showMedicalLimitDialog = ref(false)
 const showMedicalTypesDialog = ref(false)
 const showAddMedicalTypeDialog = ref(false)
 const editingMedicalRegion = ref(null)
 const editingMedicalType = ref(null)
 const currentMedicalRegion = ref(null)
+const currentMedicalLimitRegion = ref(null)
 
 // 表单数据
 const regionForm = ref({
@@ -954,8 +1046,7 @@ const regionForm = ref({
   code: '',
   company: '',
   min_base_amount: null,
-  max_base_amount: null,
-  limit_effective_date: ''
+  max_base_amount: null
 })
 
 const typeForm = ref({
@@ -966,41 +1057,29 @@ const typeForm = ref({
   only_company_pay: false
 })
 
-// 基数组自定义验证器：最低基数、最高基数、生效时间必须同时填写或同时为空
-const validateBaseAmountGroup = (rule, value, callback) => {
-  // 新建模式不验证
-  if (!editingRegion.value) {
-    callback()
-    return
-  }
-
-  const { min_base_amount, max_base_amount, limit_effective_date } = regionForm.value
-
-  // 三个都为空或都填写，通过验证
-  const allEmpty = !min_base_amount && !max_base_amount && !limit_effective_date
-  const allFilled = min_base_amount && max_base_amount && limit_effective_date
-
-  if (allEmpty || allFilled) {
-    callback()
-  } else {
-    callback(new Error('最低基数、最高基数、生效时间必须同时填写，或同时为空'))
-  }
-}
-
 // 表单验证规则
 const regionRules = {
   name: [
     { required: true, message: '请输入地区名称', trigger: 'blur' },
     { min: 2, max: 100, message: '地区名称长度在 2 到 100 个字符', trigger: 'blur' }
-  ],
+  ]
+}
+
+const socialLimitForm = ref({
+  min_base_amount: null,
+  max_base_amount: null,
+  limit_effective_date: ''
+})
+
+const socialLimitRules = {
   min_base_amount: [
-    { validator: validateBaseAmountGroup, trigger: 'change' }
+    { required: true, message: '请输入最低基数', trigger: 'change' }
   ],
   max_base_amount: [
-    { validator: validateBaseAmountGroup, trigger: 'change' }
+    { required: true, message: '请输入最高基数', trigger: 'change' }
   ],
   limit_effective_date: [
-    { validator: validateBaseAmountGroup, trigger: 'change' }
+    { required: true, message: '请选择生效日期', trigger: 'change' }
   ]
 }
 
@@ -1035,12 +1114,29 @@ const medicalRegionForm = ref({
   company: '',
   min_base_amount: null,
   max_base_amount: null,
-  limit_effective_date: '',
   type_id: null,
   type_name: '默认配置',
   type_employee_ratio: 0,
   type_company_ratio: 0
 })
+
+const medicalLimitForm = ref({
+  min_base_amount: null,
+  max_base_amount: null,
+  limit_effective_date: ''
+})
+
+const medicalLimitRules = {
+  min_base_amount: [
+    { required: true, message: '请输入最低基数', trigger: 'change' }
+  ],
+  max_base_amount: [
+    { required: true, message: '请输入最高基数', trigger: 'change' }
+  ],
+  limit_effective_date: [
+    { required: true, message: '请选择生效日期', trigger: 'change' }
+  ]
+}
 
 const medicalTypeForm = ref({
   name: '',
@@ -1050,8 +1146,10 @@ const medicalTypeForm = ref({
 
 // 表单引用
 const regionFormRef = ref()
+const socialLimitFormRef = ref()
 const typeFormRef = ref()
 const medicalRegionFormRef = ref()
+const medicalLimitFormRef = ref()
 const medicalTypeFormRef = ref()
 
 // 加载数据
@@ -1097,6 +1195,58 @@ const showSocialRegionHistory = async (region) => {
   }
 }
 
+const openSocialLimitDialog = async (region) => {
+  try {
+    const response = await getSocialSecurityRegion(region.id)
+    const latestRegion = response.data
+    currentSocialLimitRegion.value = latestRegion
+    socialLimitForm.value = {
+      min_base_amount: latestRegion.min_base_amount ?? null,
+      max_base_amount: latestRegion.max_base_amount ?? null,
+      limit_effective_date: ''
+    }
+    showSocialLimitDialog.value = true
+  } catch (error) {
+    console.error('获取社保地区详情失败:', error)
+    ElMessage.error('获取地区详情失败')
+  }
+}
+
+const submitSocialLimit = async () => {
+  if (!socialLimitFormRef.value || !currentSocialLimitRegion.value) return
+
+  try {
+    await socialLimitFormRef.value.validate()
+    submitting.value = true
+
+    await updateSocialSecurityRegion(currentSocialLimitRegion.value.id, {
+      min_base_amount: socialLimitForm.value.min_base_amount,
+      max_base_amount: socialLimitForm.value.max_base_amount,
+      limit_effective_date: socialLimitForm.value.limit_effective_date
+    })
+
+    ElMessage.success('上下限设置成功')
+    showSocialLimitDialog.value = false
+    resetSocialLimitForm()
+    loadRegions()
+  } catch (error) {
+    console.error('设置社保上下限失败:', error)
+    ElMessage.error('设置上下限失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+const resetSocialLimitForm = () => {
+  currentSocialLimitRegion.value = null
+  socialLimitForm.value = {
+    min_base_amount: null,
+    max_base_amount: null,
+    limit_effective_date: ''
+  }
+  socialLimitFormRef.value?.resetFields()
+}
+
 // 编辑地区
 const editRegion = async (region) => {
   try {
@@ -1108,10 +1258,7 @@ const editRegion = async (region) => {
     regionForm.value = {
       name: latestRegion.name,
       code: latestRegion.code || '',
-      company: latestRegion.company || '',
-      min_base_amount: null,
-      max_base_amount: null,
-      limit_effective_date: ''
+      company: latestRegion.company || ''
     }
     showCreateDialog.value = true
   } catch (error) {
@@ -1156,14 +1303,13 @@ const handleSubmitRegion = async () => {
       name: regionForm.value.name,
       code: regionForm.value.code || null,
       company: regionForm.value.company || null,
-      min_base_amount: regionForm.value.min_base_amount || null,
-      max_base_amount: regionForm.value.max_base_amount || null,
-      limit_effective_date: regionForm.value.limit_effective_date || null,
       account_set_id: currentAccountSetId.value
     }
 
-    // 调试日志：查看提交的数据
-    console.log('提交社保地区数据:', data)
+    if (!editingRegion.value) {
+      data.min_base_amount = regionForm.value.min_base_amount
+      data.max_base_amount = regionForm.value.max_base_amount
+    }
 
     if (editingRegion.value) {
       await updateSocialSecurityRegion(editingRegion.value.id, data)
@@ -1192,8 +1338,7 @@ const resetRegionForm = () => {
     code: '',
     company: '',
     min_base_amount: null,
-    max_base_amount: null,
-    limit_effective_date: ''
+    max_base_amount: null
   }
   if (regionFormRef.value) {
     regionFormRef.value.resetFields()
@@ -1388,6 +1533,62 @@ const showMedicalRegionHistory = async (region) => {
   }
 }
 
+const openMedicalLimitDialog = async (region) => {
+  try {
+    const response = await getMedicalInsuranceRegion(region.id)
+    const latestRegion = response.data
+    currentMedicalLimitRegion.value = latestRegion
+    medicalLimitForm.value = {
+      min_base_amount: latestRegion.min_base_amount ?? null,
+      max_base_amount: latestRegion.max_base_amount ?? null,
+      limit_effective_date: ''
+    }
+    showMedicalLimitDialog.value = true
+  } catch (error) {
+    console.error('获取医保地区详情失败:', error)
+    ElMessage.error('获取地区详情失败')
+  }
+}
+
+const submitMedicalLimit = async () => {
+  if (!medicalLimitFormRef.value || !currentMedicalLimitRegion.value) return
+
+  try {
+    await medicalLimitFormRef.value.validate()
+    submitting.value = true
+
+    await updateMedicalInsuranceRegion(currentMedicalLimitRegion.value.id, {
+      name: currentMedicalLimitRegion.value.name,
+      code: currentMedicalLimitRegion.value.code || null,
+      company: currentMedicalLimitRegion.value.company || null,
+      min_base_amount: medicalLimitForm.value.min_base_amount,
+      max_base_amount: medicalLimitForm.value.max_base_amount,
+      limit_effective_date: medicalLimitForm.value.limit_effective_date,
+      account_set_id: currentAccountSetId.value
+    })
+
+    ElMessage.success('上下限设置成功')
+    showMedicalLimitDialog.value = false
+    resetMedicalLimitForm()
+    loadMedicalRegions()
+  } catch (error) {
+    console.error('设置医保上下限失败:', error)
+    ElMessage.error('设置上下限失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+const resetMedicalLimitForm = () => {
+  currentMedicalLimitRegion.value = null
+  medicalLimitForm.value = {
+    min_base_amount: null,
+    max_base_amount: null,
+    limit_effective_date: ''
+  }
+  medicalLimitFormRef.value?.resetFields()
+}
+
 // 编辑医保地区
 const editMedicalRegion = async (region) => {
   try {
@@ -1403,7 +1604,6 @@ const editMedicalRegion = async (region) => {
       company: latestRegion.company || '',
       min_base_amount: null,
       max_base_amount: null,
-      limit_effective_date: '',
       type_id: firstType?.id || null,
       type_name: firstType?.name || '默认配置',
       type_employee_ratio: decimalToPercent(firstType?.employee_ratio || 0),
@@ -1464,10 +1664,12 @@ const handleSubmitMedicalRegion = async () => {
       name: medicalRegionForm.value.name,
       code: medicalRegionForm.value.code || null,
       company: medicalRegionForm.value.company || null,
-      min_base_amount: medicalRegionForm.value.min_base_amount || null,
-      max_base_amount: medicalRegionForm.value.max_base_amount || null,
-      limit_effective_date: medicalRegionForm.value.limit_effective_date || null,
       account_set_id: currentAccountSetId.value
+    }
+
+    if (!editingMedicalRegion.value) {
+      data.min_base_amount = medicalRegionForm.value.min_base_amount
+      data.max_base_amount = medicalRegionForm.value.max_base_amount
     }
 
     const typePayload = {
@@ -1518,7 +1720,6 @@ const resetMedicalRegionForm = () => {
     company: '',
     min_base_amount: null,
     max_base_amount: null,
-    limit_effective_date: '',
     type_id: null,
     type_name: '默认配置',
     type_employee_ratio: 0,

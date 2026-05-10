@@ -287,16 +287,24 @@
             </el-table-column>
             <el-table-column prop="creator.name" label="创建人" width="120" />
             <el-table-column prop="created_at" label="创建时间" width="180" />
-            <el-table-column label="医保类型数量" width="120">
+            <el-table-column label="员工缴纳比例" width="130">
               <template #default="{ row }">
-                <el-tag type="info">{{ row.medical_insurance_types?.length || 0 }} 种</el-tag>
+                <span v-if="row.medical_insurance_types?.[0]">
+                  {{ (Number(row.medical_insurance_types[0].employee_ratio || 0) * 100).toFixed(2) }}%
+                </span>
+                <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="400">
+            <el-table-column label="公司缴纳比例" width="130">
               <template #default="{ row }">
-                <el-button type="primary" size="small" @click="viewMedicalTypes(row)">
-                  查看类型
-                </el-button>
+                <span v-if="row.medical_insurance_types?.[0]">
+                  {{ (Number(row.medical_insurance_types[0].company_ratio || 0) * 100).toFixed(2) }}%
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="260">
+              <template #default="{ row }">
                 <el-button type="info" size="small" @click="showMedicalRegionHistory(row)">
                   历史
                 </el-button>
@@ -347,6 +355,28 @@
               />
               <div class="form-tip">该地区所有医保类型共用此基数上限</div>
             </el-form-item>
+            <el-form-item label="员工缴纳比例">
+              <el-input-number
+                v-model="medicalRegionForm.type_employee_ratio"
+                :min="0"
+                :max="100"
+                :precision="2"
+                :step="0.01"
+                placeholder="请输入员工缴纳比例（%）"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="公司缴纳比例">
+              <el-input-number
+                v-model="medicalRegionForm.type_company_ratio"
+                :min="0"
+                :max="100"
+                :precision="2"
+                :step="0.01"
+                placeholder="请输入公司缴纳比例（%）"
+                style="width: 100%"
+              />
+            </el-form-item>
             <el-form-item label="上下限生效日期" prop="limit_effective_date" v-if="editingMedicalRegion">
               <el-date-picker
                 v-model="medicalRegionForm.limit_effective_date"
@@ -377,10 +407,15 @@
           width="800px"
         >
           <div class="types-header">
-            <el-button type="primary" @click="showAddMedicalTypeDialog = true">
+            <el-button
+              v-if="(currentMedicalRegion?.medical_insurance_types?.length || 0) === 0"
+              type="primary"
+              @click="showAddMedicalTypeDialog = true"
+            >
               <el-icon><Plus /></el-icon>
               添加医保类型
             </el-button>
+            <div v-else class="form-tip">该地区已存在配置，如需调整请编辑当前配置</div>
           </div>
 
           <el-table :data="currentMedicalRegion?.medical_insurance_types || []" stripe class="types-table">
@@ -1000,7 +1035,11 @@ const medicalRegionForm = ref({
   company: '',
   min_base_amount: null,
   max_base_amount: null,
-  limit_effective_date: ''
+  limit_effective_date: '',
+  type_id: null,
+  type_name: '默认配置',
+  type_employee_ratio: 0,
+  type_company_ratio: 0
 })
 
 const medicalTypeForm = ref({
@@ -1331,12 +1370,6 @@ const loadMedicalRegions = async () => {
   }
 }
 
-// 查看医保类型
-const viewMedicalTypes = (region) => {
-  currentMedicalRegion.value = region
-  showMedicalTypesDialog.value = true
-}
-
 const showMedicalRegionHistory = async (region) => {
   regionHistoryTitle.value = `${region.name} - 上下限历史`
   showRegionHistoryDialog.value = true
@@ -1361,6 +1394,7 @@ const editMedicalRegion = async (region) => {
     // 从服务器获取最新数据
     const response = await getMedicalInsuranceRegion(region.id)
     const latestRegion = response.data
+    const firstType = latestRegion.medical_insurance_types?.[0] || null
     
     editingMedicalRegion.value = latestRegion
     medicalRegionForm.value = {
@@ -1369,7 +1403,11 @@ const editMedicalRegion = async (region) => {
       company: latestRegion.company || '',
       min_base_amount: null,
       max_base_amount: null,
-      limit_effective_date: ''
+      limit_effective_date: '',
+      type_id: firstType?.id || null,
+      type_name: firstType?.name || '默认配置',
+      type_employee_ratio: decimalToPercent(firstType?.employee_ratio || 0),
+      type_company_ratio: decimalToPercent(firstType?.company_ratio || 0)
     }
     showCreateMedicalDialog.value = true
   } catch (error) {
@@ -1410,6 +1448,16 @@ const handleSubmitMedicalRegion = async () => {
 
   try {
     await medicalRegionFormRef.value.validate()
+
+    if (medicalRegionForm.value.type_employee_ratio === null || medicalRegionForm.value.type_employee_ratio === undefined) {
+      ElMessage.warning('请输入员工缴纳比例')
+      return
+    }
+    if (medicalRegionForm.value.type_company_ratio === null || medicalRegionForm.value.type_company_ratio === undefined) {
+      ElMessage.warning('请输入公司缴纳比例')
+      return
+    }
+
     submitting.value = true
 
     const data = {
@@ -1422,16 +1470,30 @@ const handleSubmitMedicalRegion = async () => {
       account_set_id: currentAccountSetId.value
     }
 
-    // 调试日志：查看提交的数据
-    console.log('提交医保地区数据:', data)
+    const typePayload = {
+      name: (medicalRegionForm.value.type_name || medicalRegionForm.value.name || '默认配置').trim(),
+      employee_ratio: percentToDecimal(medicalRegionForm.value.type_employee_ratio),
+      company_ratio: percentToDecimal(medicalRegionForm.value.type_company_ratio),
+      account_set_id: currentAccountSetId.value
+    }
 
     if (editingMedicalRegion.value) {
       await updateMedicalInsuranceRegion(editingMedicalRegion.value.id, {
         ...data,
         account_set_id: currentAccountSetId.value
       })
+
+      if (medicalRegionForm.value.type_id) {
+        await updateMedicalInsuranceType(medicalRegionForm.value.type_id, typePayload)
+      } else {
+        await addMedicalInsuranceType(editingMedicalRegion.value.id, typePayload)
+      }
+
       ElMessage.success('更新成功')
     } else {
+      data.type_name = typePayload.name
+      data.type_employee_ratio = typePayload.employee_ratio
+      data.type_company_ratio = typePayload.company_ratio
       await createMedicalInsuranceRegion(data)
       ElMessage.success('创建成功')
     }
@@ -1456,7 +1518,11 @@ const resetMedicalRegionForm = () => {
     company: '',
     min_base_amount: null,
     max_base_amount: null,
-    limit_effective_date: ''
+    limit_effective_date: '',
+    type_id: null,
+    type_name: '默认配置',
+    type_employee_ratio: 0,
+    type_company_ratio: 0
   }
   if (medicalRegionFormRef.value) {
     medicalRegionFormRef.value.resetFields()
@@ -1506,6 +1572,12 @@ const handleSubmitMedicalType = async () => {
 
   try {
     await medicalTypeFormRef.value.validate()
+
+    if (!editingMedicalType.value && (currentMedicalRegion.value?.medical_insurance_types?.length || 0) > 0) {
+      ElMessage.warning('该地区已存在配置，请直接编辑')
+      return
+    }
+
     submitting.value = true
 
     const data = {

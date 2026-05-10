@@ -9,6 +9,7 @@ use App\Services\InsuranceChangeDetectionService;
 use App\Services\InsuranceLimitPendingService;
 use App\Models\InsuranceLimitPendingChange;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class MedicalInsuranceController extends Controller
@@ -76,6 +77,9 @@ class MedicalInsuranceController extends Controller
             'account_set_id' => 'required|exists:account_sets,id',
             'min_base_amount' => 'nullable|numeric|min:0',
             'max_base_amount' => 'nullable|numeric|min:0',
+            'type_name' => 'required|string|max:100',
+            'type_employee_ratio' => 'required|numeric|min:0|max:1',
+            'type_company_ratio' => 'required|numeric|min:0|max:1',
         ]);
 
         if ($validator->fails()) {
@@ -101,32 +105,41 @@ class MedicalInsuranceController extends Controller
             ], 422);
         }
 
-        // 记录接收到的数据（调试用）
-        \Log::info('创建医保地区 - 接收到的数据', [
-            'name' => $name,
-            'code' => $request->input('code'),
-            'company' => $request->input('company'),
-            'min_base_amount' => $request->input('min_base_amount'),
-            'max_base_amount' => $request->input('max_base_amount'),
-            'account_set_id' => $accountSetId,
-        ]);
+        $createdType = null;
 
-        $region = MedicalInsuranceRegion::create([
-            'name' => $name,
-            'code' => $request->input('code'),
-            'company' => $request->input('company'),
-            'min_base_amount' => $request->input('min_base_amount'),
-            'max_base_amount' => $request->input('max_base_amount'),
-            'account_set_id' => $accountSetId,
-            'created_by' => $request->user()->id
-        ]);
+        $region = DB::transaction(function () use ($request, $accountSetId, $name, &$createdType) {
+            $region = MedicalInsuranceRegion::create([
+                'name' => $name,
+                'code' => $request->input('code'),
+                'company' => $request->input('company'),
+                'min_base_amount' => $request->input('min_base_amount'),
+                'max_base_amount' => $request->input('max_base_amount'),
+                'account_set_id' => $accountSetId,
+                'created_by' => $request->user()->id
+            ]);
 
-        $region->load('creator');
+            $createdType = MedicalInsuranceType::create([
+                'region_id' => $region->id,
+                'name' => $request->input('type_name'),
+                'employee_ratio' => $request->input('type_employee_ratio'),
+                'company_ratio' => $request->input('type_company_ratio'),
+                'account_set_id' => $accountSetId,
+                'created_by' => $request->user()->id
+            ]);
+
+            return $region;
+        });
+
+        $detectionService = app(InsuranceChangeDetectionService::class);
+        $importResult = $detectionService->detectAndImport('medical_insurance', [], $createdType->toArray(), $region->id);
+
+        $region->load(['creator', 'medicalInsuranceTypes']);
 
         return response()->json([
             'success' => true,
             'message' => '医保地区创建成功',
-            'data' => $region
+            'data' => $region,
+            'import_result' => $importResult
         ]);
     }
 
@@ -356,6 +369,14 @@ class MedicalInsuranceController extends Controller
             ], 404);
         }
 
+        $existsType = MedicalInsuranceType::where('region_id', $regionId)->exists();
+        if ($existsType) {
+            return response()->json([
+                'success' => false,
+                'message' => '该地区已存在配置，不允许重复新增'
+            ], 422);
+        }
+
         $type = MedicalInsuranceType::create([
             'region_id' => $regionId,
             'name' => $request->input('name'),
@@ -519,4 +540,3 @@ class MedicalInsuranceController extends Controller
         ]);
     }
 }
-

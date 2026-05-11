@@ -219,6 +219,8 @@ Route::get('/test-chinese-pdf', function() {
 
 // 合同下载（公开，不走 Sanctum，供前端带自定义 Token 调用）
 Route::get('/employees/contracts/{id}/download', [App\Http\Controllers\EmployeeContractController::class, 'download']);
+// 汇总申请附件下载（公开，不走 Sanctum，兼容直接下载场景）
+Route::get('/process-approvals/{id}/attachments/{attachmentId}/download', [App\Http\Controllers\ProcessApprovalController::class, 'downloadAttachment']);
 
 // 需要认证的路由
 Route::middleware('auth:sanctum')->group(function () {
@@ -1066,7 +1068,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [App\Http\Controllers\ProcessApprovalController::class, 'store']);
         Route::get('/{id}', [App\Http\Controllers\ProcessApprovalController::class, 'show']);
         Route::post('/{id}/upload-attachment', [App\Http\Controllers\ProcessApprovalController::class, 'uploadAttachment']);
-        Route::get('/{id}/attachments/{attachmentId}/download', [App\Http\Controllers\ProcessApprovalController::class, 'downloadAttachment']);
         Route::delete('/{id}/attachments/{attachmentId}', [App\Http\Controllers\ProcessApprovalController::class, 'deleteAttachment']);
         Route::post('/{id}/submit', [App\Http\Controllers\ProcessApprovalController::class, 'submit']);
         Route::post('/{id}/withdraw', [App\Http\Controllers\ProcessApprovalController::class, 'withdraw']); // 撤回审批
@@ -1089,6 +1090,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [App\Http\Controllers\PaymentRequestAttachmentController::class, 'upload']); // 上传附件
         Route::get('/', [App\Http\Controllers\PaymentRequestAttachmentController::class, 'index']); // 获取附件列表
         Route::delete('/', [App\Http\Controllers\PaymentRequestAttachmentController::class, 'delete']); // 删除附件
+        Route::get('/{id}/download', [App\Http\Controllers\PaymentRequestAttachmentController::class, 'download']); // 下载附件
     });
 
     // 投标项目管理

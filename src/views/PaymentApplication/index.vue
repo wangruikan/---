@@ -526,8 +526,8 @@
           </el-table-column>
           <el-table-column label="操作" width="150">
             <template #default="{ row }">
-              <el-button link type="primary" :icon="View" @click="viewAttachment(row)">
-                查看
+              <el-button link type="primary" :icon="Download" @click="viewAttachment(row)">
+                下载
               </el-button>
               <el-button 
                 v-if="detailData.status === 'draft' || dialogMode === 'edit'" 
@@ -585,12 +585,8 @@
         <div style="display: flex; gap: 10px; margin-bottom: 15px;">
           <el-upload
             ref="invoiceUploadRef"
-            :action="getInvoiceUploadUrl()"
-            :headers="uploadHeaders"
-            :data="{ payment_request_id: currentInvoiceRequest.id }"
+            :http-request="handleInvoiceUploadRequest"
             name="file"
-            :on-success="handleInvoiceUploadSuccess"
-            :on-error="handleInvoiceUploadError"
             :show-file-list="false"
             :before-upload="beforeUpload"
           >
@@ -789,7 +785,8 @@ import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vu
 import {
   getPaymentApplications, getPaymentApplicationDetail, uploadAttachment,
   deleteAttachment, submitPaymentApplication, resubmitPaymentApplication, supplementAttachment,
-  getPaymentRequestAttachments, deletePaymentRequestAttachment
+  getPaymentRequestAttachments, deletePaymentRequestAttachment, uploadInvoiceAttachment,
+  downloadPaymentAttachment
 } from '@/api/paymentApplication'
 import { getProjects } from '@/api/projects'
 import { PDFDocument } from 'pdf-lib'
@@ -859,12 +856,6 @@ const uploadHeaders = computed(() => ({
 const getUploadUrl = (id) => {
   const baseURL = import.meta.env.VITE_API_BASE_URL || ''
   return `${baseURL}/api/payment-applications/${id}/upload-attachment`
-}
-
-// 获取发票上传URL
-const getInvoiceUploadUrl = () => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-  return `${baseURL}/api/insurance-payment-requests/invoice-attachments/upload`
 }
 
 // 获取项目名称
@@ -1167,17 +1158,28 @@ const handleDeleteAttachment = async (attachment) => {
   }
 }
 
-// 查看附件（在新标签页打开）
-const viewAttachment = (attachment) => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-  let filePath = attachment.path || ''
-  // 移除已有的 origin，保留路径部分
-  filePath = filePath.replace(/^https?:\/\/[^/]+/, '')
-  if (!filePath.startsWith('/')) {
-    filePath = '/' + filePath
+// 查看/下载附件（通过 API 下载，携带认证）
+const viewAttachment = async (attachment) => {
+  try {
+    ElMessage.info('正在下载，请稍候...')
+
+    const blob = await downloadPaymentAttachment(attachment.id)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.filename || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+    ElMessage.success('下载成功')
+  } catch (error) {
+    console.error('Download error:', error)
+    ElMessage.error('下载失败: ' + (error.message || '未知错误'))
   }
-  const url = `${baseURL}${filePath}`
-  window.open(url, '_blank')
 }
 
 // ========== 发票上传相关方法 ==========
@@ -1208,22 +1210,28 @@ const loadInvoiceAttachments = async (paymentRequestId) => {
   }
 }
 
-// 发票上传成功
-const handleInvoiceUploadSuccess = (response) => {
-  if (response.success) {
-    ElMessage.success('发票上传成功')
-    loadInvoiceAttachments(currentInvoiceRequest.value.id)
-    // 更新当前请求的发票状态
-    currentInvoiceRequest.value.invoice_status = 'invoice_uploaded'
-  } else {
-    ElMessage.error(response.message || '上传失败')
-  }
-}
+// 发票上传请求（使用 http-request 走 axios，确保认证正确）
+const handleInvoiceUploadRequest = async (options) => {
+  const formData = new FormData()
+  formData.append('file', options.file)
+  formData.append('payment_request_id', currentInvoiceRequest.value.id)
 
-// 发票上传失败
-const handleInvoiceUploadError = (error) => {
-  ElMessage.error('发票上传失败，请重试')
-  console.error('发票上传错误:', error)
+  try {
+    const res = await uploadInvoiceAttachment(formData)
+    if (res.success) {
+      ElMessage.success('发票上传成功')
+      loadInvoiceAttachments(currentInvoiceRequest.value.id)
+      currentInvoiceRequest.value.invoice_status = 'invoice_uploaded'
+      options.onSuccess(res)
+    } else {
+      ElMessage.error(res.message || '上传失败')
+      options.onError(new Error(res.message || '上传失败'))
+    }
+  } catch (error) {
+    console.error('发票上传失败:', error)
+    ElMessage.error('发票上传失败，请重试')
+    options.onError(error)
+  }
 }
 
 // 查看发票附件

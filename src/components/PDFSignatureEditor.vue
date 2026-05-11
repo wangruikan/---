@@ -195,13 +195,33 @@ let pdfDoc = null // pdf.js文档对象
 let nextStampId = 1
 let currentScale = 1
 
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token')
+  const accountSetId = localStorage.getItem('current_account_set_id')
+  const headers = {}
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  if (accountSetId) {
+    headers['X-Account-Set-Id'] = accountSetId
+  }
+
+  return headers
+}
+
 // 加载PDF
 const loadPDF = async () => {
   try {
     console.log('📄 开始加载PDF:', props.pdfUrl)
     
     // 使用pdf.js加载（用于渲染显示）
-    const loadingTask = pdfjsLib.getDocument(props.pdfUrl)
+    const loadingTask = pdfjsLib.getDocument({
+      url: props.pdfUrl,
+      httpHeaders: getAuthHeaders(),
+      withCredentials: true
+    })
     pdfDoc = await loadingTask.promise
     totalPages.value = pdfDoc.numPages
     
@@ -425,7 +445,9 @@ const handleConfirm = async () => {
 const mergePDFWithStamps = async () => {
   // 重新下载PDF用于合成（避免ArrayBuffer detached问题）
   console.log('📥 重新下载PDF用于合成...')
-  const response = await fetch(props.pdfUrl)
+  const response = await fetch(props.pdfUrl, {
+    headers: getAuthHeaders()
+  })
   if (!response.ok) {
     throw new Error(`下载PDF失败: HTTP ${response.status}`)
   }

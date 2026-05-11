@@ -95,7 +95,11 @@ export function getSalaryApprovalAttachments(params) {
  * 下载附件
  */
 export function downloadSalaryApprovalAttachment(id) {
-  return `/api/salary-approvals/attachments/${id}/download`
+  return request({
+    url: `/salary-approvals/attachments/${id}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
 }
 
 /**

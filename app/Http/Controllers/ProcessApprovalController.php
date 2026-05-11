@@ -261,51 +261,58 @@ class ProcessApprovalController extends Controller
      */
     public function downloadAttachment(Request $request, $id, $attachmentId)
     {
-        // 汇总申请查看权限
-        if ($response = $this->checkPermission('process_approval.view_details')) {
-            return $response;
-        }
+        try {
+            // 兼容公开下载路由：
+            // 若请求已带登录态则继续校验权限；未带登录态时允许按附件ID下载
+            if ($request->user()) {
+                if ($response = $this->checkPermission('process_approval.view_details')) {
+                    return $response;
+                }
+            }
 
-        $attachment = ProcessAttachment::where('process_approval_id', $id)
-            ->where('id', $attachmentId)
-            ->firstOrFail();
+            $attachment = ProcessAttachment::where('process_approval_id', $id)
+                ->where('id', $attachmentId)
+                ->firstOrFail();
 
-        $filePath = public_path($attachment->file_path);
-        if (!file_exists($filePath)) {
+            $filePath = public_path($attachment->file_path);
+
+            if (!file_exists($filePath)) {
+                \Log::error('下载附件失败：文件不存在', [
+                    'attachment_id' => $attachmentId,
+                    'process_id' => $id,
+                    'file_path' => $filePath,
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => '文件不存在'
+                ], 404);
+            }
+
+            $downloadName = $attachment->filename ?: basename($filePath);
+            $downloadName = trim(str_replace(['/', '\\'], '-', $downloadName));
+            $downloadName = preg_replace('/[\x00-\x1F\x7F]/u', '', $downloadName);
+            if ($downloadName === '') {
+                $downloadName = 'attachment_' . $attachmentId . '.pdf';
+            }
+
+            \Log::info('开始下载附件', [
+                'attachment_id' => $attachmentId,
+                'process_id' => $id,
+                'download_name' => $downloadName,
+            ]);
+
+            return response()->download($filePath, $downloadName);
+        } catch (\Exception $e) {
+            \Log::error('下载附件失败', [
+                'error' => $e->getMessage(),
+                'attachment_id' => $attachmentId,
+                'process_id' => $id,
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => '文件不存在'
-            ], 404);
+                'message' => '下载失败: ' . $e->getMessage()
+            ], 500);
         }
-
-        $contentType = $attachment->mime_type ?: 'application/octet-stream';
-        $fileSize = @filesize($filePath) ?: null;
-        $downloadName = $attachment->filename ?: basename($filePath);
-
-        if (function_exists('ob_get_level')) {
-            while (ob_get_level() > 0) {
-                @ob_end_clean();
-            }
-        }
-
-        return response()->stream(function () use ($filePath) {
-            $handle = fopen($filePath, 'rb');
-            if ($handle) {
-                while (!feof($handle)) {
-                    echo fread($handle, 8192);
-                    flush();
-                }
-                fclose($handle);
-            }
-        }, 200, array_filter([
-            'Content-Type' => $contentType,
-            'Content-Disposition' => 'attachment; filename="' . $downloadName . '"',
-            'Content-Length' => $fileSize,
-            'Cache-Control' => 'private, max-age=0, no-cache, no-store, must-revalidate',
-            'Pragma' => 'no-cache',
-            'Expires' => '0',
-            'Accept-Ranges' => 'bytes',
-        ]));
     }
 
     /**
@@ -487,4 +494,3 @@ class ProcessApprovalController extends Controller
         }
     }
 }
-

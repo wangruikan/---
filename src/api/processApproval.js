@@ -68,6 +68,13 @@ export function downloadAttachment(id, attachmentId) {
 }
 
 /**
+ * Get attachment download URL (for PDF preview component).
+ */
+export function getDownloadAttachmentUrl(id, attachmentId) {
+  return `/api/process-approvals/${id}/attachments/${attachmentId}/download`
+}
+
+/**
  * 提交流程
  */
 export function submitProcess(id, data) {

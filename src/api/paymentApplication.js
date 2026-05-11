@@ -173,6 +173,17 @@ export function getInvoiceAttachments(paymentRequestId) {
 }
 
 /**
+ * 下载付款申请附件
+ */
+export function downloadPaymentAttachment(attachmentId) {
+  return request({
+    url: `/payment-request-attachments/${attachmentId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+/**
  * 提交发票审批
  */
 export function submitInvoiceApproval(paymentRequestId) {

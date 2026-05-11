@@ -184,4 +184,63 @@ class PaymentRequestAttachmentController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * 下载附件
+     */
+    public function download(Request $request, $id)
+    {
+        try {
+            \Log::info('开始下载付款申请附件', ['attachment_id' => $id]);
+
+            $attachment = PaymentRequestAttachment::findOrFail($id);
+            \Log::info('附件信息', ['file_path' => $attachment->file_path, 'filename' => $attachment->filename]);
+
+            if (!$attachment->file_path) {
+                \Log::error('附件文件路径为空');
+                return response()->json([
+                    'success' => false,
+                    'message' => '文件不存在'
+                ], 404);
+            }
+
+            $filePath = public_path($attachment->file_path);
+
+            if (!file_exists($filePath)) {
+                \Log::error('文件不存在', [
+                    'attachment_id' => $id,
+                    'file_path' => $filePath,
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => '文件不存在'
+                ], 404);
+            }
+
+            $downloadName = $attachment->filename ?: basename($filePath);
+            $downloadName = trim(str_replace(['/', '\\'], '-', $downloadName));
+            $downloadName = preg_replace('/[\x00-\x1F\x7F]/u', '', $downloadName);
+            if ($downloadName === '') {
+                $downloadName = 'attachment_' . $id . '.pdf';
+            }
+
+            \Log::info('开始发送文件', [
+                'attachment_id' => $id,
+                'download_name' => $downloadName,
+                'file_path' => $filePath,
+            ]);
+
+            return response()->download($filePath, $downloadName);
+        } catch (\Exception $e) {
+            \Log::error('下载附件失败', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'attachment_id' => $id,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => '下载失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

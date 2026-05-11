@@ -560,21 +560,29 @@ const detailVisible = ref(false)
 const detailData = ref({})
 
 // 统一附件上传：走 request 拦截器，确保鉴权头与账套参数和其他接口一致
-const handleUploadRequest = (uploadOptions) => {
+const handleUploadRequest = async (options) => {
   const processId = detailVisible.value && detailData.value?.id
     ? detailData.value.id
     : currentProcessId.value
 
   if (!processId) {
-    return Promise.reject(new Error('请先保存流程后再上传附件'))
+    ElMessage.error('请先保存流程后再上传附件')
+    throw new Error('请先保存流程后再上传附件')
   }
 
   const formData = new FormData()
-  const uploadFile = uploadOptions.file?.raw || uploadOptions.file
-  formData.append('file', uploadFile, uploadOptions.file?.name || uploadFile?.name || 'upload-file')
+  formData.append('file', options.file)
 
-  // 返回 Promise 给 el-upload，由组件内部统一触发 onSuccess/onError，避免重复回调
-  return uploadAttachment(processId, formData)
+  try {
+    const result = await uploadAttachment(processId, formData)
+    if (result.success) {
+      options.onSuccess(result)
+    } else {
+      options.onError(new Error(result.message || '上传失败'))
+    }
+  } catch (error) {
+    options.onError(error)
+  }
 }
 
 // 删除详情弹窗中的附件
@@ -784,30 +792,9 @@ const beforeUpload = (file) => {
 }
 
 // 上传成功
-const handleUploadSuccess = (response, file) => {
+const handleUploadSuccess = (response) => {
   if (response && response.success) {
     ElMessage.success('附件上传成功')
-    
-    // 如果是在编辑表单中上传
-    if (currentProcessId.value) {
-      fileList.value.push({
-        id: response.data.id,
-        name: response.data.filename,
-        file_path: response.data.file_path,
-        file_size: response.data.file_size,
-        uploader: response.data.uploader
-      })
-    }
-    
-    // 如果是在详情弹窗中上传
-    if (detailVisible.value && detailData.value.id) {
-      // 重新加载详情
-      getProcessDetail(detailData.value.id).then(res => {
-        detailData.value = res.data
-      })
-    }
-    
-    // 刷新流程列表，确保附件数据同步
     loadProcessList()
   } else {
     ElMessage.error(response?.message || '上传失败')
@@ -848,10 +835,20 @@ const downloadAttachment = async (attachment) => {
       return
     }
 
-    const response = await downloadProcessAttachment(processId, attachment.id)
-    const blob = response instanceof Blob
-      ? response
-      : new Blob([response], { type: attachment.mime_type || 'application/octet-stream' })
+    ElMessage.info('正在下载，请稍候...')
+
+    const response = await fetch(`/api/process-approvals/${processId}/attachments/${attachment.id}/download`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`下载失败: ${response.status}`)
+    }
+
+    const blob = await response.blob()
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -859,10 +856,14 @@ const downloadAttachment = async (attachment) => {
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+    ElMessage.success('下载成功')
   } catch (error) {
-    ElMessage.error('下载失败')
+    console.error('Download error:', error)
+    ElMessage.error('下载失败: ' + (error.message || '未知错误'))
   }
 }
 

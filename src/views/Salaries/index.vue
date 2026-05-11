@@ -2016,28 +2016,65 @@ const handleCreatePaymentFromDetail = () => {
 }
 
 // 下载附件
-const handleDownloadAttachment = (att) => {
-  // 获取文件路径
-  const filePath = att.file_path || att.path
-  if (!filePath) {
-    ElMessage.warning('附件路径不存在')
-    return
+const handleDownloadAttachment = async (att) => {
+  try {
+    const filename = att?.filename || att?.file_name || 'attachment'
+
+    if (att?.id) {
+      const blob = await downloadSalaryApprovalAttachment(att.id)
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+
+      setTimeout(() => {
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+      }, 100)
+      return
+    }
+
+    const filePath = String(att?.file_path || att?.path || '').trim()
+    if (!filePath) {
+      ElMessage.warning('附件路径不存在')
+      return
+    }
+
+    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+    let url
+    if (filePath.startsWith('salary_approvals/') || filePath.startsWith('/salary_approvals/')) {
+      url = `${baseURL}/${filePath.replace(/^\//, '')}`
+    } else if (filePath.startsWith('storage/') || filePath.startsWith('/storage/')) {
+      url = `${baseURL}/${filePath.replace(/^\//, '')}`
+    } else {
+      url = `${baseURL}/storage/${filePath}`
+    }
+
+    const response = await fetch(url, { method: 'GET' })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = filename
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(blobUrl)
+    }, 100)
+  } catch (error) {
+    console.error('Download attachment error:', error)
+    ElMessage.error('下载失败')
   }
-  
-  // 构建完整URL - 使用相对路径，让浏览器自动使用当前域名
-  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-  // salary_approvals 目录直接在 public 下，不需要 storage 前缀
-  // 其他目录可能需要 storage 前缀
-  let url
-  if (filePath.startsWith('salary_approvals/') || filePath.startsWith('/salary_approvals/')) {
-    url = `${baseURL}/${filePath.replace(/^\//, '')}`
-  } else if (filePath.startsWith('storage/') || filePath.startsWith('/storage/')) {
-    url = `${baseURL}/${filePath.replace(/^\//, '')}`
-  } else {
-    url = `${baseURL}/storage/${filePath}`
-  }
-  
-  window.open(url, '_blank')
 }
 
 // 付款文件选择后

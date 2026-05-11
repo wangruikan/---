@@ -689,6 +689,7 @@ import {
   returnRecord,
   rejectRecord
 } from '@/api/approvalFlow'
+import { downloadAttachment, getDownloadAttachmentUrl } from '@/api/processApproval'
 import { getMySignature, getMySeals } from '@/api/signatures'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { useRouter } from 'vue-router'
@@ -896,7 +897,7 @@ const handleActionSubmit = async (type) => {
             // 合成并上传PDF
             const mergeSuccess = await mergePDFAndUpload(
               currentApproval.value.id,
-              instance.attachments[0].file_path,
+              instance.attachments[0],
               actionForm.use_signature ? mySignature.value : null,
               actionForm.selected_seal_id ? mySeals.value.find(s => s.id === actionForm.selected_seal_id) : null,
               currentApproval.value.step_order
@@ -939,16 +940,14 @@ const handleActionSubmit = async (type) => {
 }
 
 // 合成PDF并上传
-const mergePDFAndUpload = async (recordId, pdfPath, signature, seal, stepOrder) => {
+const mergePDFAndUpload = async (recordId, attachment, signature, seal, stepOrder) => {
   try {
-    // 下载原PDF
-    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-    const pdfUrl = `${baseURL}/storage/${pdfPath}`
-    const pdfResponse = await fetch(pdfUrl)
-    const pdfBlob = await pdfResponse.arrayBuffer()
+    // 下载原PDF（通过API下载，不用storage路径）
+    const pdfBlob = await downloadAttachment(attachment.process_approval_id, attachment.id)
+    const originalPdfBytes = await pdfBlob.arrayBuffer()
     
     // 使用pdf-lib加载PDF
-    const pdfDoc = await PDFDocument.load(pdfBlob)
+    const pdfDoc = await PDFDocument.load(originalPdfBytes)
     const pages = pdfDoc.getPages()
     const lastPage = pages[pages.length - 1]
     const { width, height } = lastPage.getSize()
@@ -1015,8 +1014,8 @@ const mergePDFAndUpload = async (recordId, pdfPath, signature, seal, stepOrder) 
     }
     
     // 生成新PDF
-    const pdfBytes = await pdfDoc.save()
-    const newPdfBlob = new Blob([pdfBytes], { type: 'application/pdf' })
+    const signedPdfBytes = await pdfDoc.save()
+    const newPdfBlob = new Blob([signedPdfBytes], { type: 'application/pdf' })
     
     // 上传到后端
     const formData = new FormData()
@@ -1185,9 +1184,8 @@ const openPDFEditor = async () => {
     if (!fileName.toLowerCase().endsWith('.pdf')) {
       ElMessage.warning('该文件不是PDF格式，可能无法正常签名盖章')
     }
-    
-    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-    currentPDFUrl.value = `${baseURL}/storage/${attachment.file_path}`
+
+    currentPDFUrl.value = getDownloadAttachmentUrl(attachment.process_approval_id, attachment.id)
     selectedAttachmentId.value = attachment.id // 记录选择的附件ID
     showPDFEditor.value = true
     return
@@ -1258,8 +1256,7 @@ const confirmPDFSelection = () => {
       }
     ).then(() => {
       // 用户确认继续
-    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-    currentPDFUrl.value = `${baseURL}/storage/${attachment.file_path}`
+    currentPDFUrl.value = getDownloadAttachmentUrl(attachment.process_approval_id, attachment.id)
       selectedAttachmentId.value = attachment.id // 记录选择的附件ID
       showPDFSelector.value = false
     showPDFEditor.value = true
@@ -1268,8 +1265,7 @@ const confirmPDFSelection = () => {
     })
   } else {
     // 是PDF文件，直接打开
-    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-    currentPDFUrl.value = `${baseURL}/storage/${attachment.file_path}`
+    currentPDFUrl.value = getDownloadAttachmentUrl(attachment.process_approval_id, attachment.id)
     selectedAttachmentId.value = attachment.id // 记录选择的附件ID
     showPDFSelector.value = false
     showPDFEditor.value = true
@@ -1450,83 +1446,38 @@ const getRecordStatusText = (status) => {
   return texts[status] || status
 }
 
-// 查看附件（在新窗口打开PDF）
-const handleViewAttachment = (attachment) => {
+// 查看/下载附件（通过 API 下载，携带认证）
+const handleViewAttachment = async (attachment) => {
   if (!attachment.file_path) {
     ElMessage.warning('无附件')
     return
   }
-  
-  // 生成完整的文件URL
-  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-  // 判断文件存储位置：
-  // - 考勤表附件：attendance-attachments（直接访问public目录）
-  // - 流程管理附件：process_approvals（直接访问public目录）
-  // - 工资表审批附件：salary_approvals（直接访问public目录）
-  // - 其他附件：storage 目录
-  const needsStoragePrefix = !attachment.file_path.includes('attendance-attachments') 
-    && !attachment.file_path.includes('process_approvals')
-    && !attachment.file_path.includes('salary_approvals')
-  
-  const fileUrl = needsStoragePrefix
-    ? `${baseURL}/storage/${attachment.file_path}`
-    : `${baseURL}/${attachment.file_path}`
-  
-  window.open(fileUrl, '_blank')
-}
 
-// 下载附件
-const handleDownloadAttachment = async (attachment) => {
   try {
-    if (!attachment.file_path) {
-      ElMessage.warning('无附件')
-      return
-    }
-    
     ElMessage.info('正在下载，请稍候...')
-    
-    // 生成完整的文件URL
-    const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-    // 判断文件存储位置
-    const needsStoragePrefix = !attachment.file_path.includes('attendance-attachments') 
-      && !attachment.file_path.includes('process_approvals')
-      && !attachment.file_path.includes('salary_approvals')
-    
-    const fileUrl = needsStoragePrefix
-      ? `${baseURL}/storage/${attachment.file_path}`
-      : `${baseURL}/${attachment.file_path}`
-    
-    // 使用fetch下载（携带token）
-    const response = await fetch(fileUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    
-    if (!response.ok) {
-      throw new Error(`下载失败: ${response.status}`)
-    }
-    
-    const blob = await response.blob()
+
+    const blob = await downloadAttachment(attachment.process_approval_id, attachment.id)
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = attachment.file_name || '附件.pdf'
+    link.download = attachment.filename || attachment.file_name || '附件'
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
-    
     setTimeout(() => {
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
     }, 100)
-    
     ElMessage.success('下载成功')
   } catch (error) {
     console.error('Download error:', error)
-    ElMessage.error('下载失败')
+    ElMessage.error('下载失败: ' + (error.message || '未知错误'))
   }
+}
+
+const handleDownloadAttachment = async (attachment) => {
+  // 复用 handleViewAttachment 的逻辑
+  await handleViewAttachment(attachment)
 }
 
 // 上传前检查
@@ -1754,8 +1705,7 @@ const goToBatchStampPosition = () => {
   // 获取第一个选中文件的URL
   const firstSelectedIndex = batchStampSelectedFiles.value[0]
   const firstFile = batchStampPDFList.value[firstSelectedIndex]
-  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
-  batchStampFirstPDFUrl.value = `${baseURL}/storage/${firstFile.file_path}`
+  batchStampFirstPDFUrl.value = getDownloadAttachmentUrl(firstFile.process_approval_id, firstFile.id)
   
   // 重置盖章位置
   batchStampPosition.value = { x: 80, y: 85, page: 1, sealId: null, sealUrl: '' }
@@ -1793,15 +1743,15 @@ const goToBatchStampPreview = () => {
   }
   
   // 生成预览列表
-  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
   batchStampPreviewList.value = batchStampSelectedFiles.value.map(index => {
     const file = batchStampPDFList.value[index]
     return {
       index: index,
       fileId: file.id,
+      processApprovalId: file.process_approval_id,
       fileName: file.file_name || file.original_name,
       filePath: file.file_path,
-      fileUrl: `${baseURL}/storage/${file.file_path}`,
+      fileUrl: getDownloadAttachmentUrl(file.process_approval_id, file.id),
       stampPosition: { ...batchStampPosition.value }
     }
   })
@@ -1879,14 +1829,11 @@ const confirmBatchStamp = async () => {
         ElMessage.info(`正在处理 ${i + 1}/${totalCount}: ${file.fileName}`)
         
         // 1. 下载原始PDF
-        const pdfResponse = await fetch(file.fileUrl)
-        if (!pdfResponse.ok) {
-          throw new Error(`下载PDF失败: HTTP ${pdfResponse.status}`)
-        }
-        const pdfBytes = await pdfResponse.arrayBuffer()
+        const sourcePdfBlob = await downloadAttachment(file.processApprovalId, file.fileId)
+        const sourcePdfBytes = await sourcePdfBlob.arrayBuffer()
         
         // 2. 使用pdf-lib加载PDF
-        const pdfDoc = await PDFDocument.load(pdfBytes)
+        const pdfDoc = await PDFDocument.load(sourcePdfBytes)
         const pageCount = pdfDoc.getPageCount()
         
         // 3. 获取要盖章的页面

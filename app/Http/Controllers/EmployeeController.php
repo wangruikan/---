@@ -126,13 +126,14 @@ class EmployeeController extends ApiController
             $employees = Cache::remember($cacheKey, 0, function() use ($request) {
                 try {
                     $query = Employee::with([
-                        'projects', 
-                        'socialSecurityRegion', 
-                        'medicalInsuranceRegion', 
-                        'housingFundRegion', 
+                        'projects',
+                        'socialSecurityRegion',
+                        'medicalInsuranceRegion',
+                        'housingFundRegion',
                         'housingFundConfig',
                         'largeMedicalInsuranceConfig',
                         'onboardingForm',
+                        'registrationForm',
                         'documents'
                     ]);
                     

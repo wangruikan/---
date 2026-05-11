@@ -3286,7 +3286,8 @@ class InsuranceChangeController extends ApiController
             }
 
             $filteredPolicies = [];
-            $currentDate = \Carbon\Carbon::create($year, $month, 1);
+            $targetMonthStart = \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+            $targetMonthEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
 
             foreach ($policies as $policy) {
                 $policyId = $policy['id'] ?? null;
@@ -3301,18 +3302,22 @@ class InsuranceChangeController extends ApiController
                 }
 
                 // 使用数据库中的最新有效期
-                $startDate = \Carbon\Carbon::parse($latestPolicy->start_date);
-                $endDate = \Carbon\Carbon::parse($latestPolicy->end_date);
+                if (empty($latestPolicy->start_date) || empty($latestPolicy->end_date)) {
+                    continue;
+                }
+                $startDate = \Carbon\Carbon::parse($latestPolicy->start_date)->startOfDay();
+                $endDate = \Carbon\Carbon::parse($latestPolicy->end_date)->endOfDay();
 
-                // 判断当前月份是否在保单有效期内
-                if ($currentDate->gte($startDate) && $currentDate->lte($endDate)) {
+                // 只要保单有效期与目标月份有交集，即计入当月明细
+                $hasOverlap = $startDate->lte($targetMonthEnd) && $endDate->gte($targetMonthStart);
+                if ($hasOverlap) {
                     // 在有效期内，保留该保单
                     $filteredPolicies[] = $policy;
                     
                     \Log::info('其他保险保单在有效期内', [
                         'policy_id' => $policyId,
                         'policy_name' => $policy['name'] ?? '未知',
-                        'current_date' => $currentDate->format('Y-m'),
+                        'current_date' => $targetMonthStart->format('Y-m'),
                         'start_date' => $startDate->format('Y-m-d'),
                         'end_date' => $endDate->format('Y-m-d'),
                     ]);
@@ -3320,7 +3325,7 @@ class InsuranceChangeController extends ApiController
                     \Log::info('其他保险保单不在有效期内，已过滤', [
                         'policy_id' => $policyId,
                         'policy_name' => $policy['name'] ?? '未知',
-                        'current_date' => $currentDate->format('Y-m'),
+                        'current_date' => $targetMonthStart->format('Y-m'),
                         'start_date' => $startDate->format('Y-m-d'),
                         'end_date' => $endDate->format('Y-m-d'),
                     ]);

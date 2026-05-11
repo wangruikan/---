@@ -130,16 +130,25 @@ class InsuranceDetailRecord extends Model
                         }
                         
                         // 闂?闂備礁鎲＄敮鍥磹閺嶎厼钃熼柛銉簵娴滃綊鏌熼幆褍鏆辨い銈呮嚇閺岋繝宕煎┑鍫濐暪闂佸摜鍋戦崐婵嗩嚕娴兼惌鏁嶆慨姗嗗幖閸撱劑姊洪棃鈺勭闁告柨顑囬幑銏狀潩鐠鸿櫣顢呴梺鍝勬川閸犳劗绮婚幒妤佺厸濞达絽鎽滄晶娑欑節閳ь剟鏁撻悩鑼槰?
-                        $currentDate = \Carbon\Carbon::create($year, $month, 1);
-                        $startDate = \Carbon\Carbon::parse($policy['policy_start_date'] ?? $policy['start_date'] ?? null);
-                        $endDate = \Carbon\Carbon::parse($policy['policy_end_date'] ?? $policy['end_date'] ?? null);
-                        
-                        if (!$startDate || !$endDate || $currentDate->lt($startDate) || $currentDate->gt($endDate)) {
+                        $targetMonthStart = \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+                        $targetMonthEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+                        $rawStartDate = $policy['policy_start_date'] ?? $policy['start_date'] ?? null;
+                        $rawEndDate = $policy['policy_end_date'] ?? $policy['end_date'] ?? null;
+
+                        if (empty($rawStartDate) || empty($rawEndDate)) {
+                            continue;
+                        }
+
+                        $startDate = \Carbon\Carbon::parse($rawStartDate)->startOfDay();
+                        $endDate = \Carbon\Carbon::parse($rawEndDate)->endOfDay();
+                        $hasOverlap = $startDate->lte($targetMonthEnd) && $endDate->gte($targetMonthStart);
+
+                        if (!$hasOverlap) {
                             // 濠电偞鍨堕幐鍝ョ矓閺夋埊鑰挎い蹇撴噽閳瑰秵绻濋棃娑欘棞缂佲偓鐎ｎ喗鐓涢柛顐ｇ箥濡插綊鏌￠崨顐㈠姦鐎殿喚鏁婚幃銏犵暋閻楀牊娈介梻浣瑰缁嬫垿鎯屾笟鈧幃婊堟晜閼恒儰姘?
                             \Log::info('Policy not in effective period when generating detail, skip', [
                                 'employee_id' => $personnel->employee_id,
                                 'policy_id' => $policyId,
-                                'current_date' => $currentDate->format('Y-m'),
+                                'current_date' => $targetMonthStart->format('Y-m'),
                                 'start_date' => $startDate ? $startDate->format('Y-m-d') : 'null',
                                 'end_date' => $endDate ? $endDate->format('Y-m-d') : 'null'
                             ]);
@@ -265,16 +274,25 @@ class InsuranceDetailRecord extends Model
                         }
                         
                         // 闂?闂備礁鎲＄敮鍥磹閺嶎厼钃熼柛銉簵娴滃綊鏌熼幆褍鏆辨い銈呮嚇閺岋繝宕煎┑鍫濐暪闂佸摜鍋戦崐婵嗩嚕娴兼惌鏁嶆慨姗嗗幖閸撱劑姊洪棃鈺勭闁告柨顑囬幑銏狀潩鐠鸿櫣顢呴梺鍝勬川閸犳劗绮婚幒妤佺厸濞达絽鎽滄晶娑欑節閳ь剟鏁撻悩鑼槰?
-                        $currentDate = \Carbon\Carbon::create($year, $month, 1);
-                        $startDate = \Carbon\Carbon::parse($policy['policy_start_date'] ?? $policy['start_date'] ?? null);
-                        $endDate = \Carbon\Carbon::parse($policy['policy_end_date'] ?? $policy['end_date'] ?? null);
-                        
-                        if (!$startDate || !$endDate || $currentDate->lt($startDate) || $currentDate->gt($endDate)) {
+                        $targetMonthStart = \Carbon\Carbon::create($year, $month, 1)->startOfMonth();
+                        $targetMonthEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth();
+                        $rawStartDate = $policy['policy_start_date'] ?? $policy['start_date'] ?? null;
+                        $rawEndDate = $policy['policy_end_date'] ?? $policy['end_date'] ?? null;
+
+                        if (empty($rawStartDate) || empty($rawEndDate)) {
+                            continue;
+                        }
+
+                        $startDate = \Carbon\Carbon::parse($rawStartDate)->startOfDay();
+                        $endDate = \Carbon\Carbon::parse($rawEndDate)->endOfDay();
+                        $hasOverlap = $startDate->lte($targetMonthEnd) && $endDate->gte($targetMonthStart);
+
+                        if (!$hasOverlap) {
                             // 濠电偞鍨堕幐鍝ョ矓閺夋埊鑰挎い蹇撴噽閳瑰秵绻濋棃娑欘棞缂佲偓鐎ｎ喗鐓涢柛顐ｇ箥濡插綊鏌￠崨顐㈠姦鐎殿喚鏁婚幃銏犵暋閻楀牊娈介梻浣瑰缁嬫垿鎯屾笟鈧幃婊堟晜閼恒儰姘?
                             \Log::info('Other insurance detail generation: policy out of effective period, skip', [
                                 'employee_id' => $personnel->employee_id,
                                 'policy_id' => $policyId,
-                                'current_date' => $currentDate->format('Y-m'),
+                                'current_date' => $targetMonthStart->format('Y-m'),
                                 'start_date' => $startDate ? $startDate->format('Y-m-d') : 'null',
                                 'end_date' => $endDate ? $endDate->format('Y-m-d') : 'null'
                             ]);

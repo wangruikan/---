@@ -162,7 +162,7 @@
             <el-checkbox label="employee" border>员工信息</el-checkbox>
             <el-checkbox label="insurance" border>保险信息</el-checkbox>
             <el-checkbox label="documents" border>资料上传</el-checkbox>
-            <el-checkbox label="personal" border>个人信息</el-checkbox>
+            <!-- <el-checkbox label="personal" border>个人信息</el-checkbox> -->
             <el-checkbox label="salary-card" border>工资卡</el-checkbox>
             <el-checkbox label="transfer-logs" border>调动记录</el-checkbox>
           </el-checkbox-group>
@@ -346,195 +346,7 @@
               </template>
             </el-table-column>
           </template>
-          
-          <!-- 个人信息视图的列 -->
-          <template v-if="selectedModules.includes('personal')">
-            <!-- 基本信息 -->
-            <el-table-column label="登记日期" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.registration_date ? formatDate(row.onboarding_form.registration_date) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="姓名" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.name || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="性别" width="80">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.gender === 'male' ? '男' : (row.onboarding_form?.gender === 'female' ? '女' : '-') }}
-              </template>
-            </el-table-column>
-            <el-table-column label="民族" width="80">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.ethnicity || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="政治面貌" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.political_status || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="籍贯" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.place_of_origin || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="出生年月" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.birth_date ? formatDate(row.onboarding_form.birth_date) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="身份证号码" width="180">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.id_number || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="现居住地" width="200">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.current_residence || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="户口所在地" width="200">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.household_registration || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="婚姻状况" width="100">
-              <template #default="{ row }">
-                {{ getMaritalStatusText(row.onboarding_form?.marital_status || row.marital_status) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="健康状况" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.health_status || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="身高(cm)" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.height || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="体重(kg)" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.weight || '-' }}
-              </template>
-            </el-table-column>
-            
-            <!-- 教育信息 -->
-            <el-table-column label="毕业学校" width="150">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.graduated_school || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="毕业时间" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.graduation_date ? formatDate(row.onboarding_form.graduation_date) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="文化程度" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.education_level || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="所学专业" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.major || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="学位" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.degree || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="技术职称" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.technical_title || '-' }}
-              </template>
-            </el-table-column>
-            
-            <!-- 学习简历 -->
-            <el-table-column label="学习简历数" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.education_background?.length || 0 }}
-              </template>
-            </el-table-column>
-            
-            <!-- 工作经历 -->
-            <el-table-column label="工作经历数" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.work_experience?.length || 0 }}
-              </template>
-            </el-table-column>
-            
-            <!-- 家庭情况 -->
-            <el-table-column label="家庭成员数" width="100">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.family_info?.length || 0 }}
-              </template>
-            </el-table-column>
-            
-            <!-- 紧急联系人 -->
-            <el-table-column label="紧急联系人" width="120">
-              <template #default="{ row }">
-                {{ row.emergency_contact || row.onboarding_form?.emergency_contact_name || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="紧急联系电话" width="130">
-              <template #default="{ row }">
-                {{ row.emergency_phone || row.onboarding_form?.emergency_contact_phone || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="与本人关系" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.emergency_contact_relationship || '-' }}
-              </template>
-            </el-table-column>
-            
-            <!-- 就业信息 -->
-            <el-table-column label="岗位" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.position || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="求职地区" width="120">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.desired_location || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="是否服从调配" width="120">
-              <template #default="{ row }">
-                <el-tag :type="row.onboarding_form?.accept_assignment ? 'success' : 'info'">
-                  {{ row.onboarding_form?.accept_assignment ? '是' : '否' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="联系电话" width="130">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.contact_phone || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="联系地址" width="200">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.contact_address || '-' }}
-              </template>
-            </el-table-column>
-            
-            <!-- 备注和签名 -->
-            <el-table-column label="备注" width="200">
-              <template #default="{ row }">
-                {{ row.onboarding_form?.remarks || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="是否签名" width="100">
-              <template #default="{ row }">
-                <el-tag :type="row.onboarding_form?.signature ? 'success' : 'info'">
-                  {{ row.onboarding_form?.signature ? '已签' : '未签' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-          </template>
-          
+
           <!-- 工资卡视图的列 -->
           <template v-if="selectedModules.includes('salary-card')">
             <el-table-column prop="bank_account" label="银行账号" width="200">
@@ -8525,6 +8337,18 @@ const getHouseholdTypeText = (type) => {
 }
 
 // 格式化日期
+// 获取员工当前应显示的表单数据（根据项目设置的登记表类型）
+const getDisplayForm = (row) => {
+  if (!row) return {}
+
+  // 查找员工所属项目的登记表类型
+  // 优先取第一个项目的设置，如果项目没有设置，默认为 onboarding
+  const project = row.projects && row.projects.length > 0 ? row.projects[0] : null
+  const formType = project?.registration_form_type || 'onboarding'
+
+  return formType === 'registration' ? (row.registration_form || {}) : (row.onboarding_form || {})
+}
+
 const formatDate = (date) => {
   if (!date) return '-'
   const d = new Date(date)

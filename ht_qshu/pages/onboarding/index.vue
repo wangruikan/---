@@ -155,12 +155,12 @@
 			<!-- 学历性质 -->
 			<view class="form-item">
 				<text class="label">学历性质</text>
-				<radio-group @change="onEducationTypeChange">
+				<radio-group :value="normalizeEducationType(formData.education_type)" @change="onEducationTypeChange">
 					<label class="radio-label">
-						<radio value="统招" :checked="formData.education_type === '统招'" />统招
+						<radio value="统招" :checked="normalizeEducationType(formData.education_type) === '统招'" />统招
 					</label>
 					<label class="radio-label">
-						<radio value="非统招" :checked="formData.education_type === '非统招'" />非统招
+						<radio value="非统招" :checked="normalizeEducationType(formData.education_type) === '非统招'" />非统招
 					</label>
 				</radio-group>
 			</view>
@@ -520,6 +520,7 @@ export default {
 				// 复制其他数据（排除signature和photo，因为已经处理过了）
 				const { signature, photo, ...otherData } = data
 				this.formData = { ...this.formData, ...otherData }
+				this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
 				this.formData.education_background = Array.isArray(this.formData.education_background) ? this.formData.education_background : []
 				this.formData.work_experience = Array.isArray(this.formData.work_experience) ? this.formData.work_experience : []
 				this.formData.family_info = Array.isArray(this.formData.family_info) ? this.formData.family_info : []
@@ -637,6 +638,8 @@ export default {
 		},
 
 		validateAllRequiredFields() {
+			this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
+
 			const requiredFields = [
 				{ key: 'registration_date', label: '登记日期' },
 				{ key: 'name', label: '姓名' },
@@ -770,8 +773,46 @@ export default {
 			this.formData.health_status = this.healthOptions[e.detail.value]
 		},
 
+		normalizeEducationType(value) {
+			const rawValue = value === null || value === undefined ? '' : String(value)
+			const normalized = rawValue.trim().replace(/\s+/g, '')
+			if (!normalized) {
+				return ''
+			}
+
+			const directMap = {
+				'统招': '统招',
+				'統招': '统招',
+				'全日制': '统招',
+				'普通全日制': '统招',
+				'全日制统招': '统招',
+				'非统招': '非统招',
+				'非統招': '非统招',
+				'非全日制': '非统招',
+				'成人教育': '非统招',
+				'自考': '非统招',
+				'函授': '非统招',
+				'网络教育': '非统招',
+				'开放教育': '非统招'
+			}
+
+			if (directMap[normalized]) {
+				return directMap[normalized]
+			}
+
+			if (normalized.includes('非')) {
+				return '非统招'
+			}
+
+			if (normalized.includes('统')) {
+				return '统招'
+			}
+
+			return ''
+		},
+
 		onEducationTypeChange(e) {
-			this.formData.education_type = e.detail.value
+			this.formData.education_type = this.normalizeEducationType(e.detail.value)
 		},
 		
 		// 选择一寸照片
@@ -1055,6 +1096,9 @@ export default {
 			try {
 				// 处理提交数据，将日期范围转换为start_date和end_date
 				const submitData = { ...this.formData }
+				const normalizedEducationType = this.normalizeEducationType(this.formData.education_type)
+				this.formData.education_type = normalizedEducationType
+				submitData.education_type = normalizedEducationType
 				const placeRegion = Array.isArray(this.placeOfOriginArray) ? this.placeOfOriginArray : []
 				const placeDetail = (this.formData.place_of_origin_detail || '').trim()
 				const fullPlaceOfOrigin = [...placeRegion, placeDetail].filter(item => !!item).join('')

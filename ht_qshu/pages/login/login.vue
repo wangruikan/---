@@ -51,8 +51,8 @@ export default {
 	data() {
 		return {
 			form: {
-				phone: '15304543664',
-				password: '020345'
+				phone: '15404600145',
+				password: '028934'
 			},
 			loading: false
 		}

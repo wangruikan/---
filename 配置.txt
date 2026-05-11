@@ -11,3 +11,6 @@ Host=43.139.90.164
 Port=21
 Username=dy_cyygkj_cn
 Password=cBTLCj4EacDc5rDL
+
+
+ftp上传代码的时候，需要用绝对路径上传，不需要额外加路径

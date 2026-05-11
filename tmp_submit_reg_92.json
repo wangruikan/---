@@ -1,0 +1,105 @@
+﻿{
+    "fill_date":  "2026-05-06",
+    "entry_position":  "翻身",
+    "entry_date":  "2026-05-06",
+    "department":  "fsdf",
+    "job_title":  "fsd",
+    "housing_fund_account":  "fd",
+    "bank_account":  "fsd",
+    "bank_name":  "fsfs",
+    "name":  "wrk1",
+    "english_name":  "wfadf",
+    "gender":  "male",
+    "height":  "143",
+    "birth_date":  "2004-02-27",
+    "political_status":  "群众",
+    "education_level":  "小学",
+    "education_type":  "统招",
+    "native_place":  "北京市北京市朝阳区某某街道某某号",
+    "native_place_province":  "北京市",
+    "native_place_city":  "北京市",
+    "native_place_district":  "朝阳区",
+    "native_place_detail":  "某某街道某某号",
+    "native_place_region":  [
+                                "北京市",
+                                "北京市",
+                                "朝阳区"
+                            ],
+    "marital_status":  "single",
+    "has_children":  "无",
+    "id_number":  "430281200403028934",
+    "household_type":  "urban",
+    "current_address":  "313",
+    "postal_code":  "3213",
+    "household_address":  "21312",
+    "contact_phone":  "15404600145",
+    "document_address":  "13132",
+    "disability_level":  "321313",
+    "language_skills":  [
+                            "四级"
+                        ],
+    "engineering_skills":  [
+                               "电工证"
+                           ],
+    "professional_title":  "无",
+    "hobbies":  [
+                    "唱歌"
+                ],
+    "other_skills":  "321321dad3",
+    "education_history":  [
+                              {
+                                  "date_range":  "3123-312",
+                                  "school_major":  "3123",
+                                  "certificate":  "321312"
+                              }
+                          ],
+    "work_history":  [
+                         {
+                             "date_range":  "3213-3213",
+                             "company":  "3213",
+                             "position":  "3123",
+                             "salary":  "231",
+                             "leave_reason":  "2313"
+                         }
+                     ],
+    "reference_company":  "3123",
+    "reference_contact":  "15312212121",
+    "rewards_punishments":  "dadasd",
+    "family_members":  [
+                           {
+                               "name":  "das",
+                               "relation":  "da",
+                               "age":  "da",
+                               "employer":  "ads",
+                               "phone":  "das"
+                           }
+                       ],
+    "emergency_contact1_name":  "421233",
+    "emergency_contact1_relation":  "3213",
+    "emergency_contact1_phone":  "15304600145",
+    "emergency_contact2_name":  "212",
+    "emergency_contact2_relation":  "2112",
+    "emergency_contact2_phone":  "15343455432",
+    "mental_illness":  "无",
+    "mental_illness_detail":  null,
+    "other_illness":  "无",
+    "other_illness_detail":  null,
+    "hospitalized_recently":  "无",
+    "hospitalized_reason":  null,
+    "criminal_record":  "无",
+    "criminal_record_time":  null,
+    "employment_documents":  [
+                                 "劳动手册",
+                                 "应届毕业"
+                             ],
+    "remarks":  "321312",
+    "is_pregnant":  "无",
+    "pregnant_detail":  null,
+    "accept_overtime":  "接受",
+    "need_accommodation":  "无",
+    "accommodation_detail":  null,
+    "has_driving_license":  "无",
+    "driving_license_detail":  null,
+    "signature":  "uploads/signatures/6a006c1d689eb_1778412573.png",
+    "signature_date":  "2026-05-06"
+}

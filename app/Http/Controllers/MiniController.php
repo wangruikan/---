@@ -63,9 +63,40 @@ class MiniController extends Controller
      */
     private function normalizeEducationTypeValue($value): string
     {
-        $normalized = preg_replace('/\s+/u', '', trim((string) ($value ?? '')));
-        if ($normalized === '') {
+        $rawValue = trim((string) ($value ?? ''));
+        if ($rawValue === '') {
             return '';
+        }
+
+        $normalizeText = function (string $text): string {
+            return preg_replace('/\s+/u', '', trim($text));
+        };
+
+        $candidates = [];
+        $pushCandidate = function ($text) use (&$candidates, $normalizeText): void {
+            if (!is_string($text)) {
+                return;
+            }
+            $normalized = $normalizeText($text);
+            if ($normalized !== '' && !in_array($normalized, $candidates, true)) {
+                $candidates[] = $normalized;
+            }
+        };
+
+        $pushCandidate($rawValue);
+
+        // 尝试修复常见编码错乱值（如：缁熸嫑 -> 统招）
+        if (function_exists('iconv')) {
+            foreach (['GBK', 'GB2312', 'BIG5'] as $legacyEncoding) {
+                $legacyBytes = @iconv('UTF-8', $legacyEncoding . '//IGNORE', $rawValue);
+                if ($legacyBytes === false || $legacyBytes === '') {
+                    continue;
+                }
+                $recovered = @iconv('UTF-8', 'UTF-8//IGNORE', $legacyBytes);
+                if ($recovered !== false && $recovered !== '') {
+                    $pushCandidate($recovered);
+                }
+            }
         }
 
         $directMap = [
@@ -74,9 +105,13 @@ class MiniController extends Controller
             '全日制' => '统招',
             '普通全日制' => '统招',
             '全日制统招' => '统招',
+            '缁熸嫑' => '统招',
+            'ç»æ' => '统招',
             '非统招' => '非统招',
             '非統招' => '非统招',
             '非全日制' => '非统招',
+            '闈炵粺鎷' => '非统招',
+            'éç»æ' => '非统招',
             '成人教育' => '非统招',
             '自考' => '非统招',
             '函授' => '非统招',
@@ -84,16 +119,31 @@ class MiniController extends Controller
             '开放教育' => '非统招',
         ];
 
-        if (isset($directMap[$normalized])) {
-            return $directMap[$normalized];
+        foreach ($candidates as $normalized) {
+            if (isset($directMap[$normalized])) {
+                return $directMap[$normalized];
+            }
         }
 
-        if (strpos($normalized, '非') !== false) {
-            return '非统招';
-        }
+        foreach ($candidates as $normalized) {
+            if (
+                strpos($normalized, '非') !== false ||
+                strpos($normalized, '闈') !== false ||
+                stripos($normalized, 'feitong') !== false ||
+                stripos($normalized, 'fei') !== false
+            ) {
+                return '非统招';
+            }
 
-        if (strpos($normalized, '统') !== false || strpos($normalized, '全日制') !== false) {
-            return '统招';
+            if (
+                strpos($normalized, '统') !== false ||
+                strpos($normalized, '缁熸嫑') !== false ||
+                strpos($normalized, '全日制') !== false ||
+                stripos($normalized, 'tongzhao') !== false ||
+                stripos($normalized, 'tong') !== false
+            ) {
+                return '统招';
+            }
         }
 
         return '';
@@ -1362,6 +1412,8 @@ class MiniController extends Controller
                     $formData['place_of_origin'] = implode('', $placeOfOriginParts);
                 }
 
+                $formData['education_type'] = $this->normalizeEducationTypeValue($formData['education_type'] ?? '');
+
                 return response()->json([
                     'success' => true,
                     'data' => $formData
@@ -1386,6 +1438,16 @@ class MiniController extends Controller
      */
     public function submitOnboardingForm(Request $request)
     {
+        $rawOnboardingEducationType = $request->input('education_type', $request->input('educationType', $request->input('education_nature', $request->input('education_property', ''))));
+        $normalizedOnboardingEducationType = $this->normalizeEducationTypeValue($rawOnboardingEducationType);
+        $existingOnboardingForm = OnboardingForm::where('employee_id', optional($request->user())->id)->first();
+        if ($normalizedOnboardingEducationType === '' && $existingOnboardingForm && !empty($existingOnboardingForm->education_type)) {
+            $normalizedOnboardingEducationType = $this->normalizeEducationTypeValue($existingOnboardingForm->education_type);
+        }
+        $request->merge([
+            'education_type' => $normalizedOnboardingEducationType,
+        ]);
+
         $validator = Validator::make($request->all(), [
             'registration_date' => 'required|date',
             'name' => 'required|string|max:50',
@@ -1402,7 +1464,7 @@ class MiniController extends Controller
             'graduated_school' => 'nullable|string|max:200',
             'graduation_date' => 'nullable|date',
             'education_level' => 'nullable|string|max:50',
-            'education_type' => 'nullable|in:统招,非统招',
+            'education_type' => 'required|in:统招,非统招',
             'major' => 'nullable|string|max:100',
             'degree' => 'nullable|string|max:50',
             'technical_title' => 'nullable|string|max:50',
@@ -1692,6 +1754,10 @@ class MiniController extends Controller
             if ($form) {
                 $formData = $form->toArray();
 
+                \Log::info('Registration form load education_type debug', [
+                    'db_education_type' => $formData['education_type'] ?? 'null',
+                ]);
+
                 if (!empty($formData['signature'])) {
                     // 兼容新旧路径格式
                     if (strpos($formData['signature'], 'uploads/') === 0) {
@@ -1738,8 +1804,14 @@ class MiniController extends Controller
      */
     public function submitRegistrationForm(Request $request)
     {
+        $rawRegistrationEducationType = $request->input('education_type', $request->input('educationType', $request->input('education_nature', $request->input('education_property', ''))));
+        $normalizedRegistrationEducationType = $this->normalizeEducationTypeValue($rawRegistrationEducationType);
+        $existingRegistrationForm = \App\Models\EmployeeRegistrationForm::where('employee_id', optional($request->user())->id)->first();
+        if ($normalizedRegistrationEducationType === '' && $existingRegistrationForm && !empty($existingRegistrationForm->education_type)) {
+            $normalizedRegistrationEducationType = $this->normalizeEducationTypeValue($existingRegistrationForm->education_type);
+        }
         $request->merge([
-            'education_type' => $this->normalizeEducationTypeValue($request->input('education_type')),
+            'education_type' => $normalizedRegistrationEducationType,
         ]);
 
         $validator = Validator::make($request->all(), [
@@ -1927,6 +1999,11 @@ class MiniController extends Controller
         try {
             $employee = Employee::find($request->user()->id);
             $educationType = $this->normalizeEducationTypeValue($request->input('education_type'));
+
+            \Log::info('Registration form education_type debug', [
+                'input_education_type' => $request->input('education_type'),
+                'normalized_education_type' => $educationType,
+            ]);
             $nativePlaceProvince = trim((string) $request->input('native_place_province', ''));
             $nativePlaceCity = trim((string) $request->input('native_place_city', ''));
             $nativePlaceDistrict = trim((string) $request->input('native_place_district', ''));

@@ -793,6 +793,7 @@ import {
 } from '@/api/paymentApplication'
 import { getProjects } from '@/api/projects'
 import { PDFDocument } from 'pdf-lib'
+import request from '@/api/request'
 
 const accountSetStore = useAccountSetStore()
 const userStore = useUserStore()
@@ -856,13 +857,13 @@ const uploadHeaders = computed(() => ({
 
 // 获取上传URL
 const getUploadUrl = (id) => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
   return `${baseURL}/api/payment-applications/${id}/upload-attachment`
 }
 
 // 获取发票上传URL
 const getInvoiceUploadUrl = () => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
   return `${baseURL}/api/insurance-payment-requests/invoice-attachments/upload`
 }
 
@@ -1168,8 +1169,14 @@ const handleDeleteAttachment = async (attachment) => {
 
 // 查看附件（在新标签页打开）
 const viewAttachment = (attachment) => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-  const url = `${baseURL}/${attachment.path}`
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+  let filePath = attachment.path || ''
+  // 移除已有的 origin，保留路径部分
+  filePath = filePath.replace(/^https?:\/\/[^/]+/, '')
+  if (!filePath.startsWith('/')) {
+    filePath = '/' + filePath
+  }
+  const url = `${baseURL}${filePath}`
   window.open(url, '_blank')
 }
 
@@ -1186,14 +1193,11 @@ const openInvoiceUploadDialog = async (row) => {
 const loadInvoiceAttachments = async (paymentRequestId) => {
   invoiceLoading.value = true
   try {
-    const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const response = await fetch(`${baseURL}/api/insurance-payment-requests/invoice-attachments?payment_request_id=${paymentRequestId}`, {
-      headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'X-Account-Set-Id': accountSetStore.currentAccountSetId
-      }
+    const res = await request({
+      url: '/insurance-payment-requests/invoice-attachments',
+      method: 'get',
+      params: { payment_request_id: paymentRequestId }
     })
-    const res = await response.json()
     if (res.success) {
       invoiceAttachments.value = res.data || []
     }
@@ -1224,8 +1228,14 @@ const handleInvoiceUploadError = (error) => {
 
 // 查看发票附件
 const viewInvoiceAttachment = (attachment) => {
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-  const url = `${baseURL}/${attachment.file_path}`
+  const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+  let filePath = attachment.file_path || ''
+  // 移除已有的 origin，保留路径部分
+  filePath = filePath.replace(/^https?:\/\/[^/]+/, '')
+  if (!filePath.startsWith('/')) {
+    filePath = '/' + filePath
+  }
+  const url = `${baseURL}${filePath}`
   window.open(url, '_blank')
 }
 
@@ -1238,18 +1248,12 @@ const handleDeleteInvoiceAttachment = async (attachment) => {
       type: 'warning'
     })
 
-    const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const response = await fetch(`${baseURL}/api/insurance-payment-requests/invoice-attachments`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'X-Account-Set-Id': accountSetStore.currentAccountSetId,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ id: attachment.id })
+    const res = await request({
+      url: '/insurance-payment-requests/invoice-attachments',
+      method: 'delete',
+      data: { id: attachment.id }
     })
-    const res = await response.json()
-    
+
     if (res.success) {
       ElMessage.success('删除成功')
       loadInvoiceAttachments(currentInvoiceRequest.value.id)
@@ -1288,17 +1292,11 @@ const handleSubmitInvoiceApproval = async () => {
     await mergePdfWithCounts()
     
     // 2. 提交发票审批
-    const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const response = await fetch(`${baseURL}/api/insurance-payment-requests/submit-invoice-approval`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'X-Account-Set-Id': accountSetStore.currentAccountSetId,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ payment_request_id: currentInvoiceRequest.value.id })
+    const res = await request({
+      url: '/insurance-payment-requests/submit-invoice-approval',
+      method: 'post',
+      data: { payment_request_id: currentInvoiceRequest.value.id }
     })
-    const res = await response.json()
 
     if (res.success) {
       ElMessage.success('发票审批流程已创建')
@@ -1332,18 +1330,15 @@ const handlePaymentFormGenerated = async ({ file, fileName }) => {
     formData.append('file', file, fileName)
     formData.append('payment_request_id', currentInvoiceRequest.value.id)
     formData.append('current_account_set_id', accountSetStore.currentAccountSetId)
-    
-    const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const response = await fetch(`${baseURL}/api/insurance-payment-requests/invoice-attachments/upload`, {
-      method: 'POST',
+
+    const res = await request({
+      url: '/insurance-payment-requests/invoice-attachments/upload',
+      method: 'post',
+      data: formData,
       headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'X-Account-Set-Id': accountSetStore.currentAccountSetId
-      },
-      body: formData
+        'Content-Type': 'multipart/form-data'
+      }
     })
-    
-    const res = await response.json()
     if (res.success) {
       ElMessage.success('付款申请单已自动上传')
       // 重新加载发票附件列表
@@ -1367,15 +1362,11 @@ const mergePdfWithCounts = async () => {
 
   try {
     // 1. 获取付款申请的附件列表
-    const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const detailResponse = await fetch(`${baseURL}/api/payment-applications/${currentInvoiceRequest.value.id}`, {
-      headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'X-Account-Set-Id': accountSetStore.currentAccountSetId
-      }
+    const detailRes = await request({
+      url: `/payment-applications/${currentInvoiceRequest.value.id}`,
+      method: 'get'
     })
-    const detailRes = await detailResponse.json()
-    
+
     if (!detailRes.success) {
       console.warn('获取付款申请详情失败，跳过PDF合成')
       return
@@ -1479,17 +1470,15 @@ const mergePdfWithCounts = async () => {
     formData.append('payment_request_id', currentInvoiceRequest.value.id)
     formData.append('attachment_id', pdfAttachment.id) // 用于替换原文件
     formData.append('current_account_set_id', accountSetStore.currentAccountSetId)
-    
-    const uploadResponse = await fetch(`${baseURL}/api/insurance-payment-requests/attachments/replace`, {
-      method: 'POST',
+
+    const uploadRes = await request({
+      url: '/insurance-payment-requests/attachments/replace',
+      method: 'post',
+      data: formData,
       headers: {
-        'Authorization': `Bearer ${userStore.token}`,
-        'X-Account-Set-Id': accountSetStore.currentAccountSetId
-      },
-      body: formData
+        'Content-Type': 'multipart/form-data'
+      }
     })
-    
-    const uploadRes = await uploadResponse.json()
     if (uploadRes.success) {
       console.log('PDF合成并替换成功')
     } else {

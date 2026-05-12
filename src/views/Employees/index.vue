@@ -3990,6 +3990,7 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="labor">签署劳动合同</el-dropdown-item>
+                  <el-dropdown-item command="confidentiality">保密协议</el-dropdown-item>
                   <el-dropdown-item command="termination">解除协议合同</el-dropdown-item>
                   <el-dropdown-item command="retirement">退休解除协议合同</el-dropdown-item>
                   <el-dropdown-item command="other">其他合同</el-dropdown-item>
@@ -4054,10 +4055,10 @@
               >
                 提交签署
               </el-button>
-              <el-button 
-                v-if="row.status === 'employee_signed'" 
-                type="success" 
-                size="small" 
+              <el-button
+                v-if="row.status === 'employee_signed' && !['confidentiality', 'non_compete'].includes(row.contract_type)"
+                type="success"
+                size="small"
                 @click="handleSubmitApproval(row)"
               >
                 提交审批
@@ -4098,12 +4099,21 @@
             @change="handleContractTypeChange"
           >
             <el-option label="劳动合同" value="labor" />
+            <el-option label="保密协议" value="confidentiality" />
             <el-option label="解除协议合同" value="termination" />
             <el-option label="退休解除协议合同" value="retirement" />
             <el-option label="其他合同" value="other" />
           </el-select>
         </el-form-item>
-        
+
+        <el-form-item label="盖章方式" required>
+          <el-radio-group v-model="uploadForm.stamp_method">
+            <el-radio value="online">线上盖章</el-radio>
+            <el-radio value="offline">线下盖章</el-radio>
+          </el-radio-group>
+          <div class="form-tip">选择盖章方式后，提交审批时将自动使用此方式</div>
+        </el-form-item>
+
         <el-form-item label="选择模板" required v-if="uploadForm.contract_type">
           <el-select
             v-model="uploadForm.template_id"
@@ -4165,6 +4175,7 @@
             style="width: 100%"
           >
             <el-option label="劳动合同" value="labor" />
+            <el-option label="保密协议" value="confidentiality" />
             <el-option label="解除协议合同" value="termination" />
             <el-option label="退休解除协议合同" value="retirement" />
             <el-option label="其他合同" value="other" />
@@ -4230,13 +4241,13 @@
         label-width="100px"
       >
         <el-form-item label="盖章方式" prop="stamp_method">
-          <el-radio-group v-model="signatureForm.stamp_method">
+          <el-radio-group v-model="signatureForm.stamp_method" disabled>
             <el-radio label="online">线上盖章</el-radio>
             <el-radio label="offline">线下盖章</el-radio>
           </el-radio-group>
           <div class="form-item-tip">
             <el-text type="info" size="small">
-              线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质合同上盖章
+              此盖章方式在创建合同时已选定，不可更改
             </el-text>
           </div>
         </el-form-item>
@@ -7387,6 +7398,7 @@ const fileList = ref([])
 const uploadForm = reactive({
   employee_id: null,
   contract_type: '',
+  stamp_method: 'online',
   template_id: null,
   notes: ''
 })
@@ -7647,6 +7659,7 @@ const handleContractTypeSelect = async (contractType) => {
   // 重置表单（参考 SharedFiles 的实现，不在 reactive 对象中存储 File）
   uploadForm.contract_type = contractType
   uploadForm.employee_id = currentEmployee.value?.id || null
+  uploadForm.stamp_method = 'online'
   uploadForm.template_id = null
   uploadForm.notes = ''
   fileList.value = []
@@ -7771,6 +7784,7 @@ const handleCreateContract = async () => {
     const prepareData = {
       employee_id: uploadForm.employee_id,
       contract_type: uploadForm.contract_type,
+      stamp_method: uploadForm.stamp_method,
       template_id: uploadForm.template_id,
       notes: uploadForm.notes || ''
     }
@@ -7801,6 +7815,7 @@ const handleCreateContract = async () => {
     formData.append('employee_id', uploadForm.employee_id)
     formData.append('template_id', uploadForm.template_id)
     formData.append('contract_type', uploadForm.contract_type)
+    formData.append('stamp_method', uploadForm.stamp_method)
     formData.append('notes', uploadForm.notes || '')
     formData.append('filled_pdf', filledPdfBlob, 'filled_contract.pdf')
     
@@ -7861,18 +7876,16 @@ const handleSubmitContract = async (contract) => {
   }
 }
 
-// 提交审批
+// 提交审批 - 自动使用合同中存储的盖章方式
 const handleSubmitApproval = async (contract) => {
   try {
     console.log('=== 提交审批 - 合同信息 ===')
     console.log('合同对象:', contract)
-    console.log('合同字段:', {
-      id: contract.id,
-      contract_file: contract.contract_file,
-      original_filename: contract.original_filename,
-      status: contract.status
-    })
-    
+    console.log('盖章方式:', contract.stamp_method)
+
+    // 自动使用合同中存储的盖章方式
+    signatureForm.stamp_method = contract.stamp_method || 'online'
+
     await loadMySignatureAndSeals()
     currentContract.value = contract
     showSignatureDialog.value = true
@@ -8369,6 +8382,7 @@ const getContractTypeText = (type, row = null) => {
 
   const types = {
     labor: '劳动合同',
+    confidentiality: '保密协议',
     termination: '解除协议合同',
     retirement: '退休解除协议合同',
     other: '其他合同'
@@ -8380,6 +8394,7 @@ const getContractTypeText = (type, row = null) => {
 const getContractTypeColor = (type) => {
   const colors = {
     labor: 'success',
+    confidentiality: 'danger',
     termination: 'warning',
     retirement: 'info',
     other: ''
@@ -8416,10 +8431,11 @@ const getContractStatusColor = (status) => {
 }
 
 const getContractSourceType = (row) => {
-  if (row?.source_type === 'offline' || row?.source_type === 'online') {
-    return row.source_type
+  // 直接读取合同中存储的盖章方式
+  if (row?.stamp_method === 'offline' || row?.stamp_method === 'online') {
+    return row.stamp_method
   }
-  return row?.status === 'completed' && !row?.employee_signed_at ? 'offline' : 'online'
+  return 'online'
 }
 
 const getContractSourceText = (row) => {

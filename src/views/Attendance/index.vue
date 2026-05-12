@@ -642,8 +642,8 @@
         </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handlePreviewAttendanceBasisFile(row)" link>
-              预览
+            <el-button type="primary" size="small" @click="handleDownloadAttendanceBasisAttachment(row)" link>
+              下载
             </el-button>
           </template>
         </el-table-column>
@@ -1031,6 +1031,44 @@ const handleViewAttendanceBasis = async (row) => {
 const handlePreviewAttendanceBasisFile = (file) => {
   const url = `${apiBaseUrl}/storage/${file.file_path}`
   window.open(url, '_blank')
+}
+
+// 下载考勤依据附件
+const handleDownloadAttendanceBasisAttachment = async (attachment) => {
+  try {
+    const filePath = String(attachment?.file_path || '').trim()
+    if (!filePath) {
+      ElMessage.error('附件路径不存在')
+      return
+    }
+
+    const encodedPath = filePath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/')
+
+    const response = await fetch(`/storage/${encodedPath}`, { method: 'GET' })
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.file_name || '考勤依据附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+    ElMessage.success('下载成功')
+  } catch (error) {
+    console.error('Download error:', error)
+    ElMessage.error('下载失败: ' + (error.message || '未知错误'))
+  }
 }
 
 // 文件类型标签

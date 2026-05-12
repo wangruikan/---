@@ -45,6 +45,7 @@ class EmployeeContract extends Model
         'employee_id',
         'account_set_id',
         'contract_type',
+        'stamp_method',  // 盖章方式：online-线上盖章，offline-线下盖章
         'contract_file',
         'original_filename',
         'status',

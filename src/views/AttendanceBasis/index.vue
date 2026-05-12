@@ -151,9 +151,6 @@
             </el-table-column>
             <el-table-column label="操作" width="120">
               <template #default="{ row }">
-                <el-button type="primary" size="small" @click="handlePreview(row)" link>
-                  预览
-                </el-button>
                 <el-button type="primary" size="small" @click="handleDownloadAttachment(row)" link>
                   下载
                 </el-button>
@@ -224,11 +221,8 @@
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="120">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handlePreview(row)" link>
-              预览
-            </el-button>
             <el-button type="primary" size="small" @click="handleDownloadAttachment(row)" link>
               下载
             </el-button>

@@ -69,6 +69,7 @@ class EmployeeContractController extends Controller
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
+            'stamp_method' => 'nullable|in:online,offline',
             'template_id' => 'nullable|exists:contract_templates,id',
             'notes' => 'nullable|string',
         ]);
@@ -182,10 +183,20 @@ class EmployeeContractController extends Controller
             ], 422);
         }
 
-        $contract->update([
-            'status' => 'employee_signed',
-            'employee_signed_at' => now(),
-        ]);
+        // 保密协议等类型签完就算完成，不需要提交审批
+        $autoCompleteTypes = ['confidentiality', 'non_compete'];
+
+        if (in_array($contract->contract_type, $autoCompleteTypes)) {
+            $contract->update([
+                'status' => 'completed',
+                'employee_signed_at' => now(),
+            ]);
+        } else {
+            $contract->update([
+                'status' => 'employee_signed',
+                'employee_signed_at' => now(),
+            ]);
+        }
 
         return response()->json([
             'success' => true,
@@ -892,6 +903,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_type' => $request->contract_type,
+                'stamp_method' => $request->stamp_method ?? 'online',
                 'contract_file' => $path,
                 'original_filename' => $originalFilename,
                 'status' => 'draft',
@@ -1077,6 +1089,7 @@ class EmployeeContractController extends Controller
             'employee_id' => 'required|exists:employees,id',
             'template_id' => 'required|exists:contract_templates,id',
             'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
+            'stamp_method' => 'nullable|in:online,offline',
             'filled_pdf' => 'required|file|mimes:pdf|max:10240', // 10MB限制
             'notes' => 'nullable|string',
         ]);
@@ -1174,6 +1187,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_type' => $request->contract_type,
+                'stamp_method' => $request->stamp_method ?? 'online',
                 'contract_file' => $targetPath,
                 'original_filename' => $template->sharedFile->name,
                 'status' => 'draft',
@@ -1308,6 +1322,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_type' => $request->contract_type,
+                'stamp_method' => $request->stamp_method ?? 'online',
                 'contract_file' => $targetPath,
                 'original_filename' => $templateFile->name,
                 'status' => 'draft',
@@ -1460,6 +1475,7 @@ class EmployeeContractController extends Controller
                 'account_set_id' => $employee->account_set_id,
                 'contract_type' => $request->contract_type,
                 'contract_file' => $path,
+                'original_filename' => $file->getClientOriginalName(),
                 'status' => 'completed', // 直接设置为已完成
                 'notes' => $request->notes,
                 'created_by' => $user->id,

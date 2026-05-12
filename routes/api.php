@@ -890,6 +890,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/mark-completed', [App\Http\Controllers\DocumentDeliveryController::class, 'markAsCompleted']);
         Route::post('/{id}/attachments', [App\Http\Controllers\DocumentDeliveryController::class, 'uploadAttachment']);
         Route::delete('/{deliveryId}/attachments/{attachmentId}', [App\Http\Controllers\DocumentDeliveryController::class, 'deleteAttachment']);
+        Route::get('/{deliveryId}/attachments/{attachmentId}/download', [App\Http\Controllers\DocumentDeliveryController::class, 'downloadAttachment']);
     });
 });
 

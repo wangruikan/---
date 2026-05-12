@@ -1,3 +1,6 @@
+【API配置】
+线上API地址：https://renli.cyygg.cn
+
 【数据库配置】
 DB_CONNECTION=mysql
 DB_HOST=43.139.90.164

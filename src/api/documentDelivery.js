@@ -130,3 +130,12 @@ export function deleteDeliveryAttachment(deliveryId, attachmentId) {
   })
 }
 
+// 下载附件
+export function downloadDeliveryAttachment(deliveryId, attachmentId) {
+  return request({
+    url: `/document-deliveries/${deliveryId}/attachments/${attachmentId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+

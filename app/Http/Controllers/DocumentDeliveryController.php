@@ -112,6 +112,79 @@ class DocumentDeliveryController extends Controller
     }
 
     /**
+     * 下载附件
+     */
+    public function downloadAttachment($deliveryId, $attachmentId)
+    {
+        try {
+            $attachment = DocumentDeliveryAttachment::where('delivery_id', $deliveryId)
+                ->where('id', $attachmentId)
+                ->first();
+
+            if (!$attachment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '附件不存在'
+                ], 404);
+            }
+
+            $filePath = public_path($attachment->file_path);
+
+            if (!file_exists($filePath)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '文件不存在: ' . $filePath
+                ], 404);
+            }
+
+            $downloadName = $attachment->filename ?: basename($filePath);
+            $downloadName = trim(str_replace(['/', '\\'], '-', $downloadName));
+            $downloadName = preg_replace('/[\x00-\x1F\x7F]/u', '', $downloadName);
+            if ($downloadName === '') {
+                $downloadName = 'attachment_' . $attachmentId;
+            }
+
+            $fileSize = @filesize($filePath) ?: null;
+            $mimeType = $attachment->mime_type ?: (mime_content_type($filePath) ?: 'application/octet-stream');
+
+            // 清空已有输出缓冲，避免下载内容前出现额外字节导致文件损坏
+            if (function_exists('ob_get_level')) {
+                while (ob_get_level() > 0) {
+                    @ob_end_clean();
+                }
+            }
+
+            return response()->streamDownload(function () use ($filePath) {
+                $handle = fopen($filePath, 'rb');
+                if ($handle) {
+                    while (!feof($handle)) {
+                        echo fread($handle, 8192);
+                    }
+                    fclose($handle);
+                }
+            }, $downloadName, array_filter([
+                'Content-Type' => $mimeType,
+                'Content-Length' => $fileSize,
+                'Cache-Control' => 'private, max-age=0, no-cache, no-store, must-revalidate',
+                'Pragma' => 'no-cache',
+                'Expires' => '0',
+                'Accept-Ranges' => 'bytes',
+            ]));
+        } catch (\Exception $e) {
+            Log::error('下载附件失败', [
+                'delivery_id' => $deliveryId,
+                'attachment_id' => $attachmentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '下载失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * 提交交付（快递方式）
      */
     public function submitExpress(Request $request, $id)
@@ -481,4 +554,3 @@ class DocumentDeliveryController extends Controller
         }
     }
 }
-

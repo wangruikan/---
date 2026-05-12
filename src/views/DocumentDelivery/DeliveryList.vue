@@ -177,7 +177,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="附件列表" :span="2" v-if="currentDelivery.attachments && currentDelivery.attachments.length > 0">
           <div v-for="att in currentDelivery.attachments" :key="att.id" style="margin-bottom: 5px;">
-            <el-link :href="`/${att.file_path}`" target="_blank" type="primary">
+            <el-link type="primary" @click="handleDownloadAttachment(att)">
               <el-icon><Document /></el-icon>
               {{ att.filename }} ({{ formatFileSize(att.file_size) }})
             </el-link>
@@ -281,7 +281,8 @@ import {
   submitExpressDelivery,
   submitElectronicDelivery,
   markDeliveryAsCompleted,
-  uploadDeliveryAttachment
+  uploadDeliveryAttachment,
+  downloadDeliveryAttachment
 } from '@/api/documentDelivery'
 
 const accountSetStore = useAccountSetStore()
@@ -359,6 +360,42 @@ const formatFileSize = (bytes) => {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+// 下载附件
+const handleDownloadAttachment = async (attachment) => {
+  try {
+    if (!attachment?.id) {
+      ElMessage.error('附件信息不完整')
+      return
+    }
+
+    ElMessage.info('正在下载...')
+
+    // 获取交付记录ID - 从附件的 delivery_id 或通过 currentDelivery
+    const deliveryId = currentDelivery.value?.id
+    if (!deliveryId) {
+      ElMessage.error('交付记录信息不完整')
+      return
+    }
+
+    const blob = await downloadDeliveryAttachment(deliveryId, attachment.id)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = attachment.filename || '附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    setTimeout(() => {
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    }, 100)
+    ElMessage.success('下载成功')
+  } catch (error) {
+    console.error('Download error:', error)
+    ElMessage.error('下载失败: ' + (error.message || '未知错误'))
+  }
 }
 
 // 加载项目列表

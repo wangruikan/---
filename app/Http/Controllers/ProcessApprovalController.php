@@ -270,9 +270,24 @@ class ProcessApprovalController extends Controller
                 }
             }
 
+            // 验证流程ID有效性
+            if (!$id || $id === 'undefined' || $id === 'null' || !is_numeric($id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '流程ID无效: ' . var_export($id, true)
+                ], 400);
+            }
+
             $attachment = ProcessAttachment::where('process_approval_id', $id)
                 ->where('id', $attachmentId)
-                ->firstOrFail();
+                ->first();
+
+            if (!$attachment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '附件不存在或已被删除'
+                ], 404);
+            }
 
             $filePath = public_path($attachment->file_path);
 

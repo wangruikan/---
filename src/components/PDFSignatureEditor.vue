@@ -156,6 +156,7 @@ import { ElMessage } from 'element-plus'
 import { getMySignature, getMySeals } from '@/api/signatures'
 import { PDFDocument } from 'pdf-lib'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import * as pdfjsLib from 'pdfjs-dist'
 
 // 配置 pdf.js worker
@@ -178,6 +179,7 @@ const props = defineProps({
 
 const emit = defineEmits(['confirm', 'cancel', 'position-change'])
 const router = useRouter()
+const userStore = useUserStore()
 
 const canvasContainer = ref()
 const canvasWrapper = ref()
@@ -194,15 +196,17 @@ const selectedStamp = ref(null) // 当前选中的已添加项
 let pdfDoc = null // pdf.js文档对象
 let nextStampId = 1
 let currentScale = 1
+let originalPdfBytes = null
 
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
+  const token = userStore.token || localStorage.getItem('token') || sessionStorage.getItem('token')
   const accountSetId = localStorage.getItem('current_account_set_id')
   const headers = {}
 
   if (token) {
     headers.Authorization = `Bearer ${token}`
+    headers['X-Auth-Token'] = token
   }
   if (accountSetId) {
     headers['X-Account-Set-Id'] = accountSetId
@@ -212,15 +216,29 @@ const getAuthHeaders = () => {
 }
 
 // 加载PDF
+const fetchPdfBytes = async () => {
+  const response = await fetch(props.pdfUrl, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
+  if (!response.ok) {
+    throw new Error(`涓嬭浇PDF澶辫触: HTTP ${response.status}`)
+  }
+  const arrayBuffer = await response.arrayBuffer()
+  return new Uint8Array(arrayBuffer)
+}
+
 const loadPDF = async () => {
   try {
     console.log('📄 开始加载PDF:', props.pdfUrl)
     
     // 使用pdf.js加载（用于渲染显示）
+    const pdfBytes = await fetchPdfBytes()
+    originalPdfBytes = pdfBytes
+
     const loadingTask = pdfjsLib.getDocument({
-      url: props.pdfUrl,
-      httpHeaders: getAuthHeaders(),
-      withCredentials: true
+      data: pdfBytes
     })
     pdfDoc = await loadingTask.promise
     totalPages.value = pdfDoc.numPages
@@ -451,7 +469,7 @@ const mergePDFWithStamps = async () => {
   if (!response.ok) {
     throw new Error(`下载PDF失败: HTTP ${response.status}`)
   }
-  const pdfBytes = await response.arrayBuffer()
+  const pdfBytes = originalPdfBytes || await response.arrayBuffer()
   
   // 使用pdf-lib加载
   const newPdfDoc = await PDFDocument.load(pdfBytes)

@@ -559,11 +559,24 @@ const fileList = ref([])
 const detailVisible = ref(false)
 const detailData = ref({})
 
+const normalizeProcessApprovalId = (value) => {
+  if (value === undefined || value === null) return null
+  const normalized = String(value).trim()
+  if (!normalized || normalized === 'undefined' || normalized === 'null') return null
+  return normalized
+}
+
+const resolveProcessApprovalId = (attachment = null) => {
+  return normalizeProcessApprovalId(
+    attachment?.process_approval_id ||
+    detailData.value?.id ||
+    currentProcessId.value
+  )
+}
+
 // 统一附件上传：走 request 拦截器，确保鉴权头与账套参数和其他接口一致
 const handleUploadRequest = async (options) => {
-  const processId = detailVisible.value && detailData.value?.id
-    ? detailData.value.id
-    : currentProcessId.value
+  const processId = resolveProcessApprovalId()
 
   if (!processId) {
     ElMessage.error('请先保存流程后再上传附件')
@@ -592,11 +605,17 @@ const handleDeleteAttachment = async (attachment) => {
       type: 'warning'
     })
     
-    await deleteProcessAttachment(detailData.value.id, attachment.id)
+    const processId = resolveProcessApprovalId(attachment)
+    if (!processId) {
+      ElMessage.error('删除失败：流程ID无效')
+      return
+    }
+
+    await deleteProcessAttachment(processId, attachment.id)
     ElMessage.success('附件删除成功')
     
     // 重新加载详情
-    const res = await getProcessDetail(detailData.value.id)
+    const res = await getProcessDetail(processId)
     detailData.value = res.data
     
     // 刷新列表
@@ -826,9 +845,7 @@ const deleteAttachmentFile = async (file) => {
 // 下载附件
 const downloadAttachment = async (attachment) => {
   try {
-    const processId = detailVisible.value && detailData.value?.id
-      ? detailData.value.id
-      : currentProcessId.value
+    const processId = resolveProcessApprovalId(attachment)
 
     if (!processId || !attachment?.id) {
       ElMessage.error('下载失败：缺少流程或附件信息')

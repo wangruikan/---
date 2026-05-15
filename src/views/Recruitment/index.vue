@@ -188,20 +188,13 @@
               分配
             </el-button>
             <el-button
-              type="info"
+              v-if="row.status === 'active'"
+              type="primary"
               size="small"
-              @click="handleViewCandidates(row)"
-            >
-              查看候选人
-            </el-button>
-              <el-button 
-                v-if="row.status === 'active'" 
-                type="success" 
-                size="small" 
               @click="handleManageCandidates(row)"
-              >
+            >
               管理候选人
-              </el-button>
+            </el-button>
               <el-button 
                 v-if="row.status === 'active'" 
               type="primary" 
@@ -580,12 +573,28 @@
       
       <el-table :data="candidates" border stripe class="candidates-table">
         <el-table-column prop="name" label="姓名" width="100" />
-        <el-table-column prop="gender_text" label="性别" width="60" />
+        <el-table-column label="性别" width="60">
+          <template #default="{ row }">
+            {{ getGenderText(row.gender) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="age" label="年龄" width="60" />
         <el-table-column prop="phone" label="联系电话" width="120" />
         <el-table-column prop="email" label="邮箱" width="180" />
-        <el-table-column prop="education_text" label="学历" width="100" />
+        <el-table-column label="学历" width="100">
+          <template #default="{ row }">
+            {{ getEducationText(row.education) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="experience" label="工作经验" width="100" />
+        <el-table-column label="简历" width="80">
+          <template #default="{ row }">
+            <span v-if="row.resume_url" @click.prevent="() => downloadCandidateResume(row)" style="color: #409eff; text-decoration: underline; cursor: pointer;">
+              下载
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <span :class="['candidate-status-tag', row.status]">
@@ -624,49 +633,50 @@
     <!-- 添加/编辑候选人对话框 -->
     <el-dialog
       v-model="showCandidateFormDialog"
-      :title="isCandidateEdit ? '编辑候选人' : '添加候选人'"
+      :title="isCandidateViewMode ? '查看候选人' : (isCandidateEdit ? '编辑候选人' : '添加候选人')"
       width="800px"
       :close-on-click-modal="false"
       class="candidate-form-dialog"
+      @close="handleCandidateDialogClose"
     >
       <el-form :model="candidateForm" :rules="candidateFormRules" ref="candidateFormRef" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="姓名" prop="name">
-              <el-input v-model="candidateForm.name" placeholder="请输入姓名" />
+              <el-input v-model="candidateForm.name" placeholder="请输入姓名" :disabled="isCandidateViewMode" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="性别" prop="gender">
-              <el-select v-model="candidateForm.gender" placeholder="请选择性别" style="width: 100%">
+              <el-select v-model="candidateForm.gender" placeholder="请选择性别" style="width: 100%" :disabled="isCandidateViewMode">
                 <el-option label="男" value="male" />
                 <el-option label="女" value="female" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-        
+
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="年龄" prop="age">
-              <el-input-number v-model="candidateForm.age" :min="18" :max="65" style="width: 100%" />
+              <el-input-number v-model="candidateForm.age" :min="18" :max="65" style="width: 100%" :disabled="isCandidateViewMode" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="联系电话" prop="phone">
-              <el-input v-model="candidateForm.phone" placeholder="请输入联系电话" />
+              <el-input v-model="candidateForm.phone" placeholder="请输入联系电话" :disabled="isCandidateViewMode" />
             </el-form-item>
           </el-col>
         </el-row>
-        
+
         <el-form-item label="邮箱" prop="email">
-          <el-input v-model="candidateForm.email" placeholder="请输入邮箱" />
+          <el-input v-model="candidateForm.email" placeholder="请输入邮箱" :disabled="isCandidateViewMode" />
         </el-form-item>
-        
+
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="学历" prop="education">
-              <el-select v-model="candidateForm.education" placeholder="请选择学历" style="width: 100%">
+              <el-select v-model="candidateForm.education" placeholder="请选择学历" style="width: 100%" :disabled="isCandidateViewMode">
                 <el-option label="高中及以下" value="high_school" />
                 <el-option label="中专/大专" value="college" />
                 <el-option label="本科" value="bachelor" />
@@ -677,13 +687,13 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="工作经验" prop="experience">
-              <el-input v-model="candidateForm.experience" placeholder="如：3年" />
+              <el-input v-model="candidateForm.experience" placeholder="如：3年" :disabled="isCandidateViewMode" />
             </el-form-item>
           </el-col>
         </el-row>
-        
+
         <el-form-item label="状态" prop="status">
-          <el-select v-model="candidateForm.status" placeholder="请选择状态" style="width: 100%">
+          <el-select v-model="candidateForm.status" placeholder="请选择状态" style="width: 100%" :disabled="isCandidateViewMode">
             <el-option label="待面试" value="pending" />
             <el-option label="面试中" value="interviewing" />
             <el-option label="待录用" value="to_be_hired" />
@@ -691,40 +701,58 @@
             <el-option label="已拒绝" value="rejected" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="简历附件">
-          <el-upload
-            class="upload-demo"
-            :action="uploadUrl"
-            :headers="uploadHeaders"
-            :on-success="handleResumeUploadSuccess"
-            :before-upload="beforeResumeUpload"
-          >
-            <el-button size="small" type="primary">点击上传简历</el-button>
-            <template #tip>
-              <div class="el-upload__tip">
-                支持PDF、Word格式，文件大小不超过10MB
-              </div>
-            </template>
-          </el-upload>
-          <div v-if="candidateForm.resume_url" class="uploaded-file">
-            已上传：{{ candidateForm.resume_url }}
+          <div v-if="!isCandidateViewMode">
+            <el-upload
+              ref="resumeUploadRef"
+              class="upload-demo"
+              :http-request="handleResumeUpload"
+              :before-upload="beforeResumeUpload"
+              :show-file-list="false"
+              :limit="1"
+            >
+              <el-button size="small" type="primary">点击上传简历</el-button>
+              <template #tip>
+                <div class="el-upload__tip">
+                  支持任意格式，文件大小不超过10MB
+                </div>
+              </template>
+            </el-upload>
+          </div>
+          <div v-if="candidateForm.resume_url" class="resume-file-info">
+            <span class="resume-file-label">已上传：</span>
+            <span class="resume-file-name" @click.prevent="downloadResume">
+              {{ getResumeDisplayName() }}
+            </span>
+            <el-button
+              v-if="!isCandidateViewMode"
+              type="danger"
+              size="small"
+              @click="handleDeleteResume"
+            >
+              删除
+            </el-button>
+          </div>
+          <div v-if="!candidateForm.resume_url && isCandidateViewMode" class="resume-file-info">
+            <span class="resume-file-label">未上传简历</span>
           </div>
         </el-form-item>
-        
+
         <el-form-item label="备注">
           <el-input
             v-model="candidateForm.notes"
             type="textarea"
             :rows="3"
             placeholder="其他补充信息"
+            :disabled="isCandidateViewMode"
           />
         </el-form-item>
       </el-form>
       
       <template #footer>
         <el-button @click="showCandidateFormDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmitCandidate">
+        <el-button type="primary" @click="handleSubmitCandidate" :disabled="isCandidateViewMode">
           {{ isCandidateEdit ? '保存' : '添加' }}
         </el-button>
       </template>
@@ -780,13 +808,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, Document, Clock, Check, User } from '@element-plus/icons-vue'
-import { 
-  getRecruitments, 
-  createRecruitment, 
-  updateRecruitment, 
+import {
+  getRecruitments,
+  createRecruitment,
+  updateRecruitment,
   deleteRecruitment,
   assignRecruitment,
   updateProgress,
@@ -795,6 +823,7 @@ import {
   addCandidate,
   updateCandidate,
   deleteCandidate,
+  deleteCandidateResume,
   getRecruitmentPermissions
 } from '@/api/recruitment'
 import { getProjects } from '@/api/projects'
@@ -815,8 +844,11 @@ const showCandidateFormDialog = ref(false)
 const isEdit = ref(false)
 const isViewMode = ref(false)
 const isCandidateEdit = ref(false)
+const isCandidateViewMode = ref(false)
 const formRef = ref()
 const candidateFormRef = ref()
+const resumeUploadRef = ref()
+const uploadedResumeOriginalName = ref('')
 
 const recruitments = ref([])
 const projects = ref([])
@@ -910,6 +942,29 @@ const candidateForm = reactive({
   notes: ''
 })
 
+const clearResumeUploadState = () => {
+  nextTick(() => {
+    if (resumeUploadRef.value && typeof resumeUploadRef.value.clearFiles === 'function') {
+      resumeUploadRef.value.clearFiles()
+    }
+  })
+}
+
+const getResumeFileNameFromUrl = (url) => {
+  if (!url || typeof url !== 'string') return '简历附件'
+  const sanitizedUrl = url.split('?')[0]
+  const fileName = sanitizedUrl.substring(sanitizedUrl.lastIndexOf('/') + 1)
+  try {
+    return decodeURIComponent(fileName) || '简历附件'
+  } catch (error) {
+    return fileName || '简历附件'
+  }
+}
+
+const getResumeDisplayName = () => {
+  return uploadedResumeOriginalName.value || getResumeFileNameFromUrl(candidateForm.resume_url)
+}
+
 // 表单验证规则
 const formRules = {
   position: [{ required: true, message: '请输入职位名称', trigger: 'blur' }],
@@ -933,11 +988,6 @@ const dialogTitle = computed(() => {
   if (isEdit.value) return '编辑招聘需求'
   return '新增招聘需求'
 })
-
-const uploadUrl = computed(() => `${import.meta.env.VITE_API_BASE_URL}/api/upload`)
-const uploadHeaders = computed(() => ({
-  Authorization: `Bearer ${userStore.token}`
-}))
 
 // 加载数据
 const loadRecruitments = async () => {
@@ -1086,6 +1136,7 @@ const handleUpdateProgress = (row) => {
 }
 
 const handleConfirmUpdateProgress = async () => {
+  submitting.value = true
   try {
     await updateProgress(currentRecruitment.value.id, progressForm)
     ElMessage.success('进度更新成功')
@@ -1093,7 +1144,9 @@ const handleConfirmUpdateProgress = async () => {
     loadRecruitments()
   } catch (error) {
     console.error('更新进度失败:', error)
-    ElMessage.error('更新进度失败')
+    ElMessage.error(error.message || '更新进度失败')
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -1111,6 +1164,8 @@ const handleViewCandidates = async (row) => {
 
 const handleAddCandidate = () => {
   isCandidateEdit.value = false
+  isCandidateViewMode.value = false
+  uploadedResumeOriginalName.value = ''
   Object.assign(candidateForm, {
     name: '',
     gender: '',
@@ -1123,17 +1178,26 @@ const handleAddCandidate = () => {
     resume_url: '',
     notes: ''
   })
+  clearResumeUploadState()
   showCandidateFormDialog.value = true
 }
 
 const handleViewCandidate = (row) => {
-  // 查看候选人详情
-  ElMessage.info('查看候选人详情功能开发中')
+  // 查看候选人详情 - 使用编辑表单但禁用所有字段
+  isCandidateViewMode.value = true
+  isCandidateEdit.value = false
+  uploadedResumeOriginalName.value = ''
+  Object.assign(candidateForm, row)
+  clearResumeUploadState()
+  showCandidateFormDialog.value = true
 }
 
 const handleEditCandidate = (row) => {
   isCandidateEdit.value = true
+  isCandidateViewMode.value = false
+  uploadedResumeOriginalName.value = ''
   Object.assign(candidateForm, row)
+  clearResumeUploadState()
   showCandidateFormDialog.value = true
 }
 
@@ -1267,22 +1331,220 @@ const handleDialogClose = () => {
   formRef.value?.resetFields()
 }
 
+const handleCandidateDialogClose = () => {
+  isCandidateEdit.value = false
+  isCandidateViewMode.value = false
+  uploadedResumeOriginalName.value = ''
+  clearResumeUploadState()
+}
+
 // 文件上传
-const handleResumeUploadSuccess = (response) => {
-  if (response.success) {
-    candidateForm.resume_url = response.data.url
-    ElMessage.success('简历上传成功')
+import axios from 'axios'
+
+const handleResumeUpload = async (options) => {
+  const { file, onSuccess, onError } = options
+  const userStore = useUserStore()
+  const currentAccountSetId = localStorage.getItem('current_account_set_id')
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  if (currentAccountSetId) {
+    formData.append('current_account_set_id', parseInt(currentAccountSetId, 10))
+  }
+
+  try {
+    const response = await axios.post('/api/recruitment/candidates/upload-resume', formData, {
+      headers: {
+        'Authorization': `Bearer ${userStore.token}`,
+        'X-Auth-Token': userStore.token,
+        'X-Account-Set-Id': currentAccountSetId ? parseInt(currentAccountSetId, 10) : undefined,
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+
+    if (response.data.success) {
+      candidateForm.resume_url = response.data.data.url
+      uploadedResumeOriginalName.value = response.data.data.original_name || getResumeFileNameFromUrl(response.data.data.url)
+      ElMessage.success('简历上传成功')
+      onSuccess(response.data, file)
+    } else {
+      ElMessage.error(response.data.message || '上传失败')
+      onError(new Error(response.data.message))
+    }
+  } catch (error) {
+    console.error('上传失败:', error)
+    ElMessage.error('上传失败')
+    onError(error)
+  }
+}
+
+// 下载简历（列表页）
+const downloadCandidateResume = async (row) => {
+  if (!row.resume_url) return
+
+  try {
+    const userStore = useUserStore()
+    const currentAccountSetId = localStorage.getItem('current_account_set_id')
+
+    let url = row.resume_url
+    if (!url.startsWith('http')) {
+      url = window.location.origin + url
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${userStore.token}`,
+        'X-Auth-Token': userStore.token,
+        'X-Account-Set-Id': currentAccountSetId || undefined
+      },
+      credentials: 'include'
+    })
+
+    if (!response.ok) {
+      throw new Error('下载失败')
+    }
+
+    const contentDisposition = response.headers.get('Content-Disposition')
+    let filename = 'resume'
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (match) {
+        filename = match[1].replace(/['"]/g, '')
+      }
+    }
+
+    const urlParts = row.resume_url.split('/')
+    const urlFilename = urlParts[urlParts.length - 1]
+    if (urlFilename.includes('.')) {
+      filename = decodeURIComponent(urlFilename)
+    }
+
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败')
+  }
+}
+
+// 下载简历
+const downloadResume = async () => {
+  if (!candidateForm.resume_url) return
+
+  try {
+    const userStore = useUserStore()
+    const currentAccountSetId = localStorage.getItem('current_account_set_id')
+
+    // 构建完整的下载URL
+    let url = candidateForm.resume_url
+    if (!url.startsWith('http')) {
+      url = window.location.origin + url
+    }
+
+    // 使用fetch下载文件
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${userStore.token}`,
+        'X-Auth-Token': userStore.token,
+        'X-Account-Set-Id': currentAccountSetId || undefined
+      },
+      credentials: 'include'
+    })
+
+    if (!response.ok) {
+      throw new Error('下载失败')
+    }
+
+    // 获取文件名
+    const contentDisposition = response.headers.get('Content-Disposition')
+    let filename = 'resume'
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (match) {
+        filename = match[1].replace(/['"]/g, '')
+      }
+    }
+
+    // 从URL中提取文件名
+    const urlParts = candidateForm.resume_url.split('/')
+    const urlFilename = urlParts[urlParts.length - 1]
+    if (urlFilename.includes('.')) {
+      filename = decodeURIComponent(urlFilename)
+    }
+
+    // 创建blob并下载
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败')
+  }
+}
+
+// 删除简历
+const handleDeleteResume = async () => {
+  if (!candidateForm.resume_url) return
+
+  if (!candidateForm.id) {
+    candidateForm.resume_url = ''
+    uploadedResumeOriginalName.value = ''
+    clearResumeUploadState()
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm('确定要删除该简历吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    await deleteCandidateResume(candidateForm.id)
+    candidateForm.resume_url = ''
+    uploadedResumeOriginalName.value = ''
+    clearResumeUploadState()
+    ElMessage.success('简历删除成功')
+
+    const localCandidate = candidates.value.find(c => c.id === candidateForm.id)
+    if (localCandidate) {
+      localCandidate.resume_url = null
+    }
+
+    // 刷新候选人列表
+    const candidatesData = await getCandidates(currentRecruitment.value.id)
+    candidates.value = candidatesData.data
+
+    // 更新当前表单中的数据
+    const updatedCandidate = candidates.value.find(c => c.id === candidateForm.id)
+    if (updatedCandidate) {
+      Object.assign(candidateForm, updatedCandidate)
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error)
+      ElMessage.error('删除失败')
+    }
   }
 }
 
 const beforeResumeUpload = (file) => {
-  const isValidType = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)
   const isLt10M = file.size / 1024 / 1024 < 10
 
-  if (!isValidType) {
-    ElMessage.error('只能上传PDF或Word格式的文件!')
-    return false
-  }
   if (!isLt10M) {
     ElMessage.error('文件大小不能超过10MB!')
     return false
@@ -1338,6 +1600,26 @@ const getCandidateStatusText = (status) => {
     rejected: '已拒绝'
   }
   return texts[status] || '未知'
+}
+
+const getGenderText = (gender) => {
+  const texts = {
+    male: '男',
+    female: '女'
+  }
+  return texts[gender] || '-'
+}
+
+const getEducationText = (education) => {
+  const texts = {
+    none: '不限',
+    high_school: '高中及以下',
+    college: '中专/大专',
+    bachelor: '本科',
+    master: '硕士',
+    doctor: '博士'
+  }
+  return texts[education] || education || '-'
 }
 
 // 获取权限信息
@@ -1787,6 +2069,34 @@ onMounted(() => {
   border-radius: 6px;
   color: #409eff;
   font-size: 13px;
+}
+
+/* 简历文件信息样式 */
+.resume-file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border: 1px solid #b3d8ff;
+  border-radius: 6px;
+}
+
+.resume-file-label {
+  color: #606266;
+  font-size: 14px;
+}
+
+.resume-file-name {
+  color: #409eff;
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.resume-file-name:hover {
+  color: #66b1ff;
 }
 
 /* 表单按钮样式 */

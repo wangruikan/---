@@ -99,6 +99,24 @@ export const rejectRecord = (recordId, data) => {
 }
 
 /**
+ * 下载审批实例附件
+ */
+export const downloadApprovalAttachment = (instanceId, attachmentId) => {
+  return request({
+    url: `/approvals/${instanceId}/attachments/${attachmentId}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
+/**
+ * 获取审批实例附件下载地址（用于PDF预览）
+ */
+export const getApprovalAttachmentDownloadUrl = (instanceId, attachmentId) => {
+  return `/api/approvals/${instanceId}/attachments/${attachmentId}/download`
+}
+
+/**
  * 上传合成后的PDF
  */
 export const uploadSignedPDF = (recordId, formData) => {

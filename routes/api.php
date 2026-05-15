@@ -685,6 +685,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/records/{recordId}/reject', [\App\Http\Controllers\ApprovalFlowController::class, 'reject']); // 新：驳回
         Route::post('/{instanceId}/withdraw', [\App\Http\Controllers\ApprovalFlowController::class, 'withdraw']); // 新：撤回审批
         Route::post('/{instanceId}/upload-attachment', [\App\Http\Controllers\ApprovalFlowController::class, 'uploadAttachment']); // 新：上传附件
+        Route::get('/{instanceId}/attachments/{attachmentId}/download', [\App\Http\Controllers\ApprovalFlowController::class, 'downloadAttachment']); // 新：下载附件
         Route::delete('/{instanceId}/attachments/{attachmentId}', [\App\Http\Controllers\ApprovalFlowController::class, 'deleteAttachment']); // 新：删除附件
     });
 
@@ -729,6 +730,8 @@ Route::prefix('recruitment')->group(function () {
     Route::post('/candidates', [RecruitmentController::class, 'storeCandidate']);
     Route::put('/candidates/{id}', [RecruitmentController::class, 'updateCandidate']);
     Route::delete('/candidates/{id}', [RecruitmentController::class, 'destroyCandidate']);
+    Route::post('/candidates/upload-resume', [RecruitmentController::class, 'uploadResume']); // 上传候选人简历
+    Route::delete('/candidates/{id}/resume', [RecruitmentController::class, 'deleteResume']); // 删除候选人简历
 });
 
     // 共享文件

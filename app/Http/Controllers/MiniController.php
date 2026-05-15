@@ -1854,7 +1854,7 @@ class MiniController extends Controller
             'professional_title' => 'required|string|max:50',
             'hobbies' => 'required|array|min:1',
             'hobbies.*' => 'required|string|max:50',
-            'other_skills' => 'required|string',
+            'other_skills' => 'nullable|string',
             'education_history' => 'required|array|min:1',
             'education_history.*.date_range' => 'required|string|max:50',
             'education_history.*.school_major' => 'required|string|max:200',

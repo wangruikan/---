@@ -44,11 +44,11 @@ request.interceptors.request.use(
     if (currentAccountSetId) {
       // 转换为数字类型
       const accountSetIdNum = parseInt(currentAccountSetId, 10)
-      
+
       config.headers['X-Account-Set-Id'] = accountSetIdNum
-      
-      // 同时添加到请求参数中（GET请求）
-      if (config.method === 'get') {
+
+      // GET/DELETE 请求使用 params
+      if (config.method === 'get' || config.method === 'delete') {
         config.params = {
           ...config.params,
           current_account_set_id: accountSetIdNum

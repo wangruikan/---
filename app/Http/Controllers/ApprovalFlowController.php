@@ -8,6 +8,7 @@ use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ApprovalFlowController extends Controller
 {
@@ -777,6 +778,67 @@ class ApprovalFlowController extends Controller
     }
 
     /**
+     * 下载审批实例附件
+     */
+    public function downloadAttachment(Request $request, $instanceId, $attachmentId)
+    {
+        try {
+            if (!$instanceId || !is_numeric($instanceId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "审批实例ID无效: '{$instanceId}'"
+                ], 400);
+            }
+
+            $attachment = \App\Models\ApprovalAttachment::where('instance_id', $instanceId)
+                ->where('id', $attachmentId)
+                ->first();
+
+            if (!$attachment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '附件不存在或已被删除'
+                ], 404);
+            }
+
+            $filePath = $this->resolveStoredFilePath($attachment->file_path);
+            if (!$filePath) {
+                Log::error('审批实例附件文件不存在', [
+                    'instance_id' => $instanceId,
+                    'attachment_id' => $attachmentId,
+                    'relative_path' => $attachment->file_path,
+                    'candidates' => $this->buildStoredFilePathCandidates($attachment->file_path)
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => '文件不存在'
+                ], 404);
+            }
+
+            $downloadName = $attachment->file_name ?: basename($filePath);
+            $downloadName = trim(str_replace(['/', '\\'], '-', $downloadName));
+            $downloadName = preg_replace('/[\x00-\x1F\x7F]/u', '', $downloadName);
+            if ($downloadName === '') {
+                $downloadName = "approval_attachment_{$attachmentId}";
+            }
+
+            return response()->download($filePath, $downloadName);
+        } catch (\Exception $e) {
+            Log::error('下载审批实例附件失败', [
+                'instance_id' => $instanceId,
+                'attachment_id' => $attachmentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '下载失败：' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * 删除审批实例附件
      */
     public function deleteAttachment(Request $request, $instanceId, $attachmentId)
@@ -787,8 +849,8 @@ class ApprovalFlowController extends Controller
                 ->firstOrFail();
 
             // 删除文件
-            $filePath = storage_path('app/public/' . $attachment->file_path);
-            if (file_exists($filePath)) {
+            $filePath = $this->resolveStoredFilePath($attachment->file_path);
+            if ($filePath && file_exists($filePath)) {
                 unlink($filePath);
             }
 
@@ -1173,5 +1235,44 @@ class ApprovalFlowController extends Controller
         }
 
         return $attachments;
+    }
+
+    /**
+     * 构建附件可能的存储路径（兼容新旧目录结构）
+     */
+    private function buildStoredFilePathCandidates(?string $relativePath): array
+    {
+        if (!$relativePath) {
+            return [];
+        }
+
+        $normalized = ltrim(str_replace('\\', '/', $relativePath), '/');
+        $candidates = [];
+
+        try {
+            $candidates[] = Storage::disk('public')->path($normalized);
+        } catch (\Throwable $e) {
+            // ignore and fallback to legacy path candidates
+        }
+
+        $candidates[] = storage_path('app/public/' . $normalized);
+        $candidates[] = public_path('storage/' . $normalized);
+        $candidates[] = public_path($normalized);
+
+        return array_values(array_filter(array_unique($candidates)));
+    }
+
+    /**
+     * 解析附件真实物理路径
+     */
+    private function resolveStoredFilePath(?string $relativePath): ?string
+    {
+        foreach ($this->buildStoredFilePathCandidates($relativePath) as $candidate) {
+            if (is_string($candidate) && $candidate !== '' && file_exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

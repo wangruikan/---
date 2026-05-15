@@ -445,6 +445,7 @@ const pagination = reactive({
 })
 
 const form = reactive({
+  id: null,
   name: '',
   code: '',
   description: '',
@@ -463,6 +464,32 @@ const rules = {
   name: [
     { required: true, message: '请输入套账名称', trigger: 'blur' }
   ]
+}
+
+const normalizeAdjustmentMonths = (value) => {
+  let months = []
+
+  if (Array.isArray(value)) {
+    months = value
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return []
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      months = Array.isArray(parsed) ? parsed : []
+    } catch (error) {
+      months = trimmed.split(',')
+    }
+  } else if (typeof value === 'number') {
+    months = [value]
+  }
+
+  return [...new Set(
+    months
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item >= 1 && item <= 12)
+  )]
 }
 
 const loadAccountSets = async () => {
@@ -526,6 +553,7 @@ const handleView = (row) => {
   isViewMode.value = true
   isEdit.value = false
   Object.assign(form, { ...row })
+  form.base_adjustment_months = normalizeAdjustmentMonths(row.base_adjustment_months)
   showCreateDialog.value = true
 }
 
@@ -533,6 +561,7 @@ const handleEdit = (row) => {
   isViewMode.value = false
   isEdit.value = true
   Object.assign(form, { ...row })
+  form.base_adjustment_months = normalizeAdjustmentMonths(row.base_adjustment_months)
   showCreateDialog.value = true
 }
 
@@ -642,6 +671,7 @@ const resetForm = () => {
     formRef.value.resetFields()
   }
   Object.assign(form, {
+    id: null,
     name: '',
     code: '',
     description: '',

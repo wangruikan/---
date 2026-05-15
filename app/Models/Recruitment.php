@@ -58,6 +58,8 @@ class Recruitment extends Model
         'progress_notes',
         'candidates',
         'hired_count',
+        'applied_count',
+        'interviewed_count',
         'deadline',
         // 添加前端表单中的其他字段
         'department',
@@ -111,7 +113,7 @@ class Recruitment extends Model
             'status' => 'active', // 保持进行中状态
             'progress_notes' => $notes,
         ];
-        
+
         // 只更新提供的字段
         if ($appliedCount !== null) {
             $updateData['applied_count'] = $appliedCount;
@@ -122,7 +124,7 @@ class Recruitment extends Model
         if ($hiredCount !== null) {
             $updateData['hired_count'] = $hiredCount;
         }
-        
+
         $this->update($updateData);
     }
 

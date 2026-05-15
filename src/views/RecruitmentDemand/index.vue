@@ -144,7 +144,7 @@
         <el-descriptions-item label="需求人数">{{ currentDemand.required_count }}人</el-descriptions-item>
         <el-descriptions-item label="薪资范围">{{ currentDemand.salary_range || '-' }}</el-descriptions-item>
         <el-descriptions-item label="工作地点">{{ currentDemand.work_location || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="学历要求">{{ currentDemand.education_text || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="学历要求">{{ getEducationText(currentDemand.education) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="工作经验">{{ currentDemand.experience || '-' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="getStatusType(currentDemand.status)">
@@ -583,6 +583,19 @@ const getStatusText = (status) => {
 
 const formatDateTime = (datetime) => {
   return datetime ? dayjs(datetime).format('YYYY-MM-DD HH:mm:ss') : '-'
+}
+
+// 学历转换
+const getEducationText = (education) => {
+  const educationMap = {
+    'none': '不限',
+    'high_school': '高中及以下',
+    'college': '中专/大专',
+    'bachelor': '本科',
+    'master': '硕士',
+    'doctor': '博士'
+  }
+  return educationMap[education] || education || '-'
 }
 
 onMounted(() => {

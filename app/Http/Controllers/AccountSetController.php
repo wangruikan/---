@@ -111,6 +111,8 @@ class AccountSetController extends Controller
             'address' => 'nullable|string',
             'enabled_date' => 'nullable|date',
             'is_default' => 'boolean',
+            'base_adjustment_months' => 'nullable|array',
+            'base_adjustment_months.*' => 'integer|min:1|max:12',
         ]);
 
         if ($validator->fails()) {
@@ -133,6 +135,7 @@ class AccountSetController extends Controller
             'enabled_date' => $request->enabled_date,
             'status' => 'active',
             'is_default' => $request->is_default ?? false,
+            'base_adjustment_months' => $request->input('base_adjustment_months', []),
             'created_by' => $request->user()->id,
         ]);
 

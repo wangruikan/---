@@ -636,11 +636,11 @@ export default {
 			childrenIndex: 0,
 			householdOptions: ['城镇', '非城镇'],
 			householdIndex: 0,
-			englishOptions: ['四级', '六级', '托福', '雅思'],
-			engineeringOptions: ['电工证', '高压证'],
+			englishOptions: ['四级', '六级', '托福', '雅思', '无'],
+			engineeringOptions: ['电工证', '高压证', '无'],
 			titleOptions: ['无', '初级', '中级', '高级'],
 			titleIndex: 0,
-			hobbyOptions: ['唱歌', '棋类', '球类'],
+			hobbyOptions: ['唱歌', '棋类', '球类', '无'],
 			employmentDocOptions: ['劳动手册', '离职证明', '应届毕业', '下岗/协保证明'],
 			nativePlaceArray: []
 		}

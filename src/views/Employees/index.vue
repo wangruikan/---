@@ -4257,7 +4257,7 @@
         <el-button @click="handleSignatureDialogClose">取消</el-button>
         <el-button type="warning" @click="openPDFEditor">
           <el-icon><Edit /></el-icon>
-          高级签名盖章
+                    签名盖章
         </el-button>
         <el-button type="primary" @click="handleSignatureSubmit" :loading="submitting">
           确认盖章签字
@@ -5634,25 +5634,14 @@ const handleDownloadTemplate = async () => {
       responseType: 'blob'
     })
 
-    // 检查响应是否是错误（blob中的文本内容包含success:false）
-    const text = await response.data.text()
-    let errorData
-    try {
-      errorData = JSON.parse(text)
-    } catch (e) {
-      // 不是JSON，说明是正常的文件流
-    }
-
-    if (errorData && errorData.success === false) {
-      ElMessage.error(errorData.message || '下载模板失败')
-      return
+    // 兼容两种返回：新拦截器直接返回 Blob；旧逻辑返回 AxiosResponse
+    const fileBlob = response instanceof Blob ? response : response?.data
+    if (!(fileBlob instanceof Blob)) {
+      throw new Error('模板文件响应格式异常')
     }
 
     // 正常文件流，创建下载链接
-    const blob = new Blob([response.data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    })
-    const url = window.URL.createObjectURL(blob)
+    const url = window.URL.createObjectURL(fileBlob)
     const link = document.createElement('a')
     link.href = url
     link.download = `员工导入模板_${new Date().getTime()}.xlsx`
@@ -5664,22 +5653,7 @@ const handleDownloadTemplate = async () => {
     ElMessage.success('模板下载成功')
   } catch (error) {
     console.error('下载模板失败:', error)
-
-    // 尝试解析错误信息
-    let errorMessage = '下载模板失败'
-    if (error.response && error.response.data) {
-      try {
-        const text = await error.response.data.text()
-        const data = JSON.parse(text)
-        if (data.message) {
-          errorMessage = data.message
-        }
-      } catch (e) {
-        // 解析失败，使用默认消息
-      }
-    }
-
-    ElMessage.error(errorMessage)
+    ElMessage.error(error?.message || '下载模板失败')
   }
 }
 

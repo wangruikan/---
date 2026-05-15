@@ -436,7 +436,7 @@
           @click="openPDFEditor"
         >
           <el-icon><Edit /></el-icon>
-          高级签名盖章
+                  签名盖章
         </el-button>
         <el-button 
           type="success" 
@@ -687,9 +687,10 @@ import {
   getApprovalDetail,
   approveRecord,
   returnRecord,
-  rejectRecord
+  rejectRecord,
+  downloadApprovalAttachment,
+  getApprovalAttachmentDownloadUrl
 } from '@/api/approvalFlow'
-import { downloadAttachment, getDownloadAttachmentUrl } from '@/api/processApproval'
 import { getMySignature, getMySeals } from '@/api/signatures'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { useRouter } from 'vue-router'
@@ -752,6 +753,16 @@ const actionForm = reactive({
   use_signature: false,
   selected_seal_id: null
 })
+
+const resolveAttachmentInstanceId = (attachment) => {
+  return (
+    attachment?.instance_id ||
+    currentDetail.value?.id ||
+    currentApproval.value?.instance?.id ||
+    currentApproval.value?.instance_id ||
+    null
+  )
+}
 
 // 判断是否是第一步（第一步不能退回）
 const isFirstStep = computed(() => {
@@ -942,8 +953,13 @@ const handleActionSubmit = async (type) => {
 // 合成PDF并上传
 const mergePDFAndUpload = async (recordId, attachment, signature, seal, stepOrder) => {
   try {
+    const instanceId = resolveAttachmentInstanceId(attachment)
+    if (!instanceId) {
+      throw new Error('审批实例ID缺失，无法下载附件')
+    }
+
     // 下载原PDF（通过API下载，不用storage路径）
-    const pdfBlob = await downloadAttachment(attachment.process_approval_id, attachment.id)
+    const pdfBlob = await downloadApprovalAttachment(instanceId, attachment.id)
     const originalPdfBytes = await pdfBlob.arrayBuffer()
     
     // 使用pdf-lib加载PDF
@@ -1145,6 +1161,11 @@ const hasPDFAttachments = computed(() => {
   }
   
   const instance = currentApproval.value.instance
+  const instanceId = instance?.id
+  if (!instanceId) {
+    ElMessage.error('审批实例ID缺失')
+    return
+  }
   if (!instance.attachments || instance.attachments.length === 0) {
     return false
   }
@@ -1179,13 +1200,19 @@ const openPDFEditor = async () => {
   if (allAttachments.length === 1) {
     const attachment = allAttachments[0]
     const fileName = attachment.file_name || attachment.original_name || ''
+    const instanceId = resolveAttachmentInstanceId(attachment)
+
+    if (!instanceId) {
+      ElMessage.error('审批实例ID缺失，无法打开附件')
+      return
+    }
     
     // 检查是否为PDF
     if (!fileName.toLowerCase().endsWith('.pdf')) {
       ElMessage.warning('该文件不是PDF格式，可能无法正常签名盖章')
     }
 
-    currentPDFUrl.value = getDownloadAttachmentUrl(attachment.process_approval_id, attachment.id)
+    currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
     selectedAttachmentId.value = attachment.id // 记录选择的附件ID
     showPDFEditor.value = true
     return
@@ -1242,6 +1269,11 @@ const getFileIconColor = (fileName) => {
 // 确认选择文件
 const confirmPDFSelection = () => {
   const attachment = pdfList.value[selectedPDFIndex.value]
+  const instanceId = resolveAttachmentInstanceId(attachment)
+  if (!instanceId) {
+    ElMessage.error('审批实例ID缺失，无法预览附件')
+    return
+  }
   const fileName = attachment.file_name || attachment.original_name || ''
   
   // 检查是否为PDF
@@ -1256,7 +1288,7 @@ const confirmPDFSelection = () => {
       }
     ).then(() => {
       // 用户确认继续
-    currentPDFUrl.value = getDownloadAttachmentUrl(attachment.process_approval_id, attachment.id)
+    currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
       selectedAttachmentId.value = attachment.id // 记录选择的附件ID
       showPDFSelector.value = false
     showPDFEditor.value = true
@@ -1265,7 +1297,7 @@ const confirmPDFSelection = () => {
     })
   } else {
     // 是PDF文件，直接打开
-    currentPDFUrl.value = getDownloadAttachmentUrl(attachment.process_approval_id, attachment.id)
+    currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
     selectedAttachmentId.value = attachment.id // 记录选择的附件ID
     showPDFSelector.value = false
     showPDFEditor.value = true
@@ -1454,9 +1486,15 @@ const handleViewAttachment = async (attachment) => {
   }
 
   try {
+    const instanceId = resolveAttachmentInstanceId(attachment)
+    if (!instanceId) {
+      ElMessage.error('审批实例ID缺失，无法下载附件')
+      return
+    }
+
     ElMessage.info('正在下载，请稍候...')
 
-    const blob = await downloadAttachment(attachment.process_approval_id, attachment.id)
+    const blob = await downloadApprovalAttachment(instanceId, attachment.id)
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -1705,7 +1743,12 @@ const goToBatchStampPosition = () => {
   // 获取第一个选中文件的URL
   const firstSelectedIndex = batchStampSelectedFiles.value[0]
   const firstFile = batchStampPDFList.value[firstSelectedIndex]
-  batchStampFirstPDFUrl.value = getDownloadAttachmentUrl(firstFile.process_approval_id, firstFile.id)
+  const firstFileInstanceId = resolveAttachmentInstanceId(firstFile)
+  if (!firstFileInstanceId) {
+    ElMessage.error('审批实例ID缺失，无法加载附件')
+    return
+  }
+  batchStampFirstPDFUrl.value = getApprovalAttachmentDownloadUrl(firstFileInstanceId, firstFile.id)
   
   // 重置盖章位置
   batchStampPosition.value = { x: 80, y: 85, page: 1, sealId: null, sealUrl: '' }
@@ -1745,13 +1788,14 @@ const goToBatchStampPreview = () => {
   // 生成预览列表
   batchStampPreviewList.value = batchStampSelectedFiles.value.map(index => {
     const file = batchStampPDFList.value[index]
+    const instanceId = resolveAttachmentInstanceId(file)
     return {
       index: index,
       fileId: file.id,
-      processApprovalId: file.process_approval_id,
+      instanceId,
       fileName: file.file_name || file.original_name,
       filePath: file.file_path,
-      fileUrl: getDownloadAttachmentUrl(file.process_approval_id, file.id),
+      fileUrl: getApprovalAttachmentDownloadUrl(instanceId, file.id),
       stampPosition: { ...batchStampPosition.value }
     }
   })
@@ -1829,7 +1873,10 @@ const confirmBatchStamp = async () => {
         ElMessage.info(`正在处理 ${i + 1}/${totalCount}: ${file.fileName}`)
         
         // 1. 下载原始PDF
-        const sourcePdfBlob = await downloadAttachment(file.processApprovalId, file.fileId)
+        if (!file.instanceId) {
+          throw new Error('审批实例ID缺失')
+        }
+        const sourcePdfBlob = await downloadApprovalAttachment(file.instanceId, file.fileId)
         const sourcePdfBytes = await sourcePdfBlob.arrayBuffer()
         
         // 2. 使用pdf-lib加载PDF

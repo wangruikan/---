@@ -104,3 +104,11 @@ export function deleteCandidate(id) {
     method: 'delete'
   })
 }
+
+// 删除候选人简历
+export function deleteCandidateResume(id) {
+  return request({
+    url: `/recruitment/candidates/${id}/resume`,
+    method: 'delete'
+  })
+}

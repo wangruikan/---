@@ -46,16 +46,15 @@ class RecruitmentController extends Controller
         $recruitments->getCollection()->transform(function ($recruitment) {
             $recruitment->project_name = $recruitment->project ? $recruitment->project->name : '-';
             $recruitment->assigned_to_name = $recruitment->assignedTo ? $recruitment->assignedTo->name : '-';
-            
+
             // 添加前端需要的字段（如果数据库中没有这些字段，使用默认值）
             $recruitment->department = $recruitment->department ?? '技术部';
             $recruitment->recruitment_count = $recruitment->required_count ?? 1;
-            $recruitment->applied_count = 0;
-            $recruitment->interviewed_count = 0;
-            $recruitment->salary_range = $recruitment->salary_min && $recruitment->salary_max 
+            // 注意：不要重置 applied_count 和 interviewed_count，让它们使用数据库中的实际值
+            $recruitment->salary_range = $recruitment->salary_min && $recruitment->salary_max
                 ? $recruitment->salary_min . '-' . $recruitment->salary_max . '元'
                 : '面议';
-            
+
             return $recruitment;
         });
         
@@ -541,6 +540,73 @@ class RecruitmentController extends Controller
         return response()->json([
             'success' => true,
             'message' => '候选人删除成功'
+        ]);
+    }
+
+    // 上传候选人简历
+    public function uploadResume(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|max:10240', // 最大10MB
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $file = $request->file('file');
+            $extension = strtolower($file->getClientOriginalExtension());
+
+            // 保存文件到 storage/app/public/resumes 目录
+            $path = $file->store('resumes', 'public');
+            $url = '/storage/' . $path;
+
+            return response()->json([
+                'success' => true,
+                'message' => '上传成功',
+                'data' => [
+                    'url' => $url,
+                    'path' => $path,
+                    'original_name' => $file->getClientOriginalName(),
+                    'size' => $file->getSize()
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '上传失败：' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 删除候选人简历
+    public function deleteResume($id)
+    {
+        $candidate = \App\Models\RecruitmentCandidate::findOrFail($id);
+
+        // 删除文件
+        if ($candidate->resume_url) {
+            // 从URL中提取存储路径
+            $path = str_replace('/storage/', '', $candidate->resume_url);
+            $fullPath = storage_path('app/public/' . $path);
+
+            if (file_exists($fullPath)) {
+                unlink($fullPath);
+            }
+        }
+
+        // 更新数据库
+        $candidate->resume_url = null;
+        $candidate->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => '简历删除成功'
         ]);
     }
 }

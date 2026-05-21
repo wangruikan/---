@@ -55,10 +55,45 @@
             </el-dropdown>
           </div>
         </el-header>
+
+        <!-- 访问页签 -->
+        <div class="visited-tabs" v-if="visitedTabs.length > 0">
+          <div class="visited-tabs-inner">
+            <div
+              v-for="tab in visitedTabs"
+              :key="tab.fullPath"
+              class="visited-tab-item"
+              :class="{ active: isActiveTab(tab) }"
+              @click="goToVisitedTab(tab)"
+            >
+              <span class="visited-tab-title">{{ tab.title }}</span>
+              <el-icon
+                v-if="tab.path !== '/'"
+                class="visited-tab-close"
+                @click.stop="removeVisitedTab(tab)"
+              >
+                <Close />
+              </el-icon>
+            </div>
+          </div>
+        </div>
         
         <!-- 主内容 -->
         <el-main class="main-content">
-          <router-view />
+          <router-view v-slot="{ Component, route }">
+            <keep-alive :max="20">
+              <component
+                :is="Component"
+                :key="route.name || route.path"
+                v-if="route.meta?.keepAlive !== false"
+              />
+            </keep-alive>
+            <component
+              :is="Component"
+              :key="route.name || route.path"
+              v-if="route.meta?.keepAlive === false"
+            />
+          </router-view>
         </el-main>
       </el-container>
     </el-container>
@@ -151,7 +186,7 @@ import { getDashboardData, markReminderAsRead } from '@/api/dashboard'
 import AccountSetSelector from '@/components/AccountSetSelector.vue'
 import HoverMenu from '@/components/HoverMenu.vue'
 // import OperationBarrage from '@/components/OperationBarrage.vue' // 已隐藏弹幕功能
-import { Bell, ArrowDown } from '@element-plus/icons-vue'
+import { Bell, ArrowDown, Close } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -161,6 +196,8 @@ const permissionStore = usePermissionStore()
 
 const showNotifications = ref(false)
 const notifications = ref([])
+const visitedTabs = ref([])
+const MAX_VISITED_TABS = 20
 
 // 个人资料相关
 const showProfileDialog = ref(false)
@@ -211,6 +248,56 @@ const unreadCount = computed(() => notifications.value.filter(n => !n.is_read).l
 const canAccessAccountSets = computed(() => {
   return userStore.userInfo?.role === 'admin' || permissionStore.hasModuleAccess('account_sets')
 })
+
+const buildVisitedTab = (targetRoute) => {
+  if (!targetRoute || !targetRoute.path) return null
+  if (targetRoute.path === '/login') return null
+
+  return {
+    name: targetRoute.name || targetRoute.path,
+    path: targetRoute.path,
+    fullPath: targetRoute.fullPath || targetRoute.path,
+    title: targetRoute.meta?.title || targetRoute.name || targetRoute.path
+  }
+}
+
+const addVisitedTab = (targetRoute) => {
+  const tab = buildVisitedTab(targetRoute)
+  if (!tab) return
+
+  const existingIndex = visitedTabs.value.findIndex(item => item.fullPath === tab.fullPath)
+  if (existingIndex !== -1) {
+    visitedTabs.value[existingIndex] = tab
+    return
+  }
+
+  visitedTabs.value.push(tab)
+  if (visitedTabs.value.length > MAX_VISITED_TABS) {
+    visitedTabs.value.shift()
+  }
+}
+
+const isActiveTab = (tab) => tab?.fullPath === route.fullPath
+
+const goToVisitedTab = (tab) => {
+  if (!tab?.fullPath || tab.fullPath === route.fullPath) return
+  router.push(tab.fullPath)
+}
+
+const removeVisitedTab = (tab) => {
+  const index = visitedTabs.value.findIndex(item => item.fullPath === tab.fullPath)
+  if (index === -1) return
+
+  const wasActive = isActiveTab(tab)
+  visitedTabs.value.splice(index, 1)
+
+  if (wasActive && visitedTabs.value.length > 0) {
+    const fallbackTab = visitedTabs.value[index - 1] || visitedTabs.value[index] || visitedTabs.value[visitedTabs.value.length - 1]
+    if (fallbackTab?.fullPath) {
+      router.push(fallbackTab.fullPath)
+    }
+  }
+}
 
 const handleUserCommand = async (command) => {
   switch (command) {
@@ -410,6 +497,14 @@ watch(showNotifications, (visible) => {
     loadNotifications()
   }
 })
+
+watch(
+  () => route.fullPath,
+  () => {
+    addVisitedTab(route)
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -420,8 +515,11 @@ watch(showNotifications, (visible) => {
 
 .main-container {
   margin-left: 80px;
+  width: calc(100vw - 80px);
   height: 100vh;
   overflow-y: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-menu .el-sub-menu .el-menu-item.is-active .el-icon {
@@ -435,6 +533,9 @@ watch(showNotifications, (visible) => {
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 3200;
 }
 
 .header-left {
@@ -458,6 +559,74 @@ watch(showNotifications, (visible) => {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+.visited-tabs {
+  background: #fff;
+  border-bottom: 1px solid #ebeef5;
+  padding: 8px 12px;
+  position: sticky;
+  top: 60px;
+  z-index: 3190;
+}
+
+.visited-tabs-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.visited-tabs-inner::-webkit-scrollbar {
+  height: 4px;
+}
+
+.visited-tabs-inner::-webkit-scrollbar-thumb {
+  background: #dcdfe6;
+  border-radius: 2px;
+}
+
+.visited-tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fafafa;
+  color: #606266;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+
+.visited-tab-item:hover {
+  border-color: #c6e2ff;
+  color: #409eff;
+}
+
+.visited-tab-item.active {
+  border-color: #409eff;
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+.visited-tab-title {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.visited-tab-close {
+  font-size: 12px;
+  color: #909399;
+}
+
+.visited-tab-close:hover {
+  color: #f56c6c;
 }
 
 .notification-badge {

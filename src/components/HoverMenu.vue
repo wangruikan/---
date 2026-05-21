@@ -263,7 +263,8 @@ watch(() => route.path, () => {
   left: 0;
   top: 0;
   bottom: 0;
-  z-index: 1000;
+  z-index: 5000;
+  pointer-events: none;
 }
 
 .primary-menu {
@@ -275,6 +276,7 @@ watch(() => route.path, () => {
   align-items: center;
   padding-top: 10px;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  pointer-events: auto;
 }
 
 .logo {
@@ -345,6 +347,7 @@ watch(() => route.path, () => {
   overflow-x: hidden;
   z-index: 999;
   border-radius: 8px;
+  pointer-events: auto;
 }
 
 .submenu-header {

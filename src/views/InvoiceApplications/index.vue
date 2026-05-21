@@ -105,7 +105,7 @@
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleDetail(row)">查看</el-button>
             <el-button 
@@ -115,6 +115,14 @@
               @click="handleEdit(row)"
             >
               编辑
+            </el-button>
+            <el-button
+              v-if="canEditInvoice && (!row.approval_status || row.approval_status === 'rejected')"
+              type="success"
+              link
+              @click="handleSubmitFromList(row)"
+            >
+              提交
             </el-button>
             <el-button 
               v-if="canEditInvoice && row.can_resubmit" 
@@ -153,68 +161,280 @@
     <el-dialog
       v-model="createDialogVisible"
       title="创建开票任务"
-      width="600px"
+      width="960px"
+      top="12vh"
       @close="handleCreateDialogClose"
     >
       <el-form
         ref="createFormRef"
         :model="createForm"
         :rules="createFormRules"
-        label-width="100px"
+        label-width="120px"
+        style="max-height: 58vh; overflow-y: auto; padding-right: 6px"
       >
-        <el-form-item label="任务名称" prop="task_name">
-          <el-input
-            v-model="createForm.task_name"
-            placeholder="请输入任务名称（如：11月工资发票）"
-            maxlength="100"
-            show-word-limit
-          />
-        </el-form-item>
-        <el-form-item label="年份" prop="year">
-          <el-select v-model="createForm.year" placeholder="请选择年份" style="width: 100%">
-            <el-option
-              v-for="year in years"
-              :key="year"
-              :label="`${year}年`"
-              :value="year"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="月份" prop="month">
-          <el-select v-model="createForm.month" placeholder="请选择月份" style="width: 100%">
-            <el-option
-              v-for="month in 12"
-              :key="month"
-              :label="`${month}月`"
-              :value="month"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="项目" prop="project_id">
-          <el-select
-            v-model="createForm.project_id"
-            placeholder="请选择项目"
-            filterable
-            style="width: 100%"
-          >
-            <el-option
-              v-for="project in validProjects"
-              :key="project.id"
-              :label="project.name"
-              :value="project.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input
-            v-model="createForm.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入备注（非必填）"
-            maxlength="500"
-            show-word-limit
-          />
-        </el-form-item>
+        <el-row :gutter="20">
+          <el-col :span="24">
+            <el-form-item label="项目" prop="project_id">
+              <el-select
+                v-model="createForm.project_id"
+                placeholder="请选择项目"
+                filterable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="project in validProjects"
+                  :key="project.id"
+                  :label="project.name"
+                  :value="project.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">开票详情</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="所属期-年份" prop="period_year">
+              <el-select v-model="createForm.period_year" placeholder="请选择年份" style="width: 100%">
+                <el-option
+                  v-for="year in years"
+                  :key="'period-year-' + year"
+                  :label="`${year}年`"
+                  :value="year"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="所属期-月份" prop="period_month">
+              <el-select v-model="createForm.period_month" placeholder="请选择月份" style="width: 100%">
+                <el-option
+                  v-for="month in 12"
+                  :key="'period-month-' + month"
+                  :label="`${month}月`"
+                  :value="month"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="单位名称" prop="company_name">
+              <el-input v-model="createForm.company_name" placeholder="请输入单位名称" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="申请日期" prop="application_date">
+              <el-date-picker
+                v-model="createForm.application_date"
+                type="date"
+                placeholder="选择日期"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开票方式" prop="invoice_method">
+              <el-select v-model="createForm.invoice_method" placeholder="请选择开票方式" style="width: 100%">
+                <el-option label="全额" value="full" />
+                <el-option label="差额" value="diff" />
+                <el-option label="无" value="none" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开票种类" prop="invoice_type">
+              <el-input v-model="createForm.invoice_type" placeholder="默认：普票" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="扣除额" prop="deduction_amount">
+              <el-input-number
+                v-model="createForm.deduction_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                :disabled="!createNeedsDeductionAmount"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="税率" prop="tax_rate">
+              <el-select v-model="createForm.tax_rate" placeholder="请选择税率" style="width: 100%">
+                <el-option label="1%" :value="0.01" />
+                <el-option label="2%" :value="0.02" />
+                <el-option label="3%" :value="0.03" />
+                <el-option label="4%" :value="0.04" />
+                <el-option label="5%" :value="0.05" />
+                <el-option label="6%" :value="0.06" />
+                <el-option label="7%" :value="0.07" />
+                <el-option label="8%" :value="0.08" />
+                <el-option label="9%" :value="0.09" />
+                <el-option label="10%" :value="0.10" />
+                <el-option label="11%" :value="0.11" />
+                <el-option label="12%" :value="0.12" />
+                <el-option label="13%" :value="0.13" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="不含税金额" prop="amount_excluding_tax">
+              <el-input-number
+                v-model="createForm.amount_excluding_tax"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开票税额" prop="invoice_tax_amount">
+              <el-input-number
+                v-model="createForm.invoice_tax_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开票金额" prop="invoice_amount">
+              <el-input-number
+                v-model="createForm.invoice_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="税金" prop="tax_amount">
+              <el-input-number
+                v-model="createForm.tax_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开票日期" prop="invoice_date">
+              <el-date-picker
+                v-model="createForm.invoice_date"
+                type="date"
+                placeholder="选择日期"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开票人" prop="invoicer">
+              <el-input v-model="createForm.invoicer" placeholder="请输入开票人" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="发票号码" prop="invoice_number">
+              <el-input v-model="createForm.invoice_number" placeholder="请输入发票号码" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="是否完成">
+              <el-switch v-model="createForm.is_completed" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="开票备注">
+              <el-input
+                v-model="createForm.invoice_remark"
+                type="textarea"
+                :rows="2"
+                placeholder="请输入开票备注（非必填）"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      
+
+        <el-divider content-position="left">扣除明细</el-divider>
+        <div class="section-header">
+          <span>扣除明细项</span>
+          <el-button type="primary" link @click="addCreateItem">添加明细</el-button>
+        </div>
+        <el-table :data="createItems" border size="small" style="margin-top: 10px">
+          <el-table-column type="index" label="序号" width="70" align="center" />
+          <el-table-column label="项目" min-width="220">
+            <template #default="{ row }">
+              <el-select
+                v-model="row.invoice_project_id"
+                placeholder="请选择项目"
+                filterable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="project in invoiceProjects"
+                  :key="project.id"
+                  :label="project.project_name"
+                  :value="project.id"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="金额" width="220">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="备注" min-width="240">
+            <template #default="{ row }">
+              <el-input v-model="row.remark" placeholder="请输入备注（可选）" />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" align="center">
+            <template #default="{ $index }">
+              <el-button
+                type="danger"
+                link
+                @click="removeCreateItem($index)"
+                :disabled="createItems.length <= 1"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-divider content-position="left">附件上传</el-divider>
+        <el-upload
+          v-model:file-list="createAttachmentFileList"
+          action="#"
+          multiple
+          :auto-upload="false"
+          :before-upload="beforeCreateAttachmentUpload"
+        >
+          <el-button type="primary">
+            <el-icon><Upload /></el-icon>
+            选择附件
+          </el-button>
+          <template #tip>
+            <div class="el-upload__tip">可上传多个文件，单个文件不超过10MB</div>
+          </template>
+        </el-upload>
       </el-form>
 
       <template #footer>
@@ -292,17 +512,6 @@
               合计金额：<span>¥{{ totalAmount.toFixed(2) }}</span>
             </div>
 
-            <!-- 生成Excel按钮 -->
-            <div class="excel-section" v-if="currentApplication.items && currentApplication.items.length > 0">
-              <el-button 
-                type="success" 
-                @click="handleGenerateExcel" 
-                :loading="generatingExcel"
-              >
-                <el-icon><Document /></el-icon>
-                生成扣除明细表（Excel）
-              </el-button>
-            </div>
           </div>
         </el-tab-pane>
 
@@ -600,14 +809,6 @@
 
       <template #footer>
         <el-button @click="detailDialogVisible = false">关闭</el-button>
-        <el-button 
-          v-if="canSubmit" 
-          type="primary" 
-          @click="openSubmitStampDialog" 
-          :loading="submitting"
-        >
-          提交审批
-        </el-button>
       </template>
     </el-dialog>
 
@@ -698,7 +899,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Document, Upload, Download } from '@element-plus/icons-vue'
+import { Plus, Upload, Download } from '@element-plus/icons-vue'
 import {
   getInvoiceApplications,
   getInvoiceApplicationDetail,
@@ -767,22 +968,105 @@ const creating = ref(false)
 const createForm = reactive({
   task_name: '',
   year: currentYear,
-  month: new Date().getMonth() + 1,
+  month: currentMonth,
   project_id: null,
-  remark: ''
+  remark: '',
+  period_year: currentYear,
+  period_month: currentMonth,
+  company_name: '',
+  application_date: '',
+  invoice_method: null,
+  invoice_type: '普票',
+  deduction_amount: 0,
+  tax_rate: null,
+  amount_excluding_tax: 0,
+  invoice_tax_amount: 0,
+  invoice_amount: 0,
+  tax_amount: 0,
+  invoice_date: '',
+  is_completed: false,
+  invoicer: '',
+  invoice_number: '',
+  invoice_remark: ''
 })
 
 const createFormRules = {
-  task_name: [
-    { required: true, message: '请输入任务名称', trigger: 'blur' },
-    { max: 100, message: '任务名称不能超过100个字符', trigger: 'blur' }
-  ],
-  year: [{ required: true, message: '请选择年份', trigger: 'change' }],
-  month: [{ required: true, message: '请选择月份', trigger: 'change' }],
-  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }]
+  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  period_year: [{ required: true, message: '请选择所属期年份', trigger: 'change' }],
+  period_month: [{ required: true, message: '请选择所属期月份', trigger: 'change' }],
+  company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
+  application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
+  invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
+  invoice_type: [{ required: true, message: '请输入开票种类', trigger: 'blur' }],
+  tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
+  amount_excluding_tax: [{ required: true, message: '请输入不含税金额', trigger: 'blur' }],
+  invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
+  invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
+  tax_amount: [{ required: true, message: '请输入税金', trigger: 'blur' }],
+  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }],
+  invoicer: [{ required: true, message: '请输入开票人', trigger: 'blur' }],
+  invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
 }
 
-// 详情对话框
+const createItems = ref([
+  { invoice_project_id: null, amount: 0, remark: '' }
+])
+const createAttachmentFileList = ref([])
+
+const addCreateItem = () => {
+  createItems.value.push({
+    invoice_project_id: null,
+    amount: 0,
+    remark: ''
+  })
+}
+
+const removeCreateItem = (index) => {
+  if (createItems.value.length <= 1) return
+  createItems.value.splice(index, 1)
+}
+
+const beforeCreateAttachmentUpload = (file) => {
+  const isLt10M = file.size / 1024 / 1024 < 10
+  if (!isLt10M) {
+    ElMessage.error('\u6587\u4ef6\u5927\u5c0f\u4e0d\u80fd\u8d85\u8fc7 10MB')
+  }
+  return isLt10M
+}
+
+const validateCreateExtraData = () => {
+  if (!createItems.value.length) {
+    ElMessage.warning('\u8bf7\u81f3\u5c11\u6dfb\u52a01\u6761\u6263\u9664\u660e\u7ec6')
+    return false
+  }
+
+  const invalidIndex = createItems.value.findIndex(item => {
+    return !item.invoice_project_id || Number(item.amount) <= 0
+  })
+
+  if (invalidIndex !== -1) {
+    ElMessage.warning('\u8bf7\u5b8c\u6210\u6263\u9664\u660e\u7ec6\u7b2c ' + (invalidIndex + 1) + ' \u884c\u7684\u9879\u76ee\u548c\u91d1\u989d')
+    return false
+  }
+
+  if (!createAttachmentFileList.value.length) {
+    ElMessage.warning('\u8bf7\u81f3\u5c11\u4e0a\u4f201\u4e2a\u9644\u4ef6')
+    return false
+  }
+
+  const oversizeFile = createAttachmentFileList.value.find(file => {
+    const size = file.size || file.raw?.size || 0
+    return size / 1024 / 1024 >= 10
+  })
+
+  if (oversizeFile) {
+    ElMessage.error('\u6587\u4ef6\u5927\u5c0f\u4e0d\u80fd\u8d85\u8fc7 10MB')
+    return false
+  }
+
+  return true
+}
+
 const detailDialogVisible = ref(false)
 const detailDialogTitle = ref('')
 const activeTab = ref('items')
@@ -862,9 +1146,6 @@ const invoiceDetailsFormRules = {
 // 开票详情表单ref
 const invoiceDetailsFormRef = ref(null)
 
-// Excel生成
-const generatingExcel = ref(false)
-
 // 计算属性
 const canEdit = computed(() => {
   return isEditMode.value && 
@@ -877,13 +1158,9 @@ const needsDeductionAmount = computed(() => {
   return method === 'full' || method === 'diff'
 })
 
-const canSubmit = computed(() => {
-  // 与后端逻辑保持一致：无审批状态或已驳回状态，且有明细项和附件
-  const hasNoApprovalOrRejected = !currentApplication.value.approval_status || 
-                                   currentApplication.value.approval_status === 'rejected'
-  return hasNoApprovalOrRejected &&
-         currentApplication.value.items?.length > 0 &&
-         currentApplication.value.attachments?.length > 0
+const createNeedsDeductionAmount = computed(() => {
+  const method = createForm.invoice_method
+  return method === 'full' || method === 'diff'
 })
 
 const totalAmount = computed(() => {
@@ -1145,45 +1422,117 @@ const handleExport = async () => {
 }
 
 // 创建开票任务
-const handleCreate = () => {
+const getTodayDate = () => {
+  return new Date().toISOString().split('T')[0]
+}
+
+const resetCreateForm = () => {
+  const today = getTodayDate()
+  createForm.task_name = ''
   createForm.year = currentYear
-  createForm.month = new Date().getMonth() + 1
+  createForm.month = currentMonth
+  createForm.project_id = null
+  createForm.remark = ''
+  createForm.period_year = currentYear
+  createForm.period_month = currentMonth
+  createForm.company_name = ''
+  createForm.application_date = today
+  createForm.invoice_method = null
+  createForm.invoice_type = '普票'
+  createForm.deduction_amount = 0
+  createForm.tax_rate = null
+  createForm.amount_excluding_tax = 0
+  createForm.invoice_tax_amount = 0
+  createForm.invoice_amount = 0
+  createForm.tax_amount = 0
+  createForm.invoice_date = today
+  createForm.is_completed = false
+  createForm.invoicer = ''
+  createForm.invoice_number = ''
+  createForm.invoice_remark = ''
+  createItems.value = [
+    { invoice_project_id: null, amount: 0, remark: '' }
+  ]
+  createAttachmentFileList.value = []
+  createFormRef.value?.clearValidate()
+}
+
+const handleCreate = () => {
+  resetCreateForm()
   createDialogVisible.value = true
 }
 
 // 确认创建
 const handleConfirmCreate = async () => {
   try {
+    const selectedProject = validProjects.value.find(project => project.id === createForm.project_id)
+    createForm.task_name = (selectedProject?.name || '开票') + `${createForm.year}年${createForm.month}月`
+
     await createFormRef.value.validate()
-    
+
+    if (!validateCreateExtraData()) {
+      return
+    }
+
     creating.value = true
     const response = await createInvoiceApplication(createForm)
 
-    if (response.success) {
-      ElMessage.success(response.message || '创建成功')
+    if (!response?.success) {
+      ElMessage.error(response?.message || '创建失败')
+      return
+    }
+
+    const createdId = response.data?.id
+
+    if (!createdId) {
+      throw new Error('创建成功但未返回任务ID')
+    }
+
+    try {
+      for (const item of createItems.value) {
+        const itemRes = await addInvoiceItem(createdId, {
+          invoice_project_id: item.invoice_project_id,
+          amount: Number(item.amount || 0),
+          remark: item.remark || ''
+        })
+
+        if (!itemRes?.success) {
+          throw new Error(itemRes?.message || '扣除明细保存失败')
+        }
+      }
+
+      const attachmentFiles = createAttachmentFileList.value
+        .map(file => file.raw || file)
+        .filter(Boolean)
+
+      for (const file of attachmentFiles) {
+        const uploadRes = await uploadAttachment(createdId, file)
+        if (!uploadRes?.success) {
+          throw new Error(uploadRes?.message || '附件上传失败')
+        }
+      }
+    } catch (extraError) {
+      ElMessage.error('开票任务已创建，但扣除明细或附件保存失败，请进入详情补充')
       createDialogVisible.value = false
       loadData()
-      // 直接打开编辑
-      handleEdit(response.data)
+      return
     }
+
+    ElMessage.success(response.message || '创建成功')
+    createDialogVisible.value = false
+    loadData()
   } catch (error) {
     if (error !== false) {
       console.error('创建失败', error)
-      ElMessage.error(error.response?.data?.message || '创建失败')
+      ElMessage.error(error.response?.data?.message || error.message || '创建失败')
     }
   } finally {
     creating.value = false
   }
 }
 
-// 创建对话框关闭
 const handleCreateDialogClose = () => {
-  createFormRef.value?.resetFields()
-  createForm.task_name = ''
-  createForm.year = currentYear
-  createForm.month = new Date().getMonth() + 1
-  createForm.project_id = null
-  createForm.remark = ''
+  resetCreateForm()
 }
 
 // 查看详情
@@ -1440,25 +1789,23 @@ const handleProjectChange = (projectId) => {
   }
 }
 
-// 生成Excel
-const handleGenerateExcel = async () => {
-  try {
-    generatingExcel.value = true
-    const response = await generateExcel(currentApplication.value.id)
-    
-    if (response.success) {
-      ElMessage.success(response.message || '生成成功，已自动添加到附件列表')
-      // 刷新数据以获取新生成的文件
-      await loadApplicationDetail(currentApplication.value.id)
-      // 自动切换到附件标签页
-      activeTab.value = 'attachments'
-    }
-  } catch (error) {
-    console.error('生成Excel失败', error)
-    ElMessage.error(error.response?.data?.message || '生成失败')
-  } finally {
-    generatingExcel.value = false
+const hasDeductionExcelAttachment = () => {
+  return currentApplication.value.attachments?.some(att => {
+    return att.filename && att.filename.includes('扣除明细')
+  })
+}
+
+const autoGenerateDeductionExcelIfNeeded = async () => {
+  const invoiceMethod = invoiceDetailsForm.invoice_method
+  const needsDeductionExcel = invoiceMethod === 'full' || invoiceMethod === 'diff'
+  if (!needsDeductionExcel) return
+  if (hasDeductionExcelAttachment()) return
+
+  const response = await generateExcel(currentApplication.value.id)
+  if (!response?.success) {
+    throw new Error(response?.message || '自动生成扣除明细表失败')
   }
+  await loadApplicationDetail(currentApplication.value.id)
 }
 
 // 上传前验证
@@ -1591,19 +1938,6 @@ const openSubmitStampDialog = () => {
     return
   }
   
-  // 3. 如果选择了全额或差额，必须生成扣除明细
-  if (invoiceMethod === 'full' || invoiceMethod === 'diff') {
-    const hasDeductionAttachment = currentApplication.value.attachments?.some(att => 
-      att.filename && att.filename.includes('扣除明细')
-    )
-    
-    if (!hasDeductionAttachment) {
-      const methodText = invoiceMethod === 'full' ? '全额' : '差额'
-      ElMessage.warning(`您选择了"${methodText}"开票方式，请先生成扣除明细表`)
-      return
-    }
-  }
-  
   // 验证通过，打开盖章方式选择对话框
   submitStampDialogVisible.value = true
 }
@@ -1629,19 +1963,7 @@ const handleSubmit = async () => {
       return
     }
     
-    // 3. 如果选择了全额或差额，必须生成扣除明细
-    if (invoiceMethod === 'full' || invoiceMethod === 'diff') {
-      // 检查是否有扣除明细附件
-      const hasDeductionAttachment = currentApplication.value.attachments?.some(att => 
-        att.filename && att.filename.includes('扣除明细')
-      )
-      
-      if (!hasDeductionAttachment) {
-        const methodText = invoiceMethod === 'full' ? '全额' : '差额'
-        ElMessage.warning(`您选择了"${methodText}"开票方式，请先生成扣除明细表`)
-        return
-      }
-    }
+    await autoGenerateDeductionExcelIfNeeded()
 
     submitting.value = true
     const response = await submitInvoiceApplication(currentApplication.value.id, {
@@ -1664,6 +1986,11 @@ const handleSubmit = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+const handleSubmitFromList = async (row) => {
+  await loadApplicationDetail(row.id)
+  openSubmitStampDialog()
 }
 
 // 重新发起
@@ -1786,6 +2113,15 @@ watch(
 )
 
 // 监听开票方式变化，自动清空扣除额（如果不是全额或差额）
+watch(
+  () => createForm.invoice_method,
+  (newMethod) => {
+    if (newMethod !== 'full' && newMethod !== 'diff') {
+      createForm.deduction_amount = 0
+    }
+  }
+)
+
 watch(
   () => invoiceDetailsForm.invoice_method,
   (newMethod) => {

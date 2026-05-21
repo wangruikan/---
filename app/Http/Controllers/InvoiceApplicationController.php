@@ -100,15 +100,29 @@ class InvoiceApplicationController extends Controller
      */
     public function store(Request $request)
     {
-        if ($response = $this->checkPermission('invoice_applications.create')) {
-            return $response;
-        }
-        
         $validator = Validator::make($request->all(), [
             'task_name' => 'required|string|max:100',
             'year' => 'required|integer|min:2000|max:2100',
             'month' => 'required|integer|min:1|max:12',
             'project_id' => 'required|exists:projects,id',
+            'remark' => 'nullable|string|max:500',
+            'period_year' => 'required|integer|min:2000|max:2100',
+            'period_month' => 'required|integer|min:1|max:12',
+            'company_name' => 'required|string|max:200',
+            'application_date' => 'required|date',
+            'invoice_method' => 'required|string|max:20',
+            'invoice_type' => 'required|string|max:50',
+            'deduction_amount' => 'nullable|numeric|min:0',
+            'tax_rate' => 'required|numeric|min:0|max:1',
+            'amount_excluding_tax' => 'required|numeric|min:0',
+            'invoice_tax_amount' => 'required|numeric|min:0',
+            'invoice_amount' => 'required|numeric|min:0',
+            'tax_amount' => 'required|numeric|min:0',
+            'invoice_date' => 'required|date',
+            'is_completed' => 'nullable|boolean',
+            'invoicer' => 'required|string|max:100',
+            'invoice_number' => 'required|string|max:100',
+            'invoice_remark' => 'nullable|string',
         ], [
             'task_name.required' => '任务名称不能为空',
             'task_name.max' => '任务名称不能超过100个字符',
@@ -116,6 +130,20 @@ class InvoiceApplicationController extends Controller
             'month.required' => '月份不能为空',
             'project_id.required' => '请选择项目',
             'project_id.exists' => '项目不存在',
+            'period_year.required' => '请选择所属期-年份',
+            'period_month.required' => '请选择所属期-月份',
+            'company_name.required' => '请输入单位名称',
+            'application_date.required' => '请选择申请日期',
+            'invoice_method.required' => '请选择开票方式',
+            'invoice_type.required' => '请输入开票种类',
+            'tax_rate.required' => '请选择税率',
+            'amount_excluding_tax.required' => '请输入不含税金额',
+            'invoice_tax_amount.required' => '请输入开票税额',
+            'invoice_amount.required' => '请输入开票金额',
+            'tax_amount.required' => '请输入税金',
+            'invoice_date.required' => '请选择开票日期',
+            'invoicer.required' => '请输入开票人',
+            'invoice_number.required' => '请输入发票号码',
         ]);
 
         if ($validator->fails()) {
@@ -129,7 +157,6 @@ class InvoiceApplicationController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        // 获取项目名称
         $project = \App\Models\Project::find($request->input('project_id'));
         if (!$project) {
             return response()->json([
@@ -138,8 +165,24 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        // 生成申请单号
         $applicationNo = InvoiceApplication::generateApplicationNo();
+
+        // 兼容中文/英文的开票方式入参，统一保存为 full/diff/none
+        $rawInvoiceMethod = trim((string)($request->input('invoice_method') ?? ''));
+        $normalizedKey = mb_strtolower($rawInvoiceMethod);
+        $invoiceMethodMap = [
+            'full' => 'full',
+            '全额' => 'full',
+            'diff' => 'diff',
+            '差额' => 'diff',
+            'partial' => 'diff',
+            '缺额' => 'diff',
+            'none' => 'none',
+            '无' => 'none',
+        ];
+        $normalizedInvoiceMethod = isset($invoiceMethodMap[$normalizedKey])
+            ? $invoiceMethodMap[$normalizedKey]
+            : $rawInvoiceMethod;
 
         $application = InvoiceApplication::create([
             'account_set_id' => $accountSetId,
@@ -147,9 +190,27 @@ class InvoiceApplicationController extends Controller
             'task_name' => $request->input('task_name'),
             'year' => $request->input('year'),
             'month' => $request->input('month'),
-            'project_name' => $project->name,  // 保存项目名称
-            'status' => InvoiceApplication::STATUS_NORMAL,  // 业务状态：正常
-            'approval_status' => null,  // 审批状态：未提交
+            'project_name' => $project->name,
+            'remark' => $request->input('remark'),
+            'status' => InvoiceApplication::STATUS_NORMAL,
+            'approval_status' => null,
+            'period_year' => $request->input('period_year'),
+            'period_month' => $request->input('period_month'),
+            'company_name' => $request->input('company_name'),
+            'application_date' => $request->input('application_date'),
+            'invoice_method' => $normalizedInvoiceMethod,
+            'invoice_type' => $request->input('invoice_type'),
+            'deduction_amount' => $request->input('deduction_amount', 0),
+            'tax_rate' => $request->input('tax_rate'),
+            'amount_excluding_tax' => $request->input('amount_excluding_tax'),
+            'invoice_tax_amount' => $request->input('invoice_tax_amount'),
+            'invoice_amount' => $request->input('invoice_amount'),
+            'tax_amount' => $request->input('tax_amount'),
+            'invoice_date' => $request->input('invoice_date'),
+            'is_completed' => $request->boolean('is_completed', false),
+            'invoicer' => $request->input('invoicer'),
+            'invoice_number' => $request->input('invoice_number'),
+            'invoice_remark' => $request->input('invoice_remark'),
             'submitter_id' => $user->id,
             'created_by' => $user->id,
         ]);
@@ -1132,39 +1193,11 @@ class InvoiceApplicationController extends Controller
     public function checkCreatePermission(Request $request)
     {
         $user = Auth::user();
-        $accountSetId = $request->input('account_set_id', $user->account_set_id);
-
-        if (!$accountSetId) {
-            return response()->json([
-                'success' => true,
-                'has_access' => false,
-                'message' => '请选择账套'
-            ]);
-        }
-
-        // 管理员始终有权限
-        if (in_array($user->role, ['admin', 'super_admin'])) {
-            return response()->json([
-                'success' => true,
-                'has_access' => true,
-                'role' => $user->role
-            ]);
-        }
-
-        // 检查用户是否是该账套的第2、3、4审批节点的审批人
-        $approver = \DB::table('account_set_users')
-            ->where('account_set_id', $accountSetId)
-            ->where('user_id', $user->id)
-            ->whereIn('approval_level', [2, 3, 4])
-            ->first();
-
-        $hasAccess = !is_null($approver);
 
         return response()->json([
             'success' => true,
-            'has_access' => $hasAccess,
-            'role' => $user->role,
-            'approval_level' => $approver ? $approver->approval_level : null
+            'has_access' => true,
+            'role' => $user ? $user->role : null
         ]);
     }
 

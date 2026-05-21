@@ -238,15 +238,21 @@
             />
           </el-form-item>
 
-          <!-- 附件上传组件（隐藏发票上传，保留表格生成PDF功能） -->
+          <!-- 表单附件（内联填写） -->
+          <SelectableReimbursementForms
+            ref="reimbursementInlineFormsRef"
+            :has-uploaded-attachments="attachmentFileList.length > 0"
+            :base-info="reimbursementBaseInfo"
+          />
+
+          <!-- 附件上传组件（隐藏发票上传） -->
           <PaymentAttachmentUploader
             ref="attachmentUploaderRef"
             v-model:other-file-list="attachmentFileList"
             :show-invoice-upload="false"
             :other-limit="10"
-            :show-form-generator="true"
-            form-button-text="填写报销表格生成PDF"
-            form-title="报销申请表"
+            :show-form-generator="false"
+            :show-signature-stamp="true"
           />
         </el-form>
 
@@ -458,6 +464,7 @@ import { useAccountSetStore } from '@/stores/accountSet'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import ReimbursementForm from '@/components/ReimbursementForm.vue'
+import SelectableReimbursementForms from '@/components/SelectableReimbursementForms.vue'
 import {
   getReimbursements,
   createReimbursement,
@@ -511,6 +518,7 @@ const createForm = reactive({
 
 // 附件列表
 const attachmentUploaderRef = ref(null)
+const reimbursementInlineFormsRef = ref(null)
 const attachmentFileList = ref([])
 const submitting = ref(false)
 
@@ -523,6 +531,14 @@ const pendingReimbursementData = ref(null)
 
 // 项目列表
 const projectList = ref([])
+
+const reimbursementBaseInfo = computed(() => ({
+  companyName: '鄂尔多斯市汇邦人力资源有限责任公司',
+  date: createForm.applyDate || new Date().toISOString().split('T')[0],
+  project: createForm.summary || '',
+  applicant: createForm.reimburser || '',
+  amount: createForm.expenditureAmount || 0
+}))
 
 // 详情对话框
 const detailDialogVisible = ref(false)
@@ -655,6 +671,8 @@ const handleCreate = () => {
   createForm.category = ''
   createForm.summary = ''
   attachmentFileList.value = []
+  attachmentUploaderRef.value?.clearAll?.()
+  reimbursementInlineFormsRef.value?.reset?.()
 }
 
 // 填充测试数据
@@ -677,6 +695,27 @@ const handleConfirmCreate = async () => {
   try {
     // 验证表单
     await createFormRef.value.validate()
+
+    const shouldRequireSituation = attachmentFileList.value.length === 0
+    const generatedFiles = await reimbursementInlineFormsRef.value?.generateSelectedFormPdfs?.({
+      requireSituationWhenNoAttachment: shouldRequireSituation
+    }) || []
+
+    if (generatedFiles.length > 0) {
+      const existingNames = new Set(attachmentFileList.value.map(item => item.name))
+      generatedFiles.forEach((file) => {
+        if (!existingNames.has(file.name)) {
+          attachmentFileList.value.push({
+            name: file.name,
+            raw: file,
+            size: file.size,
+            status: 'ready',
+            uid: `generated_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            isGeneratedForm: true
+          })
+        }
+      })
+    }
 
     // 准备提交数据
     const submitData = {
@@ -764,11 +803,12 @@ const confirmReimbursementStampAndSubmit = async () => {
       createForm.applyDate = new Date().toISOString().split('T')[0]
       createForm.reimburser = ''
       createForm.invoiceNumber = ''
-      createForm.expenditureAmount = null
-      createForm.category = ''
-      createForm.summary = ''
-      attachmentFileList.value = []
-      pendingReimbursementData.value = null
+  createForm.expenditureAmount = null
+  createForm.category = ''
+  createForm.summary = ''
+  attachmentFileList.value = []
+  pendingReimbursementData.value = null
+  reimbursementInlineFormsRef.value?.reset?.()
       
       // 刷新列表
       handleSearch()

@@ -582,6 +582,19 @@ class MiniController extends Controller
         $idNumber = preg_replace('/\D/u', '', (string) $employee->id_number);
         $last4 = substr($idNumber, -4);
 
+        // 兼容身份证末位 X/x：按字符标准化后再比对（不再只保留数字）
+        $normalizeLast4 = function (?string $value): string {
+            $normalized = str_replace('　', ' ', trim((string) $value));
+            if (function_exists('mb_convert_kana')) {
+                $normalized = mb_convert_kana($normalized, 'as', 'UTF-8');
+            }
+            $normalized = preg_replace('/\s+/u', '', $normalized);
+            return strtoupper($normalized);
+        };
+        $inputLast4 = $normalizeLast4($request->id_last_4);
+        $idNumber = $normalizeLast4($employee->id_number);
+        $last4 = substr($idNumber, -4);
+
         if ($inputLast4 !== $last4) {
             return response()->json([
                 'success' => false,

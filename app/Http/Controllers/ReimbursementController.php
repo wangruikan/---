@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ApprovalInstance;
+use App\Models\ApprovalAttachment;
 use App\Models\Reimbursement;
 use App\Models\ReimbursementAttachment;
 use App\Services\ApprovalService;
@@ -227,6 +228,26 @@ class ReimbursementController extends Controller
                 'file_type' => $file->getClientMimeType(),
                 'file_size' => $file->getSize(),
             ]);
+
+            // 报销在创建时已生成审批实例，上传附件后需要同步到审批附件表，
+            // 否则流程中心审批详情看不到这些附件。
+            if (!empty($reimbursement->approval_flow_id)) {
+                $instance = ApprovalInstance::find($reimbursement->approval_flow_id);
+                if ($instance) {
+                    ApprovalAttachment::firstOrCreate(
+                        [
+                            'instance_id' => $instance->id,
+                            'file_path' => $filePath,
+                            'file_name' => $file->getClientOriginalName(),
+                        ],
+                        [
+                            'file_size' => $file->getSize(),
+                            'file_type' => $file->getClientMimeType(),
+                            'uploaded_by' => Auth::id(),
+                        ]
+                    );
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -475,4 +496,3 @@ class ReimbursementController extends Controller
         return (bool) $accountSetId || ($user && $user->role === 'admin');
     }
 }
-

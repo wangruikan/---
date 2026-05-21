@@ -19,7 +19,7 @@
 
     <el-form-item label="可选表单">
       <el-checkbox-group v-model="selectedOptionalForms">
-        <el-checkbox value="payment">付款申请单</el-checkbox>
+        <el-checkbox value="payment" disabled>付款申请单</el-checkbox>
         <el-checkbox value="reimbursement">报销单</el-checkbox>
         <el-checkbox value="travelApplication">差旅申请单</el-checkbox>
         <el-checkbox value="travel">差旅费报销单</el-checkbox>
@@ -98,7 +98,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="大写金额">
+            <el-form-item label="大写金额" prop="amountLarge">
               <el-input v-model="paymentForm.amountLarge" />
             </el-form-item>
           </el-col>
@@ -112,12 +112,12 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="开户行">
+            <el-form-item label="开户行" prop="bank">
               <el-input v-model="paymentForm.bank" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="账号">
+            <el-form-item label="账号" prop="bankAccount">
               <el-input v-model="paymentForm.bankAccount" />
             </el-form-item>
           </el-col>
@@ -127,7 +127,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="24">
-            <el-form-item label="备注">
+            <el-form-item label="备注" prop="remarks">
               <el-input v-model="paymentForm.remarks" type="textarea" :rows="2" />
             </el-form-item>
           </el-col>
@@ -168,17 +168,17 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="开户行">
+            <el-form-item label="开户行" prop="bankName">
               <el-input v-model="reimbursementForm.bankName" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="卡号">
+            <el-form-item label="卡号" prop="cardNumber">
               <el-input v-model="reimbursementForm.cardNumber" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="支付日期">
+            <el-form-item label="支付日期" prop="paymentDate">
               <el-date-picker
                 v-model="reimbursementForm.paymentDate"
                 type="date"
@@ -190,25 +190,29 @@
           </el-col>
           <el-col :span="24">
             <div class="items-header">
-              <span>报销明细</span>
-              <el-button type="primary" link @click="addReimbursementItem">新增明细</el-button>
+              <span class="items-header-title">报销明细</span>
+              <el-button type="primary" size="small" plain @click="addReimbursementItem">
+                新增明细
+              </el-button>
             </div>
             <div v-for="(item, idx) in reimbursementForm.items" :key="idx" class="line-item">
-              <el-row :gutter="8">
-                <el-col :span="13">
+              <el-row :gutter="8" align="middle" class="reimbursement-item-row">
+                <el-col :span="12">
                   <el-input v-model="item.projectName" placeholder="项目名称" />
                 </el-col>
                 <el-col :span="9">
                   <el-input-number v-model="item.amount" :min="0" :precision="2" :controls="false" style="width: 100%" />
                 </el-col>
-                <el-col :span="2">
-                  <el-button type="danger" link @click="removeReimbursementItem(idx)">删</el-button>
+                <el-col :span="3" class="remove-item-col">
+                  <el-button type="danger" size="small" plain class="remove-item-btn" @click="removeReimbursementItem(idx)">
+                    删除
+                  </el-button>
                 </el-col>
               </el-row>
             </div>
           </el-col>
           <el-col :span="24">
-            <el-form-item label="备注">
+            <el-form-item label="备注" prop="remarks">
               <el-input v-model="reimbursementForm.remarks" type="textarea" :rows="2" />
             </el-form-item>
           </el-col>
@@ -424,7 +428,17 @@ const props = defineProps({
   }
 })
 
-const selectedOptionalForms = ref([])
+const REQUIRED_OPTIONAL_FORMS = ['payment']
+const selectedOptionalForms = ref([...REQUIRED_OPTIONAL_FORMS])
+
+const ensureRequiredOptionalForms = () => {
+  const current = Array.isArray(selectedOptionalForms.value) ? selectedOptionalForms.value : []
+  const merged = Array.from(new Set([...current, ...REQUIRED_OPTIONAL_FORMS]))
+  const missingRequired = REQUIRED_OPTIONAL_FORMS.some(key => !current.includes(key))
+  if (missingRequired || merged.length !== current.length) {
+    selectedOptionalForms.value = merged
+  }
+}
 
 const showSituationForm = computed(() => !props.hasUploadedAttachments)
 
@@ -499,16 +513,25 @@ const situationRules = {
 
 const paymentRules = {
   department: [{ required: true, message: '请输入部门', trigger: 'blur' }],
+  applyDate: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
   payee: [{ required: true, message: '请输入支付对象', trigger: 'blur' }],
   amountSmall: [{ required: true, message: '请输入小写金额', trigger: 'blur' }],
+  amountLarge: [{ required: true, message: '请输入大写金额', trigger: 'blur' }],
   paymentMethod: [{ required: true, message: '请选择付款方式', trigger: 'change' }],
-  purpose: [{ required: true, message: '请输入用途', trigger: 'blur' }]
+  bank: [{ required: true, message: '请输入开户行', trigger: 'blur' }],
+  bankAccount: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  purpose: [{ required: true, message: '请输入用途', trigger: 'blur' }],
+  remarks: [{ required: true, message: '请输入备注', trigger: 'blur' }]
 }
 
 const reimbursementRules = {
   companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }],
   date: [{ required: true, message: '请选择日期', trigger: 'change' }],
-  applicant: [{ required: true, message: '请输入报销人', trigger: 'blur' }]
+  applicant: [{ required: true, message: '请输入报销人', trigger: 'blur' }],
+  bankName: [{ required: true, message: '请输入开户行', trigger: 'blur' }],
+  cardNumber: [{ required: true, message: '请输入卡号', trigger: 'blur' }],
+  paymentDate: [{ required: true, message: '请选择支付日期', trigger: 'change' }],
+  remarks: [{ required: true, message: '请输入备注', trigger: 'blur' }]
 }
 
 const travelApplicationRules = {
@@ -611,6 +634,7 @@ const buildPdfFile = async (elRef, fileName, orientation = 'p') => {
 }
 
 const generateSelectedFormPdfs = async ({ requireSituationWhenNoAttachment = false } = {}) => {
+  ensureRequiredOptionalForms()
   const tasks = []
 
   if (showSituationForm.value && requireSituationWhenNoAttachment) {
@@ -670,7 +694,7 @@ const generateSelectedFormPdfs = async ({ requireSituationWhenNoAttachment = fal
 }
 
 const reset = () => {
-  selectedOptionalForms.value = []
+  selectedOptionalForms.value = [...REQUIRED_OPTIONAL_FORMS]
 
   Object.assign(situationForm, {
     companyName: defaultCompany,
@@ -731,6 +755,14 @@ const reset = () => {
   travelApplicationFormRef.value?.clearValidate()
   travelFormRef.value?.clearValidate()
 }
+
+watch(
+  selectedOptionalForms,
+  () => {
+    ensureRequiredOptionalForms()
+  },
+  { deep: true, immediate: true }
+)
 
 watch(
   () => props.baseInfo,
@@ -795,12 +827,32 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  padding-right: 2px;
   color: #606266;
+}
+
+.items-header-title {
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .line-item {
   margin-bottom: 6px;
+}
+
+.reimbursement-item-row {
+  margin-bottom: 2px;
+}
+
+.remove-item-col {
+  display: flex;
+  justify-content: center;
+}
+
+.remove-item-btn {
+  width: 100%;
+  min-width: 0;
 }
 
 .print-root {

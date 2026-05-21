@@ -68,23 +68,18 @@
           style="width: 100%"
         >
           <el-table-column type="index" label="序号" width="60" align="center" />
-          <el-table-column prop="applicant" label="报销人" width="120" />
-          <el-table-column prop="amount" label="报销金额" width="140" align="right">
-            <template #default="scope">
-              <span style="color: #E6A23C; font-weight: bold;">{{ formatMoney(scope.row.amount) }}</span>
+          <el-table-column prop="project" label="项目" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="category" label="类别" width="120" />
+          <el-table-column prop="created_at" label="创建时间" width="180">
+            <template #default="{ row }">
+              {{ formatApplyTime(row.created_at) }}
             </template>
           </el-table-column>
-          <el-table-column prop="reason" label="报销事由" min-width="200" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="100">
             <template #default="scope">
               <el-tag :type="getStatusType(scope.row.status)">
                 {{ getStatusText(scope.row.status) }}
               </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="created_at" label="申请时间" width="160">
-            <template #default="{ row }">
-              {{ formatDateTime(row.created_at) }}
             </template>
           </el-table-column>
           <el-table-column label="操作" width="250" fixed="right">
@@ -101,31 +96,7 @@
               >
                 审批
               </el-button>
-              <!-- 审批通过且未发起付款：显示发起付款按钮 -->
-              <el-button 
-                v-if="scope.row.status === 'approved' && !scope.row.payment_request_created" 
-                link 
-                type="primary" 
-                size="small" 
-                @click="handleCreatePayment(scope.row)"
-              >
-                发起付款
-              </el-button>
-              <!-- 已发起付款：显示付款状态 -->
-              <el-tag 
-                v-if="scope.row.payment_request_created && scope.row.payment_request_status === 'pending'" 
-                type="warning" 
-                size="small"
-              >
-                付款待审批
-              </el-tag>
-              <el-tag 
-                v-if="scope.row.payment_request_created && scope.row.payment_request_status === 'approved'" 
-                type="success" 
-                size="small"
-              >
-                付款已通过
-              </el-tag>
+              <!-- 按需求隐藏报销模块发起付款申请相关入口 -->
               <el-button 
                 v-if="scope.row.status === 'pending'" 
                 link 
@@ -184,41 +155,8 @@
             </el-select>
           </el-form-item>
 
-          <!-- 申请日期 -->
-          <el-form-item label="申请日期" prop="applyDate">
-            <el-date-picker
-              v-model="createForm.applyDate"
-              type="date"
-              placeholder="选择申请日期"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              style="width: 100%"
-            />
-          </el-form-item>
-
-          <!-- 报销人 -->
-          <el-form-item label="报销人" prop="reimburser">
-            <el-input v-model="createForm.reimburser" placeholder="请输入报销人" style="width: 100%" />
-          </el-form-item>
-
-          <!-- 发票号码 -->
-          <el-form-item label="发票号码" prop="invoiceNumber">
-            <el-input v-model="createForm.invoiceNumber" placeholder="请输入发票号码" style="width: 100%" />
-          </el-form-item>
-
-          <!-- 报销金额 -->
-          <el-form-item label="报销金额" prop="expenditureAmount">
-            <el-input-number
-              v-model="createForm.expenditureAmount"
-              :precision="2"
-              :min="0"
-              placeholder="请输入报销金额"
-              style="width: 100%"
-            />
-          </el-form-item>
-
           <!-- 类目 -->
-          <el-form-item label="类目">
+          <el-form-item label="类目" prop="category">
             <el-select v-model="createForm.category" placeholder="请选择类目" style="width: 100%">
               <el-option label="报销" value="报销" />
               <el-option label="差旅" value="差旅" />
@@ -226,16 +164,6 @@
               <el-option label="项目" value="项目" />
               <el-option label="其他" value="其他" />
             </el-select>
-          </el-form-item>
-
-          <!-- 报销事由 -->
-          <el-form-item label="报销事由" prop="summary">
-            <el-input
-              v-model="createForm.summary"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入报销事由"
-            />
           </el-form-item>
 
           <!-- 表单附件（内联填写） -->
@@ -356,7 +284,7 @@
               {{ getStatusText(currentRow.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="申请时间">{{ currentRow.created_at }}</el-descriptions-item>
+          <el-descriptions-item label="申请时间">{{ formatApplyTime(currentRow.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="报销事由" :span="2">{{ currentRow.reason }}</el-descriptions-item>
           <el-descriptions-item v-if="currentRow.remarks" label="备注" :span="2">{{ currentRow.remarks }}</el-descriptions-item>
         </el-descriptions>
@@ -535,7 +463,7 @@ const projectList = ref([])
 const reimbursementBaseInfo = computed(() => ({
   companyName: '鄂尔多斯市汇邦人力资源有限责任公司',
   date: createForm.applyDate || new Date().toISOString().split('T')[0],
-  project: createForm.summary || '',
+  project: createForm.project || '',
   applicant: createForm.reimburser || '',
   amount: createForm.expenditureAmount || 0
 }))
@@ -576,21 +504,8 @@ const rules = {
   project: [
     { required: true, message: '请选择项目', trigger: 'change' }
   ],
-  applyDate: [
-    { required: true, message: '请选择申请日期', trigger: 'change' }
-  ],
-  reimburser: [
-    { required: true, message: '请输入报销人', trigger: 'blur' }
-  ],
-  invoiceNumber: [
-    { required: true, message: '请输入发票号码', trigger: 'blur' }
-  ],
-  expenditureAmount: [
-    { required: true, message: '请输入报销金额', trigger: 'blur' },
-    { type: 'number', min: 0.01, message: '报销金额必须大于0', trigger: 'blur' }
-  ],
-  summary: [
-    { required: true, message: '请输入报销事由', trigger: 'blur' }
+  category: [
+    { required: true, message: '请选择类目', trigger: 'change' }
   ]
 }
 
@@ -601,6 +516,22 @@ const formatMoney = (amount) => {
     amount = 0
   }
   return '¥' + Number(amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const formatApplyTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  const pad = (num) => String(num).padStart(2, '0')
+  const y = date.getFullYear()
+  const m = pad(date.getMonth() + 1)
+  const d = pad(date.getDate())
+  const hh = pad(date.getHours())
+  const mm = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
 }
 
 // 状态类型映射
@@ -681,18 +612,40 @@ const fillTestData = () => {
   
   createForm.project = projectList.value.length > 0 ? projectList.value[0].name : ''
   createForm.applyDate = today
-  createForm.reimburser = '张三'
+  createForm.reimburser = userStore.userInfo?.name || userStore.userInfo?.nickname || '张三'
   createForm.invoiceNumber = 'INV' + Date.now().toString().slice(-8) // 生成示例发票号码
-  createForm.expenditureAmount = 1500.50
+  createForm.expenditureAmount = 0.01
   createForm.category = '报销'
-  createForm.summary = '差旅费报销，包含往返交通费、住宿费及餐饮补贴'
+  createForm.summary = '自动生成摘要'
   
   ElMessage.success('已填充测试数据')
+}
+
+const ensureCreateFormRequiredFields = () => {
+  const today = new Date().toISOString().split('T')[0]
+  if (!createForm.applyDate) {
+    createForm.applyDate = today
+  }
+  if (!createForm.reimburser) {
+    createForm.reimburser = userStore.userInfo?.name || userStore.userInfo?.nickname || '申请人'
+  }
+  if (!createForm.invoiceNumber) {
+    createForm.invoiceNumber = `INV${Date.now()}`
+  }
+  if (!(Number(createForm.expenditureAmount) > 0)) {
+    createForm.expenditureAmount = 0.01
+  }
+  if (!createForm.summary) {
+    const categoryText = createForm.category || '报销'
+    createForm.summary = `${categoryText}申请`
+  }
 }
 
 // 确认创建
 const handleConfirmCreate = async () => {
   try {
+    ensureCreateFormRequiredFields()
+
     // 验证表单
     await createFormRef.value.validate()
 
@@ -803,12 +756,12 @@ const confirmReimbursementStampAndSubmit = async () => {
       createForm.applyDate = new Date().toISOString().split('T')[0]
       createForm.reimburser = ''
       createForm.invoiceNumber = ''
-  createForm.expenditureAmount = null
-  createForm.category = ''
-  createForm.summary = ''
-  attachmentFileList.value = []
-  pendingReimbursementData.value = null
-  reimbursementInlineFormsRef.value?.reset?.()
+      createForm.expenditureAmount = null
+      createForm.category = ''
+      createForm.summary = ''
+      attachmentFileList.value = []
+      pendingReimbursementData.value = null
+      reimbursementInlineFormsRef.value?.reset?.()
       
       // 刷新列表
       handleSearch()
@@ -1133,21 +1086,6 @@ const loadProjects = async () => {
   }
 }
 
-// 格式化日期时间
-const formatDateTime = (dateTime) => {
-  if (!dateTime) return '-'
-  const date = new Date(dateTime)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  })
-}
-
 onMounted(() => {
   handleSearch()
   loadProjects()
@@ -1192,4 +1130,6 @@ onMounted(() => {
   margin-bottom: 0;
 }
 </style>
+
+
 

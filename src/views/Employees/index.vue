@@ -4255,10 +4255,6 @@
       
       <template #footer>
         <el-button @click="handleSignatureDialogClose">取消</el-button>
-        <el-button type="warning" @click="openPDFEditor">
-          <el-icon><Edit /></el-icon>
-                    签名盖章
-        </el-button>
         <el-button type="primary" @click="handleSignatureSubmit" :loading="submitting">
           确认盖章签字
         </el-button>

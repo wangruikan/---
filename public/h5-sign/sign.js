@@ -172,24 +172,44 @@ createApp({
             return Math.min(normalizedPreferred, maxByHeight)
         },
 
+        // 取PC端同款“姓名字号”，用于上个公司字段保持一致
+        getPcNameLikeFontSize() {
+            const positions = Array.isArray(this.contract?.signature_positions)
+                ? this.contract.signature_positions
+                : []
+            const namePos = positions.find(pos => pos?.type === 'name')
+            const nameBoxHeight = Number(namePos?.height || 24)
+            return this.calculateSafeFontSize(nameBoxHeight, 20)
+        },
+
         async createTextImageDataUrl(text, options = {}) {
             const width = options.width || 320
             const height = options.height || 42
             const preferredFontSize = options.fontSize || 20
-            const fontSize = this.calculateSafeFontSize(height, preferredFontSize)
+            const fontSize = options.absoluteFontSize !== undefined && options.absoluteFontSize !== null
+                ? Math.max(Number(options.absoluteFontSize) || preferredFontSize, 12)
+                : this.calculateSafeFontSize(height, preferredFontSize)
             const fontFamily = options.fontFamily || 'SimSun'
+            const textValue = String(text || '')
+
+            // 先测量文字宽度，避免字数稍多时被固定宽度截断
+            const measureCanvas = document.createElement('canvas')
+            const measureCtx = measureCanvas.getContext('2d')
+            measureCtx.font = `700 ${fontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+            const measuredWidth = Math.ceil(measureCtx.measureText(textValue).width) + 16
+            const effectiveWidth = Math.max(width, measuredWidth)
 
             const canvas = document.createElement('canvas')
-            canvas.width = width
+            canvas.width = effectiveWidth
             canvas.height = height
             const ctx = canvas.getContext('2d')
 
-            ctx.clearRect(0, 0, width, height)
+            ctx.clearRect(0, 0, effectiveWidth, height)
             ctx.fillStyle = '#000000'
             ctx.font = `700 ${fontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
             ctx.textAlign = 'left'
             ctx.textBaseline = 'middle'
-            ctx.fillText(String(text || ''), 4, height / 2)
+            ctx.fillText(textValue, 6, height / 2)
 
             return canvas.toDataURL('image/png')
         },
@@ -201,6 +221,8 @@ createApp({
 
             const pages = pdfDoc.getPages()
             const pcScale = 1.5
+            const pcNameLikeFontSize = this.getPcNameLikeFontSize()
+            const targetFontSize = pcNameLikeFontSize
 
             for (const pos of placeholderPositions) {
                 const pageIndex = Number.isInteger(Number(pos.page)) ? Number(pos.page) : 0
@@ -228,20 +250,29 @@ createApp({
                 const textImageDataUrl = await this.createTextImageDataUrl(String(text).trim(), {
                     width: Math.max(rawWidth, 80),
                     height: Math.max(rawHeight, 20),
-                    fontSize: this.calculateSafeFontSize(rawHeight, 20),
+                    fontSize: targetFontSize,
+                    absoluteFontSize: targetFontSize,
                     fontFamily: 'SimSun'
                 })
                 const textImage = await pdfDoc.embedPng(textImageDataUrl)
+                // 按占位框宽高同比缩放，保持与PC端视觉一致
                 const scale = Math.min(
                     placeholderWidth / textImage.width,
                     placeholderHeight / textImage.height
                 )
+                const drawWidth = textImage.width * scale
+                const drawHeight = textImage.height * scale
+                let drawX = x
+                const safeMargin = 2
+                if (drawX + drawWidth > pageWidth - safeMargin) {
+                    drawX = Math.max(safeMargin, pageWidth - drawWidth - safeMargin)
+                }
 
                 page.drawImage(textImage, {
-                    x,
+                    x: drawX,
                     y,
-                    width: textImage.width * scale,
-                    height: textImage.height * scale
+                    width: drawWidth,
+                    height: drawHeight
                 })
             }
         },

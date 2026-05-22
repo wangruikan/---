@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>合同签署</title>
+    <title>鍚堝悓绛剧讲</title>
     <style>
         * {
             margin: 0;
@@ -25,6 +25,55 @@
             display: flex;
             flex-direction: column;
             background-color: #000;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .contract-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .status-tag {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.3);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .pdf-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 18px;
+            background: #667eea;
+            margin-right: 10px;
+            border-radius: 2px;
         }
 
         .pdf-fullscreen {
@@ -78,6 +127,20 @@
             font-size: 15px;
             color: #fff;
             font-weight: 500;
+        }
+
+        .tip-box {
+            background: #fff9e6;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .tip-box p {
+            color: #ff9800;
+            font-size: 14px;
+            margin: 0;
         }
 
         .sign-popup {
@@ -136,7 +199,7 @@
             height: 200px;
             border: 2px dashed #999;
             border-radius: 8px;
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(255, 255, 255, 0.95);  /* 鍗婇€忔槑鐧借壊锛岃绛惧悕鍖哄煙鍙浣嗕笉瀹屽叏閬尅 */
             touch-action: none;
         }
 
@@ -214,7 +277,7 @@
             border-radius: 8px;
             margin: 20px;
         }
-
+        
         .sign-button-container {
             position: fixed;
             bottom: 0;
@@ -224,7 +287,7 @@
             background: rgba(0, 0, 0, 0.9);
             z-index: 99;
         }
-
+        
         .sign-main-btn {
             width: 100%;
             padding: 15px;
@@ -237,11 +300,36 @@
             cursor: pointer;
             box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
         }
-
+        
         .sign-main-btn:active {
             transform: scale(0.98);
         }
 
+        .prev-company-box {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .prev-company-label {
+            display: block;
+            color: #fff;
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+
+        .prev-company-input {
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        /* 寮哄埗纭寮圭獥鏍峰紡 */
         .force-confirm-overlay {
             position: fixed;
             top: 0;
@@ -294,42 +382,47 @@
 <body>
     <div id="app">
         <div v-if="loading" class="loading">
-            <p>{{ loadingText || '加载中...' }}</p>
+            <p>{{ loadingText || '鍔犺浇涓?..' }}</p>
         </div>
 
         <div v-else-if="error" class="error">
             <p>{{ error }}</p>
-            <button @click="retry" style="margin-top: 10px; padding: 10px 20px;">重试</button>
+            <button @click="retry" style="margin-top: 10px; padding: 10px 20px;">閲嶈瘯</button>
         </div>
 
         <div v-else class="fullscreen-container">
+            <!-- 鍒濆寮哄埗纭閬僵 -->
             <div v-if="showForceConfirm" class="force-confirm-overlay">
                 <div class="force-confirm-box">
-                    <h3>加载完成</h3>
-                    <p>合同已安全加载，请点击下方按钮开始查阅并签署。</p>
-                    <button class="force-confirm-btn" @click="confirmAndRender">确认查看</button>
+                    <h3>鍔犺浇瀹屾垚</h3>
+                    <p>鍚堝悓宸插畨鍏ㄥ姞杞斤紝璇风偣鍑讳笅鏂圭‘璁ゆ寜閽紑濮嬫煡闃呭苟绛剧讲銆?/p>
+                    <button class="force-confirm-btn" @click="confirmAndRender">纭鏌ョ湅</button>
                 </div>
             </div>
 
+            <!-- PDF鍏ㄥ睆鏄剧ず -->
             <div class="pdf-fullscreen">
                 <canvas id="pdf-canvas" @click="handleCanvasClick"></canvas>
             </div>
-
+            
+            <!-- 搴曢儴椤电爜瀵艰埅鍜岀缃叉寜閽?-->
             <div class="page-nav-bottom">
-                <button @click="prevPage" :disabled="currentPage <= 1">上一页</button>
+                <button @click="prevPage" :disabled="currentPage <= 1">涓婁竴椤?/button>
                 <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
-                <button @click="nextPage" :disabled="currentPage >= totalPages">下一页</button>
+                <button @click="nextPage" :disabled="currentPage >= totalPages">涓嬩竴椤?/button>
             </div>
-
+            
+            <!-- 绛剧讲鎸夐挳 -->
             <div class="sign-button-container">
-                <button class="sign-main-btn" @click="openSignPopup">立即签署</button>
+                <button class="sign-main-btn" @click="openSignPopup">鉁嶏笍 绔嬪嵆绛剧讲</button>
             </div>
 
+            <!-- 绛惧悕寮圭獥 -->
             <div class="sign-popup" :class="{show: showSignPopup}" @click="closeSignPopup">
                 <div class="sign-content" @click.stop>
                     <div class="popup-header">
-                        <div class="popup-title">请签署您的姓名</div>
-                        <button class="close-btn" @click="closeSignPopup">×</button>
+                        <div class="popup-title">璇风缃叉偍鐨勫鍚?/div>
+                        <button class="close-btn" @click="closeSignPopup">脳</button>
                     </div>
 
                     <div v-if="requiresPreviousCompany()" class="popup-prev-company">
@@ -352,28 +445,31 @@
                             placeholder="请输入身份证后4位"
                         />
                     </div>
-
+                    
                     <canvas id="sign-canvas"></canvas>
-
+                    
                     <div class="popup-actions">
-                        <button class="clear-btn" @click="clearSignature">清空重签</button>
-                        <button class="confirm-btn" @click="confirmSignature">确认签名</button>
+                        <button class="clear-btn" @click="clearSignature">娓呯┖閲嶇</button>
+                        <button class="confirm-btn" @click="confirmSignature">纭绛惧悕</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- vConsole 璋冭瘯宸ュ叿锛堟墜鏈虹鏌ョ湅鏃ュ織锛?-->
     <script src="https://cdn.jsdelivr.net/npm/vconsole@3.15.1/dist/vconsole.min.js"></script>
     <script>
+        // 鍒濆鍖杤Console
         var vConsole = new window.VConsole();
         console.log('vConsole已启动');
     </script>
-
+    
     <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+    <!-- 浣跨敤pdf.js 1.x鏈€绋冲畾鐗堟湰 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/1.10.100/pdf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
-    <script src="./sign.js?v=20260522_sign_scale_final4"></script>
+    <script src="./sign.js?v=20260522_inside_fill_7_drawfix"></script>
 </body>
 </html>

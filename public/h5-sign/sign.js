@@ -163,18 +163,19 @@ createApp({
                 .toUpperCase()
         },
 
-        // 涓嶱C绔?PDF 娓叉煋淇濇寔涓€鑷寸殑瀹夊叏瀛楀彿绠楁硶
+        // 与PC端一致的字体安全字号算法
         calculateSafeFontSize(boxHeight, preferredSize = 14) {
             const safeHeight = Math.max(Number(boxHeight) || 20, 14)
-            const maxByHeight = Math.max(10, Math.floor(safeHeight * 0.78))
-            const normalizedPreferred = Math.max(Number(preferredSize) || 14, 10)
+            const maxByHeight = Math.max(12, Math.floor(safeHeight * 0.92))
+            const basePreferred = Math.max(Number(preferredSize) || 14, 12)
+            const normalizedPreferred = Math.ceil(basePreferred * 1.35)
             return Math.min(normalizedPreferred, maxByHeight)
         },
 
         async createTextImageDataUrl(text, options = {}) {
             const width = options.width || 320
             const height = options.height || 42
-            const preferredFontSize = options.fontSize || 14
+            const preferredFontSize = options.fontSize || 20
             const fontSize = this.calculateSafeFontSize(height, preferredFontSize)
             const fontFamily = options.fontFamily || 'SimSun'
 
@@ -185,7 +186,7 @@ createApp({
 
             ctx.clearRect(0, 0, width, height)
             ctx.fillStyle = '#000000'
-            ctx.font = `600 ${fontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+            ctx.font = `700 ${fontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
             ctx.textAlign = 'left'
             ctx.textBaseline = 'middle'
             ctx.fillText(String(text || ''), 4, height / 2)
@@ -227,7 +228,7 @@ createApp({
                 const textImageDataUrl = await this.createTextImageDataUrl(String(text).trim(), {
                     width: Math.max(rawWidth, 80),
                     height: Math.max(rawHeight, 20),
-                    fontSize: this.calculateSafeFontSize(rawHeight, 14),
+                    fontSize: this.calculateSafeFontSize(rawHeight, 20),
                     fontFamily: 'SimSun'
                 })
                 const textImage = await pdfDoc.embedPng(textImageDataUrl)
@@ -517,7 +518,7 @@ createApp({
             
             // 设置绘图样式
             this.signCtx.strokeStyle = '#000'
-            this.signCtx.lineWidth = 3
+            this.signCtx.lineWidth = 5
             this.signCtx.lineCap = 'round'
             this.signCtx.lineJoin = 'round'
             
@@ -707,7 +708,7 @@ createApp({
                     const signScale = Math.min(
                         placeholderWidth / signatureImage.width,
                         placeholderHeight / signatureImage.height
-                    ) * 0.9  // 鐣欎竴鐐硅竟璺?                    
+                    ) * 1.8  // 直接放大到原始基线的2倍（0.9 * 2 = 1.8）
                     const signWidth = signatureImage.width * signScale
                     const signHeight = signatureImage.height * signScale
                     
@@ -839,7 +840,7 @@ createApp({
                 const signScale = Math.min(
                     placeholderWidth / signatureImage.width,
                     placeholderHeight / signatureImage.height
-                ) * 0.9
+                ) * 1.8
                 const signWidth = signatureImage.width * signScale
                 const signHeight = signatureImage.height * signScale
                 const centeredX = pdfX + (placeholderWidth - signWidth) / 2

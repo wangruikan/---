@@ -184,7 +184,31 @@ class InsuranceDetailRecord extends Model
                     
                     // 闂備礁鎲￠悷顖涚濞嗘垶宕叉慨妯垮煐閸嬧晜绻涢崱妯诲鞍濞寸姵锕㈤幃鐑藉即濮橀硸妲悗娈垮櫘閸撴氨绮氶崡鐐╂斀闁割偆鍠撻弳鐘崇箾閿濆懏澶勭紒璇插€搁悾?
                     if (!empty($policiesToEnroll)) {
-                        $otherInsurancePolicies = json_encode($policiesToEnroll);
+                        $existingOtherInsurancePolicies = [];
+                        if (!empty($existingRecord->other_insurance_policies)) {
+                            $decodedExistingPolicies = json_decode($existingRecord->other_insurance_policies, true);
+                            $existingOtherInsurancePolicies = is_array($decodedExistingPolicies) ? $decodedExistingPolicies : [];
+                        }
+
+                        $mergedPolicies = $existingOtherInsurancePolicies;
+                        $existingPolicyKeys = [];
+                        foreach ($mergedPolicies as $existingPolicy) {
+                            if (is_array($existingPolicy)) {
+                                $existingPolicyKeys[self::generatePolicyKey($existingPolicy)] = true;
+                            }
+                        }
+
+                        foreach ($policiesToEnroll as $policy) {
+                            $policyKey = self::generatePolicyKey($policy);
+                            if (!isset($existingPolicyKeys[$policyKey])) {
+                                $mergedPolicies[] = $policy;
+                                $existingPolicyKeys[$policyKey] = true;
+                            }
+                        }
+
+                        $otherInsurancePolicies = json_encode($mergedPolicies);
+                    } elseif (!empty($existingRecord->other_insurance_policies)) {
+                        $otherInsurancePolicies = $existingRecord->other_insurance_policies;
                     } else {
                         $otherInsurancePolicies = '';
                     }

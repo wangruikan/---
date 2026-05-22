@@ -955,6 +955,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}/update-other-insurance-cost', [App\Http\Controllers\InsuranceChangeController::class, 'updateOtherInsuranceCost']);
         Route::put('/{id}/update-endorsement-number', [App\Http\Controllers\InsuranceChangeController::class, 'updateEndorsementNumber']);
         Route::post('/{id}/update-per-capita-cost', [App\Http\Controllers\InsuranceChangeController::class, 'updatePerCapitaCost']);
+        Route::post('/{id}/update-surrender-amount', [App\Http\Controllers\InsuranceChangeController::class, 'updateSurrenderAmount']);
         Route::post('/{id}/use-quota', [App\Http\Controllers\InsuranceChangeController::class, 'useQuota']);
         Route::put('/{id}/toggle-large-medical', [App\Http\Controllers\InsuranceChangeController::class, 'toggleLargeMedical']);
         Route::post('/generate-summary', [App\Http\Controllers\InsuranceChangeController::class, 'generateSummary']);

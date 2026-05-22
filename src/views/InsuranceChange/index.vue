@@ -1388,6 +1388,26 @@
                 </div>
               </template>
             </el-table-column>
+            <el-table-column
+              v-if="currentChange && currentChange.change_type === 'decrease'"
+              prop="surrender_amount"
+              label="退保金额"
+              width="180"
+            >
+              <template #default="{ row }">
+                <el-input-number
+                  v-if="canEditOtherInsuranceSurrenderAmount()"
+                  v-model="row.surrender_amount"
+                  :precision="2"
+                  :step="1"
+                  :min="0"
+                  size="small"
+                  style="width: 130px;"
+                  @change="saveSurrenderAmount(row)"
+                />
+                <span v-else>¥{{ row.surrender_amount || '0.00' }}</span>
+              </template>
+            </el-table-column>
           </el-table>
           <div class="form-tip">该项目绑定的其他保险，无需选择地区。数据导入后不可修改。</div>
         </div>
@@ -5766,12 +5786,15 @@ const saveEmployeePerCapitaCost = async (row) => {
       url: `/insurance-changes/${currentChange.value.id}/update-per-capita-cost`,
       method: 'post',
       data: {
-        insurance_id: row.id,
+        insurance_id: row.id || row.policy_id,
         employee_per_capita_cost: row.employee_per_capita_cost
       }
     })
 
     if (response.success) {
+      if (response.data) {
+        currentChange.value = response.data
+      }
       ElMessage.success('费用保存成功')
     } else {
       ElMessage.error(response.message || '费用保存失败')
@@ -5779,6 +5802,42 @@ const saveEmployeePerCapitaCost = async (row) => {
   } catch (error) {
     console.error('保存费用失败:', error)
     ElMessage.error('费用保存失败')
+  }
+}
+
+const canEditOtherInsuranceSurrenderAmount = () => {
+  return currentChange.value
+    && currentChange.value.change_type === 'decrease'
+    && ['pending', 'submitted'].includes(currentChange.value.status)
+}
+
+// 保存减少参保时的其他保险退保金额
+const saveSurrenderAmount = async (row) => {
+  if (!currentChange.value) {
+    return
+  }
+
+  try {
+    const response = await request({
+      url: `/insurance-changes/${currentChange.value.id}/update-surrender-amount`,
+      method: 'post',
+      data: {
+        insurance_id: row.id || row.policy_id,
+        surrender_amount: row.surrender_amount
+      }
+    })
+
+    if (response.success) {
+      if (response.data) {
+        currentChange.value = response.data
+      }
+      ElMessage.success('退保金额保存成功')
+    } else {
+      ElMessage.error(response.message || '退保金额保存失败')
+    }
+  } catch (error) {
+    console.error('保存退保金额失败:', error)
+    ElMessage.error(error.response?.data?.message || '退保金额保存失败')
   }
 }
 

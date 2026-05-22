@@ -1556,6 +1556,10 @@ class InsuranceChangeController extends ApiController
                 ], 400);
             }
 
+            if ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change)) {
+                return $validationResponse;
+            }
+
             DB::transaction(function () use ($change, $user) {
                 // 更新状态为已处理，并清空变更记录
                 $updateData = [
@@ -1576,6 +1580,8 @@ class InsuranceChangeController extends ApiController
                 // 确认处理时更新快照，重置变化记录
                 // 禁用保险配置变更检测
                 // $change->checkAndRecordChanges(true);
+
+                $this->applyOtherInsuranceCoverageAmountChanges($change);
 
                 // 生成参保明细（基于新表生成明细记录）
                 // 注意：必须先创建参保人员记录，再设置支付起始时间
@@ -1605,6 +1611,160 @@ class InsuranceChangeController extends ApiController
                 'success' => false,
                 'message' => '处理失败：' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Decode the other-insurance snapshot safely.
+     */
+    private function decodeOtherInsurancePolicies($policies): array
+    {
+        if (empty($policies) || $policies === '[]') {
+            return [];
+        }
+
+        if (is_string($policies)) {
+            $decoded = json_decode($policies, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        if (is_array($policies)) {
+            return $policies;
+        }
+
+        return [];
+    }
+
+    private function getOtherInsurancePolicyId($policy)
+    {
+        if (is_array($policy)) {
+            return $policy['id'] ?? $policy['policy_id'] ?? null;
+        }
+
+        if (is_object($policy)) {
+            return $policy->id ?? $policy->policy_id ?? null;
+        }
+
+        return null;
+    }
+
+    private function hasMoneyValue($value): bool
+    {
+        return $value !== null && $value !== '' && is_numeric($value);
+    }
+
+    private function normalizeMoneyValue($value): float
+    {
+        return round((float) $value, 2);
+    }
+
+    private function saveOtherInsurancePoliciesSnapshot(InsuranceChange $change, array $policies): void
+    {
+        $change->other_insurance_policies = json_encode(array_values($policies), JSON_UNESCAPED_UNICODE);
+        $change->save();
+    }
+
+    private function updateOtherInsurancePolicySnapshotAmount(InsuranceChange $change, $insuranceId, string $field, $amount): bool
+    {
+        $policies = $this->decodeOtherInsurancePolicies($change->other_insurance_policies);
+        $updated = false;
+
+        foreach ($policies as &$policy) {
+            if (!is_array($policy)) {
+                continue;
+            }
+
+            if ((string) $this->getOtherInsurancePolicyId($policy) === (string) $insuranceId) {
+                $policy[$field] = $this->normalizeMoneyValue($amount);
+                $updated = true;
+                break;
+            }
+        }
+        unset($policy);
+
+        if ($updated) {
+            $this->saveOtherInsurancePoliciesSnapshot($change, $policies);
+        }
+
+        return $updated;
+    }
+
+    private function validateOtherInsuranceSurrenderAmounts(InsuranceChange $change)
+    {
+        if ($change->change_type !== 'decrease') {
+            return null;
+        }
+
+        $policies = $this->decodeOtherInsurancePolicies($change->other_insurance_policies);
+        foreach ($policies as $index => $policy) {
+            if (!is_array($policy) || !$this->getOtherInsurancePolicyId($policy)) {
+                continue;
+            }
+
+            if (!$this->hasMoneyValue($policy['surrender_amount'] ?? null)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请先填写其他保险的退保金额',
+                    'errors' => [
+                        'other_insurance_policies.' . $index . '.surrender_amount' => ['退保金额必填']
+                    ]
+                ], 422);
+            }
+        }
+
+        return null;
+    }
+
+    private function applyOtherInsuranceCoverageAmountChanges(InsuranceChange $change): void
+    {
+        if (!in_array($change->change_type, ['increase', 'decrease'])) {
+            return;
+        }
+
+        $policies = $this->decodeOtherInsurancePolicies($change->other_insurance_policies);
+        if (empty($policies)) {
+            return;
+        }
+
+        foreach ($policies as $policyData) {
+            if (!is_array($policyData)) {
+                continue;
+            }
+
+            $policyId = $this->getOtherInsurancePolicyId($policyData);
+            if (!$policyId) {
+                continue;
+            }
+
+            $amount = $change->change_type === 'increase'
+                ? $this->normalizeMoneyValue($policyData['employee_per_capita_cost'] ?? 0)
+                : $this->normalizeMoneyValue($policyData['surrender_amount'] ?? 0);
+
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $policy = OtherInsurancePolicy::whereKey($policyId)->lockForUpdate()->first();
+            if (!$policy) {
+                continue;
+            }
+
+            $beforeAmount = (float) ($policy->coverage_amount ?? 0);
+            $afterAmount = $change->change_type === 'increase'
+                ? $beforeAmount + $amount
+                : $beforeAmount - $amount;
+
+            $policy->coverage_amount = round($afterAmount, 2);
+            $policy->save();
+
+            \Log::info('Other insurance coverage amount changed from insurance change', [
+                'insurance_change_id' => $change->id,
+                'change_type' => $change->change_type,
+                'policy_id' => $policy->id,
+                'before_amount' => $beforeAmount,
+                'changed_amount' => $amount,
+                'after_amount' => $policy->coverage_amount,
+            ]);
         }
     }
 
@@ -2018,17 +2178,25 @@ class InsuranceChangeController extends ApiController
                 'employee_per_capita_cost' => $request->employee_per_capita_cost
             ]);
 
-            // 更新增减记录中的其他保险配置
-            $otherInsuranceConfig = $change->other_insurance_config;
-            if (is_array($otherInsuranceConfig)) {
-                foreach ($otherInsuranceConfig as &$insurance) {
-                    if (isset($insurance['id']) && $insurance['id'] == $request->insurance_id) {
-                        $insurance['employee_per_capita_cost'] = $request->employee_per_capita_cost;
-                        break;
-                    }
-                }
-                $change->other_insurance_config = $otherInsuranceConfig;
-                $change->save();
+            if (!in_array($change->status, ['pending', 'submitted'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前状态不允许修改其他保险金额'
+                ], 400);
+            }
+
+            $updated = $this->updateOtherInsurancePolicySnapshotAmount(
+                $change,
+                $request->insurance_id,
+                'employee_per_capita_cost',
+                $request->employee_per_capita_cost
+            );
+
+            if (!$updated) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '未找到对应的其他保险保单'
+                ], 404);
             }
 
             \Log::info('员工人均参保费用更新成功', [
@@ -2039,12 +2207,79 @@ class InsuranceChangeController extends ApiController
 
             return response()->json([
                 'success' => true,
-                'message' => '费用更新成功'
+                'message' => '费用更新成功',
+                'data' => $change->fresh()
             ]);
         } catch (\Exception $e) {
             \Log::error('更新员工人均参保费用失败: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
+            return response()->json([
+                'success' => false,
+                'message' => '更新失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update surrender amount for a policy in the insurance-change snapshot.
+     */
+    public function updateSurrenderAmount(Request $request, $id)
+    {
+        try {
+            $change = InsuranceChange::findOrFail($id);
+
+            $validator = Validator::make($request->all(), [
+                'insurance_id' => 'required|integer',
+                'surrender_amount' => 'required|numeric|min:0'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '验证失败',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            if ($change->change_type !== 'decrease') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只有减少参保记录需要填写退保金额'
+                ], 400);
+            }
+
+            if (!in_array($change->status, ['pending', 'submitted'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前状态不允许修改退保金额'
+                ], 400);
+            }
+
+            $updated = $this->updateOtherInsurancePolicySnapshotAmount(
+                $change,
+                $request->insurance_id,
+                'surrender_amount',
+                $request->surrender_amount
+            );
+
+            if (!$updated) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '未找到对应的其他保险保单'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => '退保金额保存成功',
+                'data' => $change->fresh()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('更新其他保险退保金额失败: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => '更新失败: ' . $e->getMessage()

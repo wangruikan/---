@@ -324,6 +324,16 @@ class MiniController extends Controller
             }
         }
 
+        $normalizedSignaturePositions = $this->normalizePlaceholderPositions($contract->signature_positions);
+        $contract->signature_positions = $normalizedSignaturePositions;
+
+        $previousCompanyPositions = $this->getContractPlaceholderPositionsByType(
+            $normalizedSignaturePositions,
+            'previous_company'
+        );
+        $contract->requires_previous_company = !empty($previousCompanyPositions);
+        $contract->previous_company_positions = $previousCompanyPositions;
+
         // 检查是否需要显示须知文件
         $noticeInfo = $this->getContractNoticeInfo($contract, $request);
         
@@ -336,6 +346,70 @@ class MiniController extends Controller
                 'must_read_notice' => $noticeInfo['must_read_notice']
             ]
         ]);
+    }
+
+    private function getContractPlaceholderPositionsByType($rawPositions, string $type): array
+    {
+        if (empty($rawPositions)) {
+            return [];
+        }
+
+        $positions = $this->normalizePlaceholderPositions($rawPositions);
+        if (empty($positions)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($positions as $position) {
+            if (!is_array($position)) {
+                continue;
+            }
+
+            $positionType = $position['type'] ?? null;
+            if ($type === 'employee_signature') {
+                // 兼容历史数据：无 type 也视为签名位置
+                if ($positionType !== null && $positionType !== 'employee_signature') {
+                    continue;
+                }
+            } elseif ($positionType !== $type) {
+                continue;
+            }
+
+            $result[] = $position;
+        }
+
+        return array_values($result);
+    }
+
+    private function normalizePlaceholderPositions($rawPositions): array
+    {
+        if (empty($rawPositions)) {
+            return [];
+        }
+
+        $positions = is_array($rawPositions) ? $rawPositions : json_decode($rawPositions, true);
+        if (!is_array($positions)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($positions as $position) {
+            if (!is_array($position)) {
+                continue;
+            }
+
+            $item = $position;
+            if (array_key_exists('x_percent', $item) && ($item['x_percent'] === null || $item['x_percent'] === '')) {
+                unset($item['x_percent']);
+            }
+            if (array_key_exists('y_percent', $item) && ($item['y_percent'] === null || $item['y_percent'] === '')) {
+                unset($item['y_percent']);
+            }
+
+            $normalized[] = $item;
+        }
+
+        return array_values($normalized);
     }
 
     /**
@@ -409,7 +483,7 @@ class MiniController extends Controller
                             'id' => $file->id,
                             'name' => $file->original_name ?: '劳动合同须知.pdf',
                             'view_url' => $host . '/storage/' . $file->path,
-                            'signature_positions' => $projectNoticePositions[$file->id] ?? []
+                            'signature_positions' => $this->normalizePlaceholderPositions($projectNoticePositions[$file->id] ?? [])
                         ];
                     }
                 }
@@ -430,7 +504,7 @@ class MiniController extends Controller
                         'id' => $noticeFile->id,
                         'name' => $noticeFile->original_name ?: '劳动合同须知.pdf',
                         'view_url' => $host . '/storage/' . $noticeFile->path,
-                        'signature_positions' => $projectNoticePositions[$noticeFile->id] ?? []
+                        'signature_positions' => $this->normalizePlaceholderPositions($projectNoticePositions[$noticeFile->id] ?? [])
                     ];
                 }
             }
@@ -561,10 +635,12 @@ class MiniController extends Controller
             'sign_x_percent' => 'nullable|numeric|min:0|max:100',
             'sign_y_percent' => 'nullable|numeric|min:0|max:100',
             'page_index' => 'nullable|integer|min:0',
+            'previous_company' => 'nullable|string|max:255',
         ], [
             'id_last_4.required' => '请输入身份证后4位',
             'id_last_4.size' => '请输入正确的身份证后4位',
             'signature_image.required' => '请先签名',
+            'previous_company.max' => '上个公司最多255个字符',
         ]);
 
         if ($validator->fails()) {
@@ -577,13 +653,8 @@ class MiniController extends Controller
 
         $employee = Employee::find($request->user()->id);
 
-        // 验证身份证后4位（兼容空格/全角输入）
-        $inputLast4 = preg_replace('/\D/u', '', str_replace('　', '', trim((string) $request->id_last_4)));
-        $idNumber = preg_replace('/\D/u', '', (string) $employee->id_number);
-        $last4 = substr($idNumber, -4);
-
-        // 兼容身份证末位 X/x：按字符标准化后再比对（不再只保留数字）
-        $normalizeLast4 = function (?string $value): string {
+        // 验证身份证后4位（兼容空格/全角输入、末位X/x、历史数字口径）
+        $normalizeValue = function (?string $value): string {
             $normalized = str_replace('　', ' ', trim((string) $value));
             if (function_exists('mb_convert_kana')) {
                 $normalized = mb_convert_kana($normalized, 'as', 'UTF-8');
@@ -591,11 +662,35 @@ class MiniController extends Controller
             $normalized = preg_replace('/\s+/u', '', $normalized);
             return strtoupper($normalized);
         };
-        $inputLast4 = $normalizeLast4($request->id_last_4);
-        $idNumber = $normalizeLast4($employee->id_number);
-        $last4 = substr($idNumber, -4);
 
-        if ($inputLast4 !== $last4) {
+        $inputLast4Raw = $normalizeValue($request->id_last_4);
+        $inputLast4 = preg_replace('/[^0-9X]/u', '', $inputLast4Raw);
+
+        $idNumberRaw = $normalizeValue($employee->id_number);
+        $idNumber = preg_replace('/[^0-9X]/u', '', $idNumberRaw);
+
+        $expectedSet = [];
+
+        // 当前标准口径：身份证号最后4位（可含X）
+        if (strlen($idNumber) >= 4) {
+            $expectedSet[] = substr($idNumber, -4);
+        }
+
+        // 历史兼容口径：仅取数字后4位（历史版本曾按此规则）
+        $idDigitsOnly = preg_replace('/\D/u', '', $idNumber);
+        if (strlen($idDigitsOnly) >= 4) {
+            $expectedSet[] = substr($idDigitsOnly, -4);
+        }
+
+        $expectedSet = array_values(array_unique(array_filter($expectedSet)));
+
+        if (!in_array($inputLast4, $expectedSet, true)) {
+            \Log::warning('小程序签署身份证后4位校验失败', [
+                'employee_id' => $employee->id,
+                'contract_id' => $id,
+                'input_last4' => $inputLast4,
+                'id_tail_candidates' => $expectedSet,
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => '身份证后4位错误'
@@ -620,11 +715,26 @@ class MiniController extends Controller
             ], 422);
         }
 
+        $previousCompanyPositions = $this->getContractPlaceholderPositionsByType(
+            $contract->signature_positions,
+            'previous_company'
+        );
+        $requiresPreviousCompany = !empty($previousCompanyPositions);
+        $previousCompany = trim((string) $request->input('previous_company', ''));
+
+        if ($requiresPreviousCompany && $previousCompany === '') {
+            return response()->json([
+                'success' => false,
+                'message' => '请先填写上个公司后再签署合同'
+            ], 422);
+        }
+
         try {
             \Log::info('收到签署请求', [
                 'contract_id' => $id,
                 'employee_id' => $employee->id,
                 'has_preset_positions' => !empty($contract->signature_positions),
+                'requires_previous_company' => $requiresPreviousCompany,
                 'has_pdf' => $request->hasFile('signed_pdf'),
                 'has_notice_signed_pdfs' => $request->hasFile('notice_signed_pdfs')
             ]);

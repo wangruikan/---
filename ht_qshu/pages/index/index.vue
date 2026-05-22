@@ -25,7 +25,7 @@
 						<text class="contract-time">上传时间：{{ formatTime(contract.uploaded_at) }}</text>
 					</view>
 					<view class="contract-action">
-						<text class="sign-btn">立即签署</text>
+						<text class="sign-btn" @click.stop="goToDetail(contract.id)">立即签署</text>
 					</view>
 				</view>
 			</view>
@@ -581,6 +581,10 @@ import request from '@/utils/request.js'
 	color: #fff;
 	border-radius: 40rpx;
 	font-size: 26rpx;
+}
+
+.contract-action {
+	display: block;
 }
 
 .empty-state {

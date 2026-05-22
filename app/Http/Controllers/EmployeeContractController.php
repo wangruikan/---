@@ -1049,7 +1049,8 @@ class EmployeeContractController extends Controller
                         'emergency_phone' => $employee->emergency_phone,
                         'household_address' => $employee->household_address,
                         'residence_address' => $employee->residence_address,
-                        'contact_address' => $employee->contact_address
+                        'contact_address' => $employee->contact_address,
+                        'previous_company' => $employee->previous_company ?? '',
                     ],
                     'contract_type' => $request->contract_type,
                     'notes' => $request->notes
@@ -1078,6 +1079,56 @@ class EmployeeContractController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * 提取小程序签约阶段需要保留的占位符坐标
+     * 当前支持：employee_signature、previous_company
+     */
+    private function extractContractPlaceholderPositions($rawPlaceholderPositions): array
+    {
+        if (empty($rawPlaceholderPositions)) {
+            return [];
+        }
+
+        $positions = is_array($rawPlaceholderPositions)
+            ? $rawPlaceholderPositions
+            : json_decode($rawPlaceholderPositions, true);
+
+        if (!is_array($positions)) {
+            return [];
+        }
+
+        $allowedTypes = ['employee_signature', 'previous_company'];
+        $result = [];
+
+        foreach ($positions as $pos) {
+            if (!is_array($pos)) {
+                continue;
+            }
+
+            $type = $pos['type'] ?? null;
+            if (!$type || !in_array($type, $allowedTypes, true)) {
+                continue;
+            }
+
+            $isAbsolute = isset($pos['x']) && isset($pos['y']);
+            $defaultWidth = $type === 'employee_signature' ? 150 : 180;
+            $defaultHeight = $type === 'employee_signature' ? 50 : 24;
+
+            $result[] = [
+                'type' => $type,
+                'x' => isset($pos['x']) ? (float) $pos['x'] : 0,
+                'y' => isset($pos['y']) ? (float) $pos['y'] : 0,
+                'x_percent' => $isAbsolute ? null : ($pos['x_percent'] ?? null),
+                'y_percent' => $isAbsolute ? null : ($pos['y_percent'] ?? null),
+                'width' => isset($pos['width']) ? (float) $pos['width'] : $defaultWidth,
+                'height' => isset($pos['height']) ? (float) $pos['height'] : $defaultHeight,
+                'page' => isset($pos['page']) ? (int) $pos['page'] : 0,
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -1153,34 +1204,15 @@ class EmployeeContractController extends Controller
             // 获取当前账套ID
             $currentAccountSetId = $request->input('current_account_set_id');
             
-            // 从模板中提取员工签字占位符位置
-            $signaturePositions = [];
-            if ($template->placeholder_positions) {
-                $positions = is_array($template->placeholder_positions) 
-                    ? $template->placeholder_positions 
-                    : json_decode($template->placeholder_positions, true);
-                
-                foreach ($positions as $pos) {
-                    if (isset($pos['type']) && $pos['type'] === 'employee_signature') {
-                        $signaturePositions[] = [
-                            'x' => $pos['x'] ?? 0,
-                            'y' => $pos['y'] ?? 0,
-                            'x_percent' => isset($pos['x']) && isset($pos['width']) ? null : ($pos['x_percent'] ?? null),
-                            'y_percent' => isset($pos['y']) && isset($pos['height']) ? null : ($pos['y_percent'] ?? null),
-                            'width' => $pos['width'] ?? 150,
-                            'height' => $pos['height'] ?? 50,
-                            'page' => $pos['page'] ?? 0,
-                        ];
-                    }
-                }
-                \Log::info('saveFilledContract: 提取签名位置', ['signature_positions' => $signaturePositions]);
-            }
+            // 提取小程序签约需要的占位符位置（签名 + 上个公司）
+            $contractPlaceholderPositions = $this->extractContractPlaceholderPositions($template->placeholder_positions);
+            \Log::info('saveFilledContract: extracted contract placeholder positions', ['signature_positions' => $contractPlaceholderPositions]);
 
             \Log::info('saveFilledContract: 开始创建数据库记录', [
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_file' => $targetPath,
-                'signature_positions_count' => count($signaturePositions),
+                'signature_positions_count' => count($contractPlaceholderPositions),
             ]);
 
             $contract = EmployeeContract::create([
@@ -1193,7 +1225,7 @@ class EmployeeContractController extends Controller
                 'status' => 'draft',
                 'created_by' => $request->user()->id,
                 'notes' => $request->notes,
-                'signature_positions' => !empty($signaturePositions) ? $signaturePositions : null,
+                'signature_positions' => !empty($contractPlaceholderPositions) ? $contractPlaceholderPositions : null,
             ]);
 
             \Log::info('saveFilledContract: 完成', [
@@ -1318,6 +1350,8 @@ class EmployeeContractController extends Controller
                 'contract_file' => $targetPath,
             ]);
 
+            $contractPlaceholderPositions = $this->extractContractPlaceholderPositions($template->placeholder_positions);
+
             $contract = EmployeeContract::create([
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
@@ -1328,6 +1362,7 @@ class EmployeeContractController extends Controller
                 'status' => 'draft',
                 'created_by' => $request->user()->id,
                 'notes' => $request->notes,
+                'signature_positions' => !empty($contractPlaceholderPositions) ? $contractPlaceholderPositions : null,
             ]);
 
             \Log::info('storeWithTemplate: 完成', [

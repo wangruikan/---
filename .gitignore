@@ -17,6 +17,8 @@ _archive_root_files/
 
 dist/
 docs/
-public/
+public/*
+!public/h5-sign/
+!public/h5-sign/**
 storage/
 ht_qshu/unpackage/dist/

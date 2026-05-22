@@ -37,7 +37,7 @@
 					</view>
 					
 					<view v-if="contract.status === 'pending_sign'" class="contract-action">
-						<text class="action-btn">立即签署 →</text>
+						<text class="action-btn" @click.stop="goToDetail(contract.id)">立即签署 →</text>
 					</view>
 				</view>
 			</view>

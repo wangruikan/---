@@ -1257,7 +1257,7 @@ class ProjectController extends Controller
         $validator = Validator::make($request->all(), [
             'placeholder_fields' => 'present|array',
             'placeholder_fields.*.key' => 'required|string',
-            'placeholder_fields.*.label' => 'required|string',
+            'placeholder_fields.*.label' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -1268,7 +1268,51 @@ class ProjectController extends Controller
             ], 422);
         }
 
-        $project->placeholder_fields = $request->placeholder_fields;
+        $availablePlaceholderFields = Project::getAvailablePlaceholderFields();
+        $rawFields = $request->input('placeholder_fields', []);
+        $normalizedFields = [];
+
+        foreach ($rawFields as $field) {
+            // 兼容前端仅上传 key 字符串的场景
+            if (is_string($field)) {
+                $key = trim($field);
+                if ($key === '') {
+                    continue;
+                }
+                $normalizedFields[] = [
+                    'key' => $key,
+                    'label' => $availablePlaceholderFields[$key] ?? $key,
+                ];
+                continue;
+            }
+
+            if (!is_array($field)) {
+                continue;
+            }
+
+            $key = trim((string)($field['key'] ?? ''));
+            if ($key === '') {
+                continue;
+            }
+
+            $label = trim((string)($field['label'] ?? ''));
+            if ($label === '') {
+                $label = $availablePlaceholderFields[$key] ?? $key;
+            }
+
+            $normalizedFields[] = [
+                'key' => $key,
+                'label' => $label,
+            ];
+        }
+
+        // 去重，避免重复 key
+        $uniqueFields = [];
+        foreach ($normalizedFields as $field) {
+            $uniqueFields[$field['key']] = $field;
+        }
+
+        $project->placeholder_fields = array_values($uniqueFields);
         $project->save();
 
         return response()->json([

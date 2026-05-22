@@ -1349,6 +1349,7 @@ const availablePlaceholderFields = ref({
   nationality: '民族',
   education: '学历',
   position: '岗位',
+  previous_company: '上个公司',
   employee_number: '工号',
   email: '邮箱',
   bank_name: '开户银行',

@@ -1,0 +1,379 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>合同签署</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: #000;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .fullscreen-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #000;
+        }
+
+        .pdf-fullscreen {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #2a2a2a;
+        }
+
+        #pdf-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            cursor: crosshair;
+            display: block;
+        }
+
+        .page-nav-bottom {
+            position: fixed;
+            bottom: 70px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .page-nav-bottom button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .page-nav-bottom button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .page-info {
+            font-size: 15px;
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .sign-popup {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: flex-end;
+        }
+
+        .sign-popup.show {
+            display: flex;
+        }
+
+        .sign-content {
+            background: white;
+            width: 100%;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            padding: 20px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .popup-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+        }
+
+        #sign-canvas {
+            width: 100%;
+            height: 200px;
+            border: 2px dashed #999;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            touch-action: none;
+        }
+
+        .popup-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .popup-prev-company {
+            margin-bottom: 12px;
+        }
+
+        .popup-prev-company .prev-company-label {
+            color: #333;
+            font-size: 14px;
+        }
+
+        .popup-prev-company .prev-company-input {
+            border: 1px solid #ddd;
+            background: #fff;
+        }
+
+        .id-last4-box {
+            margin-bottom: 12px;
+        }
+
+        .id-last4-label {
+            display: block;
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .id-last4-input {
+            width: 100%;
+            border: 1px solid #ddd;
+            background: #fff;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 14px;
+            outline: none;
+            text-transform: uppercase;
+        }
+
+        .popup-actions button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .clear-btn {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .confirm-btn {
+            background: #4caf50;
+            color: white;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px;
+        }
+
+        .sign-button-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 99;
+        }
+
+        .sign-main-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .sign-main-btn:active {
+            transform: scale(0.98);
+        }
+
+        .force-confirm-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .force-confirm-box {
+            background: white;
+            padding: 30px 20px;
+            border-radius: 16px;
+            width: 85%;
+            max-width: 320px;
+        }
+
+        .force-confirm-box h3 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .force-confirm-box p {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+
+        .force-confirm-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div v-if="loading" class="loading">
+            <p>{{ loadingText || '加载中...' }}</p>
+        </div>
+
+        <div v-else-if="error" class="error">
+            <p>{{ error }}</p>
+            <button @click="retry" style="margin-top: 10px; padding: 10px 20px;">重试</button>
+        </div>
+
+        <div v-else class="fullscreen-container">
+            <div v-if="showForceConfirm" class="force-confirm-overlay">
+                <div class="force-confirm-box">
+                    <h3>加载完成</h3>
+                    <p>合同已安全加载，请点击下方按钮开始查阅并签署。</p>
+                    <button class="force-confirm-btn" @click="confirmAndRender">确认查看</button>
+                </div>
+            </div>
+
+            <div class="pdf-fullscreen">
+                <canvas id="pdf-canvas" @click="handleCanvasClick"></canvas>
+            </div>
+
+            <div class="page-nav-bottom">
+                <button @click="prevPage" :disabled="currentPage <= 1">上一页</button>
+                <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+                <button @click="nextPage" :disabled="currentPage >= totalPages">下一页</button>
+            </div>
+
+            <div class="sign-button-container">
+                <button class="sign-main-btn" @click="openSignPopup">立即签署</button>
+            </div>
+
+            <div class="sign-popup" :class="{show: showSignPopup}" @click="closeSignPopup">
+                <div class="sign-content" @click.stop>
+                    <div class="popup-header">
+                        <div class="popup-title">请签署您的姓名</div>
+                        <button class="close-btn" @click="closeSignPopup">×</button>
+                    </div>
+
+                    <div v-if="requiresPreviousCompany()" class="popup-prev-company">
+                        <label class="prev-company-label">上个公司（必填）</label>
+                        <input
+                            v-model.trim="previousCompany"
+                            class="prev-company-input"
+                            type="text"
+                            placeholder="请输入上个公司名称"
+                        />
+                    </div>
+
+                    <div class="id-last4-box">
+                        <label class="id-last4-label">身份证后4位（必填，支持X）</label>
+                        <input
+                            v-model.trim="idLast4Input"
+                            class="id-last4-input"
+                            type="text"
+                            maxlength="4"
+                            placeholder="请输入身份证后4位"
+                        />
+                    </div>
+
+                    <canvas id="sign-canvas"></canvas>
+
+                    <div class="popup-actions">
+                        <button class="clear-btn" @click="clearSignature">清空重签</button>
+                        <button class="confirm-btn" @click="confirmSignature">确认签名</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/vconsole@3.15.1/dist/vconsole.min.js"></script>
+    <script>
+        var vConsole = new window.VConsole();
+        console.log('vConsole已启动');
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/1.10.100/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+    <script src="./sign.js?v=20260522_text_fix_final1"></script>
+</body>
+</html>

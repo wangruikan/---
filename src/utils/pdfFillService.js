@@ -5,6 +5,11 @@ import { PDFDocument } from 'pdf-lib'
  * 使用pdf-lib和Canvas技术，类似签名拼接功能
  */
 export class PdfFillService {
+  // PC端合同字段渲染统一放大参数
+  static FONT_SIZE_MULTIPLIER = 1.35
+  static FONT_WEIGHT = 700
+  static DEFAULT_PREFERRED_FONT_SIZE = 20
+
   /**
    * 填充PDF模板数据
    * @param {string} pdfUrl - PDF模板URL
@@ -66,6 +71,7 @@ export class PdfFillService {
         'nationality': employeeData.nationality,
         'education': employeeData.education,
         'position': employeeData.position,
+        'previous_company': employeeData.previous_company,
         'employee_number': employeeData.employee_number,
         'email': employeeData.email,
         'bank_name': employeeData.bank_name,
@@ -95,8 +101,8 @@ export class PdfFillService {
       const renderScale = 1.5
       const namePosition = positionsArray.find((pos) => pos.type === 'name')
       const uniformFontSize = namePosition
-        ? this.calculateSafeFontSize(namePosition.height, 16)
-        : 14
+        ? this.calculateSafeFontSize(namePosition.height, this.DEFAULT_PREFERRED_FONT_SIZE)
+        : this.DEFAULT_PREFERRED_FONT_SIZE
       const uniformFontFamily = 'SimSun'
 
       for (const position of positionsArray) {
@@ -182,7 +188,8 @@ export class PdfFillService {
 
         // 如果不是图片或加载图片失败，则生成文字图片
         if (!image) {
-          const fieldFontSize = this.calculateSafeFontSize(position.height, uniformFontSize)
+          // Keep every field at the same font size as the name field.
+          const fieldFontSize = uniformFontSize
 
           // 根据实际值长度动态扩展绘制宽度，避免内容被占位框宽度截断
           const dynamicImageSize = this.calculateTextImageSize(fieldValue, {
@@ -265,11 +272,12 @@ export class PdfFillService {
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
     const safeBaseHeight = Math.max(Number(baseHeight) || 20, 14)
-    const actualFontSize = this.calculateSafeFontSize(safeBaseHeight, fontSize)
-    ctx.font = `600 ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+    // Keep a fixed font size (same scale as name field), avoid per-box re-scaling.
+    const actualFontSize = Math.max(Number(fontSize) || 14, 12)
+    ctx.font = `${this.FONT_WEIGHT} ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
 
     const normalizedText = String(text || '').replace(/\r?\n/g, ' ')
-    ctx.font = `600 ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+    ctx.font = `${this.FONT_WEIGHT} ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
     const textWidth = Math.ceil(ctx.measureText(normalizedText).width)
     const horizontalPadding = 24
     const safetyFactor = 1.12
@@ -326,8 +334,9 @@ export class PdfFillService {
     }
 
     // 按占位框高度自适应字体，并使用中线绘制避免上下被裁切
-    const actualFontSize = this.calculateSafeFontSize(safeHeight, fontSize)
-    ctx.font = `600 ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+    // Keep a fixed font size (same scale as name field), avoid per-box re-scaling.
+    const actualFontSize = Math.max(Number(fontSize) || 14, 12)
+    ctx.font = `${this.FONT_WEIGHT} ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
     ctx.fillStyle = color
     ctx.textAlign = 'left'
 
@@ -378,8 +387,9 @@ export class PdfFillService {
 
   static calculateSafeFontSize(boxHeight, preferredSize = 14) {
     const safeHeight = Math.max(Number(boxHeight) || 20, 14)
-    const maxByHeight = Math.max(10, Math.floor(safeHeight * 0.78))
-    const normalizedPreferred = Math.max(Number(preferredSize) || 14, 10)
+    const maxByHeight = Math.max(12, Math.floor(safeHeight * 0.92))
+    const basePreferred = Math.max(Number(preferredSize) || 14, 12)
+    const normalizedPreferred = Math.ceil(basePreferred * this.FONT_SIZE_MULTIPLIER)
     return Math.min(normalizedPreferred, maxByHeight)
   }
 }

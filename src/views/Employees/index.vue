@@ -1817,6 +1817,7 @@
                 @change="handleSocialSecurityRegionChange"
                 clearable
               >
+                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableSocialSecurityRegions"
                   :key="region.id"
@@ -1837,6 +1838,7 @@
                 @change="handleMedicalInsuranceRegionChange"
                 clearable
               >
+                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableMedicalInsuranceRegions"
                   :key="region.id"
@@ -1857,6 +1859,7 @@
                 @change="handleHousingFundRegionChange"
                 clearable
               >
+                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableHousingFundRegions"
                   :key="region.id"
@@ -3534,6 +3537,7 @@
                 @change="handleSocialSecurityRegionChange"
                 clearable
               >
+                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableSocialSecurityRegions"
                   :key="region.id"
@@ -3553,6 +3557,7 @@
                 @change="handleMedicalInsuranceRegionChange"
                 clearable
               >
+                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableMedicalInsuranceRegions"
                   :key="region.id"
@@ -3572,6 +3577,7 @@
                 @change="handleHousingFundRegionChange"
                 clearable
               >
+                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableHousingFundRegions"
                   :key="region.id"
@@ -4713,6 +4719,14 @@ const splitSalaryItems = (items) => {
   }
 }
 
+const NO_INSURANCE_OPTION_VALUE = '__NONE__'
+const isNoInsuranceSelected = (value) => value === NO_INSURANCE_OPTION_VALUE
+const normalizeInsuranceRegionIdForSubmit = (value) => {
+  if (isNoInsuranceSelected(value)) return null
+  if (value === '' || value === undefined) return null
+  return value
+}
+
 const buildMergedSalaryItems = (source) => {
   const fixedAliases = new Set(FIXED_SALARY_ITEM_CONFIGS.flatMap((config) => config.aliases))
   const customItems = normalizeSalaryItems(source?.salary_items)
@@ -4772,7 +4786,13 @@ const buildEmployeeSubmitPayload = (source) => {
   const payload = {
     ...source,
     basic_salary: normalizeNullableNumber(source.basic_salary),
+    social_security_region_id: normalizeInsuranceRegionIdForSubmit(source.social_security_region_id),
+    medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(source.medical_insurance_region_id),
+    housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(source.housing_fund_region_id),
     salary_items: buildMergedSalaryItems(source)
+  }
+  if (!payload.housing_fund_region_id) {
+    payload.housing_fund_config_id = null
   }
   delete payload.comprehensive_salary
   delete payload.probation_salary
@@ -5803,7 +5823,7 @@ const handleBatchExportPdf = async () => {
         const pdfDoc = await PDFDocument.load(pdfBytes)
         
         // 如果有签名，嵌入签名
-        if (item.signature_base64) {
+        if (item.signature_base64 && item.form_type !== 'registration') {
           const signatureBytes = Uint8Array.from(
             atob(item.signature_base64),
             c => c.charCodeAt(0)
@@ -6080,6 +6100,10 @@ const loadProjectLargeMedicalInsuranceConfigs = async (projectIds) => {
 
 // 处理社保地区变化
 const handleSocialSecurityRegionChange = (regionId) => {
+  if (isNoInsuranceSelected(regionId)) {
+    selectedSocialSecurityRegion.value = null
+    return
+  }
   if (regionId) {
     selectedSocialSecurityRegion.value = availableSocialSecurityRegions.value.find(r => r.id === regionId)
   } else {
@@ -6089,6 +6113,10 @@ const handleSocialSecurityRegionChange = (regionId) => {
 
 // 处理医保地区变化
 const handleMedicalInsuranceRegionChange = (regionId) => {
+  if (isNoInsuranceSelected(regionId)) {
+    selectedMedicalInsuranceRegion.value = null
+    return
+  }
   if (regionId) {
     selectedMedicalInsuranceRegion.value = availableMedicalInsuranceRegions.value.find(r => r.id === regionId)
   } else {
@@ -6098,6 +6126,13 @@ const handleMedicalInsuranceRegionChange = (regionId) => {
 
 // 处理公积金地区变化
 const handleHousingFundRegionChange = async (regionId) => {
+  if (isNoInsuranceSelected(regionId)) {
+    selectedHousingFundRegion.value = null
+    availableHousingFundConfigs.value = []
+    form.housing_fund_config_id = null
+    selectedHousingFundConfig.value = null
+    return
+  }
   if (regionId) {
     selectedHousingFundRegion.value = availableHousingFundRegions.value.find(r => r.id === regionId)
     // 加载该地区下的配置
@@ -8192,7 +8227,7 @@ const exportRegistrationFormPdf = async (employeeId) => {
     )
     const pdfDoc = await PDFDocument.load(pdfBytes)
 
-    if (item.signature_base64) {
+    if (item.signature_base64 && item.form_type !== 'registration') {
       const signatureBytes = Uint8Array.from(
         atob(item.signature_base64),
         c => c.charCodeAt(0)
@@ -8964,7 +8999,7 @@ const handlePrintEmployee = async (row) => {
     }
     
     // 如果有签名，嵌入签名
-    if (item.signature_base64) {
+    if (item.signature_base64 && item.form_type !== 'registration') {
       const signatureBytes = Uint8Array.from(
         atob(item.signature_base64),
         c => c.charCodeAt(0)

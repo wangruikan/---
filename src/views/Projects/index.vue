@@ -34,7 +34,7 @@
               style="width: 200px"
             >
               <el-option label="进行中" value="active" />
-              <el-option label="已完成" value="completed" />
+              <el-option label="已结束" value="completed" />
               <el-option label="已停用" value="inactive" />
             </el-select>
           </el-form-item>
@@ -190,22 +190,6 @@
         
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="项目状态" prop="status">
-              <el-select
-                v-model="form.status"
-                placeholder="请选择项目状态"
-                style="width: 100%"
-                :disabled="form.id && !isEdit"
-                @change="handleStatusChange"
-              >
-                <el-option label="进行中" value="active" />
-                <el-option label="已完成" value="completed" />
-                <el-option label="已停用" value="inactive" />
-              </el-select>
-              <div class="form-tip">选择"已停用"会自动关闭工资依据、考勤依据和考勤表开关</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
             <el-form-item label="开始时间" prop="start_date">
               <el-date-picker
                 v-model="form.start_date"
@@ -234,6 +218,7 @@
         <!-- 社保地区选择 -->
         <el-form-item label="社保地区" prop="social_security_regions">
           <el-select
+            ref="socialSecurityRegionsSelectRef"
             v-model="form.social_security_regions"
             multiple
             placeholder="请选择社保地区"
@@ -241,6 +226,10 @@
             :disabled="form.id && !isEdit"
             @change="handleSocialSecurityRegionsChange"
           >
+            <el-option
+              label="无"
+              :value="NO_SOCIAL_SECURITY_OPTION"
+            />
             <el-option
               v-for="region in availableSocialSecurityRegions"
               :key="region.id"
@@ -254,6 +243,7 @@
         <!-- 公积金地区选择 -->
         <el-form-item label="公积金地区" prop="housing_fund_regions">
           <el-select
+            ref="housingFundRegionsSelectRef"
             v-model="form.housing_fund_regions"
             multiple
             placeholder="请选择公积金地区"
@@ -261,6 +251,10 @@
             :disabled="form.id && !isEdit"
             @change="handleHousingFundRegionsChange"
           >
+            <el-option
+              label="无"
+              :value="NO_HOUSING_FUND_OPTION"
+            />
             <el-option
               v-for="region in availableHousingFundRegions"
               :key="region.id"
@@ -274,6 +268,7 @@
         <!-- 医保参保地区选择 -->
         <el-form-item label="医保参保地区" prop="medical_insurance_regions">
           <el-select
+            ref="medicalInsuranceRegionsSelectRef"
             v-model="form.medical_insurance_regions"
             multiple
             placeholder="请选择医保参保地区"
@@ -281,6 +276,10 @@
             :disabled="form.id && !isEdit"
             @change="handleMedicalInsuranceRegionsChange"
           >
+            <el-option
+              label="无"
+              :value="NO_MEDICAL_INSURANCE_OPTION"
+            />
             <el-option
               v-for="region in availableMedicalInsuranceRegions"
               :key="region.id"
@@ -1040,15 +1039,13 @@
             <!-- 保单列表（可折叠） -->
             <el-collapse-transition>
               <div v-show="expandedTypes[typeGroup.typeId]" class="policy-list-container">
-                <el-radio-group 
-                  v-model="selectedPoliciesByType[typeGroup.typeId]"
-                  class="policy-list"
-                >
-                  <el-radio 
-                    v-for="policy in typeGroup.policies" 
-                    :key="policy.id" 
-                    :label="policy.id"
+                <div class="policy-list">
+                  <div
+                    v-for="policy in typeGroup.policies"
+                    :key="policy.id"
                     class="policy-radio-item"
+                    :class="{ 'is-checked': selectedPoliciesByType[typeGroup.typeId] === policy.id }"
+                    @click="togglePolicySelection(typeGroup.typeId, policy.id)"
                   >
                     <div class="policy-info">
                       <div class="policy-name">{{ policy.policy_name }}</div>
@@ -1065,8 +1062,8 @@
                         </el-tag>
                       </div>
                     </div>
-                  </el-radio>
-                </el-radio-group>
+                  </div>
+                </div>
               </div>
             </el-collapse-transition>
           </div>
@@ -1177,7 +1174,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
@@ -1278,6 +1275,9 @@ const submitting = ref(false)
 const showCreateDialog = ref(false)
 const isEdit = ref(false)
 const formRef = ref()
+const socialSecurityRegionsSelectRef = ref()
+const housingFundRegionsSelectRef = ref()
+const medicalInsuranceRegionsSelectRef = ref()
 
 // 须知文件设置相关
 const showNoticeDialog = ref(false)
@@ -1695,15 +1695,22 @@ const form = reactive({
   large_medical_insurance_configs: []  // 大额医疗保险配置ID列表
 })
 
+const NO_SOCIAL_SECURITY_OPTION = '__NONE_SOCIAL_SECURITY__'
+const NO_HOUSING_FUND_OPTION = '__NONE_HOUSING_FUND__'
+const NO_MEDICAL_INSURANCE_OPTION = '__NONE_MEDICAL_INSURANCE__'
+
+const closeRegionSelect = (selectRef) => {
+  nextTick(() => {
+    selectRef.value?.blur?.()
+  })
+}
+
 const formRules = {
   name: [
     { required: true, message: '请输入项目名称', trigger: 'blur' }
   ],
   code: [
     { min: 1, max: 255, message: '项目编号长度需在 1 到 255 个字符之间', trigger: 'blur' }
-  ],
-  status: [
-    { required: true, message: '请选择状态', trigger: 'change' }
   ],
   start_date: [
     { required: true, message: '请选择开始时间', trigger: 'change' }
@@ -1880,12 +1887,30 @@ const loadAvailableHousingFundRegions = async () => {
 
 // 处理社保地区变化
 const handleSocialSecurityRegionsChange = (value) => {
-  console.log('社保地区变化:', value)
+  const selectedValues = Array.isArray(value) ? value : []
+  if (selectedValues.includes(NO_SOCIAL_SECURITY_OPTION)) {
+    form.social_security_regions = selectedValues[selectedValues.length - 1] === NO_SOCIAL_SECURITY_OPTION
+      ? [NO_SOCIAL_SECURITY_OPTION]
+      : selectedValues.filter(item => item !== NO_SOCIAL_SECURITY_OPTION)
+    closeRegionSelect(socialSecurityRegionsSelectRef)
+    return
+  }
+  form.social_security_regions = selectedValues
+  closeRegionSelect(socialSecurityRegionsSelectRef)
 }
 
 // 处理公积金地区变化
 const handleHousingFundRegionsChange = (value) => {
-  console.log('公积金地区变化:', value)
+  const selectedValues = Array.isArray(value) ? value : []
+  if (selectedValues.includes(NO_HOUSING_FUND_OPTION)) {
+    form.housing_fund_regions = selectedValues[selectedValues.length - 1] === NO_HOUSING_FUND_OPTION
+      ? [NO_HOUSING_FUND_OPTION]
+      : selectedValues.filter(item => item !== NO_HOUSING_FUND_OPTION)
+    closeRegionSelect(housingFundRegionsSelectRef)
+    return
+  }
+  form.housing_fund_regions = selectedValues
+  closeRegionSelect(housingFundRegionsSelectRef)
 }
 
 // 加载可用的医保地区
@@ -1961,10 +1986,34 @@ const loadAvailableLargeMedicalInsuranceConfigs = async () => {
 
 // 处理医保地区变化
 const handleMedicalInsuranceRegionsChange = (value) => {
-  console.log('医保地区变化:', value)
+  const selectedValues = Array.isArray(value) ? value : []
+  if (selectedValues.includes(NO_MEDICAL_INSURANCE_OPTION)) {
+    form.medical_insurance_regions = selectedValues[selectedValues.length - 1] === NO_MEDICAL_INSURANCE_OPTION
+      ? [NO_MEDICAL_INSURANCE_OPTION]
+      : selectedValues.filter(item => item !== NO_MEDICAL_INSURANCE_OPTION)
+    closeRegionSelect(medicalInsuranceRegionsSelectRef)
+    return
+  }
+  form.medical_insurance_regions = selectedValues
+  closeRegionSelect(medicalInsuranceRegionsSelectRef)
 }
 
 // 确认保单选择
+const togglePolicySelection = (typeId, policyId) => {
+  const currentPolicyId = selectedPoliciesByType.value[typeId]
+  if (currentPolicyId === policyId) {
+    const nextSelection = { ...selectedPoliciesByType.value }
+    delete nextSelection[typeId]
+    selectedPoliciesByType.value = nextSelection
+    return
+  }
+
+  selectedPoliciesByType.value = {
+    ...selectedPoliciesByType.value,
+    [typeId]: policyId
+  }
+}
+
 const confirmPolicySelection = () => {
   // 将selectedPoliciesByType转换为保单ID数组
   const selectedIds = Object.values(selectedPoliciesByType.value).filter(id => id)
@@ -2109,17 +2158,6 @@ const handleSavePlaceholderPositions = async (data) => {
   }
 }
 
-// 处理项目状态变化
-const handleStatusChange = (newStatus) => {
-  // 如果选择"已停用"，自动关闭相关开关
-  if (newStatus === 'inactive') {
-    form.requires_salary_basis = false
-    form.requires_attendance_basis = false
-    form.requires_attendance = false
-    ElMessage.info('已自动关闭工资依据、考勤依据和考勤表开关')
-  }
-}
-
 // 处理新建项目
 const handleCreate = async () => {
   isEdit.value = false  // 新建时设置为false
@@ -2177,7 +2215,16 @@ const handleView = async (row) => {
   Object.assign(form, {
     ...row,
     insurance_types: row.insurance_types || [],
-    delivery_requirements: row.delivery_requirements || []
+    delivery_requirements: row.delivery_requirements || [],
+    social_security_regions: row.social_security_regions && row.social_security_regions.length > 0
+      ? row.social_security_regions
+      : [NO_SOCIAL_SECURITY_OPTION],
+    housing_fund_regions: row.housing_fund_regions && row.housing_fund_regions.length > 0
+      ? row.housing_fund_regions
+      : [NO_HOUSING_FUND_OPTION],
+    medical_insurance_regions: row.medical_insurance_regions && row.medical_insurance_regions.length > 0
+      ? row.medical_insurance_regions.map(r => r.id)
+      : [NO_MEDICAL_INSURANCE_OPTION]
   })
   
   console.log('查看项目 - 地区数据加载完成:', {
@@ -2210,10 +2257,16 @@ const handleEdit = async (row) => {
     insurance_types: row.insurance_types || [],
     delivery_requirements: row.delivery_requirements || [],
     // 注意：从数据库返回的是数组ID，但显示时需要从_data中获取详细信息
-    social_security_regions: row.social_security_regions || [],
-    housing_fund_regions: row.housing_fund_regions || [],
+    social_security_regions: row.social_security_regions && row.social_security_regions.length > 0
+      ? row.social_security_regions
+      : [NO_SOCIAL_SECURITY_OPTION],
+    housing_fund_regions: row.housing_fund_regions && row.housing_fund_regions.length > 0
+      ? row.housing_fund_regions
+      : [NO_HOUSING_FUND_OPTION],
     // 医保和其他保险使用关系，需要提取ID
-    medical_insurance_regions: row.medical_insurance_regions ? row.medical_insurance_regions.map(r => r.id) : [],
+    medical_insurance_regions: row.medical_insurance_regions && row.medical_insurance_regions.length > 0
+      ? row.medical_insurance_regions.map(r => r.id)
+      : [NO_MEDICAL_INSURANCE_OPTION],
     other_insurance_policies: row.other_insurance_policies ? row.other_insurance_policies.map(p => p.id) : [],
     large_medical_insurance_configs: row.large_medical_insurance_configs ? row.large_medical_insurance_configs.map(c => c.id) : []
   })
@@ -2594,21 +2647,27 @@ const handleSubmit = async () => {
       submitting.value = true
       try {
         let projectId
+        const projectPayload = {
+          ...form,
+          social_security_regions: (form.social_security_regions || []).filter(id => id !== NO_SOCIAL_SECURITY_OPTION),
+          housing_fund_regions: (form.housing_fund_regions || []).filter(id => id !== NO_HOUSING_FUND_OPTION),
+          medical_insurance_regions: (form.medical_insurance_regions || []).filter(id => id !== NO_MEDICAL_INSURANCE_OPTION)
+        }
         // 使用 form.id 来判断是编辑还是新建，更可靠
         if (isEdit.value && form.id) {
-          await updateProject(form.id, form)
+          await updateProject(form.id, projectPayload)
           projectId = form.id
           ElMessage.success('更新成功')
         } else {
-          const response = await createProject(form)
+          const response = await createProject(projectPayload)
           projectId = response.data.id
           ElMessage.success('创建成功')
         }
         
         // 保存社保地区（过滤空值和无效值）
         if (form.social_security_regions && form.social_security_regions.length > 0) {
-          const validRegions = form.social_security_regions.filter(id => id !== null && id !== undefined && id !== '')
-          if (validRegions.length > 0) {
+          const validRegions = form.social_security_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_SOCIAL_SECURITY_OPTION)
+          if (validRegions.length > 0 || form.social_security_regions.includes(NO_SOCIAL_SECURITY_OPTION)) {
             try {
               await setProjectSocialSecurityRegions(projectId, {
                 region_ids: validRegions
@@ -2621,8 +2680,8 @@ const handleSubmit = async () => {
         
         // 保存公积金地区（过滤空值和无效值）
         if (form.housing_fund_regions && form.housing_fund_regions.length > 0) {
-          const validRegions = form.housing_fund_regions.filter(id => id !== null && id !== undefined && id !== '')
-          if (validRegions.length > 0) {
+          const validRegions = form.housing_fund_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_HOUSING_FUND_OPTION)
+          if (validRegions.length > 0 || form.housing_fund_regions.includes(NO_HOUSING_FUND_OPTION)) {
             try {
               await setProjectHousingFundRegions(projectId, {
                 region_ids: validRegions
@@ -2635,8 +2694,8 @@ const handleSubmit = async () => {
         
         // 保存医保地区（过滤空值和无效值）
         if (form.medical_insurance_regions && form.medical_insurance_regions.length > 0) {
-          const validRegions = form.medical_insurance_regions.filter(id => id !== null && id !== undefined && id !== '')
-          if (validRegions.length > 0) {
+          const validRegions = form.medical_insurance_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_MEDICAL_INSURANCE_OPTION)
+          if (validRegions.length > 0 || form.medical_insurance_regions.includes(NO_MEDICAL_INSURANCE_OPTION)) {
             try {
               await setProjectMedicalInsuranceRegions(projectId, {
                 region_ids: validRegions
@@ -2724,7 +2783,7 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const texts = {
     active: '进行中',
-    completed: '已完成',
+    completed: '已结束',
     inactive: '已停用'
   }
   return texts[status] || '未知'
@@ -3067,19 +3126,25 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
 
 .policy-list-container {
   padding: 0 12px 12px 12px;
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .policy-list {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .policy-radio-item {
   width: 100%;
   margin: 8px 0;
-  padding: 30px 16px;
+  padding: 12px 14px;
   border: 1px solid #e4e7ed;
   border-radius: 6px;
   background-color: #fff;
+  cursor: pointer;
   transition: all 0.3s;
 }
 
@@ -3096,20 +3161,22 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
 .policy-info {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 
 .policy-name {
   font-size: 15px;
   font-weight: 500;
   color: #303133;
+  word-break: break-all;
 }
 
 .policy-details {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 8px;
   font-size: 13px;
   color: #606266;
   line-height: 1.6;

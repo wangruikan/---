@@ -126,6 +126,10 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('08:15')
                  ->timezone('Asia/Shanghai');
 
+        $schedule->command('project:update-statuses')
+                 ->dailyAt('00:05')
+                 ->timezone('Asia/Shanghai');
+
         // 每天凌晨1点自动确认符合条件的考核记录（每月15号后生效）
         $schedule->command('assessment:auto-confirm')
                  ->dailyAt('01:00')

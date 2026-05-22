@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Carbon\Carbon;
 use Overtrue\Pinyin\Pinyin;
 use App\Traits\ChecksPermission;
 
@@ -33,6 +34,15 @@ class ProjectController extends Controller
         if (!$hasAccess) {
             abort(403, '没有权限访问该项目');
         }
+    }
+
+    private function calculateProjectStatusByEndDate($endDate): string
+    {
+        if (!$endDate) {
+            return 'active';
+        }
+
+        return Carbon::parse($endDate)->lt(Carbon::today('Asia/Shanghai')) ? 'completed' : 'active';
     }
 
     public function index(Request $request)
@@ -97,7 +107,7 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'status' => 'required|in:active,completed,inactive',
+            'status' => 'nullable|in:active,completed,inactive',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'social_security_location' => 'nullable|string',
@@ -109,12 +119,12 @@ class ProjectController extends Controller
             'delivery_frequency' => 'required|in:monthly,quarterly',
             'delivery_method' => 'required|in:express,electronic',
             'registration_form_type' => 'required|in:onboarding,registration',
-            'social_security_regions' => 'required|array|min:1',
-            'social_security_regions.*' => 'required|exists:social_security_regions,id',
-            'medical_insurance_regions' => 'required|array|min:1',
-            'medical_insurance_regions.*' => 'required|exists:medical_insurance_regions,id',
-            'housing_fund_regions' => 'required|array|min:1',
-            'housing_fund_regions.*' => 'required|exists:housing_fund_regions,id',
+            'social_security_regions' => 'nullable|array',
+            'social_security_regions.*' => 'exists:social_security_regions,id',
+            'medical_insurance_regions' => 'nullable|array',
+            'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
+            'housing_fund_regions' => 'nullable|array',
+            'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
             'other_insurance_policies' => 'required|array|min:1',
             'other_insurance_policies.*' => 'required|exists:other_insurance_policies,id',
             'large_medical_insurance_configs' => 'required|array|min:1',
@@ -131,6 +141,7 @@ class ProjectController extends Controller
 
         // 【账套关联】自动关联到当前账套
         $projectData = $requestData;
+        $projectData['status'] = $this->calculateProjectStatusByEndDate($projectData['end_date'] ?? null);
         $currentAccountSetId = $request->input('current_account_set_id');
         if ($currentAccountSetId) {
             $projectData['account_set_id'] = $currentAccountSetId;
@@ -262,7 +273,7 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'code' => ['nullable', 'string', 'max:255'],
             'description' => 'nullable|string',
-            'status' => 'required|in:active,completed,inactive',
+            'status' => 'nullable|in:active,completed,inactive',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'social_security_location' => 'nullable|string',
@@ -275,12 +286,12 @@ class ProjectController extends Controller
             'delivery_frequency' => 'required|in:monthly,quarterly',
             'delivery_method' => 'required|in:express,electronic',
             'registration_form_type' => 'required|in:onboarding,registration',
-            'social_security_regions' => 'required|array|min:1',
-            'social_security_regions.*' => 'required|exists:social_security_regions,id',
-            'medical_insurance_regions' => 'required|array|min:1',
-            'medical_insurance_regions.*' => 'required|exists:medical_insurance_regions,id',
-            'housing_fund_regions' => 'required|array|min:1',
-            'housing_fund_regions.*' => 'required|exists:housing_fund_regions,id',
+            'social_security_regions' => 'nullable|array',
+            'social_security_regions.*' => 'exists:social_security_regions,id',
+            'medical_insurance_regions' => 'nullable|array',
+            'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
+            'housing_fund_regions' => 'nullable|array',
+            'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
             'other_insurance_policies' => 'required|array|min:1',
             'other_insurance_policies.*' => 'required|exists:other_insurance_policies,id',
             'large_medical_insurance_configs' => 'required|array|min:1',
@@ -299,6 +310,7 @@ class ProjectController extends Controller
 
         // 同步 requires_attendance 和 require_attendance 字段
         $updateData = $requestData;
+        $updateData['status'] = $this->calculateProjectStatusByEndDate($updateData['end_date'] ?? $project->end_date);
         if ($request->has('requires_attendance')) {
             $updateData['require_attendance'] = $request->input('requires_attendance');
         }
@@ -617,7 +629,7 @@ class ProjectController extends Controller
     public function setSocialSecurityRegions(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'region_ids' => 'required|array',
+            'region_ids' => 'present|array',
             'region_ids.*' => 'exists:social_security_regions,id'
         ]);
 
@@ -670,7 +682,7 @@ class ProjectController extends Controller
     public function setHousingFundRegions(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'region_ids' => 'required|array',
+            'region_ids' => 'present|array',
             'region_ids.*' => 'exists:housing_fund_regions,id'
         ]);
 
@@ -723,7 +735,7 @@ class ProjectController extends Controller
     public function setMedicalInsuranceRegions(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'region_ids' => 'required|array',
+            'region_ids' => 'present|array',
             'region_ids.*' => 'exists:medical_insurance_regions,id'
         ]);
 

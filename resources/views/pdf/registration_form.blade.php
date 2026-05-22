@@ -93,8 +93,8 @@
             margin-top: 20px;
         }
         .signature-img {
-            max-width: 120px;
-            max-height: 50px;
+            max-width: 240px;
+            max-height: 100px;
         }
         .page-break {
             page-break-before: always;

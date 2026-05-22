@@ -33,7 +33,7 @@ export default {
 		
 		// Build H5 URL and add cache-bust version
 		const serverUrl = BASE_URL.replace('/api/mini', '')
-		this.h5Url = `${serverUrl}/h5-sign/index.html?contractId=${encodeURIComponent(contractId)}&token=${encodeURIComponent(token)}&h5_v=20260522_prev_company_font_final7`
+		this.h5Url = `${serverUrl}/h5-sign/index.html?contractId=${encodeURIComponent(contractId)}&token=${encodeURIComponent(token)}&h5_v=20260522_prev_company_font_final10`
 		console.log('H5 sign page URL:', this.h5Url)
 	},
 	

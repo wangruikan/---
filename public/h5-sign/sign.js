@@ -186,6 +186,7 @@ createApp({
             const width = options.width || 320
             const height = options.height || 42
             const preferredFontSize = options.fontSize || 20
+            const qualityScale = Math.max(Number(options.qualityScale) || 4, 1)
             const fontSize = options.absoluteFontSize !== undefined && options.absoluteFontSize !== null
                 ? Math.max(Number(options.absoluteFontSize) || preferredFontSize, 12)
                 : this.calculateSafeFontSize(height, preferredFontSize)
@@ -200,9 +201,12 @@ createApp({
             const effectiveWidth = Math.max(width, measuredWidth)
 
             const canvas = document.createElement('canvas')
-            canvas.width = effectiveWidth
-            canvas.height = height
+            canvas.width = Math.ceil(effectiveWidth * qualityScale)
+            canvas.height = Math.ceil(height * qualityScale)
             const ctx = canvas.getContext('2d')
+            ctx.scale(qualityScale, qualityScale)
+            ctx.imageSmoothingEnabled = true
+            ctx.imageSmoothingQuality = 'high'
 
             ctx.clearRect(0, 0, effectiveWidth, height)
             ctx.fillStyle = '#000000'
@@ -214,6 +218,33 @@ createApp({
             return canvas.toDataURL('image/png')
         },
 
+        // 与PC端一致：根据文字实际长度动态计算渲染图尺寸，避免宽度压缩导致视觉变小
+        calculateTextImageSize(text, options = {}) {
+            const baseWidth = options.baseWidth || 100
+            const baseHeight = options.baseHeight || 20
+            const fontSize = options.fontSize || 14
+            const fontFamily = options.fontFamily || 'SimSun'
+
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+            const safeBaseHeight = Math.max(Number(baseHeight) || 20, 14)
+            const actualFontSize = Math.max(Number(fontSize) || 14, 12)
+            ctx.font = `700 ${actualFontSize}px ${fontFamily}, "Microsoft YaHei", "SimSun", sans-serif`
+
+            const normalizedText = String(text || '').replace(/\r?\n/g, ' ')
+            const textWidth = Math.ceil(ctx.measureText(normalizedText).width)
+            const horizontalPadding = 24
+            const safetyFactor = 1.12
+            const minWidth = Math.max(baseWidth, 32)
+            const width = Math.max(minWidth, Math.ceil(textWidth * safetyFactor) + horizontalPadding)
+            const minSafeHeight = Math.ceil(actualFontSize * 1.25 + 2)
+
+            return {
+                width,
+                height: Math.max(safeBaseHeight, minSafeHeight)
+            }
+        },
+
         async mergeTextValueToPDF(pdfDoc, text, placeholderPositions = []) {
             if (!text || !String(text).trim() || placeholderPositions.length === 0) {
                 return
@@ -222,7 +253,8 @@ createApp({
             const pages = pdfDoc.getPages()
             const pcScale = 1.5
             const pcNameLikeFontSize = this.getPcNameLikeFontSize()
-            const targetFontSize = pcNameLikeFontSize
+            // 在当前PC同款基准上缩小三分之一（保留剩余2/3）
+            const targetFontSize = Math.max(10, Math.round(pcNameLikeFontSize * 0.60))
 
             for (const pos of placeholderPositions) {
                 const pageIndex = Number.isInteger(Number(pos.page)) ? Number(pos.page) : 0
@@ -245,24 +277,28 @@ createApp({
                 const yFromTop = usePercent
                     ? (parseFloat(pos.y_percent || 0) / 100) * pageHeight
                     : (Number(pos.y || 0) / pcScale)
-                const y = pageHeight - yFromTop - placeholderHeight
+                const textValue = String(text).trim()
+                const dynamicImageSize = this.calculateTextImageSize(textValue, {
+                    baseWidth: rawWidth,
+                    baseHeight: rawHeight,
+                    fontSize: targetFontSize,
+                    fontFamily: 'SimSun'
+                })
 
-                const textImageDataUrl = await this.createTextImageDataUrl(String(text).trim(), {
-                    width: Math.max(rawWidth, 80),
-                    height: Math.max(rawHeight, 20),
+                const textImageDataUrl = await this.createTextImageDataUrl(textValue, {
+                    width: dynamicImageSize.width,
+                    height: dynamicImageSize.height,
                     fontSize: targetFontSize,
                     absoluteFontSize: targetFontSize,
+                    qualityScale: 4,
                     fontFamily: 'SimSun'
                 })
                 const textImage = await pdfDoc.embedPng(textImageDataUrl)
-                // 按占位框宽高同比缩放，保持与PC端视觉一致
-                const scale = Math.min(
-                    placeholderWidth / textImage.width,
-                    placeholderHeight / textImage.height
-                )
-                const drawWidth = textImage.width * scale
-                const drawHeight = textImage.height * scale
+                // 与PC端一致：不做二次缩放，直接按渲染比例映射到PDF坐标
+                const drawWidth = dynamicImageSize.width / (usePercent ? 1 : pcScale)
+                const drawHeight = dynamicImageSize.height / (usePercent ? 1 : pcScale)
                 let drawX = x
+                const y = pageHeight - yFromTop - drawHeight
                 const safeMargin = 2
                 if (drawX + drawWidth > pageWidth - safeMargin) {
                     drawX = Math.max(safeMargin, pageWidth - drawWidth - safeMargin)

@@ -191,6 +191,14 @@
         :rules="formRules"
         label-width="120px"
       >
+        <el-tabs v-model="projectFormActiveTab" class="project-form-tabs">
+          <el-tab-pane label="&#22522;&#30784;&#37197;&#32622;" name="basic" />
+          <el-tab-pane label="&#24320;&#31080;&#20449;&#24687;" name="invoice" />
+          <el-tab-pane label="&#20445;&#38505;&#35774;&#32622;" name="insurance" />
+          <el-tab-pane label="&#21512;&#21516;&#27169;&#26495;" name="contract" />
+        </el-tabs>
+
+        <div v-show="projectFormActiveTab === 'basic'">
         <el-row :gutter="20">
                     <el-col :span="12">
             <el-form-item label="&#39033;&#30446;&#21517;&#31216;" prop="name">
@@ -249,6 +257,55 @@
         </el-row>
         
         <!-- 社保地区选择 -->
+        </div>
+
+        <div v-show="projectFormActiveTab === 'invoice'">
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="&#20225;&#19994;&#21517;&#31216;" prop="invoice_company_name">
+                <el-input v-model="form.invoice_company_name" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#21517;&#31216;" :readonly="form.id && !isEdit" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="&#20225;&#19994;&#31246;&#21495;" prop="invoice_tax_number">
+                <el-input v-model="form.invoice_tax_number" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#31246;&#21495;" :readonly="form.id && !isEdit" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-form-item label="&#20225;&#19994;&#22320;&#22336;" prop="invoice_company_address">
+            <el-input v-model="form.invoice_company_address" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#22320;&#22336;" :readonly="form.id && !isEdit" />
+          </el-form-item>
+
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="&#20225;&#19994;&#30005;&#35805;" prop="invoice_company_phone">
+                <el-input v-model="form.invoice_company_phone" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#30005;&#35805;" :readonly="form.id && !isEdit" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="&#24320;&#25143;&#38134;&#34892;" prop="invoice_bank_name">
+                <el-input v-model="form.invoice_bank_name" placeholder="&#35831;&#36755;&#20837;&#24320;&#25143;&#38134;&#34892;" :readonly="form.id && !isEdit" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="&#38134;&#34892;&#36134;&#25143;" prop="invoice_bank_account">
+                <el-input v-model="form.invoice_bank_account" placeholder="&#35831;&#36755;&#20837;&#38134;&#34892;&#36134;&#25143;" :readonly="form.id && !isEdit" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="&#34892;&#21495;" prop="invoice_bank_code">
+                <el-input v-model="form.invoice_bank_code" placeholder="&#35831;&#36755;&#20837;&#34892;&#21495;" :readonly="form.id && !isEdit" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+
+        <div v-show="projectFormActiveTab === 'insurance'">
+
         <el-form-item label="社保地区" prop="social_security_regions">
           <el-select
             ref="socialSecurityRegionsSelectRef"
@@ -378,6 +435,10 @@
           <div class="form-tip">选择项目绑定的大额医疗保险配置，员工可在增减模块中选择是否启用</div>
         </el-form-item>
         
+        </div>
+
+        <div v-show="projectFormActiveTab === 'basic'">
+
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="工资发放日期" prop="salary_payment_date">
@@ -469,10 +530,14 @@
             </el-form-item>
           </el-col>
         </el-row>
-        
+                
+        </div>
+
+        <div v-show="projectFormActiveTab === 'contract'">
+
         <!-- 合同模板设置 -->
         <el-divider content-position="left">合同模板设置</el-divider>
-        
+
         <!-- 劳动合同模板 -->
         <el-form-item label="劳动合同模板">
           <div class="template-manager">
@@ -834,6 +899,8 @@
         </el-form-item>
         
 
+
+        </div>
       </el-form>
       
       <template #footer>
@@ -1723,6 +1790,7 @@ const pagination = reactive({
 
 const visibleColumnGroups = ref(['basic'])
 const isColumnGroupVisible = (group) => visibleColumnGroups.value.includes(group)
+const projectFormActiveTab = ref('basic')
 
 const form = reactive({
   name: '',
@@ -1731,6 +1799,13 @@ const form = reactive({
   status: 'active',
   start_date: '',
   end_date: '',
+  invoice_company_name: '',
+  invoice_tax_number: '',
+  invoice_company_address: '',
+  invoice_company_phone: '',
+  invoice_bank_name: '',
+  invoice_bank_account: '',
+  invoice_bank_code: '',
   social_security_location: '',
   insurance_types: [],
   salary_payment_date: null,  // 工资发放日期：每月几号（1-31）
@@ -1774,6 +1849,27 @@ const formRules = {
   ],
   end_date: [
     { required: true, message: '请选择结束时间', trigger: 'change' }
+  ],
+  invoice_company_name: [
+    { required: true, message: '请输入企业名称', trigger: 'blur' }
+  ],
+  invoice_tax_number: [
+    { required: true, message: '请输入企业税号', trigger: 'blur' }
+  ],
+  invoice_company_address: [
+    { required: true, message: '请输入企业地址', trigger: 'blur' }
+  ],
+  invoice_company_phone: [
+    { required: true, message: '请输入企业电话', trigger: 'blur' }
+  ],
+  invoice_bank_name: [
+    { required: true, message: '请输入开户银行', trigger: 'blur' }
+  ],
+  invoice_bank_account: [
+    { required: true, message: '请输入银行账户', trigger: 'blur' }
+  ],
+  invoice_bank_code: [
+    { required: true, message: '请输入行号', trigger: 'blur' }
   ],
   social_security_regions: [
     { type: 'array', required: true, min: 1, message: '请至少选择一个社保地区', trigger: 'change' }
@@ -2118,6 +2214,7 @@ const openPolicySelectionDialog = () => {
 const resetForm = () => {
   isProjectCodeManuallyEdited.value = false
   otherInsuranceNoSelection.value = false
+  projectFormActiveTab.value = 'basic'
   Object.assign(form, {
     id: undefined,  // 重置ID，确保新建时不会误用旧ID
     name: '',
@@ -2126,6 +2223,13 @@ const resetForm = () => {
     status: 'active',
     start_date: '',
     end_date: '',
+    invoice_company_name: '',
+    invoice_tax_number: '',
+    invoice_company_address: '',
+    invoice_company_phone: '',
+    invoice_bank_name: '',
+    invoice_bank_account: '',
+    invoice_bank_code: '',
     social_security_location: '',
     insurance_types: [],
     salary_payment_date: null,
@@ -2230,6 +2334,7 @@ const handleSavePlaceholderPositions = async (data) => {
 const handleCreate = async () => {
   isEdit.value = false  // 新建时设置为false
   currentProject.value = null
+  projectFormActiveTab.value = 'basic'
   resetForm()
   isProjectCodeManuallyEdited.value = false
   
@@ -2276,6 +2381,7 @@ const handleView = async (row) => {
   isEdit.value = false
   currentProject.value = row
   isProjectCodeManuallyEdited.value = true
+  projectFormActiveTab.value = 'basic'
   
   // 先加载所有可用的地区和保险数据（确保下拉列表有数据）
   await loadAvailableRegions()
@@ -2323,6 +2429,7 @@ const handleEdit = async (row) => {
   isEdit.value = true
   currentProject.value = row
   isProjectCodeManuallyEdited.value = true
+  projectFormActiveTab.value = 'basic'
   
   // 先加载所有可用的地区和保险数据（确保下拉列表有数据）
   await loadAvailableRegions()
@@ -2841,11 +2948,19 @@ const handleDialogClose = () => {
   isEdit.value = false
   isProjectCodeManuallyEdited.value = false
   otherInsuranceNoSelection.value = false
+  projectFormActiveTab.value = 'basic'
   Object.assign(form, {
     name: '',
     code: '',
     description: '',
     status: 'active',
+    invoice_company_name: '',
+    invoice_tax_number: '',
+    invoice_company_address: '',
+    invoice_company_phone: '',
+    invoice_bank_name: '',
+    invoice_bank_account: '',
+    invoice_bank_code: '',
     social_security_location: '',
     insurance_types: [],
     salary_payment_date: null,
@@ -3078,6 +3193,14 @@ watch(otherInsuranceNoSelection, (newVal) => {
 
 .table-section {
   margin-bottom: 20px;
+}
+
+.project-form-tabs {
+  margin-bottom: 12px;
+}
+
+:deep(.project-form-tabs .el-tabs__header) {
+  margin-bottom: 16px;
 }
 
 .column-filter-bar {

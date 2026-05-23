@@ -26,3 +26,34 @@ FTP上传路径规范：以项目根目录为基准的绝对路径（例如：ap
 FTP 只做增量上传后端文件：仅上传 app/ 和 routes/ 下的 PHP 文件。
 前端文件（src/、public/）不通过 FTP 上传。
 
+
+================ 配置补充（2026-05-23） ================
+【乱码问题原因（已确认）】
+1) 文件编码不一致（UTF-8 / ANSI / UTF-16 混用）会导致中文乱码。
+2) 使用脚本整文件重写（全量覆盖）时，容易破坏中文和模板结构。
+3) 终端编码页与文件编码不一致，会把中文写成 ? 或异常字符。
+
+【后续强制规则】
+1) 禁止整文件覆盖：只允许“局部精确修改”（行级 patch）。
+2) 写文件必须明确使用 UTF-8 编码。
+3) 修改前先看 git diff，修改后再次核对 diff。
+4) 禁止未经确认回退到仓库版本：
+   - 不允许直接 git checkout/restore/reset 覆盖工作区。
+   - 尤其不能把未提交的本地改动覆盖掉。
+5) 如必须恢复历史代码，必须先备份当前文件/分支，再执行恢复。
+6) 出现乱码时，先定位编码问题，再改代码；禁止边排查边全量替换。
+
+【FTP规则补充】
+1) FTP 增量上传必须使用“项目相对绝对路径”（如 app/Http/Controllers/xxx.php）。
+2) 不写服务器前缀路径（如 /www/wwwroot/...）。
+========================================================
+
+[SAFE_RULES_ASCII_2026-05-23]
+- root_cause: encoding_mismatch + full_file_overwrite + terminal_encoding_mismatch
+- must_use: utf8_when_write_file
+- forbidden: overwrite_whole_file_for_fixing_garbled_text
+- forbidden: git_checkout/git_restore/git_reset_without_user_confirmation
+- mandatory: check_git_diff_before_and_after_edit
+- mandatory: backup_file_or_branch_before_history_restore
+- ftp_path_rule: use_project_relative_absolute_path_like_app/Http/Controllers/xxx.php
+- ftp_path_rule: do_not_use_server_prefix_path_like_/www/wwwroot/...

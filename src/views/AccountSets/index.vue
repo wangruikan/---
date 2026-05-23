@@ -371,7 +371,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAccountSets,
@@ -406,10 +406,7 @@ onMounted(() => {
   loadAccountSets()
   loadStatistics()
 
-  if (route.query.action === 'create') {
-    showCreateDialog.value = true
-    router.replace({ path: '/account-sets' })
-  }
+  handleCreateFromRouteQuery()
 })
 
 const loading = ref(false)
@@ -688,6 +685,34 @@ const resetForm = () => {
   isEdit.value = false
   isViewMode.value = false
 }
+
+const handleCreateFromRouteQuery = async () => {
+  if (route.query.action !== 'create') return
+
+  isViewMode.value = false
+  isEdit.value = false
+  resetForm()
+  showCreateDialog.value = true
+
+  const nextQuery = { ...route.query }
+  delete nextQuery.action
+  delete nextQuery.t
+
+  try {
+    await router.replace({ path: '/account-sets', query: nextQuery })
+  } catch (error) {
+    // ignore duplicated navigation
+  }
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.query.action === 'create') {
+      handleCreateFromRouteQuery()
+    }
+  }
+)
 
 const getStatusType = (status) => {
   const types = {

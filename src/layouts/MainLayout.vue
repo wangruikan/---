@@ -478,7 +478,13 @@ const handleNotificationClick = async (notification) => {
 }
 
 const handleQuickCreateAccountSet = () => {
-  router.push({ path: '/account-sets', query: { action: 'create' } })
+  router.push({
+    path: '/account-sets',
+    query: {
+      action: 'create',
+      t: String(Date.now())
+    }
+  })
 }
 
 const handleOpenAccountSetManagement = () => {

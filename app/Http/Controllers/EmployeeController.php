@@ -1556,48 +1556,73 @@ class EmployeeController extends ApiController
         try {
             $detectionService = app(\App\Services\InsuranceChangeDetectionService::class);
 
-            $fieldMap = [
-                'social_security_region_id' => ['change_type' => 'social_security', 'payload_key' => 'region_id'],
-                'social_security_base' => ['change_type' => 'social_security', 'payload_key' => 'employee_social_security_base'],
-                'medical_insurance_region_id' => ['change_type' => 'medical_insurance', 'payload_key' => 'region_id'],
-                'medical_insurance_base' => ['change_type' => 'medical_insurance', 'payload_key' => 'employee_medical_insurance_base'],
-                'housing_fund_region_id' => ['change_type' => 'housing_fund', 'payload_key' => 'region_id'],
-                'housing_fund_config_id' => ['change_type' => 'housing_fund', 'payload_key' => 'config_id'],
-                'housing_fund_base' => ['change_type' => 'housing_fund', 'payload_key' => 'employee_housing_fund_base'],
-                'large_medical_insurance_config_id' => ['change_type' => 'large_medical_insurance', 'payload_key' => 'config_id'],
-                'large_medical_base' => ['change_type' => 'large_medical_insurance', 'payload_key' => 'employee_large_medical_base'],
-                'large_medical_company_base' => ['change_type' => 'large_medical_insurance', 'payload_key' => 'employee_large_medical_company_base'],
+            $categoryMap = [
+                'social_security' => [
+                    'social_security_region_id' => 'region_id',
+                    'social_security_base' => 'employee_social_security_base',
+                ],
+                'medical_insurance' => [
+                    'medical_insurance_region_id' => 'region_id',
+                    'medical_insurance_base' => 'employee_medical_insurance_base',
+                ],
+                'housing_fund' => [
+                    'housing_fund_region_id' => 'region_id',
+                    'housing_fund_config_id' => 'config_id',
+                    'housing_fund_base' => 'employee_housing_fund_base',
+                ],
+                'large_medical_insurance' => [
+                    'large_medical_insurance_config_id' => 'config_id',
+                    'large_medical_base' => 'employee_large_medical_base',
+                    'large_medical_company_base' => 'employee_large_medical_company_base',
+                ],
+                'other_insurance' => [
+                    'other_insurance_policies' => 'policies',
+                ],
             ];
 
-            foreach ($fieldMap as $field => $config) {
-                if (!array_key_exists($field, $updateData)) {
+            foreach ($categoryMap as $changeType => $fieldMap) {
+                $hasChangedField = false;
+                foreach ($fieldMap as $field => $payloadKey) {
+                    if (!array_key_exists($field, $updateData)) {
+                        continue;
+                    }
+
+                    $oldValue = $originalData[$field] ?? null;
+                    $newValue = $employee->{$field};
+                    if (!$this->isSameInsuranceChangeValue($oldValue, $newValue)) {
+                        $hasChangedField = true;
+                        break;
+                    }
+                }
+
+                if (!$hasChangedField) {
                     continue;
                 }
 
-                $oldValue = $originalData[$field] ?? null;
-                $newValue = $employee->{$field};
-                if ($this->isSameInsuranceChangeValue($oldValue, $newValue)) {
-                    continue;
+                $oldPayload = [];
+                $newPayload = [];
+                foreach ($fieldMap as $field => $payloadKey) {
+                    $oldPayload[$payloadKey] = $originalData[$field] ?? null;
+                    $newPayload[$payloadKey] = $employee->{$field};
                 }
 
                 \Log::info('检测到员工保险信息变更', [
                     'employee_id' => $employee->id,
                     'employee_name' => $employee->name,
-                    'field' => $field,
-                    'old_value' => $oldValue,
-                    'new_value' => $newValue,
+                    'change_type' => $changeType,
+                    'old_data' => $oldPayload,
+                    'new_data' => $newPayload,
                 ]);
 
                 $detectionService->triggerChange([
                     'scope' => \App\Services\InsuranceChangeDetectionService::SCOPE_EMPLOYEE,
-                    'change_type' => $config['change_type'],
+                    'change_type' => $changeType,
                     'employee' => $employee,
-                    'old_data' => [$config['payload_key'] => $oldValue],
-                    'new_data' => [$config['payload_key'] => $newValue],
+                    'old_data' => $oldPayload,
+                    'new_data' => $newPayload,
                     'source' => 'employee_insurance_profile_change',
                 ]);
             }
-            
         } catch (\Exception $e) {
             \Log::error('检测员工保险地区变更失败', [
                 'employee_id' => $employee->id,

@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\InsuranceChange;
+use App\Models\InsuranceDetailRecord;
 use App\Models\Employee;
+use App\Models\InsurancePersonnel;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -40,6 +42,7 @@ class InsuranceChangeDetectionService
             $newData = $event['new_data'] ?? [];
             $regionId = $event['region_id'] ?? null;
             $projectId = $event['project_id'] ?? null;
+            $source = $event['source'] ?? null;
             $year = $event['year'] ?? date('Y');
             $month = $event['month'] ?? date('n');
 
@@ -65,19 +68,44 @@ class InsuranceChangeDetectionService
                     ];
                 }
 
-                $record = $this->createOrUpdateInsuranceChange(
+                $mode = $this->resolveEmployeeEventMode($changeType, $oldData, $newData, $source);
+
+                if ($mode === 'noop') {
+                    return [
+                        'success' => true,
+                        'message' => '无需生成参保任务',
+                        'imported_count' => 0,
+                    ];
+                }
+
+                if ($mode === 'sync') {
+                    $synced = $this->syncEmployeeCurrentInsurance($employee, [
+                        'project_id' => $projectId,
+                        'change_type' => $changeType,
+                    ]);
+
+                    return [
+                        'success' => true,
+                        'message' => $synced ? '已直接同步参保数据' : '未找到可同步的参保记录',
+                        'imported_count' => $synced ? 1 : 0,
+                    ];
+                }
+
+                $record = $this->createOrUpdateRelationInsuranceTask(
                     $employee,
                     $changeType,
-                    $year,
-                    $month,
+                    $mode,
                     $oldData,
                     $newData,
-                    ['project_id' => $projectId]
+                    [
+                        'project_id' => $projectId,
+                        'source' => $source,
+                    ]
                 );
 
                 return [
                     'success' => (bool) $record,
-                    'message' => $record ? '参保增减变更任务已生成' : '参保增减变更任务生成失败',
+                    'message' => $record ? '参保增减任务已生成' : '参保增减任务未生成',
                     'imported_count' => $record ? 1 : 0,
                     'record' => $record,
                 ];
@@ -93,6 +121,25 @@ class InsuranceChangeDetectionService
             }
 
             $importedCount = 0;
+            $syncSources = ['config_change', 'base_adjustment_applied'];
+            if (in_array($source, $syncSources, true)) {
+                foreach ($affectedEmployees as $employee) {
+                    if ($this->syncEmployeeCurrentInsurance($employee, [
+                        'project_id' => $projectId,
+                        'change_type' => $changeType,
+                    ])) {
+                        $importedCount++;
+                    }
+                }
+
+                return [
+                    'success' => true,
+                    'message' => "保险信息已更新，已同步 {$importedCount} 名员工参保数据",
+                    'imported_count' => $importedCount,
+                    'affected_employees' => $affectedEmployees->pluck('name')->toArray(),
+                ];
+            }
+
             foreach ($affectedEmployees as $employee) {
                 $record = $this->createOrUpdateInsuranceChange(
                     $employee,
@@ -128,6 +175,468 @@ class InsuranceChangeDetectionService
                 'imported_count' => 0,
             ];
         }
+    }
+
+    private function resolveEmployeeEventMode(string $changeType, array $oldData, array $newData, ?string $source = null): string
+    {
+        if ($source === 'base_adjustment_applied') {
+            return 'sync';
+        }
+
+        if ($source === 'project_other_insurance_policy_change') {
+            return $this->resolveBindingMode($oldData['policies'] ?? [], $newData['policies'] ?? []);
+        }
+
+        switch ($changeType) {
+            case 'social_security':
+            case 'medical_insurance':
+                return $this->resolveBindingMode(
+                    $oldData['region_id'] ?? null,
+                    $newData['region_id'] ?? null
+                );
+
+            case 'housing_fund':
+                return $this->resolveBindingMode(
+                    $oldData['config_id'] ?? ($oldData['region_id'] ?? null),
+                    $newData['config_id'] ?? ($newData['region_id'] ?? null)
+                );
+
+            case 'large_medical_insurance':
+                return $this->resolveBindingMode(
+                    $oldData['config_id'] ?? null,
+                    $newData['config_id'] ?? null
+                );
+
+            case 'other_insurance':
+                return $this->resolveBindingMode($oldData['policies'] ?? [], $newData['policies'] ?? []);
+
+            default:
+                return 'sync';
+        }
+    }
+
+    private function resolveBindingMode($oldBinding, $newBinding): string
+    {
+        $oldHas = $this->hasBindingValue($oldBinding);
+        $newHas = $this->hasBindingValue($newBinding);
+
+        if (!$oldHas && !$newHas) {
+            return 'noop';
+        }
+
+        if (!$oldHas && $newHas) {
+            return 'increase';
+        }
+
+        if ($oldHas && !$newHas) {
+            return 'decrease';
+        }
+
+        return $this->bindingsAreEquivalent($oldBinding, $newBinding) ? 'sync' : 'increase';
+    }
+
+    private function hasBindingValue($value): bool
+    {
+        if (is_array($value)) {
+            $filtered = array_filter($value, function ($item) {
+                return !in_array($item, [null, '', [], 0, '0', false], true);
+            });
+
+            return !empty($filtered);
+        }
+
+        return !in_array($value, [null, '', 0, '0', false], true);
+    }
+
+    private function bindingsAreEquivalent($oldValue, $newValue): bool
+    {
+        if (is_array($oldValue) || is_array($newValue)) {
+            $oldList = is_array($oldValue) ? $oldValue : [$oldValue];
+            $newList = is_array($newValue) ? $newValue : [$newValue];
+
+            $normalize = function (array $items): array {
+                $items = array_values(array_filter($items, function ($item) {
+                    return !in_array($item, [null, '', [], 0, '0', false], true);
+                }));
+                sort($items);
+
+                return $items;
+            };
+
+            return $normalize($oldList) === $normalize($newList);
+        }
+
+        return (string) $oldValue === (string) $newValue;
+    }
+
+    private function syncEmployeeCurrentInsurance(Employee $employee, array $options = []): bool
+    {
+        $project = $this->resolveProjectForEmployee($employee, $options['project_id'] ?? null);
+        if (!$project) {
+            return false;
+        }
+
+        $personnel = $this->findCurrentPersonnel($employee, $project);
+        if (!$personnel) {
+            return false;
+        }
+
+        $change = $this->buildRuntimeInsuranceChange($employee, $project, [
+            'personnel' => $personnel,
+            'task_action' => 'increase',
+            'change_type' => $options['change_type'] ?? null,
+        ]);
+
+        $updatedPersonnel = InsurancePersonnel::getOrCreateFromInsuranceChange($change);
+        if (!$updatedPersonnel) {
+            return false;
+        }
+
+        InsuranceDetailRecord::generateFromPersonnel(
+            $updatedPersonnel,
+            (int) ($options['year'] ?? date('Y')),
+            (int) ($options['month'] ?? date('n'))
+        );
+
+        return true;
+    }
+
+    private function findCurrentPersonnel(Employee $employee, Project $project): ?InsurancePersonnel
+    {
+        return InsurancePersonnel::where('employee_id', $employee->id)
+            ->where('project_id', $project->id)
+            ->where('account_set_id', $employee->account_set_id)
+            ->where(function ($query) {
+                $query->whereNull('is_compensation')->orWhere('is_compensation', 0);
+            })
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function createOrUpdateRelationInsuranceTask(
+        Employee $employee,
+        string $changeType,
+        string $taskAction,
+        array $oldData,
+        array $newData,
+        array $options = []
+    ): ?InsuranceChange {
+        $project = $this->resolveProjectForEmployee($employee, $options['project_id'] ?? null);
+        if (!$project) {
+            Log::warning('员工没有绑定项目，跳过生成参保任务', [
+                'employee_id' => $employee->id,
+                'employee_name' => $employee->name,
+                'change_type' => $changeType,
+                'task_action' => $taskAction,
+            ]);
+
+            return null;
+        }
+
+        $personnel = $this->findCurrentPersonnel($employee, $project);
+        if ($taskAction === 'decrease' && !$personnel) {
+            return null;
+        }
+
+        $details = $this->buildTaskChangeDetails($changeType, $taskAction);
+        $existingRecord = $this->findReusableOpenRelationTask($employee, $project, $taskAction);
+
+        if ($existingRecord) {
+            $details = $this->mergeTaskChangeDetails($existingRecord->parseChangeDetails(), $details);
+        }
+
+        $change = $this->buildRuntimeInsuranceChange($employee, $project, [
+            'personnel' => $personnel,
+            'task_action' => $taskAction,
+            'change_type' => $changeType,
+            'change_summary' => null,
+            'change_details' => json_encode([
+                'change_type' => $changeType,
+                'change_time' => now()->format('Y-m-d H:i:s'),
+                'auto_import' => true,
+                'source' => $options['source'] ?? null,
+                'changes' => $details,
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+
+        if ($existingRecord) {
+            $existingRecord->fill($change->getAttributes());
+            $existingRecord->save();
+            $existingRecord->reopenForReprocessing(
+                [$changeType],
+                $changeType === 'other_insurance'
+            );
+
+            return $existingRecord->refresh();
+        }
+
+        $change->save();
+
+        return $change->refresh();
+    }
+
+    private function buildRuntimeInsuranceChange(Employee $employee, Project $project, array $options = []): InsuranceChange
+    {
+        $personnel = $options['personnel'] ?? null;
+        $taskAction = $options['task_action'] ?? 'increase';
+
+        $genderValue = null;
+        if (is_numeric($employee->gender)) {
+            $genderValue = (int) $employee->gender;
+        } elseif ($employee->gender === 'male') {
+            $genderValue = 1;
+        } elseif ($employee->gender === 'female') {
+            $genderValue = 2;
+        }
+
+        $change = new InsuranceChange([
+            'employee_id' => $employee->id,
+            'employee_name' => $employee->name,
+            'employee_id_number' => $employee->id_number,
+            'employee_gender' => $genderValue,
+            'employee_birth_date' => $employee->birth_date,
+            'employee_phone' => $employee->phone,
+            'employee_status' => $personnel->employee_status ?? $employee->status ?? null,
+            'project_id' => $project->id,
+            'account_set_id' => $employee->account_set_id,
+            'social_security_region_id' => $employee->social_security_region_id,
+            'medical_insurance_region_id' => $employee->medical_insurance_region_id,
+            'housing_fund_region_id' => $employee->housing_fund_region_id,
+            'housing_fund_config_id' => $employee->housing_fund_config_id,
+            'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id ?: ($personnel->large_medical_insurance_config_id ?? null),
+            'large_medical_insurance_enabled' => $personnel->large_medical_insurance_enabled ?? false,
+            'employee_social_security_base' => $employee->social_security_base ?? ($personnel->employee_social_security_base ?? 0),
+            'employee_medical_insurance_base' => $employee->medical_insurance_base ?? ($personnel->employee_medical_insurance_base ?? 0),
+            'employee_housing_fund_base' => $employee->housing_fund_base ?? ($personnel->employee_housing_fund_base ?? 0),
+            'employee_large_medical_base' => $employee->large_medical_base ?? ($personnel->employee_large_medical_base ?? 0),
+            'employee_large_medical_company_base' => $employee->large_medical_company_base ?? ($personnel->employee_large_medical_company_base ?? 0),
+            'used_quotas' => $personnel->used_quotas ?? null,
+            'change_type' => $taskAction,
+            'status' => 'pending',
+            'created_by' => 1,
+            'change_summary' => $options['change_summary'] ?? null,
+            'change_details' => $options['change_details'] ?? null,
+        ]);
+
+        $this->fillChangeSnapshotsFromState($change, $employee, $project, $personnel);
+
+        if ($taskAction === 'decrease' && $personnel && !empty($options['change_type'])) {
+            $this->applyCategoryDecreaseSnapshot($change, $personnel, $options['change_type']);
+        }
+
+        return $change;
+    }
+
+    private function fillChangeSnapshotsFromState(
+        InsuranceChange $change,
+        Employee $employee,
+        Project $project,
+        ?InsurancePersonnel $personnel = null
+    ): void {
+        $employee->loadMissing([
+            'socialSecurityRegion.socialSecurityTypes',
+            'medicalInsuranceRegion.medicalInsuranceTypes',
+            'housingFundConfig',
+            'largeMedicalInsuranceConfigRelation',
+        ]);
+        $project->loadMissing('otherInsurancePolicies.type');
+
+        $change->social_security_types = null;
+        if ($employee->socialSecurityRegion) {
+            $change->social_security_types = json_encode($employee->socialSecurityRegion->socialSecurityTypes->map(function ($type) {
+                return [
+                    'id' => $type->id,
+                    'region_id' => $type->region_id,
+                    'name' => $type->name,
+                    'base_amount' => $type->base_amount,
+                    'employee_ratio' => $type->employee_ratio,
+                    'company_ratio' => $type->company_ratio,
+                ];
+            })->values()->all(), JSON_UNESCAPED_UNICODE);
+        }
+
+        $change->medical_insurance_types = null;
+        if ($employee->medicalInsuranceRegion) {
+            $change->medical_insurance_types = json_encode($employee->medicalInsuranceRegion->medicalInsuranceTypes->map(function ($type) {
+                return [
+                    'id' => $type->id,
+                    'region_id' => $type->region_id,
+                    'name' => $type->name,
+                    'base_amount' => $type->base_amount,
+                    'employee_ratio' => $type->employee_ratio,
+                    'company_ratio' => $type->company_ratio,
+                ];
+            })->values()->all(), JSON_UNESCAPED_UNICODE);
+        }
+
+        $change->housing_fund_params = null;
+        if ($employee->housingFundConfig) {
+            $change->housing_fund_params = json_encode([
+                'config_name' => $employee->housingFundConfig->config_name,
+                'region_name' => $employee->housingFundConfig->region_name,
+                'base_amount' => $employee->housingFundConfig->base_amount,
+                'employee_ratio' => $employee->housingFundConfig->employee_ratio,
+                'company_ratio' => $employee->housingFundConfig->company_ratio,
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $change->other_insurance_policies = $this->buildOtherInsurancePolicySnapshot($project, $personnel);
+
+        $change->large_medical_insurance_config = null;
+        $largeMedicalConfig = $employee->largeMedicalInsuranceConfigRelation;
+        if (!$largeMedicalConfig && $change->large_medical_insurance_config_id) {
+            $largeMedicalConfig = \App\Models\LargeMedicalInsuranceConfig::find($change->large_medical_insurance_config_id);
+        }
+        if ($largeMedicalConfig) {
+            $change->large_medical_insurance_config = json_encode([
+                'id' => $largeMedicalConfig->id,
+                'region_name' => $largeMedicalConfig->region_name,
+                'calculation_type' => $largeMedicalConfig->calculation_type,
+                'payment_cycle' => $largeMedicalConfig->payment_cycle,
+                'company_ratio' => $largeMedicalConfig->company_ratio,
+                'employee_ratio' => $largeMedicalConfig->employee_ratio,
+                'company_amount' => $largeMedicalConfig->company_amount,
+                'employee_amount' => $largeMedicalConfig->employee_amount,
+                'is_enabled' => (bool) $change->large_medical_insurance_enabled,
+            ], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    private function buildOtherInsurancePolicySnapshot(Project $project, ?InsurancePersonnel $personnel = null): ?string
+    {
+        $project->loadMissing('otherInsurancePolicies.type');
+        if (!$project->otherInsurancePolicies || $project->otherInsurancePolicies->isEmpty()) {
+            return null;
+        }
+
+        $usedQuotas = $personnel ? $personnel->used_quotas : [];
+        if (is_string($usedQuotas)) {
+            $usedQuotas = json_decode($usedQuotas, true) ?: [];
+        }
+        if (!is_array($usedQuotas)) {
+            $usedQuotas = [];
+        }
+
+        $policies = [];
+        foreach ($project->otherInsurancePolicies as $policy) {
+            $quotaUsed = false;
+            $removedPersonName = null;
+
+            foreach ($usedQuotas as $usedQuota) {
+                if (is_array($usedQuota)) {
+                    if (($usedQuota['policy_id'] ?? null) == $policy->id) {
+                        $quotaUsed = true;
+                        $removedPersonName = $usedQuota['removed_person_name'] ?? null;
+                        break;
+                    }
+                } elseif ($usedQuota == $policy->id) {
+                    $quotaUsed = true;
+                    break;
+                }
+            }
+
+            $policies[] = [
+                'id' => $policy->id,
+                'policy_name' => $policy->policy_name,
+                'name' => $policy->policy_name,
+                'type' => optional($policy->type)->name ?: 'other_insurance',
+                'type_id' => $policy->type_id,
+                'coverage' => $policy->description ?: 'covered',
+                'description' => $policy->description,
+                'employee_per_capita_cost' => $policy->employee_per_capita_cost,
+                'premium_amount' => $policy->premium_amount,
+                'coverage_amount' => $policy->coverage_amount,
+                'contact_name' => $policy->contact_name,
+                'contact_phone' => $policy->contact_phone,
+                'available_quota' => $policy->quota ?? 0,
+                'quota' => $policy->quota ?? 0,
+                'quota_used' => $quotaUsed,
+                'removed_person_name' => $removedPersonName,
+                'personnel_name_list' => $policy->personnel_name_list ?? [],
+                'endorsement_number' => $policy->endorsement_number,
+                'policy_end_date' => $policy->policy_end_date ?: $policy->end_date,
+                'end_date' => $policy->end_date,
+                'start_date' => $policy->start_date,
+            ];
+        }
+
+        return json_encode($policies, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function applyCategoryDecreaseSnapshot(InsuranceChange $change, InsurancePersonnel $personnel, string $changeType): void
+    {
+        switch ($changeType) {
+            case 'social_security':
+                $change->social_security_region_id = $personnel->social_security_region_id;
+                $change->employee_social_security_base = $personnel->employee_social_security_base;
+                $change->social_security_types = $personnel->social_security_types;
+                break;
+
+            case 'medical_insurance':
+                $change->medical_insurance_region_id = $personnel->medical_insurance_region_id;
+                $change->employee_medical_insurance_base = $personnel->employee_medical_insurance_base;
+                $change->medical_insurance_types = $personnel->medical_insurance_types;
+                break;
+
+            case 'housing_fund':
+                $change->housing_fund_region_id = $personnel->housing_fund_region_id;
+                $change->housing_fund_config_id = $personnel->housing_fund_config_id;
+                $change->employee_housing_fund_base = $personnel->employee_housing_fund_base;
+                $change->housing_fund_params = $personnel->housing_fund_params;
+                break;
+
+            case 'large_medical_insurance':
+                $change->large_medical_insurance_config_id = $personnel->large_medical_insurance_config_id;
+                $change->large_medical_insurance_enabled = $personnel->large_medical_insurance_enabled;
+                $change->employee_large_medical_base = $personnel->employee_large_medical_base;
+                $change->employee_large_medical_company_base = $personnel->employee_large_medical_company_base;
+                $change->large_medical_insurance_config = $personnel->large_medical_insurance_config;
+                break;
+
+            case 'other_insurance':
+                $change->other_insurance_policies = $personnel->other_insurance_policies;
+                $change->used_quotas = $personnel->used_quotas;
+                break;
+        }
+    }
+
+    private function buildTaskChangeDetails(string $changeType, string $taskAction): array
+    {
+        return [[
+            'category' => $changeType,
+            'action' => $taskAction === 'decrease' ? 'removed' : 'added',
+            'item' => $this->getChangeTypeText($changeType),
+            'description' => ($taskAction === 'decrease' ? '减少' : '新增') . $this->getChangeTypeText($changeType),
+        ]];
+    }
+
+    private function mergeTaskChangeDetails(array $existingDetails, array $newDetails): array
+    {
+        $merged = [];
+        foreach (array_merge($existingDetails, $newDetails) as $detail) {
+            if (empty($detail['category'])) {
+                continue;
+            }
+            $merged[$detail['category']] = $detail;
+        }
+
+        return array_values($merged);
+    }
+
+    private function findReusableOpenRelationTask(Employee $employee, Project $project, string $taskAction): ?InsuranceChange
+    {
+        return InsuranceChange::query()
+            ->where('employee_id', $employee->id)
+            ->where('project_id', $project->id)
+            ->where('account_set_id', $employee->account_set_id)
+            ->where('change_type', $taskAction)
+            ->whereIn('status', InsuranceChange::OPEN_STATUSES)
+            ->where(function ($query) {
+                $query->whereNull('change_summary')->orWhere('change_summary', '');
+            })
+            ->orderByDesc('id')
+            ->first();
     }
 
     private function getAffectedEmployees($changeType, $regionId = null)

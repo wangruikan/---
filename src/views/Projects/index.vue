@@ -56,55 +56,88 @@
     <!-- 项目列表 -->
     <div class="table-section">
       <el-card>
+        <div class="column-filter-bar">
+          <span class="column-filter-label">&#26174;&#31034;&#23383;&#27573;&#65306;</span>
+          <el-checkbox-group v-model="visibleColumnGroups">
+            <el-checkbox label="basic">&#22522;&#30784;&#37197;&#32622;</el-checkbox>
+            <el-checkbox label="invoice">&#24320;&#31080;&#20449;&#24687;</el-checkbox>
+            <el-checkbox label="insurance">&#20445;&#38505;&#35774;&#32622;</el-checkbox>
+          </el-checkbox-group>
+        </div>
+
         <el-table
           :data="projects"
           v-loading="loading"
           stripe
           border
         >
-          <el-table-column prop="code" label="项目编号" width="100" />
-          <el-table-column prop="name" label="项目名称" width="200" />
-          <el-table-column prop="status" label="状态" width="100">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="code" label="&#39033;&#30446;&#32534;&#21495;" width="100" />
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="name" label="&#39033;&#30446;&#21517;&#31216;" width="200" />
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="status" label="&#29366;&#24577;" width="100">
             <template #default="{ row }">
               <el-tag :type="getStatusType(row.status)">
                 {{ getStatusText(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="salary_payment_date" label="工资发放日期" width="120">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="salary_payment_date" label="&#24037;&#36164;&#21457;&#25918;&#26085;&#26399;" width="120">
             <template #default="{ row }">
-              {{ row.salary_payment_date ? `${row.salary_payment_date}号` : '-' }}
+              {{ row.salary_payment_date ? row.salary_payment_date + '\u53f7' : '-' }}
             </template>
           </el-table-column>
-          <el-table-column prop="delivery_frequency" label="交付频率" width="100">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="delivery_frequency" label="&#20132;&#20184;&#39057;&#29575;" width="100">
             <template #default="{ row }">
               {{ getDeliveryFrequencyText(row.delivery_frequency) }}
             </template>
           </el-table-column>
-          <el-table-column prop="delivery_method" label="交付方式" width="100">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="delivery_method" label="&#20132;&#20184;&#26041;&#24335;" width="100">
             <template #default="{ row }">
               {{ getDeliveryMethodText(row.delivery_method) }}
             </template>
           </el-table-column>
-          <el-table-column prop="requires_salary_basis" label="上传工资依据" width="120">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="requires_salary_basis" label="&#19978;&#20256;&#24037;&#36164;&#20381;&#25454;" width="120">
             <template #default="{ row }">
               <el-tag :type="row.requires_salary_basis ? 'success' : 'info'">
-                {{ row.requires_salary_basis ? '是' : '否' }}
+                {{ row.requires_salary_basis ? '\u662f' : '\u5426' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="requires_attendance_basis" label="上传考勤依据" width="120">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="requires_attendance_basis" label="&#19978;&#20256;&#32771;&#21220;&#20381;&#25454;" width="120">
             <template #default="{ row }">
               <el-tag :type="row.requires_attendance_basis ? 'success' : 'info'">
-                {{ row.requires_attendance_basis ? '是' : '否' }}
+                {{ row.requires_attendance_basis ? '\u662f' : '\u5426' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="employees_count" label="员工数量" width="100" />
-          <el-table-column prop="created_at" label="创建时间" width="160">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="employees_count" label="&#21592;&#24037;&#25968;&#37327;" width="100" />
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="created_at" label="&#21019;&#24314;&#26102;&#38388;" width="160">
             <template #default="{ row }">
               {{ formatDateTime(row.created_at) }}
             </template>
+          </el-table-column>
+
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_company_name" label="&#20225;&#19994;&#21517;&#31216;" min-width="180" />
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_tax_number" label="&#20225;&#19994;&#31246;&#21495;" min-width="180" />
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_company_address" label="&#20225;&#19994;&#22320;&#22336;" min-width="220" show-overflow-tooltip />
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_company_phone" label="&#20225;&#19994;&#30005;&#35805;" min-width="140" />
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_bank_name" label="&#24320;&#25143;&#38134;&#34892;" min-width="160" />
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_bank_account" label="&#38134;&#34892;&#36134;&#25143;" min-width="180" />
+          <el-table-column v-if="isColumnGroupVisible('invoice')" prop="invoice_bank_code" label="&#34892;&#21495;" min-width="120" />
+
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#31038;&#20445;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ getSocialSecurityRegionsText(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20844;&#31215;&#37329;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ getHousingFundRegionsText(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#21307;&#20445;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ getMedicalInsuranceRegionsText(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20854;&#20182;&#20445;&#38505;&#20445;&#21333;" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ getOtherInsurancePoliciesText(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#22823;&#39069;&#21307;&#30103;&#37197;&#32622;" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ getLargeMedicalInsuranceConfigsText(row) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="350" fixed="right">
             <template #default="{ row }">
@@ -1688,6 +1721,9 @@ const pagination = reactive({
   total: 0
 })
 
+const visibleColumnGroups = ref(['basic'])
+const isColumnGroupVisible = (group) => visibleColumnGroups.value.includes(group)
+
 const form = reactive({
   name: '',
   code: '',
@@ -2852,10 +2888,67 @@ const getDeliveryFrequencyText = (frequency) => {
 
 const getDeliveryMethodText = (method) => {
   const texts = {
-    express: '快递',
-    electronic: '电子'
+    express: '\u5feb\u9012',
+    electronic: '\u7535\u5b50'
   }
-  return texts[method] || '未知'
+  return texts[method] || '\u672a\u77e5'
+}
+
+const extractDisplayNames = (list, preferredKeys = ['name']) => {
+  if (!Array.isArray(list)) {
+    return []
+  }
+
+  const names = list.map((item) => {
+    if (item === null || item === undefined) {
+      return ''
+    }
+
+    if (typeof item === 'string' || typeof item === 'number') {
+      return String(item).trim()
+    }
+
+    if (typeof item === 'object') {
+      for (const key of preferredKeys) {
+        const value = item?.[key]
+        if (value !== null && value !== undefined && String(value).trim() !== '') {
+          return String(value).trim()
+        }
+      }
+    }
+
+    return ''
+  }).filter(Boolean)
+
+  return [...new Set(names)]
+}
+
+const toDisplayText = (names) => (names.length > 0 ? names.join('\u3001') : '-')
+
+const getSocialSecurityRegionsText = (row) => {
+  const names = extractDisplayNames(row?.social_security_regions_data, ['name', 'region_name'])
+  if (names.length > 0) return toDisplayText(names)
+  return toDisplayText(extractDisplayNames(row?.social_security_regions, ['name', 'region_name']))
+}
+
+const getHousingFundRegionsText = (row) => {
+  const names = extractDisplayNames(row?.housing_fund_regions_data, ['region_name', 'name'])
+  if (names.length > 0) return toDisplayText(names)
+  return toDisplayText(extractDisplayNames(row?.housing_fund_regions, ['region_name', 'name']))
+}
+
+const getMedicalInsuranceRegionsText = (row) => {
+  const names = extractDisplayNames(row?.medical_insurance_regions_data, ['name', 'region_name'])
+  if (names.length > 0) return toDisplayText(names)
+  return toDisplayText(extractDisplayNames(row?.medical_insurance_regions, ['name', 'region_name']))
+}
+
+const getOtherInsurancePoliciesText = (row) => {
+  return toDisplayText(extractDisplayNames(row?.other_insurance_policies, ['policy_name', 'name']))
+}
+
+const getLargeMedicalInsuranceConfigsText = (row) => {
+  return toDisplayText(extractDisplayNames(row?.large_medical_insurance_configs, ['region_name', 'config_name', 'name']))
 }
 
 const formatFileSize = (size) => {
@@ -2947,6 +3040,12 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
 })
 
 // 监听其他保险"无"选择模式
+watch(visibleColumnGroups, (groups) => {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    visibleColumnGroups.value = ['basic']
+  }
+})
+
 watch(otherInsuranceNoSelection, (newVal) => {
   if (newVal) {
     form.other_insurance_policies = []
@@ -2979,6 +3078,19 @@ watch(otherInsuranceNoSelection, (newVal) => {
 
 .table-section {
   margin-bottom: 20px;
+}
+
+.column-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.column-filter-label {
+  color: #606266;
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .pagination {

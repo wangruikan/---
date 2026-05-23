@@ -35,6 +35,13 @@ class Project extends Model
         'delivery_frequency' => '交付频率',
         'delivery_method' => '交付方式',
         'registration_form_type' => '登记表类型',
+        'invoice_company_name' => '开票企业名称',
+        'invoice_tax_number' => '开票企业税号',
+        'invoice_company_address' => '开票企业地址',
+        'invoice_company_phone' => '开票企业电话',
+        'invoice_bank_name' => '开户银行',
+        'invoice_bank_account' => '银行账户',
+        'invoice_bank_code' => '行号',
     ];
 
     /**
@@ -75,6 +82,13 @@ class Project extends Model
         'housing_fund_regions',  // 【公积金地区ID列表】
         'placeholder_fields',  // 【占位符可用字段配置】
         'registration_form_type',  // 【登记表类型】onboarding-入职登记表，registration-从业人员登记表
+        'invoice_company_name',
+        'invoice_tax_number',
+        'invoice_company_address',
+        'invoice_company_phone',
+        'invoice_bank_name',
+        'invoice_bank_account',
+        'invoice_bank_code',
     ];
 
     protected $casts = [
@@ -221,7 +235,7 @@ class Project extends Model
         if (empty($this->housing_fund_regions)) {
             return [];
         }
-        return HousingFund::whereIn('id', $this->housing_fund_regions)->get();
+        return HousingFundRegion::whereIn('id', $this->housing_fund_regions)->get();
     }
 
     // 获取项目的医保地区

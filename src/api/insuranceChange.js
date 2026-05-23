@@ -20,11 +20,17 @@ export const autoImportInsurance = (data) => {
   return request.post('/insurance-changes/auto-import', data)
 }
 
-// 上传附件
-export const uploadAttachment = (id, file) => {
+// 上传附件（支持多文件与分类）
+export const uploadAttachment = (id, files, category = '') => {
   const formData = new FormData()
-  formData.append('attachment', file)
-  // 不要手动设置Content-Type，让浏览器自动设置（会包含boundary）
+  const list = Array.isArray(files) ? files : [files]
+  list.forEach((file) => {
+    if (!file) return
+    formData.append('attachments[]', file.raw || file)
+  })
+  if (category) {
+    formData.append('category', category)
+  }
   return request.post(`/insurance-changes/${id}/upload-attachment`, formData)
 }
 
@@ -60,9 +66,9 @@ export const updateOtherInsuranceCost = (id, data) => {
   return request.put(`/insurance-changes/${id}/update-other-insurance-cost`, data)
 }
 
-// 确认处理
-export const confirmProcess = (id) => {
-  return request.put(`/insurance-changes/${id}/confirm-process`)
+// 确认处理（支持按分类确认）
+export const confirmProcess = (id, data = {}) => {
+  return request.put(`/insurance-changes/${id}/confirm-process`, data)
 }
 
 // 其他保险确认处理

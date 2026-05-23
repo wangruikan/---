@@ -1589,22 +1589,27 @@ class InsuranceChangeController extends ApiController
         try {
             $change = InsuranceChange::findOrFail($id);
             $user = $request->user();
+            $category = $this->normalizeChangeCategory($request->input('category'));
 
-            // 完全移除权限检查 - 允许所有操作
+            if ($category !== null && $this->isChangeItemsEnabled()) {
+                return $this->confirmProcessByCategory($change, $category, $user);
+            }
 
-            // 检查状态 - 允许待处理状态和已提交状态
+            // Permission checks are intentionally relaxed here for compatibility.
+
+            // Only pending/submitted records can be confirmed in full.
             if (!in_array($change->status, ['pending', 'submitted'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => '只有待处理或已提交状态的记录才能确认处理'
+                    'message' => 'Only pending/submitted records can be confirmed'
                 ], 400);
             }
 
-            // 检查是否有附件
+            // Full confirm requires at least one attachment.
             if (!$change->attachments || $change->attachments->count() === 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => '请先上传附件'
+                    'message' => 'Please upload attachment first'
                 ], 400);
             }
 
@@ -1613,20 +1618,18 @@ class InsuranceChangeController extends ApiController
             }
 
             DB::transaction(function () use ($change, $user) {
-                // 更新状态为已处理，并清空变更记录
+                // Mark the whole task as completed.
                 $updateData = [
                     'status' => 'completed',
-                    'fully_confirmed' => 1,  // 标记为已完整确认处理
+                    'fully_confirmed' => 1,
                     'processed_at' => now(),
                     'completed_at' => now(),
-                    // 保留 change_details 和 change_summary，不清空，以便在列表和详情中继续显示变更标记
                 ];
-                
-                // 只有当用户存在时才设置 processed_by
+
                 if ($user && $user->id) {
                     $updateData['processed_by'] = $user->id;
                 }
-                
+
                 $change->update($updateData);
 
                 if ($this->isChangeItemsEnabled()) {
@@ -1638,31 +1641,19 @@ class InsuranceChangeController extends ApiController
                     ]);
                 }
 
-                // 确认处理时更新快照，重置变化记录
-                // 禁用保险配置变更检测
-                // $change->checkAndRecordChanges(true);
-
                 $this->applyOtherInsuranceCoverageAmountChanges($change);
-
-                // 生成参保明细（基于新表生成明细记录）
-                // 注意：必须先创建参保人员记录，再设置支付起始时间
                 $this->generateOrUpdateDetails($change);
-                
-                // 设置大额医疗保险支付起始时间（如果是第一次开启）
                 $this->setLargeMedicalPaymentStartTime($change);
-
-                // ❌ 已移除：自动发起退保流程（现改为手动创建）
-                // $this->autoCreateSurrenderRequestsFromChange($change, $user);
             });
 
             return response()->json([
                 'success' => true,
-                'message' => '处理完成，数据已导入参保明细',
+                'message' => 'Processed successfully',
                 'data' => $change->fresh()
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('确认处理失败', [
+            \Log::error('纭澶勭悊澶辫触', [
                 'change_id' => $id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -1670,11 +1661,120 @@ class InsuranceChangeController extends ApiController
 
             return response()->json([
                 'success' => false,
-                'message' => '处理失败：' . $e->getMessage()
+                'message' => 'Process failed: ' . $e->getMessage()
             ], 500);
         }
     }
 
+    private function normalizeChangeCategory($category): ?string
+    {
+        if (!is_string($category)) {
+            return null;
+        }
+
+        $category = trim($category);
+        if ($category === '') {
+            return null;
+        }
+
+        $allowed = [
+            'social_security',
+            'medical_insurance',
+            'housing_fund',
+            'large_medical_insurance',
+            'other_insurance',
+        ];
+
+        return in_array($category, $allowed, true) ? $category : null;
+    }
+
+    private function confirmProcessByCategory(InsuranceChange $change, string $category, $user)
+    {
+        $this->syncChangeItems($change);
+        $item = $change->items()->where('category', $category)->first();
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No processable item for this category'
+            ], 400);
+        }
+
+        if (!in_array($item->status, ['pending', 'submitted'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This category item cannot be processed now'
+            ], 400);
+        }
+
+        $hasCategoryAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->where('insurance_change_item_id', $item->id)
+            ->exists();
+
+        if (!$hasCategoryAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please upload attachment for this category first'
+            ], 400);
+        }
+
+        if ($category === 'other_insurance' && ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change))) {
+            return $validationResponse;
+        }
+
+        DB::transaction(function () use ($change, $category, $item, $user) {
+            if ($category === 'other_insurance') {
+                $personnel = $this->syncOtherInsuranceOnly($change);
+                if ($personnel) {
+                    $currentYear = date('Y');
+                    $currentMonth = date('n');
+                    InsuranceDetailRecord::generateFromPersonnel($personnel, $currentYear, $currentMonth);
+                }
+
+                $change->update([
+                    'other_insurance_processed' => 1,
+                ]);
+                $this->applyOtherInsuranceCoverageAmountChanges($change);
+            } else {
+                $this->generateOrUpdateDetails($change);
+                if ($category === 'large_medical_insurance') {
+                    $this->setLargeMedicalPaymentStartTime($change);
+                }
+            }
+
+            $item->update([
+                'status' => 'completed',
+                'processed_by' => $user && $user->id ? $user->id : null,
+                'processed_at' => now(),
+            ]);
+
+            $remaining = $change->items()->where('status', '!=', 'completed')->count();
+            if ($remaining === 0) {
+                $updateData = [
+                    'status' => 'completed',
+                    'fully_confirmed' => 1,
+                    'processed_at' => now(),
+                    'completed_at' => now(),
+                ];
+                if ($user && $user->id) {
+                    $updateData['processed_by'] = $user->id;
+                }
+                $change->update($updateData);
+            } else {
+                $change->update([
+                    'status' => 'submitted',
+                    'fully_confirmed' => 0,
+                    'processed_at' => null,
+                    'completed_at' => null,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Category processed successfully',
+            'data' => $change->fresh()->load(['items', 'attachments'])
+        ]);
+    }
     /**
      * Decode the other-insurance snapshot safely.
      */

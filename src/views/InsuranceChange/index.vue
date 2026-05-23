@@ -86,7 +86,6 @@
             </template>
 
             <el-tabs v-model="changeCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
-              <el-tab-pane label="全部" name="all" />
               <el-tab-pane label="社保" name="social_security" />
               <el-tab-pane label="医保" name="medical_insurance" />
               <el-tab-pane label="公积金" name="housing_fund" />
@@ -1050,21 +1049,11 @@
           <el-descriptions-item label="创建时间">{{ formatDate(currentChange.created_at) }}</el-descriptions-item>
         </el-descriptions>
 
-        <!-- 参保地区信息 -->
-        <el-tabs v-model="detailCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
-          <el-tab-pane label="全部" name="all" />
-          <el-tab-pane label="社保" name="social_security" v-if="getSocialSecurityDetails().length > 0 || hasCategoryChange('social_security')" />
-          <el-tab-pane label="医保" name="medical_insurance" v-if="getMedicalInsuranceDetails().length > 0 || hasCategoryChange('medical_insurance')" />
-          <el-tab-pane label="公积金" name="housing_fund" v-if="getHousingFundDetails() || hasCategoryChange('housing_fund')" />
-          <el-tab-pane label="大额医保" name="large_medical_insurance" v-if="getLargeMedicalInsuranceDetails() || hasCategoryChange('large_medical_insurance')" />
-          <el-tab-pane label="其他保险" name="other_insurance" v-if="getOtherInsuranceDetails().length > 0 || hasCategoryChange('other_insurance')" />
-        </el-tabs>
-
         <div v-if="hasRegionInfo()" class="insurance-region-info">
           <h4>参保地区信息</h4>
           <el-descriptions :column="2" size="small" border>
             <!-- 社保地区 -->
-            <el-descriptions-item label="社保地区" v-if="currentChange.employee && currentChange.employee.social_security_region">
+            <el-descriptions-item label="社保地区" v-if="shouldShowDetailCategory('social_security') && currentChange.employee && currentChange.employee.social_security_region">
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <span>{{ currentChange.employee.social_security_region.name }}</span>
                 <span v-if="currentChange.employee.social_security_region.code" style="color: #909399; font-size: 12px;">
@@ -1072,12 +1061,12 @@
                 </span>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="社保地区" v-else>
+            <el-descriptions-item label="社保地区" v-else-if="shouldShowDetailCategory('social_security')">
               <el-tag type="info" size="small">未设置</el-tag>
             </el-descriptions-item>
 
             <!-- 医保地区 -->
-            <el-descriptions-item label="医保地区" v-if="currentChange.employee && currentChange.employee.medical_insurance_region">
+            <el-descriptions-item label="医保地区" v-if="shouldShowDetailCategory('medical_insurance') && currentChange.employee && currentChange.employee.medical_insurance_region">
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <span>{{ currentChange.employee.medical_insurance_region.name }}</span>
                 <span v-if="currentChange.employee.medical_insurance_region.code" style="color: #909399; font-size: 12px;">
@@ -1085,12 +1074,12 @@
                 </span>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="医保地区" v-else>
+            <el-descriptions-item label="医保地区" v-else-if="shouldShowDetailCategory('medical_insurance')">
               <el-tag type="info" size="small">未设置</el-tag>
             </el-descriptions-item>
 
             <!-- 公积金地区 -->
-            <el-descriptions-item label="公积金地区" v-if="currentChange.employee && currentChange.employee.housing_fund_region">
+            <el-descriptions-item label="公积金地区" v-if="shouldShowDetailCategory('housing_fund') && currentChange.employee && currentChange.employee.housing_fund_region">
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <span>{{ currentChange.employee.housing_fund_region.region_name }}</span>
                 <span v-if="currentChange.employee.housing_fund_region.account_number" style="color: #909399; font-size: 12px;">
@@ -1098,15 +1087,15 @@
                 </span>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="公积金地区" v-else>
+            <el-descriptions-item label="公积金地区" v-else-if="shouldShowDetailCategory('housing_fund')">
               <el-tag type="info" size="small">未设置</el-tag>
             </el-descriptions-item>
 
             <!-- 大额医疗保险地区 -->
-            <el-descriptions-item label="大额医疗地区" v-if="currentChange.employee && currentChange.employee.large_medical_insurance_config_relation">
+            <el-descriptions-item label="大额医疗地区" v-if="shouldShowDetailCategory('large_medical_insurance') && currentChange.employee && currentChange.employee.large_medical_insurance_config_relation">
               {{ currentChange.employee.large_medical_insurance_config_relation.region_name }}
             </el-descriptions-item>
-            <el-descriptions-item label="大额医疗地区" v-else>
+            <el-descriptions-item label="大额医疗地区" v-else-if="shouldShowDetailCategory('large_medical_insurance')">
               <el-tag type="info" size="small">未设置</el-tag>
             </el-descriptions-item>
           </el-descriptions>
@@ -1117,19 +1106,19 @@
         <div v-if="hasEmployeeBaseInfo()" class="insurance-details">
           <h4>员工保险基数</h4>
           <el-descriptions :column="2" size="small" border>
-            <el-descriptions-item label="社保基数">
+            <el-descriptions-item label="社保基数" v-if="shouldShowDetailCategory('social_security')">
               <span class="base-amount">¥{{ currentChange.employee_social_security_base || '0.00' }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="医保基数">
+            <el-descriptions-item label="医保基数" v-if="shouldShowDetailCategory('medical_insurance')">
               <span class="base-amount">¥{{ currentChange.employee_medical_insurance_base || '0.00' }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="公积金基数">
+            <el-descriptions-item label="公积金基数" v-if="shouldShowDetailCategory('housing_fund')">
               <span class="base-amount">¥{{ currentChange.employee_housing_fund_base || '0.00' }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="大额医疗个人基数">
+            <el-descriptions-item label="大额医疗个人基数" v-if="shouldShowDetailCategory('large_medical_insurance')">
               <span class="base-amount">¥{{ currentChange.employee_large_medical_base || '0.00' }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="大额医疗单位基数" v-if="currentChange.employee_large_medical_company_base && currentChange.employee_large_medical_company_base != currentChange.employee_large_medical_base">
+            <el-descriptions-item label="大额医疗单位基数" v-if="shouldShowDetailCategory('large_medical_insurance') && currentChange.employee_large_medical_company_base && currentChange.employee_large_medical_company_base != currentChange.employee_large_medical_base">
               <span class="base-amount">¥{{ currentChange.employee_large_medical_company_base || '0.00' }}</span>
               <el-tag type="warning" size="small" style="margin-left: 8px;">特殊地区</el-tag>
             </el-descriptions-item>
@@ -2676,8 +2665,8 @@ const housingFundCompensationDetails = computed(() => {
 
 // 响应式数据
 const activeTab = ref('changes')
-const changeCategoryTab = ref('all')
-const detailCategoryTab = ref('all')
+const changeCategoryTab = ref('social_security')
+const detailScopedCategory = ref('')
 const detailActiveTab = ref('social') // 明细分类标签页
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -2779,19 +2768,25 @@ const getChangeCategories = (change) => {
 }
 
 const changeHasCategory = (change, category) => {
-  if (!category || category === 'all') return true
+  if (!category) return true
   return getChangeCategories(change).has(category)
 }
 
 const filteredChanges = computed(() => {
-  if (changeCategoryTab.value === 'all') {
-    return changes.value
-  }
   return changes.value.filter(change => changeHasCategory(change, changeCategoryTab.value))
 })
 
+const resolveDetailCategory = (change) => {
+  if (changeCategoryTab.value && changeHasCategory(change, changeCategoryTab.value)) {
+    return changeCategoryTab.value
+  }
+
+  const categories = Array.from(getChangeCategories(change))
+  return categories[0] || ''
+}
+
 const shouldShowDetailCategory = (category) => {
-  return detailCategoryTab.value === 'all' || detailCategoryTab.value === category
+  return !detailScopedCategory.value || detailScopedCategory.value === category
 }
 
 // 获取当前月份
@@ -4630,7 +4625,7 @@ const processChange = async (change) => {
 
 // 查看详情
 const viewDetails = async (change) => {
-  detailCategoryTab.value = 'all'
+  detailScopedCategory.value = resolveDetailCategory(change)
   console.log('=== 查看详情 ===')
   console.log('change对象:', change)
   
@@ -5436,7 +5431,20 @@ const getCategoryText = (category) => {
 // 检查是否有员工基数信息
 const hasEmployeeBaseInfo = () => {
   if (!currentChange.value) return false
-  
+
+  if (detailScopedCategory.value === 'social_security') {
+    return !!currentChange.value.employee_social_security_base
+  }
+  if (detailScopedCategory.value === 'medical_insurance') {
+    return !!currentChange.value.employee_medical_insurance_base
+  }
+  if (detailScopedCategory.value === 'housing_fund') {
+    return !!currentChange.value.employee_housing_fund_base
+  }
+  if (detailScopedCategory.value === 'large_medical_insurance') {
+    return !!(currentChange.value.employee_large_medical_base || currentChange.value.employee_large_medical_company_base)
+  }
+
   return currentChange.value.employee_social_security_base ||
          currentChange.value.employee_medical_insurance_base ||
          currentChange.value.employee_housing_fund_base ||
@@ -5446,6 +5454,20 @@ const hasEmployeeBaseInfo = () => {
 // 检查是否有参保地区信息
 const hasRegionInfo = () => {
   if (!currentChange.value || !currentChange.value.employee) return false
+
+  if (detailScopedCategory.value === 'social_security') {
+    return !!currentChange.value.employee.social_security_region
+  }
+  if (detailScopedCategory.value === 'medical_insurance') {
+    return !!currentChange.value.employee.medical_insurance_region
+  }
+  if (detailScopedCategory.value === 'housing_fund') {
+    return !!currentChange.value.employee.housing_fund_region
+  }
+  if (detailScopedCategory.value === 'large_medical_insurance') {
+    return !!currentChange.value.employee.large_medical_insurance_config_relation
+  }
+
   return currentChange.value.employee.social_security_region ||
          currentChange.value.employee.medical_insurance_region ||
          currentChange.value.employee.housing_fund_region ||
@@ -6219,7 +6241,7 @@ watch(() => detailFilterForm.value.month, (newMonth, oldMonth) => {
 
 watch(showDetailDialogFlag, (visible) => {
   if (!visible) {
-    detailCategoryTab.value = 'all'
+    detailScopedCategory.value = ''
   }
 })
 

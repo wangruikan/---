@@ -37,6 +37,46 @@
       </div>
     </div>
 
+    <div class="my-task-card">
+      <div class="my-task-header">
+        <h3>我的待办</h3>
+        <div class="my-task-header-right">
+          <el-tag type="warning" size="small">共 {{ myTaskTotal }} 条</el-tag>
+          <el-button type="primary" link @click="goToMyTasks">查看更多</el-button>
+        </div>
+      </div>
+      <div class="my-task-table-wrap">
+        <el-table :data="myTaskList" v-loading="myTaskLoading" size="small" stripe>
+          <el-table-column label="业务类型" min-width="160">
+            <template #default="{ row }">
+              {{ getTodoBusinessTypeText(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="step_name" label="当前步骤" min-width="120" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="getTodoStatusType(row.status)" size="small">
+                {{ getTodoStatusText(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="申请时间" min-width="140">
+            <template #default="{ row }">
+              {{ formatTime(row.created_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button type="primary" link @click="goToMyTasks(row)">去处理</el-button>
+            </template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="暂无待办" :image-size="60" />
+          </template>
+        </el-table>
+      </div>
+    </div>
+
     <div class="monthly-work-card">
       <div class="monthly-work-header">
         <h3>本月工作</h3>
@@ -306,6 +346,7 @@ import dayjs from 'dayjs'
 import { markReminderAsRead, getDashboardData } from '@/api/dashboard'
 import { getProcessRecordStats } from '@/api/processRecord'
 import { getAssessmentRecords } from '@/api/assessment'
+import { getMyTasks } from '@/api/approvalFlow'
 import { submitInvoiceReason } from '@/api/invoiceReminder'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { useRouter } from 'vue-router'
@@ -322,6 +363,9 @@ const projects = ref([])
 const projectStatusStats = ref([])
 const reminders = ref([])
 const assessmentRecords = ref([])
+const myTaskList = ref([])
+const myTaskTotal = ref(0)
+const myTaskLoading = ref(false)
 const monthlyWorkStats = ref({
   total: 0,
   pending: 0,
@@ -351,11 +395,90 @@ const formatTime = (time) => {
   return dayjs(time).format('MM-DD HH:mm')
 }
 
+const getTodoBusinessTypeText = (row) => {
+  const type = row?.instance?.business_type || row?.business_type || ''
+  const textMap = {
+    employee_contract: '员工合同',
+    offline_onboarding: '线下入职',
+    employee_deletion: '员工删除',
+    employee_salary_adjustment: '员工工资调整',
+    salary: '工资审核',
+    insurance: '社保审核',
+    reimbursement: '报销申请',
+    travel_application: '差旅申请',
+    invoice_application: '开票申请',
+    material_request: '资料申请'
+  }
+  return textMap[type] || type || '-'
+}
+
+const getTodoStatusType = (status) => {
+  const typeMap = {
+    pending: 'warning',
+    waiting: 'info',
+    approved: 'success',
+    rejected: 'danger',
+    returned: 'warning',
+    withdrawn: 'info'
+  }
+  return typeMap[status] || 'info'
+}
+
+const getTodoStatusText = (status) => {
+  const textMap = {
+    pending: '待审批',
+    waiting: '等待中',
+    approved: '已通过',
+    rejected: '已驳回',
+    returned: '已退回',
+    withdrawn: '已撤回'
+  }
+  return textMap[status] || status || '-'
+}
+
+const loadMyTasks = async () => {
+  if (!accountSetStore.currentAccountSet?.id) {
+    myTaskList.value = []
+    myTaskTotal.value = 0
+    return
+  }
+
+  myTaskLoading.value = true
+  try {
+    const response = await getMyTasks({
+      page: 1,
+      per_page: 5
+    })
+
+    myTaskList.value = Array.isArray(response?.data) ? response.data : []
+    myTaskTotal.value = Number(response?.total || 0)
+  } catch (error) {
+    console.error('加载我的待办失败:', error)
+    myTaskList.value = []
+    myTaskTotal.value = 0
+  } finally {
+    myTaskLoading.value = false
+  }
+}
+
+const goToMyTasks = (row) => {
+  const query = { tab: 'my-tasks' }
+  if (row?.id) {
+    query.record_id = String(row.id)
+  }
+  router.push({
+    path: '/approvals',
+    query
+  })
+}
+
 // 统一加载 Dashboard 数据
 const loadDashboardData = async () => {
   try {
     if (!accountSetStore.currentAccountSet?.id) {
       console.warn('未选择账套，无法加载 Dashboard 数据')
+      myTaskList.value = []
+      myTaskTotal.value = 0
       return
     }
 
@@ -387,13 +510,18 @@ const loadDashboardData = async () => {
 
       // 考核记录
       await loadAssessmentRecords()
+
+      // 我的待办（审批管理同源）
+      await loadMyTasks()
     } else {
       console.error('获取 Dashboard 数据失败:', response.message)
       ElMessage.error(response.message || '获取 Dashboard 数据失败')
+      await loadMyTasks()
     }
   } catch (error) {
     console.error('Load dashboard data error:', error)
     ElMessage.error('获取 Dashboard 数据失败')
+    await loadMyTasks()
   }
 }
 
@@ -1010,6 +1138,38 @@ onMounted(() => {
   color: #909399;
 }
 
+.my-task-card {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.my-task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.my-task-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #303133;
+}
+
+.my-task-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.my-task-table-wrap :deep(.el-table__cell) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 .monthly-work-card {
   margin-bottom: 20px;
   padding: 16px;
@@ -1472,4 +1632,3 @@ onMounted(() => {
   }
 }
 </style>
-

@@ -17,14 +17,24 @@
             <!-- 账套选择器 -->
             <div class="account-set-header-actions">
               <AccountSetSelector />
-              <el-button
-                v-if="canAccessAccountSets"
-                type="primary"
-                plain
-                @click="handleQuickCreateAccountSet"
-              >
-                新建账套
-              </el-button>
+              <template v-if="canAccessAccountSets">
+                <el-button
+                  class="account-set-icon-btn"
+                  circle
+                  @click="handleQuickCreateAccountSet"
+                  title="新建账套"
+                >
+                  <el-icon><CirclePlus /></el-icon>
+                </el-button>
+                <el-button
+                  class="account-set-icon-btn"
+                  circle
+                  @click="handleOpenAccountSetManagement"
+                  title="账套管理"
+                >
+                  <el-icon><Grid /></el-icon>
+                </el-button>
+              </template>
             </div>
           </div>
           
@@ -186,7 +196,7 @@ import { getDashboardData, markReminderAsRead } from '@/api/dashboard'
 import AccountSetSelector from '@/components/AccountSetSelector.vue'
 import HoverMenu from '@/components/HoverMenu.vue'
 // import OperationBarrage from '@/components/OperationBarrage.vue' // 已隐藏弹幕功能
-import { Bell, ArrowDown, Close } from '@element-plus/icons-vue'
+import { Bell, ArrowDown, Close, CirclePlus, Grid } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -471,6 +481,10 @@ const handleQuickCreateAccountSet = () => {
   router.push({ path: '/account-sets', query: { action: 'create' } })
 }
 
+const handleOpenAccountSetManagement = () => {
+  router.push({ path: '/account-sets' })
+}
+
 onMounted(async () => {
   loadNotifications()
   
@@ -548,6 +562,25 @@ watch(
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.account-set-icon-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #dcdfe6;
+  color: #909399;
+  background-color: #fff;
+  padding: 0;
+}
+
+.account-set-icon-btn:hover {
+  border-color: #c0c4cc;
+  color: #606266;
+  background-color: #f5f7fa;
+}
+
+.account-set-icon-btn .el-icon {
+  font-size: 20px;
 }
 
 .collapse-btn {

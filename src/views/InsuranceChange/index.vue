@@ -86,12 +86,12 @@
             </template>
 
             <el-tabs v-model="changeCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
-              <el-tab-pane label="??" name="all" />
-              <el-tab-pane label="??" name="social_security" />
-              <el-tab-pane label="??" name="medical_insurance" />
-              <el-tab-pane label="???" name="housing_fund" />
-              <el-tab-pane label="????" name="large_medical_insurance" />
-              <el-tab-pane label="????" name="other_insurance" />
+              <el-tab-pane label="全部" name="all" />
+              <el-tab-pane label="社保" name="social_security" />
+              <el-tab-pane label="医保" name="medical_insurance" />
+              <el-tab-pane label="公积金" name="housing_fund" />
+              <el-tab-pane label="大额医保" name="large_medical_insurance" />
+              <el-tab-pane label="其他保险" name="other_insurance" />
             </el-tabs>
 
             <el-table 
@@ -1052,12 +1052,12 @@
 
         <!-- 参保地区信息 -->
         <el-tabs v-model="detailCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
-          <el-tab-pane label="??" name="all" />
-          <el-tab-pane label="??" name="social_security" v-if="getSocialSecurityDetails().length > 0 || hasCategoryChange('social_security')" />
-          <el-tab-pane label="??" name="medical_insurance" v-if="getMedicalInsuranceDetails().length > 0 || hasCategoryChange('medical_insurance')" />
-          <el-tab-pane label="???" name="housing_fund" v-if="getHousingFundDetails() || hasCategoryChange('housing_fund')" />
-          <el-tab-pane label="????" name="large_medical_insurance" v-if="getLargeMedicalInsuranceDetails() || hasCategoryChange('large_medical_insurance')" />
-          <el-tab-pane label="????" name="other_insurance" v-if="getOtherInsuranceDetails().length > 0 || hasCategoryChange('other_insurance')" />
+          <el-tab-pane label="全部" name="all" />
+          <el-tab-pane label="社保" name="social_security" v-if="getSocialSecurityDetails().length > 0 || hasCategoryChange('social_security')" />
+          <el-tab-pane label="医保" name="medical_insurance" v-if="getMedicalInsuranceDetails().length > 0 || hasCategoryChange('medical_insurance')" />
+          <el-tab-pane label="公积金" name="housing_fund" v-if="getHousingFundDetails() || hasCategoryChange('housing_fund')" />
+          <el-tab-pane label="大额医保" name="large_medical_insurance" v-if="getLargeMedicalInsuranceDetails() || hasCategoryChange('large_medical_insurance')" />
+          <el-tab-pane label="其他保险" name="other_insurance" v-if="getOtherInsuranceDetails().length > 0 || hasCategoryChange('other_insurance')" />
         </el-tabs>
 
         <div v-if="hasRegionInfo()" class="insurance-region-info">

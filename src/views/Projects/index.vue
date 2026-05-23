@@ -293,14 +293,25 @@
         <!-- 绑定其他保险保单 -->
         <el-form-item label="绑定其他保险保单" prop="other_insurance_policies">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <el-button 
-              @click="openPolicySelectionDialog" 
+            <el-switch
+              v-model="otherInsuranceNoSelection"
+              :disabled="form.id && !isEdit"
+              active-text="无"
+              inactive-text="选择保单"
+              style="flex-shrink: 0;"
+            />
+            <el-button
+              v-if="!otherInsuranceNoSelection"
+              @click="openPolicySelectionDialog"
               :disabled="form.id && !isEdit"
             >
               选择保单 (已选 {{ form.other_insurance_policies.length }} 个)
             </el-button>
-            <div v-if="selectedPoliciesSummary.length > 0" style="color: #606266; font-size: 14px;">
+            <div v-if="selectedPoliciesSummary.length > 0 && !otherInsuranceNoSelection" style="color: #606266; font-size: 14px;">
               {{ selectedPoliciesSummary.join('、') }}
+            </div>
+            <div v-if="otherInsuranceNoSelection" style="color: #909399; font-size: 14px;">
+              不选择任何保单
             </div>
           </div>
           <div class="form-tip">点击按钮选择项目绑定的其他保险保单，每种保险类型只能绑定一个保单，员工将自动享受这些保险</div>
@@ -309,6 +320,7 @@
         <!-- 绑定大额医疗保险 -->
         <el-form-item label="大额医疗保险" prop="large_medical_insurance_configs">
           <el-select
+            ref="largeMedicalInsuranceConfigsSelectRef"
             v-model="form.large_medical_insurance_configs"
             multiple
             collapse-tags
@@ -317,7 +329,12 @@
             clearable
             style="width: 100%"
             :disabled="form.id && !isEdit"
+            @change="handleLargeMedicalInsuranceConfigsChange"
           >
+            <el-option
+              label="无"
+              :value="NO_LARGE_MEDICAL_INSURANCE_OPTION"
+            />
             <el-option
               v-for="config in availableLargeMedicalInsuranceConfigs"
               :key="config.id"
@@ -1278,6 +1295,7 @@ const formRef = ref()
 const socialSecurityRegionsSelectRef = ref()
 const housingFundRegionsSelectRef = ref()
 const medicalInsuranceRegionsSelectRef = ref()
+const largeMedicalInsuranceConfigsSelectRef = ref()
 
 // 须知文件设置相关
 const showNoticeDialog = ref(false)
@@ -1327,6 +1345,7 @@ const loadingLargeMedicalInsuranceConfigs = ref(false)
 const showPolicySelectionDialog = ref(false)
 const selectedPoliciesByType = ref({})
 const expandedTypes = ref({})  // 记录哪些保险类型已展开
+const otherInsuranceNoSelection = ref(false)  // 其他保险-无选择模式
 
 // 占位符设置相关
 const showPlaceholderSetupDialog = ref(false)
@@ -1698,6 +1717,8 @@ const form = reactive({
 const NO_SOCIAL_SECURITY_OPTION = '__NONE_SOCIAL_SECURITY__'
 const NO_HOUSING_FUND_OPTION = '__NONE_HOUSING_FUND__'
 const NO_MEDICAL_INSURANCE_OPTION = '__NONE_MEDICAL_INSURANCE__'
+const NO_LARGE_MEDICAL_INSURANCE_OPTION = '__NONE_LARGE_MEDICAL__'
+const NO_OTHER_INSURANCE_OPTION = '__NONE_OTHER_INSURANCE__'
 
 const closeRegionSelect = (selectRef) => {
   nextTick(() => {
@@ -1727,12 +1748,8 @@ const formRules = {
   medical_insurance_regions: [
     { type: 'array', required: true, min: 1, message: '请至少选择一个医保参保地区', trigger: 'change' }
   ],
-  other_insurance_policies: [
-    { type: 'array', required: true, min: 1, message: '请至少选择一个其他保险保单', trigger: 'change' }
-  ],
-  large_medical_insurance_configs: [
-    { type: 'array', required: true, min: 1, message: '请至少选择一个大额医疗保险配置', trigger: 'change' }
-  ],
+  other_insurance_policies: [],
+  large_medical_insurance_configs: [],
   salary_payment_date: [
     { required: true, message: '请选择工资发放日期', trigger: 'change' }
   ],
@@ -1998,6 +2015,20 @@ const handleMedicalInsuranceRegionsChange = (value) => {
   closeRegionSelect(medicalInsuranceRegionsSelectRef)
 }
 
+// 处理大额医疗保险配置变化
+const handleLargeMedicalInsuranceConfigsChange = (value) => {
+  const selectedValues = Array.isArray(value) ? value : []
+  if (selectedValues.includes(NO_LARGE_MEDICAL_INSURANCE_OPTION)) {
+    form.large_medical_insurance_configs = selectedValues[selectedValues.length - 1] === NO_LARGE_MEDICAL_INSURANCE_OPTION
+      ? [NO_LARGE_MEDICAL_INSURANCE_OPTION]
+      : selectedValues.filter(item => item !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
+    closeRegionSelect(largeMedicalInsuranceConfigsSelectRef)
+    return
+  }
+  form.large_medical_insurance_configs = selectedValues
+  closeRegionSelect(largeMedicalInsuranceConfigsSelectRef)
+}
+
 // 确认保单选择
 const togglePolicySelection = (typeId, policyId) => {
   const currentPolicyId = selectedPoliciesByType.value[typeId]
@@ -2050,6 +2081,7 @@ const openPolicySelectionDialog = () => {
 // 重置表单
 const resetForm = () => {
   isProjectCodeManuallyEdited.value = false
+  otherInsuranceNoSelection.value = false
   Object.assign(form, {
     id: undefined,  // 重置ID，确保新建时不会误用旧ID
     name: '',
@@ -2224,9 +2256,16 @@ const handleView = async (row) => {
       : [NO_HOUSING_FUND_OPTION],
     medical_insurance_regions: row.medical_insurance_regions && row.medical_insurance_regions.length > 0
       ? row.medical_insurance_regions.map(r => r.id)
-      : [NO_MEDICAL_INSURANCE_OPTION]
+      : [NO_MEDICAL_INSURANCE_OPTION],
+    other_insurance_policies: row.other_insurance_policies ? row.other_insurance_policies.map(p => p.id) : [],
+    large_medical_insurance_configs: row.large_medical_insurance_configs && row.large_medical_insurance_configs.length > 0
+      ? row.large_medical_insurance_configs.map(c => c.id)
+      : [NO_LARGE_MEDICAL_INSURANCE_OPTION]
   })
-  
+
+  // 设置其他保险"无"选择模式
+  otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
+
   console.log('查看项目 - 地区数据加载完成:', {
     socialSecurity: availableSocialSecurityRegions.value.length,
     medicalInsurance: availableMedicalInsuranceRegions.value.length,
@@ -2268,8 +2307,13 @@ const handleEdit = async (row) => {
       ? row.medical_insurance_regions.map(r => r.id)
       : [NO_MEDICAL_INSURANCE_OPTION],
     other_insurance_policies: row.other_insurance_policies ? row.other_insurance_policies.map(p => p.id) : [],
-    large_medical_insurance_configs: row.large_medical_insurance_configs ? row.large_medical_insurance_configs.map(c => c.id) : []
+    large_medical_insurance_configs: row.large_medical_insurance_configs && row.large_medical_insurance_configs.length > 0
+      ? row.large_medical_insurance_configs.map(c => c.id)
+      : [NO_LARGE_MEDICAL_INSURANCE_OPTION]
   })
+
+  // 设置其他保险"无"选择模式
+  otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
   
   console.log('编辑项目 - 地区数据加载完成:', {
     socialSecurity: availableSocialSecurityRegions.value.length,
@@ -2651,7 +2695,8 @@ const handleSubmit = async () => {
           ...form,
           social_security_regions: (form.social_security_regions || []).filter(id => id !== NO_SOCIAL_SECURITY_OPTION),
           housing_fund_regions: (form.housing_fund_regions || []).filter(id => id !== NO_HOUSING_FUND_OPTION),
-          medical_insurance_regions: (form.medical_insurance_regions || []).filter(id => id !== NO_MEDICAL_INSURANCE_OPTION)
+          medical_insurance_regions: (form.medical_insurance_regions || []).filter(id => id !== NO_MEDICAL_INSURANCE_OPTION),
+          large_medical_insurance_configs: (form.large_medical_insurance_configs || []).filter(id => id !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
         }
         // 使用 form.id 来判断是编辑还是新建，更可靠
         if (isEdit.value && form.id) {
@@ -2706,17 +2751,24 @@ const handleSubmit = async () => {
           }
         }
         
-        // 保存其他保险保单
-        if (form.other_insurance_policies && form.other_insurance_policies.length > 0) {
-          await setProjectOtherInsurancePolicies(projectId, {
-            policy_ids: form.other_insurance_policies
-          })
-        }
-        
-        // 保存大额医疗保险配置（即使为空也要同步，以便清除之前的绑定）
-        await request.post(`/projects/${projectId}/large-medical-insurance-configs`, {
-          config_ids: form.large_medical_insurance_configs || []
+        // 保存其他保险保单（即使为空也要同步，以便清除之前的绑定）
+        await setProjectOtherInsurancePolicies(projectId, {
+          policy_ids: form.other_insurance_policies || []
         })
+        
+        // 保存大额医疗保险配置（过滤空值和无效值）
+        if (form.large_medical_insurance_configs && form.large_medical_insurance_configs.length > 0) {
+          const validConfigs = form.large_medical_insurance_configs.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
+          if (validConfigs.length > 0 || form.large_medical_insurance_configs.includes(NO_LARGE_MEDICAL_INSURANCE_OPTION)) {
+            try {
+              await request.post(`/projects/${projectId}/large-medical-insurance-configs`, {
+                config_ids: validConfigs
+              })
+            } catch (error) {
+              console.warn('保存大额医疗保险配置失败:', error)
+            }
+          }
+        }
         
         showCreateDialog.value = false
         loadProjects() // 刷新列表
@@ -2752,6 +2804,7 @@ const handleSubmit = async () => {
 const handleDialogClose = () => {
   isEdit.value = false
   isProjectCodeManuallyEdited.value = false
+  otherInsuranceNoSelection.value = false
   Object.assign(form, {
     name: '',
     code: '',
@@ -2890,6 +2943,14 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
   if (newAccountSetId && oldAccountSetId && newAccountSetId !== oldAccountSetId) {
     console.log('✅ 项目页-账套切换，重新加载数据:', newAccountSetId)
     loadProjects()
+  }
+})
+
+// 监听其他保险"无"选择模式
+watch(otherInsuranceNoSelection, (newVal) => {
+  if (newVal) {
+    form.other_insurance_policies = []
+    selectedPoliciesByType.value = {}
   }
 })
 </script>

@@ -125,10 +125,10 @@ class ProjectController extends Controller
             'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
             'housing_fund_regions' => 'nullable|array',
             'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
-            'other_insurance_policies' => 'required|array|min:1',
-            'other_insurance_policies.*' => 'required|exists:other_insurance_policies,id',
-            'large_medical_insurance_configs' => 'required|array|min:1',
-            'large_medical_insurance_configs.*' => 'required|exists:large_medical_insurance_configs,id',
+            'other_insurance_policies' => 'nullable|array',
+            'other_insurance_policies.*' => 'exists:other_insurance_policies,id',
+            'large_medical_insurance_configs' => 'nullable|array',
+            'large_medical_insurance_configs.*' => 'exists:large_medical_insurance_configs,id',
         ]);
 
         if ($validator->fails()) {
@@ -292,10 +292,10 @@ class ProjectController extends Controller
             'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
             'housing_fund_regions' => 'nullable|array',
             'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
-            'other_insurance_policies' => 'required|array|min:1',
-            'other_insurance_policies.*' => 'required|exists:other_insurance_policies,id',
-            'large_medical_insurance_configs' => 'required|array|min:1',
-            'large_medical_insurance_configs.*' => 'required|exists:large_medical_insurance_configs,id',
+            'other_insurance_policies' => 'nullable|array',
+            'other_insurance_policies.*' => 'exists:other_insurance_policies,id',
+            'large_medical_insurance_configs' => 'nullable|array',
+            'large_medical_insurance_configs.*' => 'exists:large_medical_insurance_configs,id',
         ];
 
         $validator = Validator::make($requestData, $rules);
@@ -814,7 +814,7 @@ class ProjectController extends Controller
     public function setOtherInsurancePolicies(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'policy_ids' => 'required|array',
+            'policy_ids' => 'nullable|array',
             'policy_ids.*' => 'exists:other_insurance_policies,id'
         ]);
 

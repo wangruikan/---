@@ -46,7 +46,13 @@
         </div>
       </div>
       <div class="my-task-table-wrap">
-        <el-table :data="myTaskList" v-loading="myTaskLoading" size="small" stripe>
+        <el-table
+          :data="myTaskList"
+          v-loading="myTaskLoading"
+          size="small"
+          stripe
+          :max-height="420"
+        >
           <el-table-column label="业务类型" min-width="160">
             <template #default="{ row }">
               {{ getTodoBusinessTypeText(row) }}
@@ -447,7 +453,7 @@ const loadMyTasks = async () => {
   try {
     const response = await getMyTasks({
       page: 1,
-      per_page: 5
+      per_page: 50
     })
 
     myTaskList.value = Array.isArray(response?.data) ? response.data : []

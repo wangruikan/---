@@ -324,12 +324,6 @@ const routes = [
         meta: { title: '角色权限管理', requiresAdmin: true }
       },
       {
-        path: '/role-menus',
-        name: 'RoleMenus',
-        component: () => import('@/views/Permissions/RoleMenus.vue'),
-        meta: { title: '角色菜单配置', requiresAdmin: true }
-      },
-      {
         path: '/account-sets',
         name: 'AccountSets',
         component: () => import('@/views/AccountSets/index.vue'),

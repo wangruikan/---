@@ -534,8 +534,8 @@ watch(
 }
 
 .main-container {
-  margin-left: 80px;
-  width: calc(100vw - 80px);
+  margin-left: 140px;
+  width: calc(100vw - 140px);
   height: 100vh;
   overflow-y: auto;
   position: relative;

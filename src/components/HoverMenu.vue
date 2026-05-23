@@ -3,7 +3,7 @@
     <!-- 左侧一级菜单 -->
     <div class="primary-menu">
       <div class="logo">
-        <div class="logo-icon">🏢</div>
+        <div class="logo-icon">HRM</div>
       </div>
       
       <div 
@@ -15,7 +15,7 @@
         @mouseenter="handleMenuHover(menu, $event)"
         @click="handleMenuClick(menu)"
       >
-        <el-icon :size="24">
+        <el-icon :size="18">
           <component :is="menu.icon" />
         </el-icon>
         <span class="menu-title">{{ menu.title }}</span>
@@ -27,7 +27,7 @@
       <div 
         v-if="activeMenu && activeMenu.children"
         class="submenu-panel"
-        :style="{ top: submenuTop + 'px' }"
+        :style="{ top: submenuTop + 'px', '--submenu-panel-height': submenuPanelHeight + 'px' }"
         @mouseenter="keepSubmenuOpen"
         @mouseleave="closeSubmenu"
       >
@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -78,6 +78,21 @@ const hoverTimer = ref(null)
 const leaveTimer = ref(null)
 const submenuTop = ref(0)
 const menuRefs = ref({})
+const submenuPanelHeight = 388
+const submenuViewportMargin = 14
+
+const resolveSubmenuTop = (preferredTop = submenuViewportMargin) => {
+  const viewportHeight = window.innerHeight || 0
+  const maxTop = Math.max(
+    submenuViewportMargin,
+    viewportHeight - submenuPanelHeight - submenuViewportMargin
+  )
+  return Math.min(Math.max(preferredTop, submenuViewportMargin), maxTop)
+}
+
+const handleWindowResize = () => {
+  submenuTop.value = resolveSubmenuTop(submenuTop.value)
+}
 
 // 设置菜单项的ref
 const setMenuRef = (menuId, el) => {
@@ -214,7 +229,9 @@ const handleMenuHover = (menu, event) => {
       const menuElement = menuRefs.value[menu.id]
       if (menuElement) {
         const rect = menuElement.getBoundingClientRect()
-        submenuTop.value = rect.top
+        submenuTop.value = resolveSubmenuTop(rect.top - 8)
+      } else {
+        submenuTop.value = resolveSubmenuTop()
       }
     } else {
       activeMenu.value = null
@@ -251,6 +268,14 @@ const navigateTo = (path) => {
   activeMenu.value = null
 }
 
+onMounted(() => {
+  window.addEventListener('resize', handleWindowResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize)
+})
+
 // 监听路由变化，关闭子菜单
 watch(() => route.path, () => {
   activeMenu.value = null
@@ -268,140 +293,172 @@ watch(() => route.path, () => {
 }
 
 .primary-menu {
-  width: 80px;
+  width: 140px;
   height: 100vh;
-  background: #304156;
+  background: linear-gradient(180deg, #45455e 0%, #41425a 100%);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding-top: 10px;
+  align-items: stretch;
+  padding-top: 8px;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
   pointer-events: auto;
 }
 
 .logo {
-  width: 100%;
-  height: 60px;
+  height: 52px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 10px;
+  justify-content: flex-start;
+  margin: 0 12px 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: #f2f4ff;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .logo-icon {
-  font-size: 32px;
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
 }
 
 .menu-item {
-  width: 100%;
-  height: 70px;
+  height: 52px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 14px;
+  margin: 2px 8px;
+  border-radius: 8px;
   cursor: pointer;
-  color: #bfcbd9;
+  color: #d7d8e8;
   transition: all 0.3s;
   position: relative;
+  overflow: visible;
 }
 
 .menu-item:hover {
-  background: #263445;
-  color: #409eff;
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
 }
 
 .menu-item.active {
-  background: #409eff;
-  color: white;
+  background: rgba(34, 39, 59, 0.85);
+  color: #ffffff;
 }
 
-.menu-item.active::before {
-  content: '';
+.menu-item.active::after {
+  content: "";
   position: absolute;
-  left: 0;
+  right: -8px;
   top: 50%;
   transform: translateY(-50%);
-  width: 4px;
-  height: 40px;
-  background: white;
-  border-radius: 0 2px 2px 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 8px solid #ffffff;
 }
 
 .menu-title {
-  font-size: 12px;
-  text-align: center;
-  line-height: 1.2;
-  max-width: 60px;
-  word-break: keep-all;
+  font-size: 16px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .submenu-panel {
   position: fixed;
-  left: 80px;
-  max-height: 40vh;
-  width: 280px;
+  left: 140px;
+  width: clamp(520px, calc(100vw - 180px), 980px);
+  height: var(--submenu-panel-height);
   background: white;
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
-  overflow-y: auto;
-  overflow-x: hidden;
+  box-shadow: 8px 8px 28px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
   z-index: 999;
-  border-radius: 8px;
+  border-radius: 0 0 6px 0;
   pointer-events: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .submenu-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #f5f7fa;
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  padding: 18px 26px 8px;
+  border-bottom: 1px solid #f0f0f2;
+  background: #ffffff;
+  flex: 0 0 auto;
 }
 
 .submenu-header h3 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 17px;
+  font-weight: 500;
+  color: #2f3245;
 }
 
 .submenu-grid {
-  padding: 16px;
+  padding: 18px 26px 22px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  max-height: calc(40vh - 80px);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-auto-rows: minmax(28px, auto);
+  column-gap: 26px;
+  row-gap: 12px;
+  align-content: start;
+  flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .submenu-item {
-  padding: 16px 12px;
-  border-radius: 8px;
-  background: #f5f7fa;
+  min-height: 28px;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: color 0.2s ease;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #606266;
+  justify-content: flex-start;
+  color: #494d63;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .submenu-item:hover {
-  background: #ecf5ff;
-  color: #409eff;
-  transform: translateY(-2px);
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+  color: #2f5ddb;
 }
 
 .submenu-item.active {
-  background: #409eff;
-  color: white;
+  color: #1f4ece;
+  font-weight: 600;
+}
+
+.submenu-item :deep(.el-icon) {
+  display: none;
 }
 
 .submenu-item span {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 23px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1440px) {
+  .submenu-panel {
+    width: min(860px, calc(100vw - 180px));
+  }
+
+  .submenu-item span {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .submenu-panel {
+    width: calc(100vw - 180px);
+  }
+
+  .submenu-item span {
+    font-size: 18px;
+  }
 }
 
 /* 动画 */
@@ -412,12 +469,12 @@ watch(() => route.path, () => {
 
 .submenu-fade-enter-from {
   opacity: 0;
-  transform: translateX(-20px);
+  transform: translateX(-10px);
 }
 
 .submenu-fade-leave-to {
   opacity: 0;
-  transform: translateX(-20px);
+  transform: translateX(-10px);
 }
 
 /* 滚动条样式 */

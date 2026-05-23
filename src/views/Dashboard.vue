@@ -37,6 +37,37 @@
       </div>
     </div>
 
+    <div class="shortcut-card">
+      <div class="shortcut-header">
+        <h3>快捷入口</h3>
+        <div class="shortcut-header-right">
+          <el-tag type="info" size="small">已设置 {{ shortcutMenus.length }}/{{ MAX_SHORTCUT_COUNT }}</el-tag>
+          <el-button type="primary" link @click="openShortcutDialog">设置快捷入口</el-button>
+        </div>
+      </div>
+
+      <div v-if="shortcutMenus.length === 0" class="shortcut-empty">
+        <el-empty description="暂无快捷入口，请先设置" :image-size="60" />
+      </div>
+
+      <div v-else class="shortcut-grid">
+        <div
+          v-for="item in shortcutMenus"
+          :key="item.key"
+          class="shortcut-item"
+          @click="navigateTo(item.path)"
+        >
+          <div class="shortcut-item-icon">
+            <el-icon><component :is="item.icon || 'Menu'" /></el-icon>
+          </div>
+          <div class="shortcut-item-content">
+            <div class="shortcut-item-title">{{ item.title }}</div>
+            <div class="shortcut-item-desc">{{ item.groupTitle }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="my-task-card">
       <div class="my-task-header">
         <h3>我的待办</h3>
@@ -131,6 +162,38 @@
       </div>
       <template #footer>
         <el-button @click="approvalLauncherVisible = false">取消</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="shortcutDialogVisible"
+      title="设置首页快捷入口"
+      width="680px"
+    >
+      <div class="shortcut-dialog-tip">
+        只能从当前账号已分配的菜单中选择，最多 {{ MAX_SHORTCUT_COUNT }} 项。
+      </div>
+      <div class="shortcut-option-list">
+        <el-checkbox-group v-model="shortcutSelection">
+          <div
+            v-for="item in availableShortcutMenus"
+            :key="item.key"
+            class="shortcut-option-item"
+          >
+            <el-checkbox
+              :label="item.key"
+              :disabled="isShortcutOptionDisabled(item.key)"
+            >
+              <span class="shortcut-option-title">{{ item.title }}</span>
+              <span class="shortcut-option-group">{{ item.groupTitle }}</span>
+            </el-checkbox>
+          </div>
+        </el-checkbox-group>
+      </div>
+      <template #footer>
+        <el-button @click="shortcutDialogVisible = false">取消</el-button>
+        <el-button @click="handleClearShortcutConfig">清空</el-button>
+        <el-button type="primary" @click="handleConfirmShortcutConfig">保存</el-button>
       </template>
     </el-dialog>
     <!-- 统计卡片 -->
@@ -345,7 +408,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { User, Folder, Clock, Money, Document, UserFilled, Warning, Bell, Refresh, CircleCheck, CloseBold } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import dayjs from 'dayjs'
@@ -355,8 +418,24 @@ import { getAssessmentRecords } from '@/api/assessment'
 import { getMyTasks } from '@/api/approvalFlow'
 import { submitInvoiceReason } from '@/api/invoiceReminder'
 import { useAccountSetStore } from '@/stores/accountSet'
+import { useUserStore } from '@/stores/user'
+import { usePermissionStore } from '@/stores/permission'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { menuConfig } from '@/config/menuConfig'
+import { getMenuLayout } from '@/api/permission'
+import { buildMenusWithLayout, normalizeVisibleMenuKeys } from '@/utils/menuLayout'
+
+const accountSetStore = useAccountSetStore()
+const userStore = useUserStore()
+const permissionStore = usePermissionStore()
+const router = useRouter()
+
+const rawMenuLayout = ref([])
+const shortcutDialogVisible = ref(false)
+const shortcutSelection = ref([])
+const shortcutKeys = ref([])
+const MAX_SHORTCUT_COUNT = 12
 
 const stats = ref({
   totalEmployees: 0,
@@ -441,6 +520,213 @@ const getTodoStatusText = (status) => {
   }
   return textMap[status] || status || '-'
 }
+
+const menuStructure = computed(() => buildMenusWithLayout(menuConfig, rawMenuLayout.value))
+const sourceMenus = computed(() => menuStructure.value.menus || [])
+
+const normalizedVisibleMenuKeys = computed(() => {
+  const rawKeys = userStore.userInfo?.visible_menus
+  if (!Array.isArray(rawKeys)) return null
+  return normalizeVisibleMenuKeys(rawKeys, menuStructure.value.menuLibrary)
+})
+
+const isAdmin = computed(() => userStore.userInfo?.role === 'admin' || permissionStore.isAdmin)
+const canEvaluateShortcutMenus = computed(() => {
+  return Boolean(userStore.userInfo?.id) && (permissionStore.loaded || isAdmin.value)
+})
+const hasAccountSet = computed(() => {
+  return Array.isArray(accountSetStore.myAccountSets) && accountSetStore.myAccountSets.length > 0
+})
+
+const hasBusinessModuleAccess = computed(() => {
+  return permissionStore.hasModuleAccess('projects') ||
+    permissionStore.hasModuleAccess('attendance') ||
+    permissionStore.hasModuleAccess('salaries') ||
+    permissionStore.hasModuleAccess('social_security') ||
+    permissionStore.hasModuleAccess('housing_fund') ||
+    permissionStore.hasModuleAccess('other_insurance') ||
+    permissionStore.hasModuleAccess('large_medical') ||
+    permissionStore.hasModuleAccess('base_adjustment') ||
+    permissionStore.hasModuleAccess('insurance_change') ||
+    permissionStore.hasModuleAccess('payment_applications') ||
+    permissionStore.hasModuleAccess('payment_summaries') ||
+    permissionStore.hasModuleAccess('approvals') ||
+    permissionStore.hasModuleAccess('account_sets')
+})
+
+const hasBaseAccessToMenu = (menu) => {
+  if (menu.requireAdmin && !isAdmin.value) return false
+  if (menu.requireBusiness && !isAdmin.value && !hasAccountSet.value && !hasBusinessModuleAccess.value) return false
+  return true
+}
+
+const isVisibleByRole = (item) => {
+  const roleVisibleKeys = normalizedVisibleMenuKeys.value
+  if (roleVisibleKeys === null) return true
+  if (!Array.isArray(roleVisibleKeys) || roleVisibleKeys.length === 0) return false
+
+  const submenuKey = item?.menuKey || item?.path
+  if (!submenuKey) return false
+
+  return roleVisibleKeys.includes(submenuKey)
+}
+
+const hasSubmenuAccess = (item) => {
+  if (item.sourceParentRequireAdmin && !isAdmin.value) return false
+  if (item.sourceParentRequireBusiness && !isAdmin.value && !hasAccountSet.value && !hasBusinessModuleAccess.value) return false
+  if (item.skipPermissionCheck) return true
+  if (item.requireAccountSet && !isAdmin.value && !hasAccountSet.value) return false
+  if (item.notForLevel1 && userStore.userInfo?.approval_level === 1) return false
+  if (item.permission && !permissionStore.hasPermission(item.permission)) return false
+  return isVisibleByRole(item)
+}
+
+const availableShortcutMenus = computed(() => {
+  const options = []
+  const seen = new Set()
+
+  sourceMenus.value.forEach((menu) => {
+    if (!hasBaseAccessToMenu(menu)) return
+    if (!Array.isArray(menu.children) || menu.children.length === 0) return
+
+    menu.children.forEach((child) => {
+      if (!child?.path) return
+      if (!hasSubmenuAccess(child)) return
+
+      const key = child.menuKey || child.path
+      if (!key || seen.has(key)) return
+      seen.add(key)
+
+      options.push({
+        key,
+        title: child.title,
+        path: child.path,
+        icon: child.icon || menu.icon || 'Menu',
+        groupTitle: menu.title
+      })
+    })
+  })
+
+  return options
+})
+
+const shortcutMenus = computed(() => {
+  const map = new Map(availableShortcutMenus.value.map(item => [item.key, item]))
+  return shortcutKeys.value.map(key => map.get(key)).filter(Boolean)
+})
+
+const getShortcutStorageKey = () => {
+  const userId = userStore.userInfo?.id
+  if (!userId) return ''
+  return `dashboard_shortcuts_${userId}`
+}
+
+const areArraysEqual = (a, b) => {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+const sanitizeShortcutKeys = (keys) => {
+  if (!Array.isArray(keys)) return []
+  const validKeys = new Set(availableShortcutMenus.value.map(item => item.key))
+  const result = []
+  const seen = new Set()
+
+  keys.forEach((key) => {
+    if (typeof key !== 'string') return
+    if (!validKeys.has(key)) return
+    if (seen.has(key)) return
+    seen.add(key)
+    result.push(key)
+  })
+
+  return result.slice(0, MAX_SHORTCUT_COUNT)
+}
+
+const persistShortcutKeys = () => {
+  const storageKey = getShortcutStorageKey()
+  if (!storageKey) return
+  localStorage.setItem(storageKey, JSON.stringify(shortcutKeys.value))
+}
+
+const loadShortcutKeys = () => {
+  const storageKey = getShortcutStorageKey()
+  if (!storageKey) {
+    shortcutKeys.value = []
+    return
+  }
+
+  let parsed = []
+  try {
+    const rawValue = localStorage.getItem(storageKey)
+    parsed = rawValue ? JSON.parse(rawValue) : []
+  } catch (error) {
+    parsed = []
+  }
+
+  const normalizedInput = Array.isArray(parsed)
+    ? parsed.filter(item => typeof item === 'string').slice(0, MAX_SHORTCUT_COUNT)
+    : []
+
+  shortcutKeys.value = canEvaluateShortcutMenus.value
+    ? sanitizeShortcutKeys(normalizedInput)
+    : normalizedInput
+
+  if (canEvaluateShortcutMenus.value) {
+    persistShortcutKeys()
+  }
+}
+
+const openShortcutDialog = () => {
+  if (availableShortcutMenus.value.length === 0) {
+    ElMessage.warning('当前暂无可设置的菜单')
+    return
+  }
+  shortcutSelection.value = [...shortcutKeys.value]
+  shortcutDialogVisible.value = true
+}
+
+const isShortcutOptionDisabled = (key) => {
+  return !shortcutSelection.value.includes(key) && shortcutSelection.value.length >= MAX_SHORTCUT_COUNT
+}
+
+const handleConfirmShortcutConfig = () => {
+  shortcutKeys.value = sanitizeShortcutKeys(shortcutSelection.value)
+  persistShortcutKeys()
+  shortcutDialogVisible.value = false
+  ElMessage.success('快捷入口已保存')
+}
+
+const handleClearShortcutConfig = () => {
+  shortcutKeys.value = []
+  shortcutSelection.value = []
+  persistShortcutKeys()
+  ElMessage.success('已清空快捷入口')
+}
+
+watch(
+  () => userStore.userInfo?.id,
+  () => {
+    loadShortcutKeys()
+  },
+  { immediate: true }
+)
+
+watch(
+  availableShortcutMenus,
+  () => {
+    if (!canEvaluateShortcutMenus.value) return
+    const sanitized = sanitizeShortcutKeys(shortcutKeys.value)
+    if (!areArraysEqual(shortcutKeys.value, sanitized)) {
+      shortcutKeys.value = sanitized
+      persistShortcutKeys()
+    }
+  },
+  { deep: true }
+)
 
 const loadMyTasks = async () => {
   if (!accountSetStore.currentAccountSet?.id) {
@@ -567,11 +853,21 @@ const getProgressColor = (progress) => {
   return '#f56c6c'
 }
 
-const accountSetStore = useAccountSetStore()
-const router = useRouter()
-
 const navigateTo = (path) => {
   router.push(path)
+}
+
+const loadMenuLayoutForShortcuts = async () => {
+  try {
+    const res = await getMenuLayout()
+    if (res?.success && Array.isArray(res.data)) {
+      rawMenuLayout.value = res.data
+      return
+    }
+  } catch (error) {
+    console.warn('加载菜单布局失败，快捷入口将使用默认菜单配置', error)
+  }
+  rawMenuLayout.value = []
 }
 
 const loadAssessmentRecords = async () => {
@@ -1034,7 +1330,9 @@ watch(() => accountSetStore.currentAccountSet, (newAccountSet) => {
   }
 }, { immediate: true }) // 使用 immediate: true，初始化时若账套已加载会立即执行
 
-onMounted(() => {
+onMounted(async () => {
+  await loadMenuLayoutForShortcuts()
+
   // 如果账套未加载，加载后会通过 watch 触发刷新
   // 如果账套已加载，watch 的 immediate: true 会立即触发刷新
   console.log('Dashboard mounted, 当前账套:', accountSetStore.currentAccountSet?.name)
@@ -1142,6 +1440,123 @@ onMounted(() => {
   margin-top: 2px;
   font-size: 12px;
   color: #909399;
+}
+
+.shortcut-card {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.shortcut-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.shortcut-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #303133;
+}
+
+.shortcut-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shortcut-empty {
+  padding: 8px 0;
+}
+
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.shortcut-item:hover {
+  border-color: #409eff;
+  background: #f5faff;
+}
+
+.shortcut-item-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #ecf5ff;
+  color: #409eff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.shortcut-item-content {
+  min-width: 0;
+}
+
+.shortcut-item-title {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut-item-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.shortcut-dialog-tip {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.shortcut-option-list {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.shortcut-option-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f7fa;
+}
+
+.shortcut-option-item:last-child {
+  border-bottom: none;
+}
+
+.shortcut-option-title {
+  margin-right: 8px;
+  color: #303133;
+}
+
+.shortcut-option-group {
+  color: #909399;
+  font-size: 12px;
 }
 
 .my-task-card {
@@ -1630,6 +2045,10 @@ onMounted(() => {
   }
 
   .quick-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shortcut-grid {
     grid-template-columns: 1fr;
   }
 

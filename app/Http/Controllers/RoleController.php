@@ -6,6 +6,7 @@ use App\Models\Role;
 use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class RoleController extends Controller
 {
@@ -163,6 +164,107 @@ class RoleController extends Controller
     /**
      * 获取模块中文名称
      */
+    /**
+     * 获取系统菜单布局配置
+     */
+    public function getMenuLayout()
+    {
+        try {
+            $query = DB::table('system_settings')->where('key', 'menu_layout');
+            if (Schema::hasColumn('system_settings', 'account_set_id')) {
+                $query->whereNull('account_set_id');
+            }
+
+            $setting = $query->first();
+            $layout = [];
+
+            if ($setting && !empty($setting->value)) {
+                $decoded = json_decode($setting->value, true);
+                if (is_array($decoded)) {
+                    $layout = $decoded;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $layout
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '获取菜单布局失败',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 更新系统菜单布局配置
+     */
+    public function updateMenuLayout(Request $request)
+    {
+        $request->validate([
+            'layout' => 'nullable|array',
+            'layout.*.id' => 'required|string',
+            'layout.*.title' => 'required|string',
+            'layout.*.icon' => 'nullable|string',
+            'layout.*.children' => 'nullable|array',
+            'layout.*.children.*' => 'string',
+        ]);
+
+        try {
+            $layout = $request->input('layout', []);
+            $value = json_encode($layout, JSON_UNESCAPED_UNICODE);
+            $now = now();
+
+            $baseQuery = DB::table('system_settings')->where('key', 'menu_layout');
+            if (Schema::hasColumn('system_settings', 'account_set_id')) {
+                $baseQuery->whereNull('account_set_id');
+            }
+
+            $existing = $baseQuery->first();
+
+            if ($existing) {
+                $updateData = [
+                    'value' => $value,
+                    'description' => '系统菜单布局配置',
+                    'updated_at' => $now,
+                ];
+                if (Schema::hasColumn('system_settings', 'type')) {
+                    $updateData['type'] = 'json';
+                }
+                DB::table('system_settings')->where('id', $existing->id)->update($updateData);
+            } else {
+                $insertData = [
+                    'key' => 'menu_layout',
+                    'value' => $value,
+                    'description' => '系统菜单布局配置',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+                if (Schema::hasColumn('system_settings', 'type')) {
+                    $insertData['type'] = 'json';
+                }
+                if (Schema::hasColumn('system_settings', 'account_set_id')) {
+                    $insertData['account_set_id'] = null;
+                }
+                DB::table('system_settings')->insert($insertData);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => '菜单布局保存成功',
+                'data' => $layout
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '保存菜单布局失败',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     private function getModuleName($module)
     {
         $names = [

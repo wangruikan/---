@@ -80,6 +80,7 @@ export const menuConfig = [
       { title: '操作记录', path: '/operation-logs', icon: 'Document' },
       { title: '用户管理', path: '/users', icon: 'UserFilled' },
       { title: '角色权限', path: '/role-permissions', icon: 'Key' },
+      { title: '菜单配置', path: '/role-menus', icon: 'Menu' },
       { title: '账套管理', path: '/account-sets', icon: 'Box' },
       { title: '签名印章管理', path: '/signature-management', icon: 'Edit' },
       { title: '流程记录管理', path: '/process-records', icon: 'Document', requireProcessRecord: true },

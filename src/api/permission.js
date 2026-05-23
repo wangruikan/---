@@ -71,3 +71,25 @@ export function batchSetPermissions(userIds, permissionIds, action) {
     }
   })
 }
+
+/**
+ * 获取菜单布局配置
+ */
+export function getMenuLayout() {
+  return request({
+    url: '/roles/menu-layout',
+    method: 'get'
+  })
+}
+
+/**
+ * 保存菜单布局配置
+ * @param {Array} layout 菜单布局数组
+ */
+export function updateMenuLayout(layout) {
+  return request({
+    url: '/roles/menu-layout',
+    method: 'put',
+    data: { layout }
+  })
+}

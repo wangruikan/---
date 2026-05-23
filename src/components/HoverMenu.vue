@@ -12,11 +12,11 @@
         :ref="el => setMenuRef(menu.id, el)"
         class="menu-item"
         :class="{ active: isMenuActive(menu) }"
-        @mouseenter="handleMenuHover(menu, $event)"
+        @mouseenter="handleMenuHover(menu)"
         @click="handleMenuClick(menu)"
       >
         <el-icon :size="18">
-          <component :is="menu.icon" />
+          <component :is="menu.icon || 'Menu'" />
         </el-icon>
         <span class="menu-title">{{ menu.title }}</span>
       </div>
@@ -39,11 +39,11 @@
             v-for="item in visibleSubmenuItems"
             :key="item.path"
             class="submenu-item"
-            :class="{ active: $route.path === item.path }"
+            :class="{ active: route.path === item.path }"
             @click="navigateTo(item.path)"
           >
             <el-icon :size="20">
-              <component :is="item.icon" />
+              <component :is="item.icon || 'Menu'" />
             </el-icon>
             <span>{{ item.title }}</span>
           </div>
@@ -60,12 +60,8 @@ import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
 import { menuConfig } from '@/config/menuConfig'
-import {
-  House, User, CircleClose, UserFilled, Document, Money, Wallet, 
-  Calendar, Setting, Folder, Edit, Files, Checked, FirstAidKit,
-  DocumentChecked, List, Tickets, DocumentCopy, FolderOpened, 
-  Link, Box, Key, Suitcase
-} from '@element-plus/icons-vue'
+import { getMenuLayout } from '@/api/permission'
+import { buildMenusWithLayout, normalizeVisibleMenuKeys } from '@/utils/menuLayout'
 
 const router = useRouter()
 const route = useRoute()
@@ -78,8 +74,18 @@ const hoverTimer = ref(null)
 const leaveTimer = ref(null)
 const submenuTop = ref(0)
 const menuRefs = ref({})
+const rawMenuLayout = ref([])
 const submenuPanelHeight = 388
 const submenuViewportMargin = 14
+
+const menuStructure = computed(() => buildMenusWithLayout(menuConfig, rawMenuLayout.value))
+const sourceMenus = computed(() => menuStructure.value.menus || [])
+
+const normalizedVisibleMenuKeys = computed(() => {
+  const rawKeys = userStore.userInfo?.visible_menus
+  if (!Array.isArray(rawKeys)) return null
+  return normalizeVisibleMenuKeys(rawKeys, menuStructure.value.menuLibrary)
+})
 
 const resolveSubmenuTop = (preferredTop = submenuViewportMargin) => {
   const viewportHeight = window.innerHeight || 0
@@ -123,78 +129,59 @@ const hasBusinessModuleAccess = computed(() => {
     permissionStore.hasModuleAccess('account_sets')
 })
 
+const hasBaseAccessToMenu = (menu) => {
+  if (menu.requireAdmin && !isAdmin.value) return false
+  if (menu.requireBusiness && !isAdmin.value && !hasAccountSet.value && !hasBusinessModuleAccess.value) return false
+  return true
+}
+
+const isVisibleByRole = (item) => {
+  const roleVisibleKeys = normalizedVisibleMenuKeys.value
+  if (roleVisibleKeys === null) return true
+  if (!Array.isArray(roleVisibleKeys) || roleVisibleKeys.length === 0) return false
+
+  const submenuKey = item?.menuKey || item?.path
+  if (!submenuKey) return false
+
+  return roleVisibleKeys.includes(submenuKey)
+}
+
+const hasSubmenuAccess = (item) => {
+  if (item.sourceParentRequireAdmin && !isAdmin.value) return false
+  if (item.sourceParentRequireBusiness && !isAdmin.value && !hasAccountSet.value && !hasBusinessModuleAccess.value) return false
+  if (item.skipPermissionCheck) return true
+  if (item.requireAccountSet && !isAdmin.value && !hasAccountSet.value) return false
+  if (item.notForLevel1 && userStore.userInfo?.approval_level === 1) return false
+  if (item.permission && !permissionStore.hasPermission(item.permission)) return false
+  return isVisibleByRole(item)
+}
+
 // 过滤可见菜单
 const visibleMenus = computed(() => {
-  return menuConfig.filter(menu => {
-    // 基础权限检查
-    if (menu.requireAdmin && !isAdmin.value) return false
-    if (menu.requireBusiness && !isAdmin.value && !hasAccountSet.value && !hasBusinessModuleAccess.value) return false
-    
-    // 角色菜单显示权限检查
-    const userVisibleMenus = userStore.userInfo?.visible_menus
-    
-    // 如果用户的 visible_menus 为 null 或 undefined，表示可以看到所有菜单（管理员）
-    if (!userVisibleMenus) return true
-    
-    // 如果 visible_menus 是空数组，表示没有任何菜单权限
-    if (Array.isArray(userVisibleMenus) && userVisibleMenus.length === 0) return false
-    
-    // 如果是有子菜单的一级菜单，检查是否有任意子菜单权限
-    if (menu.children && menu.children.length > 0) {
-      // 只要有任意一个子菜单在可见列表中，就显示这个一级菜单
-      const hasAnyChildVisible = menu.children.some(child => {
-        const submenuId = `${menu.id}-${child.path.replace(/\//g, '-')}`
-        return userVisibleMenus.includes(submenuId)
-      })
-      if (hasAnyChildVisible) return true
-    }
-    
-    // 检查当前菜单ID是否在用户的可见菜单列表中
-    if (Array.isArray(userVisibleMenus) && !userVisibleMenus.includes(menu.id)) return false
-    
-    return true
-  })
+  return sourceMenus.value
+    .map((menu) => {
+      if (!hasBaseAccessToMenu(menu)) return null
+
+      if (!Array.isArray(menu.children) || menu.children.length === 0) {
+        return menu
+      }
+
+      const children = menu.children.filter((item) => hasSubmenuAccess(item))
+      if (children.length === 0) return null
+
+      return {
+        ...menu,
+        children
+      }
+    })
+    .filter(Boolean)
 })
 
 // 过滤可见子菜单项
 const visibleSubmenuItems = computed(() => {
   if (!activeMenu.value || !activeMenu.value.children) return []
-  
-  return activeMenu.value.children.filter(item => {
-    // 如果设置了跳过权限检查，直接显示
-    if (item.skipPermissionCheck) return true
-    
-    // 检查账套权限
-    if (item.requireAccountSet && !isAdmin.value && !hasAccountSet.value) return false
-    
-    // 检查审批级别（经办人不可见）
-    if (item.notForLevel1 && userStore.userInfo?.approval_level === 1) return false
-    
-    // 检查特定权限
-    if (item.permission && !permissionStore.hasPermission(item.permission)) return false
-    
-    // 角色菜单显示权限检查（二级菜单）
-    const userVisibleMenus = userStore.userInfo?.visible_menus
-    
-    // 如果用户的 visible_menus 为 null 或 undefined，表示可以看到所有菜单（管理员）
-    if (!userVisibleMenus) return true
-    
-    // 如果 visible_menus 是空数组，表示没有任何菜单权限
-    if (Array.isArray(userVisibleMenus) && userVisibleMenus.length === 0) return false
-    
-    // 生成二级菜单的唯一ID：父菜单ID + 子菜单path
-    const submenuId = `${activeMenu.value.id}-${item.path.replace(/\//g, '-')}`
-    
-    // 检查二级菜单ID是否在用户的可见菜单列表中
-    if (Array.isArray(userVisibleMenus) && !userVisibleMenus.includes(submenuId)) return false
-    
-    // 这些需要动态检查，暂时都显示
-    // if (item.requireInvoice) return hasInvoiceAccess.value
-    // if (item.requireDelivery) return hasDeliveryConfigAccess.value
-    // if (item.requireProcessRecord) return canViewProcessRecords.value
-    
-    return true
-  })
+
+  return activeMenu.value.children.filter((item) => hasSubmenuAccess(item))
 })
 
 // 判断菜单是否激活
@@ -209,7 +196,7 @@ const isMenuActive = (menu) => {
 }
 
 // 处理菜单悬浮
-const handleMenuHover = (menu, event) => {
+const handleMenuHover = (menu) => {
   // 清除之前的定时器
   if (leaveTimer.value) {
     clearTimeout(leaveTimer.value)
@@ -268,12 +255,32 @@ const navigateTo = (path) => {
   activeMenu.value = null
 }
 
-onMounted(() => {
+const loadMenuLayout = async () => {
+  try {
+    const res = await getMenuLayout()
+    if (res?.success && Array.isArray(res.data)) {
+      rawMenuLayout.value = res.data
+      return
+    }
+  } catch (error) {
+    console.warn('加载菜单布局失败，已使用默认菜单配置', error)
+  }
+  rawMenuLayout.value = []
+}
+
+onMounted(async () => {
+  await loadMenuLayout()
   window.addEventListener('resize', handleWindowResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleWindowResize)
+})
+
+watch(visibleMenus, (menus) => {
+  if (!activeMenu.value) return
+  const current = menus.find((item) => item.id === activeMenu.value.id)
+  activeMenu.value = current || null
 })
 
 // 监听路由变化，关闭子菜单

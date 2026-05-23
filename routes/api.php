@@ -307,6 +307,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('roles')->group(function () {
         Route::get('/', [App\Http\Controllers\RoleController::class, 'index']);
         Route::get('/permissions/all', [App\Http\Controllers\RoleController::class, 'getPermissions']);
+        Route::get('/menu-layout', [App\Http\Controllers\RoleController::class, 'getMenuLayout']);
+        Route::put('/menu-layout', [App\Http\Controllers\RoleController::class, 'updateMenuLayout']);
         Route::get('/{id}', [App\Http\Controllers\RoleController::class, 'show']);
         Route::put('/{id}/permissions', [App\Http\Controllers\RoleController::class, 'updatePermissions']);
         Route::put('/{id}/visible-menus', [App\Http\Controllers\RoleController::class, 'updateVisibleMenus']);

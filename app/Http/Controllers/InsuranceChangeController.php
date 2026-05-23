@@ -3975,26 +3975,26 @@ class InsuranceChangeController extends ApiController
             'other_insurance' => $change->other_insurance_policies,
         ];
 
-        $details = $change->parseChangeDetails();
-        $detailCategories = collect($details)
+        $detailCategories = $this->extractChangeDetailCategories($change);
+        $existingCategories = $change->items()
             ->pluck('category')
             ->filter(function ($category) {
-                return is_string($category) && $category !== '';
+                return is_string($category) && trim($category) !== '';
             })
-            ->unique()
             ->values()
             ->all();
 
-        $activeCategories = [];
-        foreach ($snapshotByCategory as $category => $snapshot) {
-            $hasSnapshot = !is_null($snapshot) && $snapshot !== '' && $snapshot !== '[]';
-            $hasDetail = in_array($category, $detailCategories, true);
-            if (!$hasSnapshot && !$hasDetail) {
-                continue;
-            }
+        $categoriesToUpsert = !empty($detailCategories)
+            ? $detailCategories
+            : $this->resolveActiveChangeItemCategories($snapshotByCategory);
 
-            $activeCategories[] = $category;
+        $activeCategories = !empty($detailCategories)
+            ? array_values(array_unique(array_merge($existingCategories, $detailCategories)))
+            : $categoriesToUpsert;
+
+        foreach ($categoriesToUpsert as $category) {
             $itemStatus = $this->mapChangeStatusToItemStatus($change, $category);
+            $snapshot = $snapshotByCategory[$category] ?? null;
             $serializedSnapshot = is_string($snapshot)
                 ? $snapshot
                 : (is_null($snapshot) ? null : json_encode($snapshot, JSON_UNESCAPED_UNICODE));
@@ -4019,11 +4019,43 @@ class InsuranceChangeController extends ApiController
             );
         }
 
-        if (!empty($activeCategories)) {
+        if (empty($detailCategories) && !empty($activeCategories)) {
             $change->items()
                 ->whereNotIn('category', $activeCategories)
                 ->delete();
+        } elseif (empty($detailCategories) && empty($activeCategories)) {
+            $change->items()->delete();
         }
+    }
+
+    private function extractChangeDetailCategories(InsuranceChange $change): array
+    {
+        $details = $change->parseChangeDetails();
+
+        return collect($details)
+            ->pluck('category')
+            ->filter(function ($category) {
+                return is_string($category) && trim($category) !== '';
+            })
+            ->map(function ($category) {
+                return trim($category);
+            })
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function resolveActiveChangeItemCategories(array $snapshotByCategory): array
+    {
+        $activeCategories = [];
+        foreach ($snapshotByCategory as $category => $snapshot) {
+            $hasSnapshot = !is_null($snapshot) && $snapshot !== '' && $snapshot !== '[]';
+            if ($hasSnapshot) {
+                $activeCategories[] = $category;
+            }
+        }
+
+        return $activeCategories;
     }
 
     private function mapChangeStatusToItemStatus(InsuranceChange $change, string $category): string

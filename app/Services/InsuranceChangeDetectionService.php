@@ -248,17 +248,12 @@ class InsuranceChangeDetectionService
                 return null;
             }
 
-            // 检查是否已存在本月的记录（基于创建时间判断）
-            $startOfMonth = "{$year}-{$month}-01 00:00:00";
-            $endOfMonth = date('Y-m-t 23:59:59', strtotime($startOfMonth));
-            
-            $existingRecord = InsuranceChange::where('employee_id', $employee->id)
-                ->where('project_id', $project->id)
-                ->where('account_set_id', $employee->account_set_id)
-                ->whereIn('status', ['pending', 'submitted'])
-                ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
-                ->orderByDesc('id')
-                ->first();
+            // 优先复用员工在该项目/账套下最新未完成的增减记录，不再按月份强制拆单
+            $existingRecord = InsuranceChange::findLatestOpenChange(
+                (int) $employee->id,
+                (int) $project->id,
+                (int) $employee->account_set_id
+            );
 
             if ($existingRecord) {
                 // 更新现有记录 - 合并变更详情而不是覆盖
@@ -324,6 +319,12 @@ class InsuranceChangeDetectionService
                 // 只更新当前变更类型的保险配置快照，而不是重新生成所有配置
                 $this->updateSpecificInsuranceConfig($existingRecord, $changeType);
                 $existingRecord->save();
+
+                // 标记为重新处理：保持“未完成单复用”语义
+                $existingRecord->reopenForReprocessing(
+                    [$changeType],
+                    $changeType === 'other_insurance'
+                );
 
                 return $existingRecord;
             } else {

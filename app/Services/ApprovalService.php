@@ -1399,6 +1399,45 @@ class ApprovalService
             
             // 获取大额医疗保险基数（从员工表中获取）
             $largeMedicalBase = $employee->large_medical_base;
+
+            $existingOpenChange = \App\Models\InsuranceChange::findLatestOpenChange(
+                (int) $employee->id,
+                (int) $project->id,
+                (int) $accountSetId
+            );
+
+            if ($existingOpenChange) {
+                $existingOpenChange->fill([
+                    'employee_name' => $employee->name,
+                    'employee_id_number' => $employee->id_number,
+                    'employee_gender' => $genderValue,
+                    'employee_birth_date' => $employee->birth_date,
+                    'employee_phone' => $employee->phone,
+                    'employee_status' => $employee->status,
+                    'change_type' => 'increase',
+                    'created_by' => $existingOpenChange->created_by ?: $createdBy,
+                    'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id,
+                    'large_medical_insurance_enabled' => false,
+                    'employee_social_security_base' => $employee->social_security_base,
+                    'employee_medical_insurance_base' => $employee->medical_insurance_base,
+                    'employee_housing_fund_base' => $employee->housing_fund_base,
+                    'employee_large_medical_base' => $largeMedicalBase,
+                    'change_summary' => null,
+                    'change_details' => null,
+                    'notes' => null,
+                ])->save();
+
+                $existingOpenChange->saveCompleteInsuranceConfig();
+                $existingOpenChange->reopenForReprocessing(null, true);
+
+                Log::info('复用未完成参保变更记录（新增）', [
+                    'insurance_change_id' => $existingOpenChange->id,
+                    'employee_id' => $employee->id,
+                    'project_id' => $project->id,
+                ]);
+
+                return $existingOpenChange;
+            }
             
             $insuranceChange = \App\Models\InsuranceChange::create([
                 'employee_id' => $employee->id,
@@ -2118,6 +2157,49 @@ class ApprovalService
                 $employeeStatusValue = 2; // 离职
             } elseif ($employeeStatus === 'retired') {
                 $employeeStatusValue = 3; // 退休
+            }
+
+            $existingOpenChange = \App\Models\InsuranceChange::findLatestOpenChange(
+                (int) $employee->id,
+                (int) $project->id,
+                (int) $contract->account_set_id
+            );
+
+            if ($existingOpenChange) {
+                $existingOpenChange->fill([
+                    'employee_name' => $employee->name,
+                    'employee_id_number' => $employee->id_number,
+                    'employee_gender' => $genderValue,
+                    'employee_birth_date' => $employee->birth_date,
+                    'employee_phone' => $employee->phone,
+                    'employee_status' => $employeeStatusValue,
+                    'change_type' => 'decrease',
+                    'created_by' => $existingOpenChange->created_by ?: $contract->created_by,
+                    'notes' => $employeeStatus === 'terminated' ? '员工离职，停止参保' : '员工退休，停止参保',
+                    'social_security_types' => $personnelRecord->social_security_types,
+                    'medical_insurance_types' => $personnelRecord->medical_insurance_types,
+                    'housing_fund_params' => $personnelRecord->housing_fund_params,
+                    'other_insurance_policies' => $personnelRecord->other_insurance_policies,
+                    'large_medical_insurance_config' => $personnelRecord->large_medical_insurance_config,
+                    'large_medical_insurance_config_id' => $personnelRecord->large_medical_insurance_config_id,
+                    'large_medical_insurance_enabled' => $personnelRecord->large_medical_insurance_enabled,
+                    'employee_social_security_base' => $personnelRecord->employee_social_security_base,
+                    'employee_medical_insurance_base' => $personnelRecord->employee_medical_insurance_base,
+                    'employee_housing_fund_base' => $personnelRecord->employee_housing_fund_base,
+                    'employee_large_medical_base' => $personnelRecord->employee_large_medical_base,
+                    'used_quotas' => $personnelRecord->used_quotas,
+                ])->save();
+
+                $existingOpenChange->reopenForReprocessing(null, true);
+
+                Log::info('复用未完成参保变更记录（减少）', [
+                    'insurance_change_id' => $existingOpenChange->id,
+                    'employee_id' => $employee->id,
+                    'project_id' => $project->id,
+                    'employee_status' => $employeeStatus
+                ]);
+
+                return;
             }
             
             // 创建参保减少记录

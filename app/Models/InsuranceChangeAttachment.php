@@ -11,6 +11,7 @@ class InsuranceChangeAttachment extends Model
 
     protected $fillable = [
         'insurance_change_id',
+        'insurance_change_item_id',
         'file_path',
         'original_name',
         'file_size',
@@ -29,6 +30,14 @@ class InsuranceChangeAttachment extends Model
     public function insuranceChange()
     {
         return $this->belongsTo(InsuranceChange::class);
+    }
+
+    /**
+     * 关联到参保增减子任务
+     */
+    public function insuranceChangeItem()
+    {
+        return $this->belongsTo(InsuranceChangeItem::class, 'insurance_change_item_id');
     }
 
     /**

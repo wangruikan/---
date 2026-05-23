@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\InsuranceChange;
+use App\Models\InsuranceChangeAttachment;
 use App\Models\InsuranceChangeDetail;
+use App\Models\InsuranceChangeItem;
 use App\Models\InsuranceChangeSummary;
 use App\Models\InsurancePersonnel;
 use App\Models\InsuranceDetailRecord;
@@ -18,6 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Traits\ChecksPermission;
 
 class InsuranceChangeController extends ApiController
@@ -114,6 +117,13 @@ class InsuranceChangeController extends ApiController
             
             // 解析变更详情，传递给前端
             $change->parsed_change_details = $change->parseChangeDetails();
+
+            if ($this->isChangeItemsEnabled()) {
+                $this->syncChangeItems($change);
+                $change->change_items = $change->items()->orderBy('id')->get();
+            } else {
+                $change->change_items = [];
+            }
         });
 
         return response()->json([
@@ -161,6 +171,13 @@ class InsuranceChangeController extends ApiController
         // 解析变更详情，传递给前端
         $change->parsed_change_details = $change->parseChangeDetails();
 
+        if ($this->isChangeItemsEnabled()) {
+            $this->syncChangeItems($change);
+            $change->change_items = $change->items()->orderBy('id')->get();
+        } else {
+            $change->change_items = [];
+        }
+
         // 确保 other_insurance_policies 是数组格式
         if ($change->other_insurance_policies && is_string($change->other_insurance_policies)) {
             $change->other_insurance_policies = json_decode($change->other_insurance_policies, true) ?: [];
@@ -184,6 +201,32 @@ class InsuranceChangeController extends ApiController
         return response()->json([
             'success' => true,
             'data' => $change
+        ]);
+    }
+
+    /**
+     * 获取参保增减的险种拆分子任务
+     */
+    public function getChangeItems($id)
+    {
+        $change = InsuranceChange::findOrFail($id);
+
+        if (!$this->isChangeItemsEnabled()) {
+            return response()->json([
+                'success' => true,
+                'data' => []
+            ]);
+        }
+
+        $this->syncChangeItems($change);
+        $items = $change->items()
+            ->with(['attachments', 'processor'])
+            ->orderBy('id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $items
         ]);
     }
 
@@ -1438,13 +1481,21 @@ class InsuranceChangeController extends ApiController
         $files = $request->file('attachments');
         $uploadedAttachments = [];
         $user = $request->user();
+        $category = $request->input('category');
+        $itemId = null;
+
+        if ($this->isChangeItemsEnabled() && $category) {
+            $this->syncChangeItems($change);
+            $itemId = $this->resolveChangeItemId($change, $category);
+        }
         
         foreach ($files as $file) {
             $path = $file->store('insurance-attachments', 'public');
             
             // 保存到附件表
-            $attachment = \App\Models\InsuranceChangeAttachment::create([
+            $attachment = InsuranceChangeAttachment::create([
                 'insurance_change_id' => $id,
+                'insurance_change_item_id' => $itemId,
                 'file_path' => $path,
                 'original_name' => $file->getClientOriginalName(),
                 'file_size' => $file->getSize(),
@@ -1456,6 +1507,7 @@ class InsuranceChangeController extends ApiController
             
             \Log::info('文件上传成功', [
                 'insurance_change_id' => $id,
+                'insurance_change_item_id' => $itemId,
                 'attachment_id' => $attachment->id,
                 'file_path' => $path,
                 'original_name' => $file->getClientOriginalName()
@@ -1576,6 +1628,15 @@ class InsuranceChangeController extends ApiController
                 }
                 
                 $change->update($updateData);
+
+                if ($this->isChangeItemsEnabled()) {
+                    $this->syncChangeItems($change);
+                    $change->items()->update([
+                        'status' => 'completed',
+                        'processed_by' => $user ? $user->id : null,
+                        'processed_at' => now(),
+                    ]);
+                }
 
                 // 确认处理时更新快照，重置变化记录
                 // 禁用保险配置变更检测
@@ -1940,6 +2001,18 @@ class InsuranceChangeController extends ApiController
                 
                 // 标记其他保险已处理
                 $change->update(['other_insurance_processed' => 1]);
+
+                if ($this->isChangeItemsEnabled()) {
+                    $this->syncChangeItems($change);
+                    $item = $change->items()->where('category', 'other_insurance')->first();
+                    if ($item) {
+                        $item->update([
+                            'status' => 'completed',
+                            'processed_by' => $user ? $user->id : null,
+                            'processed_at' => now(),
+                        ]);
+                    }
+                }
                 
                 \Log::info('其他保险明细处理成功', [
                     'insurance_change_id' => $change->id,
@@ -2555,13 +2628,43 @@ class InsuranceChangeController extends ApiController
         $employee = Employee::findOrFail($request->employee_id);
         $project = Project::findOrFail($request->project_id);
 
-        // 检查是否已存在
-        $existing = InsuranceChange::where('employee_id', $employee->id)
+        $openChange = InsuranceChange::findLatestOpenChange(
+            (int) $employee->id,
+            (int) $project->id,
+            (int) $request->account_set_id
+        );
+
+        if ($openChange) {
+            $openChange->fill([
+                'social_security_region_id' => $employee->social_security_region_id,
+                'medical_insurance_region_id' => $employee->medical_insurance_region_id,
+                'housing_fund_region_id' => $employee->housing_fund_region_id,
+                'housing_fund_config_id' => $employee->housing_fund_config_id,
+                'change_type' => 'increase',
+                'change_summary' => null,
+                'change_details' => null,
+                'notes' => null,
+                'created_by' => $request->user()->id
+            ])->save();
+
+            $this->generateInsuranceParams($openChange, $project);
+            $this->syncChangeItems($openChange);
+            $openChange->reopenForReprocessing();
+
+            return response()->json([
+                'success' => true,
+                'message' => '已复用未完成记录并更新',
+                'data' => $openChange->load(['employee', 'project'])
+            ]);
+        }
+
+        $completedExists = InsuranceChange::where('employee_id', $employee->id)
             ->where('project_id', $project->id)
             ->where('account_set_id', $request->account_set_id)
-            ->first();
+            ->where('status', 'completed')
+            ->exists();
 
-        if ($existing) {
+        if ($completedExists) {
             return response()->json([
                 'success' => false,
                 'message' => '该员工已存在参保记录'
@@ -2575,7 +2678,8 @@ class InsuranceChangeController extends ApiController
             'account_set_id' => $request->account_set_id,
             'social_security_region_id' => $employee->social_security_region_id,
             'medical_insurance_region_id' => $employee->medical_insurance_region_id,
-            'housing_fund_id' => $employee->housing_fund_region_id,
+            'housing_fund_region_id' => $employee->housing_fund_region_id,
+            'housing_fund_config_id' => $employee->housing_fund_config_id,
             'change_type' => 'increase',  // 手动导入默认为新增记录
             'status' => 'pending',
             'created_by' => $request->user()->id
@@ -2583,6 +2687,7 @@ class InsuranceChangeController extends ApiController
 
         // 根据项目绑定生成保险参数
         $this->generateInsuranceParams($change, $project);
+        $this->syncChangeItems($change);
 
         return response()->json([
             'success' => true,
@@ -2631,8 +2736,9 @@ class InsuranceChangeController extends ApiController
         }
 
         // 公积金参数
-        if ($change->housing_fund_id) {
-            $fund = HousingFund::find($change->housing_fund_id);
+        $housingFundId = $change->housing_fund_region_id ?: $change->housing_fund_id;
+        if ($housingFundId) {
+            $fund = HousingFund::find($housingFundId);
             if ($fund) {
                 $params['housing_fund_params'] = [
                     'id' => $fund->id,
@@ -2650,7 +2756,7 @@ class InsuranceChangeController extends ApiController
             $params['other_insurance_policies'] = $otherPolicies->map(function($policy) {
                 return [
                     'id' => $policy->id,
-                    'type_name' => $policy->type->name,
+                    'type_name' => optional($policy->type)->name ?: ($policy->type_name ?? '其他保险'),
                     'policy_name' => $policy->name,
                     'coverage_amount' => $policy->coverage_amount,
                     'premium_amount' => $policy->premium_amount
@@ -3722,5 +3828,114 @@ class InsuranceChangeController extends ApiController
                 'message' => $e->getMessage()
             ], $isBusinessError ? 200 : 500);
         }
+    }
+
+    private function isChangeItemsEnabled(): bool
+    {
+        static $enabled = null;
+        if ($enabled !== null) {
+            return $enabled;
+        }
+
+        try {
+            $enabled = Schema::hasTable('insurance_change_items');
+        } catch (\Throwable $e) {
+            $enabled = false;
+        }
+
+        return $enabled;
+    }
+
+    private function resolveChangeItemId(InsuranceChange $change, string $category): ?int
+    {
+        if (!$this->isChangeItemsEnabled()) {
+            return null;
+        }
+
+        $category = trim((string) $category);
+        if ($category === '') {
+            return null;
+        }
+
+        $item = $change->items()->where('category', $category)->first();
+        return $item ? (int) $item->id : null;
+    }
+
+    private function syncChangeItems(InsuranceChange $change): void
+    {
+        if (!$this->isChangeItemsEnabled()) {
+            return;
+        }
+
+        $snapshotByCategory = [
+            'social_security' => $change->social_security_types,
+            'medical_insurance' => $change->medical_insurance_types,
+            'housing_fund' => $change->housing_fund_params,
+            'large_medical_insurance' => $change->large_medical_insurance_config,
+            'other_insurance' => $change->other_insurance_policies,
+        ];
+
+        $details = $change->parseChangeDetails();
+        $detailCategories = collect($details)
+            ->pluck('category')
+            ->filter(function ($category) {
+                return is_string($category) && $category !== '';
+            })
+            ->unique()
+            ->values()
+            ->all();
+
+        $activeCategories = [];
+        foreach ($snapshotByCategory as $category => $snapshot) {
+            $hasSnapshot = !is_null($snapshot) && $snapshot !== '' && $snapshot !== '[]';
+            $hasDetail = in_array($category, $detailCategories, true);
+            if (!$hasSnapshot && !$hasDetail) {
+                continue;
+            }
+
+            $activeCategories[] = $category;
+            $itemStatus = $this->mapChangeStatusToItemStatus($change, $category);
+            $serializedSnapshot = is_string($snapshot)
+                ? $snapshot
+                : (is_null($snapshot) ? null : json_encode($snapshot, JSON_UNESCAPED_UNICODE));
+
+            InsuranceChangeItem::updateOrCreate(
+                [
+                    'insurance_change_id' => $change->id,
+                    'category' => $category,
+                ],
+                [
+                    'change_type' => $change->change_type ?: 'increase',
+                    'status' => $itemStatus,
+                    'category_snapshot' => $serializedSnapshot,
+                    'change_details' => is_null($change->change_details)
+                        ? null
+                        : (is_string($change->change_details)
+                            ? $change->change_details
+                            : json_encode($change->change_details, JSON_UNESCAPED_UNICODE)),
+                    'processed_by' => $itemStatus === 'completed' ? $change->processed_by : null,
+                    'processed_at' => $itemStatus === 'completed' ? $change->processed_at : null,
+                ]
+            );
+        }
+
+        if (!empty($activeCategories)) {
+            $change->items()
+                ->whereNotIn('category', $activeCategories)
+                ->delete();
+        }
+    }
+
+    private function mapChangeStatusToItemStatus(InsuranceChange $change, string $category): string
+    {
+        if ($change->status === 'completed') {
+            return 'completed';
+        }
+
+        if ($category === 'other_insurance' && (int) ($change->other_insurance_processed ?? 0) === 1) {
+            return 'completed';
+        }
+
+        return $change->status === 'submitted' ? 'submitted' : 'pending';
     }
 }

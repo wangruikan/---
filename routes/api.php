@@ -945,7 +945,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/trigger-compensation', [App\Http\Controllers\InsuranceChangeController::class, 'triggerCompensation']);
         
         // 通配路由必须放在最后
-        Route::get('/{id}', [App\Http\Controllers\InsuranceChangeController::class, 'show']);
+        
+        Route::get('/{id}/items', [App\Http\Controllers\InsuranceChangeController::class, 'getChangeItems']);
         Route::post('/auto-import', [App\Http\Controllers\InsuranceChangeController::class, 'autoImport']);
         Route::post('/{id}/upload-attachment', [App\Http\Controllers\InsuranceChangeController::class, 'uploadAttachment']);
         Route::delete('/attachments/{attachmentId}', [App\Http\Controllers\InsuranceChangeController::class, 'deleteAttachment']);
@@ -960,6 +961,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}/toggle-large-medical', [App\Http\Controllers\InsuranceChangeController::class, 'toggleLargeMedical']);
         Route::post('/generate-summary', [App\Http\Controllers\InsuranceChangeController::class, 'generateSummary']);
         Route::post('/export-summary', [App\Http\Controllers\InsuranceChangeController::class, 'exportSummary']);
+        Route::get('/{id}', [App\Http\Controllers\InsuranceChangeController::class, 'show']);
     });
 
     // 商业险退保流程（A方案：由“减除任务确认处理”自动生成）

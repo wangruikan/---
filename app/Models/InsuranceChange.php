@@ -3,12 +3,15 @@
 namespace App\Models;
 
 use App\Traits\Auditable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class InsuranceChange extends Model
 {
     use HasFactory, Auditable;
+
+    public const OPEN_STATUSES = ['pending', 'processing', 'submitted'];
 
     /**
      * 审计名称
@@ -202,6 +205,14 @@ class InsuranceChange extends Model
     public function details()
     {
         return $this->hasMany(InsuranceChangeDetail::class);
+    }
+
+    /**
+     * 参保增减子任务
+     */
+    public function items()
+    {
+        return $this->hasMany(InsuranceChangeItem::class);
     }
 
     /**
@@ -1482,5 +1493,53 @@ class InsuranceChange extends Model
     public function shouldShowChanges()
     {
         return $this->status === 'pending' && !empty($this->change_summary);
+    }
+
+    public function scopeOpen(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::OPEN_STATUSES);
+    }
+
+    public static function findLatestOpenChange(int $employeeId, int $projectId, int $accountSetId): ?self
+    {
+        return self::query()
+            ->where('employee_id', $employeeId)
+            ->where('project_id', $projectId)
+            ->where('account_set_id', $accountSetId)
+            ->open()
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    public function reopenForReprocessing(?array $categories = null, bool $resetOtherInsuranceProcessed = false): self
+    {
+        $payload = [
+            'status' => 'pending',
+            'submitted_at' => null,
+            'processed_at' => null,
+            'completed_at' => null,
+        ];
+
+        if ($resetOtherInsuranceProcessed) {
+            $payload['other_insurance_processed'] = false;
+        }
+
+        $this->fill($payload)->save();
+
+        if (method_exists($this, 'items')) {
+            $itemQuery = $this->items();
+            if (is_array($categories) && !empty($categories)) {
+                $itemQuery->whereIn('category', $categories);
+            }
+
+            $itemQuery->update([
+                'status' => 'pending',
+                'processed_by' => null,
+                'processed_at' => null,
+                'updated_at' => now(),
+            ]);
+        }
+
+        return $this->refresh();
     }
 }

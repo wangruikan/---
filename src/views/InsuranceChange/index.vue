@@ -64,7 +64,7 @@
               <div class="card-header">
                 <span>参保人员列表</span>
                 <div class="header-actions">
-                  <span class="total-count">共 {{ changes.length }} 条记录</span>
+                  <span class="total-count">共 {{ filteredChanges.length }} / {{ changes.length }} 条记录</span>
                   <!-- 生成参保登记表按钮 - 已隐藏 -->
                   <!--
                   <el-button 
@@ -85,8 +85,17 @@
               </div>
             </template>
 
+            <el-tabs v-model="changeCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
+              <el-tab-pane label="??" name="all" />
+              <el-tab-pane label="??" name="social_security" />
+              <el-tab-pane label="??" name="medical_insurance" />
+              <el-tab-pane label="???" name="housing_fund" />
+              <el-tab-pane label="????" name="large_medical_insurance" />
+              <el-tab-pane label="????" name="other_insurance" />
+            </el-tabs>
+
             <el-table 
-              :data="changes" 
+              :data="filteredChanges" 
               v-loading="loading" 
               stripe
               @selection-change="handleTaskSelectionChange"
@@ -1042,6 +1051,15 @@
         </el-descriptions>
 
         <!-- 参保地区信息 -->
+        <el-tabs v-model="detailCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
+          <el-tab-pane label="??" name="all" />
+          <el-tab-pane label="??" name="social_security" v-if="getSocialSecurityDetails().length > 0 || hasCategoryChange('social_security')" />
+          <el-tab-pane label="??" name="medical_insurance" v-if="getMedicalInsuranceDetails().length > 0 || hasCategoryChange('medical_insurance')" />
+          <el-tab-pane label="???" name="housing_fund" v-if="getHousingFundDetails() || hasCategoryChange('housing_fund')" />
+          <el-tab-pane label="????" name="large_medical_insurance" v-if="getLargeMedicalInsuranceDetails() || hasCategoryChange('large_medical_insurance')" />
+          <el-tab-pane label="????" name="other_insurance" v-if="getOtherInsuranceDetails().length > 0 || hasCategoryChange('other_insurance')" />
+        </el-tabs>
+
         <div v-if="hasRegionInfo()" class="insurance-region-info">
           <h4>参保地区信息</h4>
           <el-descriptions :column="2" size="small" border>
@@ -1120,7 +1138,7 @@
         </div>
 
         <!-- 社保配置详情 -->
-        <div v-if="getSocialSecurityDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('social_security') || (currentChange.change_summary && currentChange.change_summary.includes('社保')) }">
+        <div v-if="shouldShowDetailCategory('social_security') && getSocialSecurityDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('social_security') || (currentChange.change_summary && currentChange.change_summary.includes('社保')) }">
           <h4>
             社保配置详情
             <el-tag v-if="hasCategoryChange('social_security') || (currentChange.change_summary && currentChange.change_summary.includes('社保'))" type="danger" size="small" effect="dark" style="margin-left: 10px;">
@@ -1187,7 +1205,7 @@
         </div>
 
         <!-- 公积金配置详情 -->
-        <div v-if="getHousingFundDetails()" class="insurance-details" :class="{ 'has-change': hasCategoryChange('housing_fund') || (currentChange.change_summary && currentChange.change_summary.includes('公积金')) }">
+        <div v-if="shouldShowDetailCategory('housing_fund') && getHousingFundDetails()" class="insurance-details" :class="{ 'has-change': hasCategoryChange('housing_fund') || (currentChange.change_summary && currentChange.change_summary.includes('公积金')) }">
           <h4>
             公积金配置详情
             <el-tag v-if="hasCategoryChange('housing_fund') || (currentChange.change_summary && currentChange.change_summary.includes('公积金'))" type="danger" size="small" effect="dark" style="margin-left: 10px;">
@@ -1210,7 +1228,7 @@
         </div>
 
         <!-- 医保配置详情 -->
-        <div v-if="getMedicalInsuranceDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('medical_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('医保')) }">
+        <div v-if="shouldShowDetailCategory('medical_insurance') && getMedicalInsuranceDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('medical_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('医保')) }">
           <h4>
             医保配置详情
             <el-tag v-if="hasCategoryChange('medical_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('医保'))" type="danger" size="small" effect="dark" style="margin-left: 10px;">
@@ -1277,7 +1295,7 @@
         </div>
 
         <!-- 其他保险信息 -->
-        <div v-if="getOtherInsuranceDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('other_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('其他保险')) }">
+        <div v-if="shouldShowDetailCategory('other_insurance') && getOtherInsuranceDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('other_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('其他保险')) }">
           <h4>
             其他保险信息
             <el-tag v-if="hasCategoryChange('other_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('其他保险'))" type="danger" size="small" effect="dark" style="margin-left: 10px;">
@@ -1413,7 +1431,7 @@
         </div>
 
         <!-- 大额医疗保险 -->
-        <div v-if="currentChange && getLargeMedicalInsuranceDetails()" class="insurance-details" :class="{ 'has-change': hasCategoryChange('large_medical_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('大额')) }">
+        <div v-if="shouldShowDetailCategory('large_medical_insurance') && currentChange && getLargeMedicalInsuranceDetails()" class="insurance-details" :class="{ 'has-change': hasCategoryChange('large_medical_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('大额')) }">
           <h4>
             大额医疗保险
             <!-- 显示具体的变更类型 -->
@@ -2658,6 +2676,8 @@ const housingFundCompensationDetails = computed(() => {
 
 // 响应式数据
 const activeTab = ref('changes')
+const changeCategoryTab = ref('all')
+const detailCategoryTab = ref('all')
 const detailActiveTab = ref('social') // 明细分类标签页
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -2695,6 +2715,84 @@ const summaries = ref([])
 const regions = ref([])
 const rawCompensationData = ref([])
 const socialSecurityRegions = ref([])
+
+
+const hasSnapshotValue = (value) => {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') {
+    const text = value.trim()
+    return text !== '' && text !== '[]' && text !== '{}'
+  }
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return Boolean(value)
+}
+
+const parseChangeDetails = (change) => {
+  if (!change) return []
+
+  if (Array.isArray(change.parsed_change_details)) {
+    return change.parsed_change_details
+  }
+
+  if (!change.change_details) {
+    return []
+  }
+
+  try {
+    const parsed = typeof change.change_details === 'string'
+      ? JSON.parse(change.change_details)
+      : change.change_details
+
+    if (Array.isArray(parsed)) return parsed
+    if (parsed && Array.isArray(parsed.changes)) return parsed.changes
+  } catch (error) {
+    console.warn('parse change_details failed:', error)
+  }
+
+  return []
+}
+
+const getChangeCategories = (change) => {
+  const categories = new Set()
+  if (!change) return categories
+
+  if (Array.isArray(change.change_items)) {
+    change.change_items.forEach((item) => {
+      if (item?.category) categories.add(item.category)
+    })
+  }
+
+  parseChangeDetails(change).forEach((detail) => {
+    if (detail?.category) categories.add(detail.category)
+  })
+
+  if (hasSnapshotValue(change.social_security_types)) categories.add('social_security')
+  if (hasSnapshotValue(change.medical_insurance_types)) categories.add('medical_insurance')
+  if (hasSnapshotValue(change.housing_fund_params)) categories.add('housing_fund')
+  if (hasSnapshotValue(change.large_medical_insurance_config) || Number(change.large_medical_insurance_enabled) === 1) {
+    categories.add('large_medical_insurance')
+  }
+  if (hasSnapshotValue(change.other_insurance_policies)) categories.add('other_insurance')
+
+  return categories
+}
+
+const changeHasCategory = (change, category) => {
+  if (!category || category === 'all') return true
+  return getChangeCategories(change).has(category)
+}
+
+const filteredChanges = computed(() => {
+  if (changeCategoryTab.value === 'all') {
+    return changes.value
+  }
+  return changes.value.filter(change => changeHasCategory(change, changeCategoryTab.value))
+})
+
+const shouldShowDetailCategory = (category) => {
+  return detailCategoryTab.value === 'all' || detailCategoryTab.value === category
+}
 
 // 获取当前月份
 const getCurrentMonth = () => {
@@ -4532,6 +4630,7 @@ const processChange = async (change) => {
 
 // 查看详情
 const viewDetails = async (change) => {
+  detailCategoryTab.value = 'all'
   console.log('=== 查看详情 ===')
   console.log('change对象:', change)
   
@@ -6116,6 +6215,16 @@ watch(() => detailFilterForm.value.month, (newMonth, oldMonth) => {
       loadSummaries()
     }
   }
+})
+
+watch(showDetailDialogFlag, (visible) => {
+  if (!visible) {
+    detailCategoryTab.value = 'all'
+  }
+})
+
+watch(changeCategoryTab, () => {
+  selectedTasks.value = []
 })
 
 onMounted(async () => {

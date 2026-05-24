@@ -179,16 +179,6 @@ class BasisRecordController extends Controller
             ->where('type', $request->type)
             ->first();
 
-        if ($existing) {
-            $existingAttachmentCount = BasisAttachment::where('basis_record_id', $existing->id)->count();
-            if ($existingAttachmentCount > 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该项目该月份的依据已存在且已上传附件'
-                ], 400);
-            }
-        }
-
         $previousMonth = Carbon::createFromFormat('Y-m', $request->month)->subMonth()->format('Y-m');
 
         $sourceRecord = BasisRecord::with('attachments')
@@ -226,21 +216,21 @@ class BasisRecordController extends Controller
             $record->save();
         }
 
+        // 仅复制附件路径引用，不做文件物理拷贝，也不删除当前已上传附件
         foreach ($sourceRecord->attachments as $attachment) {
-            if (!Storage::disk('public')->exists($attachment->file_path)) {
+            $duplicate = BasisAttachment::where('basis_record_id', $record->id)
+                ->where('file_name', $attachment->file_name)
+                ->where('file_path', $attachment->file_path)
+                ->exists();
+
+            if ($duplicate) {
                 continue;
             }
-
-            $ext = pathinfo($attachment->file_name, PATHINFO_EXTENSION);
-            $newFileName = uniqid('basis_', true) . ($ext ? '.' . $ext : '');
-            $newPath = 'basis_attachments/' . $record->type . '/' . $record->month . '/' . $newFileName;
-
-            Storage::disk('public')->copy($attachment->file_path, $newPath);
 
             BasisAttachment::create([
                 'basis_record_id' => $record->id,
                 'file_name' => $attachment->file_name,
-                'file_path' => $newPath,
+                'file_path' => $attachment->file_path,
                 'file_type' => $attachment->file_type,
                 'file_size' => $attachment->file_size,
             ]);
@@ -252,7 +242,9 @@ class BasisRecordController extends Controller
             \App\Services\PendingTaskService::checkAndCompleteAttendanceBasisTask($record);
         }
 
-        $messagePrefix = $existing ? '复制上月成功（已写入当前待上传记录）' : '复制上月成功';
+        $messagePrefix = $existing
+            ? '复制上月成功（已追加上月附件路径）'
+            : '复制上月成功';
 
         return response()->json([
             'success' => true,

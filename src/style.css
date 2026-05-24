@@ -259,6 +259,12 @@ body.with-fixed-sidebar-layout .el-dropdown__popper.el-popper {
   z-index: 7600 !important;
 }
 
+/* 全局消息提示下移并置顶，避免被顶部路由标签遮挡 */
+body.with-fixed-sidebar-layout .el-message {
+  top: 92px !important;
+  z-index: 7800 !important;
+}
+
 /* 2. 字体与排版：赋予数据“呼吸空间” */
 /* 数字强制等宽对齐，专治表格里的金额、日期、工号、身份证等，提高扫视效率 */
 .el-table,

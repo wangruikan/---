@@ -30,7 +30,6 @@
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
-          <el-button type="success" @click="handleCreate">创建依据</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -51,19 +50,21 @@
           </template>
         </el-table-column>
         <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="creator.name" label="创建人" width="120" />
         <el-table-column prop="created_at" label="创建时间" width="180">
           <template #default="{ row }">
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handleView(row)">
               查看
             </el-button>
             <el-button type="warning" size="small" @click="handleEdit(row)">
               编辑
+            </el-button>
+            <el-button type="success" size="small" @click="handleCopyLastMonth(row)">
+              复制上月
             </el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)">
               删除
@@ -502,6 +503,44 @@ const handleDelete = async (row) => {
     if (error !== 'cancel') {
       console.error('Delete error:', error)
       ElMessage.error('删除失败')
+    }
+  }
+}
+
+// 复制上月（仅追加上月附件路径，不删除当前附件）
+const handleCopyLastMonth = async (row) => {
+  const hasAttachments = (row.attachments?.length || 0) > 0
+  const confirmMessage = hasAttachments
+    ? '将追加上月附件路径，不会删除当前已上传附件，是否继续？'
+    : '将复制上月附件到当前月份，是否继续？'
+
+  try {
+    await ElMessageBox.confirm(confirmMessage, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    const response = await copyLastMonthBasisRecord({
+      project_id: row.project_id || row.project?.id,
+      month: row.month,
+      type: 'salary',
+      description: row.description || ''
+    })
+
+    const backendMessage = response?.message || response?.data?.message || '复制上月成功'
+    ElMessage.success(backendMessage)
+    await loadRecords()
+
+    if (currentRecord.value && currentRecord.value.id === row.id) {
+      const detail = await getBasisRecordDetail(row.id)
+      currentRecord.value = detail.data
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Copy last month error:', error)
+      const backendMessage = error?.response?.data?.message || error?.message || '复制上月失败'
+      ElMessage.error(backendMessage)
     }
   }
 }

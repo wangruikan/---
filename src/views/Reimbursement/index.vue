@@ -32,8 +32,8 @@
             />
           </el-form-item>
 
-          <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
+          <el-form-item label="状态" class="status-form-item">
+            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable class="status-select">
               <el-option label="待审批" value="pending" />
               <el-option label="已通过" value="approved" />
               <el-option label="已拒绝" value="rejected" />
@@ -1102,7 +1102,18 @@ watch(
 .search-form {
   margin-bottom: 0;
 }
+
+.search-form .status-form-item {
+  flex-shrink: 0;
+}
+
+.search-form .status-select {
+  width: 150px;
+  min-width: 150px;
+}
 </style>
+
+
 
 
 

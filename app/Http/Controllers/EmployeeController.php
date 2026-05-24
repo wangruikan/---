@@ -101,6 +101,50 @@ class EmployeeController extends ApiController
             return "E{$accountSetId}-{$timestamp}";
         }
     }
+    /**
+     * 检查参保日期是否早于项目开始时间
+     */
+    private function checkInsuranceDateVsProjectStart(array $projectIds, Request $request): ?string
+    {
+        $insuranceDateFields = [
+            'social_insurance_enrollment_date' => '社保参保日期',
+            'provident_fund_enrollment_date' => '公积金参保日期',
+            'medical_insurance_enrollment_date' => '医保参保日期',
+            'large_medical_enrollment_date' => '大额医疗参保日期',
+        ];
+
+        $hasInsuranceDate = false;
+        foreach (array_keys($insuranceDateFields) as $field) {
+            if ($request->filled($field)) {
+                $hasInsuranceDate = true;
+                break;
+            }
+        }
+
+        if (!$hasInsuranceDate) {
+            return null;
+        }
+
+        $earliestStartDate = Project::whereIn('id', $projectIds)->min('start_date');
+
+        if (!$earliestStartDate) {
+            return null;
+        }
+
+        $earliestStartDate = date('Y-m-d', strtotime($earliestStartDate));
+
+        foreach ($insuranceDateFields as $field => $label) {
+            if ($request->filled($field)) {
+                $enrollmentDate = date('Y-m-d', strtotime($request->input($field)));
+                if ($enrollmentDate < $earliestStartDate) {
+                    return "{$label}({$enrollmentDate}) 不可早于项目开始时间({$earliestStartDate})";
+                }
+            }
+        }
+
+        return null;
+    }
+
     public function index(Request $request)
     {
         // 人员档案查看权限
@@ -330,6 +374,17 @@ class EmployeeController extends ApiController
                         'message' => "身份证号 {$request->id_number} 在项目 {$projectId} 中已存在"
                     ], 422);
                 }
+            }
+        }
+
+        // 检查参保时间不可早于项目开始时间
+        if ($request->has('project_ids') && is_array($request->project_ids)) {
+            $insuranceDateError = $this->checkInsuranceDateVsProjectStart($request->project_ids, $request);
+            if ($insuranceDateError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $insuranceDateError
+                ], 422);
             }
         }
 
@@ -572,6 +627,20 @@ class EmployeeController extends ApiController
                 'message' => '验证失败',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        // 检查参保时间不可早于项目开始时间
+        $projectIdsForCheck = $request->has('project_ids') && is_array($request->project_ids)
+            ? $request->project_ids
+            : $employee->project_ids;
+        if (!empty($projectIdsForCheck)) {
+            $insuranceDateError = $this->checkInsuranceDateVsProjectStart($projectIdsForCheck, $request);
+            if ($insuranceDateError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $insuranceDateError
+                ], 422);
+            }
         }
 
         // 处理日期字段格式 - 包含所有新增字段

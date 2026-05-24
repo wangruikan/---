@@ -754,12 +754,13 @@ class SalaryController extends Controller
         foreach ($allProjects as $project) {
             // 如果项目设置了需要上传工资依据
             if ($project->requires_salary_basis) {
-                $basisExists = \App\Models\BasisRecord::where('project_id', $project->id)
+                $basisUploaded = \App\Models\BasisRecord::where('project_id', $project->id)
                     ->where('month', $month)
                     ->where('type', 'salary')
+                    ->whereHas('attachments')
                     ->exists();
                 
-                if (!$basisExists) {
+                if (!$basisUploaded) {
                     return response()->json([
                         'success' => false,
                         'message' => "项目「{$project->name}」设置了需要上传工资依据，请先在【依据管理-工资依据】中上传本月的工资依据后再生成工资表"

@@ -111,12 +111,13 @@ class AttendanceController extends Controller
             
             // 检查是否需要上传考勤依据
             if ($project && $project->requires_attendance_basis) {
-                $basisExists = \App\Models\BasisRecord::where('project_id', $request->project_id)
+                $basisUploaded = \App\Models\BasisRecord::where('project_id', $request->project_id)
                     ->where('month', $request->month)
                     ->where('type', 'attendance')
+                    ->whereHas('attachments')
                     ->exists();
                 
-                if (!$basisExists) {
+                if (!$basisUploaded) {
                     return response()->json([
                         'success' => false,
                         'message' => '该项目设置了需要上传考勤依据，请先在【依据管理-考勤依据】中上传本月的考勤依据后再创建考勤表'

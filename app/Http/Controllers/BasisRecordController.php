@@ -180,10 +180,13 @@ class BasisRecordController extends Controller
             ->first();
 
         if ($existing) {
-            return response()->json([
-                'success' => false,
-                'message' => '该项目该月份的依据已存在'
-            ], 400);
+            $existingAttachmentCount = BasisAttachment::where('basis_record_id', $existing->id)->count();
+            if ($existingAttachmentCount > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该项目该月份的依据已存在且已上传附件'
+                ], 400);
+            }
         }
 
         $previousMonth = Carbon::createFromFormat('Y-m', $request->month)->subMonth()->format('Y-m');
@@ -209,7 +212,7 @@ class BasisRecordController extends Controller
             ], 400);
         }
 
-        $record = BasisRecord::create([
+        $record = $existing ?: BasisRecord::create([
             'account_set_id' => $accountSetId,
             'project_id' => $request->project_id,
             'type' => $request->type,
@@ -217,6 +220,11 @@ class BasisRecordController extends Controller
             'description' => $request->description ?: "复制上月({$previousMonth})",
             'created_by' => Auth::id(),
         ]);
+
+        if ($existing && $request->filled('description')) {
+            $record->description = $request->description;
+            $record->save();
+        }
 
         foreach ($sourceRecord->attachments as $attachment) {
             if (!Storage::disk('public')->exists($attachment->file_path)) {
@@ -244,9 +252,11 @@ class BasisRecordController extends Controller
             \App\Services\PendingTaskService::checkAndCompleteAttendanceBasisTask($record);
         }
 
+        $messagePrefix = $existing ? '复制上月成功（已写入当前待上传记录）' : '复制上月成功';
+
         return response()->json([
             'success' => true,
-            'message' => "复制上月成功（{$previousMonth} -> {$request->month}）",
+            'message' => "{$messagePrefix}（{$previousMonth} -> {$request->month}）",
             'data' => $record->load(['project', 'creator', 'attachments'])
         ]);
     }

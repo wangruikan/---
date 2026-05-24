@@ -250,6 +250,15 @@ body.with-fixed-sidebar-layout .el-overlay-dialog {
   z-index: 6000 !important;
 }
 
+/* Ensure select/date/cascader dropdowns are above dialog overlay */
+body.with-fixed-sidebar-layout .el-popper,
+body.with-fixed-sidebar-layout .el-select__popper.el-popper,
+body.with-fixed-sidebar-layout .el-picker__popper.el-popper,
+body.with-fixed-sidebar-layout .el-cascader__dropdown.el-popper,
+body.with-fixed-sidebar-layout .el-dropdown__popper.el-popper {
+  z-index: 7600 !important;
+}
+
 /* 2. 字体与排版：赋予数据“呼吸空间” */
 /* 数字强制等宽对齐，专治表格里的金额、日期、工号、身份证等，提高扫视效率 */
 .el-table,

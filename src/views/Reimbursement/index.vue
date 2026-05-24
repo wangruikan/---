@@ -383,7 +383,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, MagicStick, Paperclip, Document } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
@@ -591,6 +591,7 @@ const handleReset = () => {
 
 // 发起报销
 const handleCreate = () => {
+  loadProjects()
   createDialogVisible.value = true
   // 重置所有字段
   createForm.project = ''
@@ -1089,6 +1090,15 @@ onMounted(() => {
   handleSearch()
   loadProjects()
 })
+
+watch(
+  () => accountSetStore.currentAccountSetId,
+  (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      loadProjects()
+    }
+  }
+)
 </script>
 
 <style scoped>

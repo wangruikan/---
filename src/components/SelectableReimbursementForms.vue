@@ -790,6 +790,14 @@ watch(
     if (val.amount && !paymentForm.amountSmall) {
       paymentForm.amountSmall = `¥${Number(val.amount).toFixed(2)}`
     }
+    if (val.invoiceBankName) {
+      paymentForm.bank = val.invoiceBankName
+      reimbursementForm.bankName = val.invoiceBankName
+    }
+    if (val.invoiceBankAccount) {
+      paymentForm.bankAccount = val.invoiceBankAccount
+      reimbursementForm.cardNumber = val.invoiceBankAccount
+    }
   },
   { deep: true, immediate: true }
 )

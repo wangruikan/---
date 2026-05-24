@@ -346,6 +346,16 @@ watch(formData, (newVal) => {
   emit('update:modelValue', { ...newVal })
 }, { deep: true })
 
+// 选择项目后自动填入单位名称
+watch(() => formData.project, (newProject) => {
+  if (!newProject || !props.projectList?.length) return
+  const project = props.projectList.find(p => p.name === newProject)
+  if (project?.invoice_company_name) {
+    formData.unitName = project.invoice_company_name
+    formData.company = project.invoice_company_name
+  }
+})
+
 // 填充示例数据
 const handleFillTestData = () => {
   const today = new Date().toISOString().split('T')[0]

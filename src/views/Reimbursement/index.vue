@@ -459,13 +459,19 @@ const pendingReimbursementData = ref(null)
 // 项目列表
 const projectList = ref([])
 
-const reimbursementBaseInfo = computed(() => ({
-  companyName: '鄂尔多斯市汇邦人力资源有限责任公司',
-  date: createForm.applyDate || new Date().toISOString().split('T')[0],
-  project: createForm.project || '',
-  applicant: createForm.reimburser || '',
-  amount: createForm.expenditureAmount || 0
-}))
+const reimbursementBaseInfo = computed(() => {
+  const project = projectList.value.find(p => p.name === createForm.project)
+  return {
+    companyName: project?.invoice_company_name || '鄂尔多斯市汇邦人力资源有限责任公司',
+    date: createForm.applyDate || new Date().toISOString().split('T')[0],
+    project: createForm.project || '',
+    applicant: createForm.reimburser || '',
+    amount: createForm.expenditureAmount || 0,
+    invoiceCompanyName: project?.invoice_company_name || '',
+    invoiceBankName: project?.invoice_bank_name || '',
+    invoiceBankAccount: project?.invoice_bank_account || ''
+  }
+})
 
 // 详情对话框
 const detailDialogVisible = ref(false)

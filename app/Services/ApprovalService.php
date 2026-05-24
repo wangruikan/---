@@ -2777,7 +2777,7 @@ class ApprovalService
     private function stampPdf($attachment, $bankStamp, $stampImagePath, $typeLabel = '银行付讫章')
     {
         try {
-            $pdfPath = storage_path('app/public/' . $attachment->file_path);
+            $pdfPath = public_path($attachment->file_path);
             
             if (!file_exists($pdfPath)) {
                 Log::error('PDF文件不存在', [

@@ -320,7 +320,10 @@ class SignatureController extends Controller
         }
 
         $type = $request->type ?? 'bank';
-        $bankStamp = UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
+        $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
+        $bankStamp = $accountSetId
+            ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
+            : UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
 
         if ($bankStamp) {
             $bankStamp->image_url = asset('storage/' . $bankStamp->image_path);
@@ -376,11 +379,17 @@ class SignatureController extends Controller
 
             $type = $request->type ?? 'bank';
             $defaultName = $type === 'cash' ? '现金付讫' : '银行付讫';
+            $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
 
-            // 查找或创建付讫章记录
+            // 查找或创建付讫章记录（按账套共享）
+            $uniqueKey = $accountSetId
+                ? ['account_set_id' => $accountSetId, 'type' => $type]
+                : ['user_id' => $user->id, 'type' => $type];
+
             $bankStamp = UserBankStamp::updateOrCreate(
-                ['user_id' => $user->id, 'type' => $type],
+                $uniqueKey,
                 [
+                    'user_id' => $user->id,
                     'type' => $type,
                     'name' => $request->name ?? $defaultName,
                     'image_path' => $path,
@@ -449,7 +458,10 @@ class SignatureController extends Controller
 
         $type = $request->type ?? 'bank';
         $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
-        $bankStamp = UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
+        $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
+        $bankStamp = $accountSetId
+            ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
+            : UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
 
         if (!$bankStamp) {
             return response()->json([
@@ -489,7 +501,10 @@ class SignatureController extends Controller
 
         $type = $request->type ?? 'bank';
         $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
-        $bankStamp = UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
+        $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
+        $bankStamp = $accountSetId
+            ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
+            : UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
 
         if (!$bankStamp) {
             return response()->json([

@@ -2706,17 +2706,17 @@ class ApprovalService
                 $stampType = ($payment && $payment->payment_method === 'cash') ? 'cash' : 'bank';
             }
 
-            // 检查审批人是否有对应类型的付讫章
-            $bankStamp = \App\Models\UserBankStamp::where('user_id', $approverId)
+            // 获取当前账套的付讫章（按账套共享）
+            $bankStamp = \App\Models\UserBankStamp::where('account_set_id', $instance->account_set_id)
                 ->where('type', $stampType)
                 ->first();
 
             $typeLabel = $stampType === 'cash' ? '现金付讫章' : '银行付讫章';
             
             if (!$bankStamp) {
-                Log::info("审批人未设置{$typeLabel}，跳过自动盖章", [
+                Log::info("当前账套未设置{$typeLabel}，跳过自动盖章", [
                     'instance_id' => $instance->id,
-                    'approver_id' => $approverId,
+                    'account_set_id' => $instance->account_set_id,
                     'stamp_type' => $stampType
                 ]);
                 return;
@@ -2777,9 +2777,9 @@ class ApprovalService
     private function stampPdf($attachment, $bankStamp, $stampImagePath, $typeLabel = '银行付讫章')
     {
         try {
-            $pdfPath = public_path($attachment->file_path);
+            $pdfPath = $this->resolveAttachmentAbsolutePath($attachment->file_path);
             
-            if (!file_exists($pdfPath)) {
+            if (!$pdfPath || !file_exists($pdfPath)) {
                 Log::error('PDF文件不存在', [
                     'file_path' => $attachment->file_path
                 ]);
@@ -2829,5 +2829,35 @@ class ApprovalService
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * 解析附件绝对路径
+     * 兼容 public/ 与 storage/app/public/ 两种存储位置
+     */
+    private function resolveAttachmentAbsolutePath($relativePath): ?string
+    {
+        $relativePath = trim((string) $relativePath);
+        if ($relativePath === '') {
+            return null;
+        }
+
+        $normalized = ltrim(str_replace('\\', '/', $relativePath), '/');
+        if (stripos($normalized, 'storage/') === 0) {
+            $normalized = substr($normalized, strlen('storage/'));
+        }
+
+        $candidates = [
+            public_path($normalized),
+            storage_path('app/public/' . $normalized),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (file_exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

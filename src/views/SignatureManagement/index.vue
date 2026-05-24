@@ -69,13 +69,13 @@
         </template>
         
         <div class="bank-stamp-content">
-          <div v-if="myBankStamp" class="bank-stamp-display">
-            <img :src="myBankStamp.image_url" alt="银行付讫章" class="bank-stamp-image" />
+          <div v-if="bankStamp" class="bank-stamp-display">
+            <img :src="bankStamp.image_url" alt="银行付讫章" class="bank-stamp-image" />
             <div class="bank-stamp-info">
-              <p>名称：{{ myBankStamp.name }}</p>
-              <p>默认位置：X {{ myBankStamp.position_x }}%, Y {{ myBankStamp.position_y }}%</p>
-              <p>尺寸：{{ myBankStamp.width }} x {{ myBankStamp.height }}</p>
-              <p>上传时间：{{ formatDateTime(myBankStamp.created_at) }}</p>
+              <p>名称：{{ bankStamp.name }}</p>
+              <p>默认位置：X {{ bankStamp.position_x }}%, Y {{ bankStamp.position_y }}%</p>
+              <p>尺寸：{{ bankStamp.width }} x {{ bankStamp.height }}</p>
+              <p>上传时间：{{ formatDateTime(bankStamp.created_at) }}</p>
             </div>
             <div class="bank-stamp-actions">
               <el-button type="primary" @click="showUploadBankStamp = true">
@@ -158,13 +158,13 @@
         </template>
         
         <div class="bank-stamp-content">
-          <div v-if="myCashStamp" class="bank-stamp-display">
-            <img :src="myCashStamp.image_url" alt="现金付讫章" class="bank-stamp-image" />
+          <div v-if="cashStamp" class="bank-stamp-display">
+            <img :src="cashStamp.image_url" alt="现金付讫章" class="bank-stamp-image" />
             <div class="bank-stamp-info">
-              <p>名称：{{ myCashStamp.name }}</p>
-              <p>默认位置：X {{ myCashStamp.position_x }}%, Y {{ myCashStamp.position_y }}%</p>
-              <p>尺寸：{{ myCashStamp.width }} x {{ myCashStamp.height }}</p>
-              <p>上传时间：{{ formatDateTime(myCashStamp.created_at) }}</p>
+              <p>名称：{{ cashStamp.name }}</p>
+              <p>默认位置：X {{ cashStamp.position_x }}%, Y {{ cashStamp.position_y }}%</p>
+              <p>尺寸：{{ cashStamp.width }} x {{ cashStamp.height }}</p>
+              <p>上传时间：{{ formatDateTime(cashStamp.created_at) }}</p>
             </div>
             <div class="bank-stamp-actions">
               <el-button type="primary" @click="showUploadCashStamp = true">
@@ -335,8 +335,8 @@ import {
 } from '@/api/signatures'
 
 const mySeals = ref([])
-const myBankStamp = ref(null)
-const myCashStamp = ref(null)
+const bankStamp = ref(null)
+const cashStamp = ref(null)
 const uploading = ref(false)
 
 // 印章上传
@@ -470,16 +470,16 @@ const handleDeleteSeal = async (seal) => {
 // ==================== 银行付讫章相关 ====================
 
 // 加载我的银行付讫章
-const loadMyBankStamp = async () => {
+const loadBankStamp = async () => {
   try {
     const response = await getMyBankStamp()
     if (response.success) {
-      myBankStamp.value = response.data
-      if (myBankStamp.value) {
-        positionForm.position_x = myBankStamp.value.position_x
-        positionForm.position_y = myBankStamp.value.position_y
-        positionForm.width = myBankStamp.value.width
-        positionForm.height = myBankStamp.value.height
+      bankStamp.value = response.data
+      if (bankStamp.value) {
+        positionForm.position_x = bankStamp.value.position_x
+        positionForm.position_y = bankStamp.value.position_y
+        positionForm.width = bankStamp.value.width
+        positionForm.height = bankStamp.value.height
       }
     }
   } catch (error) {
@@ -513,7 +513,7 @@ const handleBankStampUpload = async () => {
       ElMessage.success('银行付讫章上传成功')
       showUploadBankStamp.value = false
       bankStampFileList.value = []
-      await loadMyBankStamp()
+      await loadBankStamp()
     }
   } catch (error) {
     console.error('上传银行付讫章失败:', error)
@@ -531,7 +531,7 @@ const handleUpdatePosition = async () => {
     if (response.success) {
       ElMessage.success('位置设置已保存')
       showPositionSetting.value = false
-      await loadMyBankStamp()
+      await loadBankStamp()
     }
   } catch (error) {
     console.error('更新位置失败:', error)
@@ -553,7 +553,7 @@ const handleDeleteBankStamp = async () => {
     const response = await deleteBankStamp()
     if (response.success) {
       ElMessage.success('银行付讫章删除成功')
-      myBankStamp.value = null
+      bankStamp.value = null
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -566,16 +566,16 @@ const handleDeleteBankStamp = async () => {
 // ==================== 现金付讫章相关 ====================
 
 // 加载我的现金付讫章
-const loadMyCashStamp = async () => {
+const loadCashStamp = async () => {
   try {
     const response = await getMyBankStamp('cash')
     if (response.success) {
-      myCashStamp.value = response.data
-      if (myCashStamp.value) {
-        cashPositionForm.position_x = myCashStamp.value.position_x
-        cashPositionForm.position_y = myCashStamp.value.position_y
-        cashPositionForm.width = myCashStamp.value.width
-        cashPositionForm.height = myCashStamp.value.height
+      cashStamp.value = response.data
+      if (cashStamp.value) {
+        cashPositionForm.position_x = cashStamp.value.position_x
+        cashPositionForm.position_y = cashStamp.value.position_y
+        cashPositionForm.width = cashStamp.value.width
+        cashPositionForm.height = cashStamp.value.height
       }
     }
   } catch (error) {
@@ -609,7 +609,7 @@ const handleCashStampUpload = async () => {
       ElMessage.success('现金付讫章上传成功')
       showUploadCashStamp.value = false
       cashStampFileList.value = []
-      await loadMyCashStamp()
+      await loadCashStamp()
     }
   } catch (error) {
     console.error('上传现金付讫章失败:', error)
@@ -627,7 +627,7 @@ const handleUpdateCashPosition = async () => {
     if (response.success) {
       ElMessage.success('位置设置已保存')
       showCashPositionSetting.value = false
-      await loadMyCashStamp()
+      await loadCashStamp()
     }
   } catch (error) {
     console.error('更新位置失败:', error)
@@ -649,7 +649,7 @@ const handleDeleteCashStamp = async () => {
     const response = await deleteBankStamp('cash')
     if (response.success) {
       ElMessage.success('现金付讫章删除成功')
-      myCashStamp.value = null
+      cashStamp.value = null
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -668,8 +668,8 @@ const formatDateTime = (dateTimeStr) => {
 
 onMounted(() => {
   loadMySeals()
-  loadMyBankStamp()
-  loadMyCashStamp()
+  loadBankStamp()
+  loadCashStamp()
 })
 </script>
 

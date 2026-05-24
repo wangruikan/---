@@ -10,6 +10,7 @@ class UserBankStamp extends Model
     use HasFactory;
 
     protected $fillable = [
+        'account_set_id',
         'user_id',
         'type',
         'name',

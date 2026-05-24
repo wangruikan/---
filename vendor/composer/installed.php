@@ -3,7 +3,7 @@
         'name' => 'laravel/hrm-system',
         'pretty_version' => 'dev-master',
         'version' => 'dev-master',
-        'reference' => 'aed00772ab13d8980d95c7fccc79199658e06f50',
+        'reference' => '0d75b74848845ba3d7eb5238687be2c450b78e13',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -436,7 +436,7 @@
         'laravel/hrm-system' => array(
             'pretty_version' => 'dev-master',
             'version' => 'dev-master',
-            'reference' => 'aed00772ab13d8980d95c7fccc79199658e06f50',
+            'reference' => '0d75b74848845ba3d7eb5238687be2c450b78e13',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -1132,6 +1132,15 @@
             'install_path' => __DIR__ . '/../sebastian/version',
             'aliases' => array(),
             'dev_requirement' => true,
+        ),
+        'setasign/fpdf' => array(
+            'pretty_version' => '1.8.5',
+            'version' => '1.8.5.0',
+            'reference' => 'f4104a04c9a3f95c4c26a0a0531abebcc980987a',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../setasign/fpdf',
+            'aliases' => array(),
+            'dev_requirement' => false,
         ),
         'setasign/fpdi' => array(
             'pretty_version' => 'v2.6.4',

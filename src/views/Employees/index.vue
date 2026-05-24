@@ -2909,11 +2909,37 @@
             <el-row :gutter="20">
               <el-col :span="12">
                 <el-form-item label="开户行" prop="bank_name">
-                  <el-input
+                  <el-select
                     v-model="form.bank_name"
-                    placeholder="请输入开户行"
+                    placeholder="请选择开户行"
                     clearable
-                  />
+                    filterable
+                    style="width: 100%"
+                  >
+                    <el-option label="招商银行" value="招商银行" />
+                    <el-option label="中国工商银行" value="中国工商银行" />
+                    <el-option label="中国农业银行" value="中国农业银行" />
+                    <el-option label="中国银行" value="中国银行" />
+                    <el-option label="中国建设银行" value="中国建设银行" />
+                    <el-option label="交通银行" value="交通银行" />
+                    <el-option label="中信银行" value="中信银行" />
+                    <el-option label="光大银行" value="光大银行" />
+                    <el-option label="华夏银行" value="华夏银行" />
+                    <el-option label="中国民生银行" value="中国民生银行" />
+                    <el-option label="国家开发银行" value="国家开发银行" />
+                    <el-option label="中国进出口银行" value="中国进出口银行" />
+                    <el-option label="中国农业发展银行" value="中国农业发展银行" />
+                    <el-option label="广东发展银行" value="广东发展银行" />
+                    <el-option label="平安银行" value="平安银行" />
+                    <el-option label="福建兴业银行" value="福建兴业银行" />
+                    <el-option label="上海浦东发展银行" value="上海浦东发展银行" />
+                    <el-option label="城市商业银行" value="城市商业银行" />
+                    <el-option label="农村商业银行" value="农村商业银行" />
+                    <el-option label="恒丰银行" value="恒丰银行" />
+                    <el-option label="浙商银行" value="浙商银行" />
+                    <el-option label="农村合作银行" value="农村合作银行" />
+                    <el-option label="邮政储蓄" value="邮政储蓄" />
+                  </el-select>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
@@ -3285,11 +3311,37 @@
         <el-row :gutter="30">
           <el-col :span="12">
             <el-form-item label="开户行" prop="bank_name">
-              <el-input
+              <el-select
                 v-model="form.bank_name"
-                placeholder="请输入开户行"
+                placeholder="请选择开户行"
                 clearable
-              />
+                filterable
+                style="width: 100%"
+              >
+                <el-option label="招商银行" value="招商银行" />
+                <el-option label="中国工商银行" value="中国工商银行" />
+                <el-option label="中国农业银行" value="中国农业银行" />
+                <el-option label="中国银行" value="中国银行" />
+                <el-option label="中国建设银行" value="中国建设银行" />
+                <el-option label="交通银行" value="交通银行" />
+                <el-option label="中信银行" value="中信银行" />
+                <el-option label="光大银行" value="光大银行" />
+                <el-option label="华夏银行" value="华夏银行" />
+                <el-option label="中国民生银行" value="中国民生银行" />
+                <el-option label="国家开发银行" value="国家开发银行" />
+                <el-option label="中国进出口银行" value="中国进出口银行" />
+                <el-option label="中国农业发展银行" value="中国农业发展银行" />
+                <el-option label="广东发展银行" value="广东发展银行" />
+                <el-option label="平安银行" value="平安银行" />
+                <el-option label="福建兴业银行" value="福建兴业银行" />
+                <el-option label="上海浦东发展银行" value="上海浦东发展银行" />
+                <el-option label="城市商业银行" value="城市商业银行" />
+                <el-option label="农村商业银行" value="农村商业银行" />
+                <el-option label="恒丰银行" value="恒丰银行" />
+                <el-option label="浙商银行" value="浙商银行" />
+                <el-option label="农村合作银行" value="农村合作银行" />
+                <el-option label="邮政储蓄" value="邮政储蓄" />
+              </el-select>
               <div class="form-tip">银行名称</div>
             </el-form-item>
           </el-col>
@@ -5141,7 +5193,7 @@ const salaryCardRules = {
     { max: 50, message: '户名长度不能超过50个字符', trigger: 'blur' }
   ],
   bank_name: [
-    { max: 100, message: '开户行名称长度不能超过100个字符', trigger: 'blur' }
+    { required: true, message: '请选择开户行', trigger: 'change' }
   ],
   bank_branch: [
     { max: 100, message: '开户地长度不能超过100个字符', trigger: 'blur' }

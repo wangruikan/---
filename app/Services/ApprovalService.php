@@ -2803,9 +2803,10 @@ class ApprovalService
                     $x = ($bankStamp->position_x / 100) * $size['width'];
                     $y = ($bankStamp->position_y / 100) * $size['height'];
                     
-                    // 将像素转换为毫米（假设72dpi）
-                    $stampWidth = $bankStamp->width * 0.3528;
-                    $stampHeight = $bankStamp->height * 0.3528;
+                    // 1:1 正方形章，大小为当前最大边的 1.5 倍
+                    $stampSize = max($bankStamp->width, $bankStamp->height) * 0.3528 * 1.5;
+                    $stampWidth = $stampSize;
+                    $stampHeight = $stampSize;
                     
                     $pdf->Image($stampImagePath, $x, $y, $stampWidth, $stampHeight);
                 }

@@ -2700,12 +2700,10 @@ class ApprovalService
             $businessType = $instance->business_type;
             $businessId = $instance->business_id;
 
-            // TODO: 当付款申请单添加了 payment_method 字段后，从此处读取
-            // 根据 business_type 查询对应业务数据的付款方式
+            // 根据付款方式选择付讫章类型：cash → 现金付讫，其他 → 银行付讫
             if (in_array($businessType, ['付款申请', '工资付款申请', '报销付款申请', '保险汇总付款申请'])) {
-                // 暂时默认使用银行付讫章，后续从 PaymentApplication 读取 payment_method
-                // $payment = \App\Models\PaymentApplication::find($businessId);
-                // $stampType = ($payment && $payment->payment_method === 'cash') ? 'cash' : 'bank';
+                $payment = \App\Models\PaymentRequest::find($businessId);
+                $stampType = ($payment && $payment->payment_method === 'cash') ? 'cash' : 'bank';
             }
 
             // 检查审批人是否有对应类型的付讫章

@@ -744,6 +744,7 @@ class PaymentApplicationController extends Controller
                 'status' => 'pending',
                 'submitted_by' => $application->submitted_by ?: $user->id,
                 'submitted_at' => now(),
+                'payment_method' => $request->input('payment_method', 'transfer'),
             ]);
 
             DB::commit();
@@ -803,6 +804,7 @@ class PaymentApplicationController extends Controller
                 'project_ids' => 'nullable|array',
                 'description' => 'nullable|string',
                 'stamp_method' => 'required|in:online,offline',
+                'payment_method' => 'nullable|in:cash,transfer,wire',
                 'reimbursement_form' => 'nullable|array',
             ]);
 
@@ -815,6 +817,7 @@ class PaymentApplicationController extends Controller
                 'rejection_reason' => null,
                 'submitted_by' => $application->submitted_by ?: $user->id,
                 'submitted_at' => now(),
+                'payment_method' => $validated['payment_method'] ?? $application->payment_method ?? 'transfer',
             ];
 
             if (isset($validated['reimbursement_form'])) {

@@ -654,6 +654,13 @@
             线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
           </div>
         </el-form-item>
+        <el-form-item label="付款方式">
+          <el-radio-group v-model="submitStampForm.payment_method">
+            <el-radio value="transfer">转账</el-radio>
+            <el-radio value="cash">现金</el-radio>
+            <el-radio value="wire">电汇</el-radio>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="submitStampDialogVisible = false">取消</el-button>
@@ -824,7 +831,8 @@ const detailData = ref({})
 const submitStampDialogVisible = ref(false)
 const submitStampForm = reactive({
   applicationId: null,
-  stamp_method: 'online' // 默认线上盖章
+  stamp_method: 'online', // 默认线上盖章
+  payment_method: 'transfer' // 默认转账
 })
 const showFormToWordDialog = ref(false)
 
@@ -998,15 +1006,17 @@ const handleSubmit = async () => {
   try {
     const res = await submitPaymentApplication(submitStampForm.applicationId, {
       current_account_set_id: accountSetStore.currentAccountSetId,
-      stamp_method: submitStampForm.stamp_method
+      stamp_method: submitStampForm.stamp_method,
+      payment_method: submitStampForm.payment_method
     })
     
     if (res.success) {
       ElMessage.success('提交成功')
       submitStampDialogVisible.value = false
       dialogVisible.value = false
-      // 重置盖章方式为默认值
+      // 重置默认值
       submitStampForm.stamp_method = 'online'
+      submitStampForm.payment_method = 'transfer'
       loadApplicationList()
     } else {
       ElMessage.error(res.message || '提交失败')
@@ -1057,7 +1067,8 @@ const confirmResubmit = async () => {
       month: detailData.value.month,
       project_ids: detailData.value.project_ids,
       description: detailData.value.description,
-      stamp_method: submitStampForm.stamp_method
+      stamp_method: submitStampForm.stamp_method,
+      payment_method: submitStampForm.payment_method
     }
 
     // 如果有报销表单数据，也一起提交
@@ -1072,6 +1083,7 @@ const confirmResubmit = async () => {
       submitStampDialogVisible.value = false
       dialogVisible.value = false
       submitStampForm.stamp_method = 'online'
+      submitStampForm.payment_method = 'transfer'
       loadApplicationList()
     } else {
       ElMessage.error(res.message || '重新申请失败')

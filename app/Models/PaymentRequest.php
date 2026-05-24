@@ -51,6 +51,7 @@ class PaymentRequest extends Model
         'invoice_date' => '发票日期',
         'accounted' => '是否已记账',
         'company' => '公司',
+        'payment_method' => '付款方式',
     ];
 
     /**
@@ -109,6 +110,7 @@ class PaymentRequest extends Model
         'invoice_date',
         'accounted',
         'company',
+        'payment_method',
     ];
 
     protected $casts = [

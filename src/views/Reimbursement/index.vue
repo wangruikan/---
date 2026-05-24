@@ -51,7 +51,7 @@
       <el-card shadow="never">
         <template #header>
           <div class="card-header">
-            <span class="title">报销列表</span>
+            <span class="title"></span>
             <el-button type="text" @click="handleSearch">
               <el-icon><Refresh /></el-icon>
               刷新
@@ -120,7 +120,7 @@
       >
         <template #header>
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-            <span>发起报销申请</span>
+            <span>付款申请</span>
             <el-button type="success" size="small" @click="fillTestData">
               <el-icon><MagicStick /></el-icon>
               填充实例
@@ -261,7 +261,7 @@
       <!-- 查看详情对话框 -->
       <el-dialog
         v-model="detailDialogVisible"
-        title="报销详情"
+        title="付款详情"
         width="700px"
       >
         <el-descriptions :column="2" border v-if="currentRow">

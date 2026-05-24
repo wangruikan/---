@@ -14,8 +14,8 @@
 
     <el-card class="tabs-card" shadow="never">
       <el-tabs v-model="activeTab" class="payment-center-tabs" @tab-change="handleTabChange">
-        <el-tab-pane label="付款申请" name="payment" />
-        <el-tab-pane label="报销管理" name="reimbursement" />
+        <el-tab-pane label="工资/保险" name="payment" />
+        <el-tab-pane label="报销/差旅/采购/项目/其他" name="reimbursement" />
       </el-tabs>
     </el-card>
 

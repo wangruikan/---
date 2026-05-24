@@ -181,15 +181,7 @@
         </el-form-item>
         <el-form-item label="附件" required>
           <div style="margin-bottom: 10px;">
-            <el-button 
-              type="success" 
-              @click="showFormToWordDialog = true"
-              :disabled="!currentProcessId"
-            >
-              <el-icon><DocumentAdd /></el-icon>
-              填写表格生成Word
-            </el-button>
-            <span style="margin-left: 10px; color: #f56c6c; font-size: 12px;">* 必须至少上传1个附件</span>
+            <span style="color: #f56c6c; font-size: 12px;">* 必须至少上传1个附件</span>
           </div>
           <el-upload
             action="#"
@@ -416,7 +408,7 @@
           v-model:other-file-list="paymentFileList"
           :invoice-limit="10"
           :other-limit="5"
-          :show-form-generator="true"
+          :show-form-generator="false"
           :show-upload-later="true"
           form-button-text="填写表格生成PDF"
           form-title="付款申请表"

@@ -329,7 +329,7 @@
           v-model:other-file-list="paymentFileList"
           :invoice-limit="10"
           :other-limit="5"
-          :show-form-generator="true"
+          :show-form-generator="false"
           :show-upload-later="true"
           form-button-text="填写表格生成PDF"
           form-title="工资付款申请表"

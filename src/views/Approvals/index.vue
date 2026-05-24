@@ -423,14 +423,6 @@
       <template #footer>
         <el-button @click="showActionDialog = false">取消</el-button>
         <el-button 
-          v-if="hasPDFAttachments"
-          type="primary" 
-          @click="openBatchStampDialog"
-        >
-          <el-icon><Files /></el-icon>
-          批量盖章
-        </el-button>
-        <el-button 
           v-if="hasContractAttachment"
           type="warning" 
           @click="openPDFEditor"

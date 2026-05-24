@@ -1174,6 +1174,26 @@ const validProjects = computed(() => {
   return projects.value.filter(p => p && p.id)
 })
 
+const findProjectById = (projectId) => {
+  if (projectId === null || projectId === undefined || projectId === '') return null
+  const targetId = String(projectId)
+  return validProjects.value.find(project => String(project.id) === targetId) || null
+}
+
+const fillCreateInvoiceInfoByProject = (projectId) => {
+  const selectedProject = findProjectById(projectId)
+  if (!selectedProject) {
+    createForm.company_name = ''
+    return
+  }
+
+  createForm.company_name =
+    selectedProject.invoice_company_name ||
+    selectedProject.invoice_company ||
+    selectedProject.company_name ||
+    ''
+}
+
 // 状态类型
 const getStatusType = (status) => {
   const typeMap = {
@@ -2119,6 +2139,13 @@ watch(
     if (newMethod !== 'full' && newMethod !== 'diff') {
       createForm.deduction_amount = 0
     }
+  }
+)
+
+watch(
+  () => createForm.project_id,
+  (newProjectId) => {
+    fillCreateInvoiceInfoByProject(newProjectId)
   }
 )
 

@@ -7,7 +7,6 @@
           <el-select v-model="filterForm.payment_type" placeholder="全部类型" clearable style="width: 150px;">
             <el-option label="工资付款" value="salary" />
             <el-option label="保险付款" value="insurance" />
-            <el-option label="报销付款" value="reimbursement" />
           </el-select>
         </el-form-item>
         <el-form-item label="月份">

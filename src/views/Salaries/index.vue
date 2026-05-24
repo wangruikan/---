@@ -313,6 +313,12 @@
           <!-- 付款表单字段组件 -->
           <PaymentFormFields ref="paymentFormFieldsRef" v-model="paymentFormFields" />
 
+          <SituationExplanationInlineForm
+            ref="paymentSituationFormRef"
+            :has-uploaded-attachments="(invoiceFileList.length + paymentFileList.length) > 0"
+            :base-info="paymentSituationBaseInfo"
+          />
+
           <el-form-item label="备注">
             <el-input
               v-model="paymentForm.remarks"
@@ -956,6 +962,7 @@ import request from '@/api/request'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
+import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
 import ResubmitButton from '@/components/ResubmitButton.vue'
 import { 
   getProjectsWithApprovalStatus, 
@@ -1661,6 +1668,7 @@ const paymentForm = reactive({
 })
 const paymentFormFields = ref({}) // 付款表单字段组件数据
 const paymentFormFieldsRef = ref(null)
+const paymentSituationFormRef = ref(null)
 
 // 付款文件上传相关
 const paymentAttachmentUploaderRef = ref(null)
@@ -1668,6 +1676,31 @@ const paymentFileList = ref([]) // 其他附件列表
 const invoiceFileList = ref([]) // 发票文件列表
 const creatingPayment = ref(false)
 const originalAttachments = ref([]) // 原工资表审批的附件（自动带入审批）
+
+const normalizeSituationDate = (value) => {
+  if (!value) return new Date().toISOString().split('T')[0]
+  if (value instanceof Date) {
+    return value.toISOString().split('T')[0]
+  }
+  if (typeof value === 'string') {
+    return value.length >= 10 ? value.slice(0, 10) : value
+  }
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0]
+  }
+  return new Date().toISOString().split('T')[0]
+}
+
+const paymentSituationBaseInfo = computed(() => {
+  return {
+    companyName: paymentFormFields.value?.unit_name || '鄂尔多斯市汇邦人力资源有限责任公司',
+    date: normalizeSituationDate(paymentFormFields.value?.apply_date),
+    project: paymentForm.project_name || paymentFormFields.value?.project || '',
+    matter: paymentFormFields.value?.summary || '',
+    remarks: paymentForm.remarks || ''
+  }
+})
 
 const handleSubmit = async (row) => {
   // 先进行验证
@@ -1978,6 +2011,8 @@ const handleCreatePayment = async (row) => {
   if (projects.value.length === 0) {
     await loadProjects()
   }
+
+  paymentSituationFormRef.value?.reset?.()
   
   // 打开发起付款对话框
   paymentForm.salary_approval_id = row.salary_approval_id
@@ -2094,17 +2129,22 @@ const confirmCreatePayment = async () => {
     // 获取稍后上传状态
     const uploadLater = paymentAttachmentUploaderRef.value?.getUploadLater() || false
 
-    // 1. 校验：如果没有勾选稍后上传，且没有发票，必须有情况说明单附件
-    if (!uploadLater && invoiceFileList.value.length === 0) {
-      // 检查其他附件中是否有情况说明单（文件名包含"情况说明单"）
-      const hasSituationReport = paymentFileList.value.some(file => 
-        file.name && file.name.includes('情况说明单')
-      )
-      
-      if (!hasSituationReport) {
-        ElMessage.error('未上传发票时，必须填写情况说明单并生成附件！')
-        creatingPayment.value = false
-        return
+    // 1. 无附件时：展示并校验情况说明单，自动生成PDF并加入附件
+    const hasAnyAttachment = invoiceFileList.value.length > 0 || paymentFileList.value.length > 0
+    if (!uploadLater && !hasAnyAttachment) {
+      const situationFile = await paymentSituationFormRef.value?.generateSituationPdfIfNeeded?.({
+        requireWhenNoAttachment: true
+      })
+
+      if (situationFile) {
+        paymentFileList.value.push({
+          name: situationFile.name,
+          raw: situationFile,
+          size: situationFile.size,
+          status: 'ready',
+          uid: `generated_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          isGeneratedForm: true
+        })
       }
     }
 

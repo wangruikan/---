@@ -401,6 +401,12 @@
         <!-- 付款表单字段组件 -->
         <PaymentFormFields ref="paymentFormFieldsRef" v-model="paymentFormFields" />
 
+        <SituationExplanationInlineForm
+          ref="paymentSituationFormRef"
+          :has-uploaded-attachments="(invoiceFileList.length + paymentFileList.length) > 0"
+          :base-info="paymentSituationBaseInfo"
+        />
+
         <!-- 付款附件上传组件（包含发票、其他附件、签名盖章） -->
         <PaymentAttachmentUploader
           ref="paymentAttachmentUploaderRef"
@@ -454,7 +460,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Plus, View, Promotion, CircleCheck, Delete, UploadFilled, Download, Paperclip, Document, DocumentAdd
@@ -462,6 +468,7 @@ import {
 import { useAccountSetStore } from '@/stores/accountSet'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
+import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
 import {
   getProcessList, getProcessDetail, createProcess, uploadAttachment,
@@ -491,6 +498,7 @@ const invoiceFileList = ref([])
 const originalAttachments = ref([]) // 原保险汇总的附件（自动带入审批）
 const paymentFormFields = ref({}) // 付款表单字段组件数据
 const paymentFormFieldsRef = ref(null)
+const paymentSituationFormRef = ref(null)
 const paymentRequestData = reactive({
   processApprovalId: null,
   category: 'social_insurance',
@@ -500,6 +508,31 @@ const paymentRequestData = reactive({
   projectIds: [],
   projectName: '',
   stamp_method: 'online' // 默认线上盖章
+})
+
+const normalizeSituationDate = (value) => {
+  if (!value) return new Date().toISOString().split('T')[0]
+  if (value instanceof Date) {
+    return value.toISOString().split('T')[0]
+  }
+  if (typeof value === 'string') {
+    return value.length >= 10 ? value.slice(0, 10) : value
+  }
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0]
+  }
+  return new Date().toISOString().split('T')[0]
+}
+
+const paymentSituationBaseInfo = computed(() => {
+  return {
+    companyName: paymentFormFields.value?.unit_name || '鄂尔多斯市汇邦人力资源有限责任公司',
+    date: normalizeSituationDate(paymentFormFields.value?.apply_date),
+    project: paymentRequestData.projectName || paymentFormFields.value?.project || '',
+    matter: paymentFormFields.value?.summary || '',
+    remarks: paymentRequestData.remarks || ''
+  }
 })
 
 // 盖章方式选择对话框
@@ -1028,6 +1061,8 @@ const handleDelete = async (row) => {
 // 打开发起付款申请对话框
 const openPaymentRequestDialog = async (processApprovalId) => {
   try {
+    paymentSituationFormRef.value?.reset?.()
+
     // 先加载流程详情
     const response = await getProcessDetail(processApprovalId)
     const detail = response.data || response // 兼容不同的返回格式
@@ -1098,6 +1133,25 @@ const confirmCreatePaymentRequest = async () => {
       creatingPayment.value = false
       return
     }
+
+    const uploadLater = paymentAttachmentUploaderRef.value ? paymentAttachmentUploaderRef.value.getUploadLater() : false
+    const hasAnyAttachment = invoiceFileList.value.length > 0 || paymentFileList.value.length > 0
+    if (!uploadLater && !hasAnyAttachment) {
+      const situationFile = await paymentSituationFormRef.value?.generateSituationPdfIfNeeded?.({
+        requireWhenNoAttachment: true
+      })
+
+      if (situationFile) {
+        paymentFileList.value.push({
+          name: situationFile.name,
+          raw: situationFile,
+          size: situationFile.size,
+          status: 'ready',
+          uid: `generated_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          isGeneratedForm: true
+        })
+      }
+    }
     
     const response = await submitInsurancePaymentRequest({
       process_approval_id: paymentRequestData.processApprovalId,
@@ -1105,7 +1159,7 @@ const confirmCreatePaymentRequest = async () => {
       remarks: paymentRequestData.remarks,
       project_ids: paymentRequestData.projectIds,
       current_account_set_id: accountSetStore.currentAccountSetId,
-      upload_later: paymentAttachmentUploaderRef.value ? paymentAttachmentUploaderRef.value.getUploadLater() : false, // 传递稍后上传状态
+      upload_later: uploadLater, // 传递稍后上传状态
       // 付款表单字段
       reimbursement_form_data: formFieldsData
     })

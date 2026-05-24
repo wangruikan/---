@@ -86,15 +86,6 @@
               <el-button link type="primary" size="small" @click="handleView(scope.row)">
                 查看
               </el-button>
-              <el-button 
-                v-if="scope.row.status === 'pending' && isApprover" 
-                link 
-                type="success" 
-                size="small" 
-                @click="handleApprove(scope.row)"
-              >
-                审批
-              </el-button>
               <!-- 按需求隐藏报销模块发起付款申请相关入口 -->
               <el-button 
                 v-if="scope.row.status === 'pending'" 
@@ -410,7 +401,6 @@ const accountSetStore = useAccountSetStore()
 
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
-const isApprover = computed(() => ['admin', 'approver'].includes(userStore.userInfo?.role))
 
 // 搜索表单
 const searchForm = reactive({
@@ -869,38 +859,6 @@ const handleDownloadAttachment = async (attachment) => {
     console.error('Download reimbursement attachment error:', error)
     ElMessage.error('下载失败')
   }
-}
-
-// 审批
-const handleApprove = (row) => {
-  ElMessageBox.prompt('请输入审批意见（可选）', '审批报销申请', {
-    confirmButtonText: '通过',
-    cancelButtonText: '拒绝',
-    inputPattern: /.*/,
-    distinguishCancelAndClose: true,
-    beforeClose: (action, instance, done) => {
-      if (action === 'confirm') {
-        // 审批通过
-        ElMessage.success('审批通过')
-        handleSearch()
-        done()
-      } else if (action === 'cancel') {
-        // 审批拒绝
-        ElMessageBox.prompt('请输入拒绝原因', '拒绝报销申请', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          inputPattern: /.+/,
-          inputErrorMessage: '请输入拒绝原因'
-        }).then(({ value }) => {
-          ElMessage.success('已拒绝')
-          handleSearch()
-        }).catch(() => {})
-        done()
-      } else {
-        done()
-      }
-    }
-  }).catch(() => {})
 }
 
 // 删除

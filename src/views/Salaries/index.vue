@@ -39,7 +39,6 @@
             
             <el-form-item label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 180px;">
-              <el-option label="全部状态" :value="null" />
                 <el-option label="草稿" value="draft" />
                 <el-option label="已提交" value="submitted" />
                 <el-option label="已审批" value="approved" />

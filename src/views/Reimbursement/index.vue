@@ -34,7 +34,6 @@
 
           <el-form-item label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
-              <el-option label="全部状态" :value="null" />
               <el-option label="待审批" value="pending" />
               <el-option label="已通过" value="approved" />
               <el-option label="已拒绝" value="rejected" />

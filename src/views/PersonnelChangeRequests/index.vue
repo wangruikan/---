@@ -33,7 +33,6 @@
 
           <el-form-item label="变动类型">
             <el-select v-model="searchForm.change_type" placeholder="请选择类型" clearable style="width: 150px;">
-              <el-option label="全部类型" :value="null" />
               <el-option label="人员新增" value="add" />
               <el-option label="人员减少" value="remove" />
             </el-select>
@@ -41,7 +40,6 @@
 
           <el-form-item label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 150px;">
-              <el-option label="全部状态" :value="null" />
               <el-option label="待审批" value="pending" />
               <el-option label="审批中" value="in_approval" />
               <el-option label="已通过" value="approved" />
@@ -976,4 +974,3 @@ onMounted(() => {
   margin-bottom: 0;
 }
 </style>
-

@@ -264,12 +264,6 @@ const routes = [
         meta: { title: '发票管理' }
       },
       {
-        path: '/travel-application',
-        name: 'TravelApplication',
-        component: () => import('@/views/TravelApplication/index.vue'),
-        meta: { title: '差旅申请' }
-      },
-      {
         path: '/recruitment',
         name: 'Recruitment',
         component: () => import('@/views/Recruitment/index.vue'),

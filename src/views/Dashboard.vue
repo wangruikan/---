@@ -995,7 +995,6 @@ const approvalLaunchItems = [
   { title: '付款申请', path: '/payment-applications' },
   { title: '开票申请管理', path: '/invoice-applications' },
   { title: '报销管理', path: '/payment-applications?tab=reimbursement' },
-  { title: '差旅申请', path: '/travel-application' },
   { title: '工资管理', path: '/salaries' },
   { title: '员工档案（审批场景）', path: '/employees' },
   { title: '资料申请', path: '/material-requests' },

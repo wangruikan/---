@@ -53,7 +53,6 @@ export const menuConfig = [
       { title: '出款汇总', path: '/payment-summaries', icon: 'List' },
       { title: '发票申请', path: '/invoice-applications', icon: 'Document' },
       { title: '发票汇总', path: '/invoice-summary', icon: 'List' },
-      { title: '差旅申请', path: '/travel-application', icon: 'Suitcase' },
       { title: '税费申报任务', path: '/tax-declaration-tasks', icon: 'Document', skipPermissionCheck: true },
       { title: '理赔管理', path: '/insurance-compensation', icon: 'FirstAidKit', skipPermissionCheck: true }
     ]

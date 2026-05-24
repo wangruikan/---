@@ -156,6 +156,28 @@
           <el-input v-model="profileForm.phone" placeholder="请输入电话" />
         </el-form-item>
       </el-form>
+      <el-divider />
+      <div class="profile-signature-section">
+        <div class="profile-signature-header">
+          <span style="font-weight: 600; font-size: 14px;">我的签名</span>
+          <span style="color: #999; font-size: 12px; margin-left: 8px;">（用于审批流程）</span>
+        </div>
+        <div v-if="mySignature" class="profile-signature-display">
+          <img :src="mySignature.image_url" alt="我的签名" class="profile-signature-image" />
+          <div class="profile-signature-info">
+            <span>上传时间：{{ formatDateTime(mySignature.created_at) }}</span>
+          </div>
+          <div class="profile-signature-actions">
+            <el-button size="small" type="primary" @click="showUploadSignature = true">更换签名</el-button>
+            <el-button size="small" type="danger" @click="handleDeleteSignature">删除签名</el-button>
+          </div>
+        </div>
+        <div v-else class="profile-signature-empty">
+          <el-empty :image-size="80" description="还未上传签名">
+            <el-button size="small" type="primary" @click="showUploadSignature = true">上传签名</el-button>
+          </el-empty>
+        </div>
+      </div>
       <template #footer>
         <el-button @click="showProfileDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSaveProfile" :loading="profileSaving">保存</el-button>
@@ -180,6 +202,34 @@
         <el-button type="primary" @click="handleChangePassword" :loading="passwordSaving">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 上传签名弹窗 -->
+    <el-dialog v-model="showUploadSignature" title="上传签名" width="500px">
+      <el-upload
+        ref="signatureUploadRef"
+        :file-list="signatureFileList"
+        :auto-upload="false"
+        :limit="1"
+        :on-change="handleSignatureFileChange"
+        :on-exceed="handleSignatureExceed"
+        accept=".png,.jpg,.jpeg"
+        drag
+      >
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">
+          将签名图片拖到此处，或<em>点击上传</em>
+        </div>
+        <template #tip>
+          <div class="el-upload__tip">
+            建议使用PNG透明背景图片，文件大小不超过2MB
+          </div>
+        </template>
+      </el-upload>
+      <template #footer>
+        <el-button @click="showUploadSignature = false">取消</el-button>
+        <el-button type="primary" @click="handleSignatureUpload" :loading="uploading">确认上传</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -193,10 +243,11 @@ import request from '@/api/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { getDashboardData, markReminderAsRead } from '@/api/dashboard'
+import { getMySignature, uploadSignature, deleteSignature } from '@/api/signatures'
 import AccountSetSelector from '@/components/AccountSetSelector.vue'
 import HoverMenu from '@/components/HoverMenu.vue'
 // import OperationBarrage from '@/components/OperationBarrage.vue' // 已隐藏弹幕功能
-import { Bell, ArrowDown, Close, CirclePlus, Grid } from '@element-plus/icons-vue'
+import { Bell, ArrowDown, Close, CirclePlus, Grid, UploadFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -251,6 +302,81 @@ const passwordRules = {
       trigger: 'blur'
     }
   ]
+}
+
+// 签名管理
+const mySignature = ref(null)
+const uploading = ref(false)
+const showUploadSignature = ref(false)
+const signatureUploadRef = ref()
+const signatureFileList = ref([])
+
+const loadMySignature = async () => {
+  try {
+    const response = await getMySignature()
+    if (response.success) {
+      mySignature.value = response.data
+    }
+  } catch (error) {
+    console.error('加载签名失败:', error)
+  }
+}
+
+const handleSignatureFileChange = (file, fileList) => {
+  signatureFileList.value = fileList
+}
+
+const handleSignatureExceed = () => {
+  ElMessage.warning('只能上传一个签名图片')
+}
+
+const handleSignatureUpload = async () => {
+  if (signatureFileList.value.length === 0) {
+    ElMessage.warning('请选择签名图片')
+    return
+  }
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('signature_image', signatureFileList.value[0].raw)
+    const response = await uploadSignature(formData)
+    if (response.success) {
+      ElMessage.success('签名上传成功')
+      showUploadSignature.value = false
+      signatureFileList.value = []
+      await loadMySignature()
+    }
+  } catch (error) {
+    console.error('上传签名失败:', error)
+    ElMessage.error(error.response?.data?.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+const handleDeleteSignature = async () => {
+  try {
+    await ElMessageBox.confirm('确定要删除签名吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const response = await deleteSignature()
+    if (response.success) {
+      ElMessage.success('签名删除成功')
+      mySignature.value = null
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除签名失败:', error)
+      ElMessage.error(error.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+const formatDateTime = (dateTimeStr) => {
+  if (!dateTimeStr) return '-'
+  return dayjs(dateTimeStr).format('YYYY-MM-DD HH:mm')
 }
 
 const currentPageTitle = computed(() => route.meta?.title)
@@ -318,6 +444,7 @@ const handleUserCommand = async (command) => {
       profileForm.email = userStore.userInfo?.email || ''
       profileForm.phone = userStore.userInfo?.phone || ''
       showProfileDialog.value = true
+      loadMySignature()
       break
     case 'password':
       // 打开修改密码弹窗
@@ -736,5 +863,48 @@ watch(
 .notification-time {
   color: #909399;
   font-size: 12px;
+}
+
+.profile-signature-section {
+  padding: 0 20px 20px;
+}
+
+.profile-signature-header {
+  margin-bottom: 12px;
+}
+
+.profile-signature-display {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #ebeef5;
+}
+
+.profile-signature-image {
+  height: 60px;
+  object-fit: contain;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  padding: 4px;
+  background: #fff;
+}
+
+.profile-signature-info {
+  flex: 1;
+  color: #909399;
+  font-size: 13px;
+}
+
+.profile-signature-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.profile-signature-empty {
+  display: flex;
+  justify-content: center;
 }
 </style>

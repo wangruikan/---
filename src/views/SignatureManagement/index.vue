@@ -4,42 +4,6 @@
       <h1>签名印章管理</h1>
     </div>
     
-    <!-- 我的签名 -->
-    <div class="section">
-      <el-card>
-        <template #header>
-          <div class="section-header">
-            <span class="section-title">✍️ 我的签名</span>
-            <span class="section-desc">（用于审批流程）</span>
-          </div>
-        </template>
-        
-        <div class="signature-content">
-          <div v-if="mySignature" class="signature-display">
-            <img :src="mySignature.image_url" alt="我的签名" class="signature-image" />
-            <div class="signature-info">
-              <p>上传时间：{{ formatDateTime(mySignature.created_at) }}</p>
-            </div>
-            <div class="signature-actions">
-              <el-button type="primary" @click="showUploadSignature = true">
-                更换签名
-              </el-button>
-              <el-button type="danger" @click="handleDeleteSignature">
-                删除签名
-              </el-button>
-            </div>
-          </div>
-          <div v-else class="signature-empty">
-            <el-empty description="还未上传签名">
-              <el-button type="primary" @click="showUploadSignature = true">
-                上传签名
-              </el-button>
-            </el-empty>
-          </div>
-        </div>
-      </el-card>
-    </div>
-    
     <!-- 我的印章 -->
     <div class="section">
       <el-card>
@@ -135,41 +99,6 @@
         </div>
       </el-card>
     </div>
-    
-    <!-- 上传签名对话框 -->
-    <el-dialog
-      v-model="showUploadSignature"
-      title="上传签名"
-      width="500px"
-    >
-      <el-upload
-        ref="signatureUploadRef"
-        :file-list="signatureFileList"
-        :auto-upload="false"
-        :limit="1"
-        :on-change="handleSignatureFileChange"
-        :on-exceed="handleSignatureExceed"
-        accept=".png,.jpg,.jpeg"
-        drag
-      >
-        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-        <div class="el-upload__text">
-          将签名图片拖到此处，或<em>点击上传</em>
-        </div>
-        <template #tip>
-          <div class="el-upload__tip">
-            建议使用PNG透明背景图片，文件大小不超过2MB
-          </div>
-        </template>
-      </el-upload>
-      
-      <template #footer>
-        <el-button @click="showUploadSignature = false">取消</el-button>
-        <el-button type="primary" @click="handleSignatureUpload" :loading="uploading">
-          确认上传
-        </el-button>
-      </template>
-    </el-dialog>
     
     <!-- 上传印章对话框 -->
     <el-dialog
@@ -287,11 +216,8 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled, Plus } from '@element-plus/icons-vue'
+import { Plus } from '@element-plus/icons-vue'
 import {
-  getMySignature,
-  uploadSignature,
-  deleteSignature,
   getMySeals,
   uploadSeal,
   setDefaultSeal,
@@ -302,15 +228,9 @@ import {
   deleteBankStamp
 } from '@/api/signatures'
 
-const mySignature = ref(null)
 const mySeals = ref([])
 const myBankStamp = ref(null)
 const uploading = ref(false)
-
-// 签名上传
-const showUploadSignature = ref(false)
-const signatureUploadRef = ref()
-const signatureFileList = ref([])
 
 // 印章上传
 const showUploadSeal = ref(false)
@@ -334,18 +254,6 @@ const positionForm = reactive({
   height: 50
 })
 
-// 加载我的签名
-const loadMySignature = async () => {
-  try {
-    const response = await getMySignature()
-    if (response.success) {
-      mySignature.value = response.data
-    }
-  } catch (error) {
-    console.error('加载签名失败:', error)
-  }
-}
-
 // 加载我的印章
 const loadMySeals = async () => {
   try {
@@ -355,64 +263,6 @@ const loadMySeals = async () => {
     }
   } catch (error) {
     console.error('加载印章失败:', error)
-  }
-}
-
-// 签名文件选择
-const handleSignatureFileChange = (file, fileList) => {
-  signatureFileList.value = fileList
-}
-
-const handleSignatureExceed = () => {
-  ElMessage.warning('只能上传一个签名图片')
-}
-
-// 上传签名
-const handleSignatureUpload = async () => {
-  if (signatureFileList.value.length === 0) {
-    ElMessage.warning('请选择签名图片')
-    return
-  }
-
-  uploading.value = true
-  try {
-    const formData = new FormData()
-    formData.append('signature_image', signatureFileList.value[0].raw)
-
-    const response = await uploadSignature(formData)
-    if (response.success) {
-      ElMessage.success('签名上传成功')
-      showUploadSignature.value = false
-      signatureFileList.value = []
-      await loadMySignature()
-    }
-  } catch (error) {
-    console.error('上传签名失败:', error)
-    ElMessage.error(error.response?.data?.message || '上传失败')
-  } finally {
-    uploading.value = false
-  }
-}
-
-// 删除签名
-const handleDeleteSignature = async () => {
-  try {
-    await ElMessageBox.confirm('确定要删除签名吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    const response = await deleteSignature()
-    if (response.success) {
-      ElMessage.success('签名删除成功')
-      mySignature.value = null
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('删除签名失败:', error)
-      ElMessage.error(error.response?.data?.message || '删除失败')
-    }
   }
 }
 
@@ -602,7 +452,6 @@ const formatDateTime = (dateTimeStr) => {
 }
 
 onMounted(() => {
-  loadMySignature()
   loadMySeals()
   loadMyBankStamp()
 })
@@ -642,41 +491,6 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   margin-left: 10px;
-}
-
-.signature-content {
-  min-height: 200px;
-}
-
-.signature-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-}
-
-.signature-image {
-  max-width: 300px;
-  max-height: 150px;
-  border: 2px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 10px;
-  background: #fafafa;
-}
-
-.signature-info {
-  text-align: center;
-  color: #606266;
-  font-size: 14px;
-}
-
-.signature-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.signature-empty {
-  padding: 40px 0;
 }
 
 .seals-content {

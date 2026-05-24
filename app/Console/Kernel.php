@@ -92,7 +92,7 @@ class Kernel extends ConsoleKernel
                  ->hourly()
                  ->timezone('Asia/Shanghai');
         
-        // 每月1日早上8点检查工资和考勤依据上传情况
+        // 每月1日早上8点自动创建工资/考勤依据记录并生成待办
         $schedule->command('basis:check-reminders')
                  ->monthlyOn(1, '08:00')
                  ->timezone('Asia/Shanghai');

@@ -286,6 +286,13 @@ class BasisRecordController extends Controller
             'file_type' => $fileType,
             'file_size' => $file->getSize(),
         ]);
+
+        // 上传附件后再关闭对应待办任务
+        if ($record->type === 'salary') {
+            \App\Services\PendingTaskService::checkAndCompleteSalaryBasisTask($record);
+        } elseif ($record->type === 'attendance') {
+            \App\Services\PendingTaskService::checkAndCompleteAttendanceBasisTask($record);
+        }
         
         return response()->json([
             'success' => true,

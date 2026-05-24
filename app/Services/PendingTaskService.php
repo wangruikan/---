@@ -494,15 +494,16 @@ class PendingTaskService
                 return null;
             }
 
-            // 检查是否已存在依据记录
-            $basisExists = \App\Models\BasisRecord::where('account_set_id', $accountSetId)
+            // 已存在且已上传附件，说明该月工资依据已完成，无需再创建任务
+            $basisRecord = \App\Models\BasisRecord::withCount('attachments')
+                ->where('account_set_id', $accountSetId)
                 ->where('project_id', $projectId)
                 ->where('type', 'salary')
                 ->where('month', $month)
-                ->exists();
+                ->first();
 
-            if ($basisExists) {
-                return null; // 已上传，不创建任务
+            if ($basisRecord && (int) ($basisRecord->attachments_count ?? 0) > 0) {
+                return null;
             }
 
             // 获取账套中第2、3、4审批节点的审批人
@@ -584,15 +585,16 @@ class PendingTaskService
                 return null;
             }
 
-            // 检查是否已存在依据记录
-            $basisExists = \App\Models\BasisRecord::where('account_set_id', $accountSetId)
+            // 已存在且已上传附件，说明该月考勤依据已完成，无需再创建任务
+            $basisRecord = \App\Models\BasisRecord::withCount('attachments')
+                ->where('account_set_id', $accountSetId)
                 ->where('project_id', $projectId)
                 ->where('type', 'attendance')
                 ->where('month', $month)
-                ->exists();
+                ->first();
 
-            if ($basisExists) {
-                return null; // 已上传，不创建任务
+            if ($basisRecord && (int) ($basisRecord->attachments_count ?? 0) > 0) {
+                return null;
             }
 
             // 获取账套中第2、3、4审批节点的审批人
@@ -672,6 +674,11 @@ class PendingTaskService
             return;
         }
 
+        // 无附件时保持待提交，不关闭任务
+        if ((int) $basisRecord->attachments()->count() <= 0) {
+            return;
+        }
+
         // 使用简单的 LIKE 匹配月份值
         $tasks = PendingTask::where('account_set_id', $basisRecord->account_set_id)
             ->where('task_type', 'salary_basis')
@@ -697,6 +704,11 @@ class PendingTaskService
     public static function checkAndCompleteAttendanceBasisTask($basisRecord)
     {
         if ($basisRecord->type !== 'attendance') {
+            return;
+        }
+
+        // 无附件时保持待提交，不关闭任务
+        if ((int) $basisRecord->attachments()->count() <= 0) {
             return;
         }
 

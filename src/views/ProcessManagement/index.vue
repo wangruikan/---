@@ -1088,15 +1088,9 @@ const openPaymentRequestDialog = async (processApprovalId) => {
       paymentFormFieldsRef.value.resetForm()
     }
     
-    // 将原保险汇总附件转换为文件列表格式（标记为已存在）
-    paymentFileList.value = (detail.attachments || []).map(att => ({
-      name: att.filename || att.file_name,
-      size: att.file_size,
-      uid: `existing_${att.id}`,
-      status: 'success',
-      isExisting: true,  // 标记为已存在的附件
-      filePath: att.file_path
-    }))
+    // 不再默认继承上次附件，允许按本次付款重新上传或填写情况说明单
+    paymentAttachmentUploaderRef.value?.clearAll?.()
+    paymentFileList.value = []
     invoiceFileList.value = []
     paymentRequestDialogVisible.value = true
   } catch (error) {

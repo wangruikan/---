@@ -17,6 +17,7 @@ _archive_root_files/
 
 dist/
 docs/
+!docs/聊天记录/
 public/*
 !public/h5-sign/
 !public/h5-sign/**

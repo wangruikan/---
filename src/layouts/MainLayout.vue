@@ -672,7 +672,6 @@ watch(
   height: 100vh;
   overflow-y: auto;
   position: relative;
-  z-index: 1;
 }
 
 .sidebar-menu .el-sub-menu .el-menu-item.is-active .el-icon {
@@ -688,7 +687,7 @@ watch(
   padding: 0 20px;
   position: sticky;
   top: 0;
-  z-index: 3200;
+  z-index: 7200;
 }
 
 .header-left {
@@ -739,7 +738,7 @@ watch(
   padding: 8px 12px;
   position: sticky;
   top: 60px;
-  z-index: 3190;
+  z-index: 7190;
 }
 
 .visited-tabs-inner {

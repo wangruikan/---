@@ -295,7 +295,7 @@ watch(() => route.path, () => {
   left: 0;
   top: 0;
   bottom: 0;
-  z-index: 5000;
+  z-index: 7000;
   pointer-events: none;
 }
 

@@ -202,6 +202,7 @@
       v-model="showCreateSheetDialog"
       :title="isEditSheet ? '编辑考勤表' : (sheetForm.id ? '查看考勤表' : '创建考勤表')"
       width="500px"
+      append-to-body
       @close="handleSheetDialogClose"
     >
       <el-form
@@ -273,6 +274,7 @@
       v-model="showSheetDetailDialog"
       title="考勤表详情"
       width="90%"
+      append-to-body
       @close="handleSheetDetailClose"
     >
       <div v-if="currentSheet" class="sheet-detail">
@@ -472,6 +474,7 @@
       v-model="showSubmitDialog"
       title="提交考勤表"
       width="600px"
+      append-to-body
       @close="handleSubmitDialogClose"
     >
       <el-form :model="submitForm" label-width="120px">
@@ -554,6 +557,7 @@
       v-model="showBatchEditDialog"
       title="批量编辑考勤"
       width="600px"
+      append-to-body
     >
       <el-form :model="batchEditForm" label-width="100px">
         <el-form-item label="选择员工">
@@ -608,6 +612,7 @@
       v-model="attendanceBasisDialogVisible"
       title="考勤依据信息"
       width="800px"
+      append-to-body
     >
       <el-descriptions :column="2" border v-if="currentAttendanceBasis">
         <el-descriptions-item label="项目名称">{{ currentAttendanceBasis.project?.name }}</el-descriptions-item>

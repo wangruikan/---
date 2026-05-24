@@ -232,6 +232,24 @@ body {
   background-color: #F5F7FA !important;
 }
 
+/* =========================================================================
+   全局弹窗层级与定位修复
+   目的：避免被左侧固定菜单/顶部区域影响，导致弹窗偏移或被遮挡
+   ========================================================================= */
+body.with-fixed-sidebar-layout {
+  --fixed-sidebar-width: 140px;
+}
+
+body.with-fixed-sidebar-layout .el-overlay,
+body.with-fixed-sidebar-layout .el-overlay-dialog {
+  position: fixed !important;
+  left: var(--fixed-sidebar-width) !important;
+  top: 0 !important;
+  width: calc(100vw - var(--fixed-sidebar-width)) !important;
+  height: 100vh !important;
+  z-index: 6000 !important;
+}
+
 /* 2. 字体与排版：赋予数据“呼吸空间” */
 /* 数字强制等宽对齐，专治表格里的金额、日期、工号、身份证等，提高扫视效率 */
 .el-table,

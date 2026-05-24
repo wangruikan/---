@@ -234,7 +234,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -619,6 +619,8 @@ const handleOpenAccountSetManagement = () => {
 }
 
 onMounted(async () => {
+  document.body.classList.add('with-fixed-sidebar-layout')
+
   loadNotifications()
   
   // 确保账套数据已加载
@@ -629,6 +631,10 @@ onMounted(async () => {
       console.error('加载账套数据失败:', error)
     }
   }
+})
+
+onBeforeUnmount(() => {
+  document.body.classList.remove('with-fixed-sidebar-layout')
 })
 
 watch(() => accountSetStore.currentAccountSet?.id, (accountSetId) => {

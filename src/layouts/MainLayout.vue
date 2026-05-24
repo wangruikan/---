@@ -71,7 +71,7 @@
           <div class="visited-tabs-inner">
             <div
               v-for="tab in visitedTabs"
-              :key="tab.fullPath"
+              :key="tab.path"
               class="visited-tab-item"
               :class="{ active: isActiveTab(tab) }"
               @click="goToVisitedTab(tab)"
@@ -397,31 +397,43 @@ const buildVisitedTab = (targetRoute) => {
   }
 }
 
+const dedupeVisitedTabsByPath = () => {
+  const pathToTab = new Map()
+  visitedTabs.value.forEach((item) => {
+    if (item?.path) {
+      pathToTab.set(item.path, item)
+    }
+  })
+  visitedTabs.value = Array.from(pathToTab.values())
+}
+
 const addVisitedTab = (targetRoute) => {
   const tab = buildVisitedTab(targetRoute)
   if (!tab) return
 
-  const existingIndex = visitedTabs.value.findIndex(item => item.fullPath === tab.fullPath)
+  const existingIndex = visitedTabs.value.findIndex(item => item.path === tab.path)
   if (existingIndex !== -1) {
     visitedTabs.value[existingIndex] = tab
+    dedupeVisitedTabsByPath()
     return
   }
 
   visitedTabs.value.push(tab)
+  dedupeVisitedTabsByPath()
   if (visitedTabs.value.length > MAX_VISITED_TABS) {
     visitedTabs.value.shift()
   }
 }
 
-const isActiveTab = (tab) => tab?.fullPath === route.fullPath
+const isActiveTab = (tab) => tab?.path === route.path
 
 const goToVisitedTab = (tab) => {
-  if (!tab?.fullPath || tab.fullPath === route.fullPath) return
+  if (!tab?.fullPath || tab.path === route.path) return
   router.push(tab.fullPath)
 }
 
 const removeVisitedTab = (tab) => {
-  const index = visitedTabs.value.findIndex(item => item.fullPath === tab.fullPath)
+  const index = visitedTabs.value.findIndex(item => item.path === tab.path)
   if (index === -1) return
 
   const wasActive = isActiveTab(tab)

@@ -1050,6 +1050,10 @@ const loadProjects = async () => {
   }
 }
 
+defineExpose({
+  openCreateDialog: handleCreate
+})
+
 onMounted(() => {
   handleSearch()
   loadProjects()

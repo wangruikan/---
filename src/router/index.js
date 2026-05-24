@@ -264,12 +264,6 @@ const routes = [
         meta: { title: '发票管理' }
       },
       {
-        path: '/reimbursement',
-        name: 'Reimbursement',
-        component: () => import('@/views/Reimbursement/index.vue'),
-        meta: { title: '报销管理' }
-      },
-      {
         path: '/travel-application',
         name: 'TravelApplication',
         component: () => import('@/views/TravelApplication/index.vue'),

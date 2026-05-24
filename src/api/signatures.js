@@ -83,17 +83,19 @@ export function deleteSeal(id) {
 /**
  * 获取我的银行付讫章
  */
-export function getMyBankStamp() {
+export function getMyBankStamp(type = 'bank') {
   return request({
     url: '/bank-stamps/my',
-    method: 'get'
+    method: 'get',
+    params: { type }
   })
 }
 
 /**
- * 上传银行付讫章
+ * 上传付讫章
  */
-export function uploadBankStamp(data) {
+export function uploadBankStamp(data, type = 'bank') {
+  data.append('type', type)
   return request({
     url: '/bank-stamps/upload',
     method: 'post',
@@ -105,7 +107,7 @@ export function uploadBankStamp(data) {
 }
 
 /**
- * 更新银行付讫章位置
+ * 更新付讫章位置
  */
 export function updateBankStampPosition(data) {
   return request({
@@ -116,11 +118,12 @@ export function updateBankStampPosition(data) {
 }
 
 /**
- * 删除银行付讫章
+ * 删除付讫章
  */
-export function deleteBankStamp() {
+export function deleteBankStamp(type = 'bank') {
   return request({
     url: '/bank-stamps',
-    method: 'delete'
+    method: 'delete',
+    params: { type }
   })
 }

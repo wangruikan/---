@@ -319,7 +319,8 @@ class SignatureController extends Controller
             ], 401);
         }
 
-        $bankStamp = UserBankStamp::where('user_id', $user->id)->first();
+        $type = $request->type ?? 'bank';
+        $bankStamp = UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
 
         if ($bankStamp) {
             $bankStamp->image_url = asset('storage/' . $bankStamp->image_path);
@@ -332,12 +333,13 @@ class SignatureController extends Controller
     }
 
     /**
-     * 上传/更新银行付讫章
+     * 上传/更新付讫章
      */
     public function uploadBankStamp(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'bank_stamp_image' => 'required|file|mimes:png,jpg,jpeg|max:2048',
+            'type' => 'nullable|in:bank,cash',
             'name' => 'nullable|string|max:100',
             'position_x' => 'nullable|integer|min:0|max:100',
             'position_y' => 'nullable|integer|min:0|max:100',
@@ -372,11 +374,15 @@ class SignatureController extends Controller
             // 保存文件
             $path = $file->store('bank_stamps', 'public');
 
-            // 查找或创建银行付讫章记录
+            $type = $request->type ?? 'bank';
+            $defaultName = $type === 'cash' ? '现金付讫' : '银行付讫';
+
+            // 查找或创建付讫章记录
             $bankStamp = UserBankStamp::updateOrCreate(
-                ['user_id' => $user->id],
+                ['user_id' => $user->id, 'type' => $type],
                 [
-                    'name' => $request->name ?? '银行付讫',
+                    'type' => $type,
+                    'name' => $request->name ?? $defaultName,
                     'image_path' => $path,
                     'original_filename' => $originalFilename,
                     'position_x' => $request->position_x ?? 70,
@@ -396,9 +402,11 @@ class SignatureController extends Controller
 
             $bankStamp->image_url = asset('storage/' . $bankStamp->image_path);
 
+            $typeLabel = $bankStamp->type === 'cash' ? '现金付讫章' : '银行付讫章';
+
             return response()->json([
                 'success' => true,
-                'message' => '银行付讫章上传成功',
+                'message' => "{$typeLabel}上传成功",
                 'data' => $bankStamp
             ]);
 
@@ -416,6 +424,7 @@ class SignatureController extends Controller
     public function updateBankStampPosition(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            'type' => 'nullable|in:bank,cash',
             'position_x' => 'required|integer|min:0|max:100',
             'position_y' => 'required|integer|min:0|max:100',
             'width' => 'nullable|integer|min:20|max:300',
@@ -438,12 +447,14 @@ class SignatureController extends Controller
             ], 401);
         }
 
-        $bankStamp = UserBankStamp::where('user_id', $user->id)->first();
+        $type = $request->type ?? 'bank';
+        $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
+        $bankStamp = UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
 
         if (!$bankStamp) {
             return response()->json([
                 'success' => false,
-                'message' => '银行付讫章不存在'
+                'message' => "{$typeLabel}不存在"
             ], 404);
         }
 
@@ -464,7 +475,7 @@ class SignatureController extends Controller
     }
 
     /**
-     * 删除银行付讫章
+     * 删除付讫章
      */
     public function deleteBankStamp(Request $request)
     {
@@ -476,12 +487,14 @@ class SignatureController extends Controller
             ], 401);
         }
 
-        $bankStamp = UserBankStamp::where('user_id', $user->id)->first();
+        $type = $request->type ?? 'bank';
+        $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
+        $bankStamp = UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
 
         if (!$bankStamp) {
             return response()->json([
                 'success' => false,
-                'message' => '银行付讫章不存在'
+                'message' => "{$typeLabel}不存在"
             ], 404);
         }
 
@@ -492,9 +505,10 @@ class SignatureController extends Controller
 
         $bankStamp->delete();
 
+        $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
         return response()->json([
             'success' => true,
-            'message' => '银行付讫章删除成功'
+            'message' => "{$typeLabel}删除成功"
         ]);
     }
 }

@@ -11,6 +11,7 @@ class UserBankStamp extends Model
 
     protected $fillable = [
         'user_id',
+        'type',
         'name',
         'image_path',
         'original_filename',

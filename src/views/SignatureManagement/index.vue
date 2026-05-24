@@ -147,6 +147,48 @@
       </template>
     </el-dialog>
     
+    <!-- 现金付讫章 -->
+    <div class="section">
+      <el-card>
+        <template #header>
+          <div class="section-header">
+            <span class="section-title">💵 现金付讫章</span>
+            <span class="section-desc">（付款方式为现金时自动盖章到付款申请单）</span>
+          </div>
+        </template>
+        
+        <div class="bank-stamp-content">
+          <div v-if="myCashStamp" class="bank-stamp-display">
+            <img :src="myCashStamp.image_url" alt="现金付讫章" class="bank-stamp-image" />
+            <div class="bank-stamp-info">
+              <p>名称：{{ myCashStamp.name }}</p>
+              <p>默认位置：X {{ myCashStamp.position_x }}%, Y {{ myCashStamp.position_y }}%</p>
+              <p>尺寸：{{ myCashStamp.width }} x {{ myCashStamp.height }}</p>
+              <p>上传时间：{{ formatDateTime(myCashStamp.created_at) }}</p>
+            </div>
+            <div class="bank-stamp-actions">
+              <el-button type="primary" @click="showUploadCashStamp = true">
+                更换
+              </el-button>
+              <el-button type="warning" @click="showCashPositionSetting = true">
+                设置位置
+              </el-button>
+              <el-button type="danger" @click="handleDeleteCashStamp">
+                删除
+              </el-button>
+            </div>
+          </div>
+          <div v-else class="bank-stamp-empty">
+            <el-empty description="还未上传现金付讫章">
+              <el-button type="primary" @click="showUploadCashStamp = true">
+                上传现金付讫章
+              </el-button>
+            </el-empty>
+          </div>
+        </div>
+      </el-card>
+    </div>
+
     <!-- 上传银行付讫章对话框 -->
     <el-dialog
       v-model="showUploadBankStamp"
@@ -182,6 +224,41 @@
       </template>
     </el-dialog>
     
+    <!-- 上传现金付讫章对话框 -->
+    <el-dialog
+      v-model="showUploadCashStamp"
+      title="上传现金付讫章"
+      width="500px"
+    >
+      <el-upload
+        ref="cashStampUploadRef"
+        :file-list="cashStampFileList"
+        :auto-upload="false"
+        :limit="1"
+        :on-change="handleCashStampFileChange"
+        :on-exceed="handleCashStampExceed"
+        accept=".png,.jpg,.jpeg"
+        drag
+      >
+        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+        <div class="el-upload__text">
+          将现金付讫章图片拖到此处，或<em>点击上传</em>
+        </div>
+        <template #tip>
+          <div class="el-upload__tip">
+            建议使用PNG透明背景图片，文件大小不超过2MB
+          </div>
+        </template>
+      </el-upload>
+      
+      <template #footer>
+        <el-button @click="showUploadCashStamp = false">取消</el-button>
+        <el-button type="primary" @click="handleCashStampUpload" :loading="uploading">
+          确认上传
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 银行付讫章位置设置对话框 -->
     <el-dialog
       v-model="showPositionSetting"
@@ -210,6 +287,35 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 现金付讫章位置设置对话框 -->
+    <el-dialog
+      v-model="showCashPositionSetting"
+      title="设置现金付讫章位置"
+      width="400px"
+    >
+      <el-form :model="cashPositionForm" label-width="100px">
+        <el-form-item label="X位置(%)">
+          <el-slider v-model="cashPositionForm.position_x" :min="0" :max="100" show-input />
+        </el-form-item>
+        <el-form-item label="Y位置(%)">
+          <el-slider v-model="cashPositionForm.position_y" :min="0" :max="100" show-input />
+        </el-form-item>
+        <el-form-item label="宽度(px)">
+          <el-input-number v-model="cashPositionForm.width" :min="20" :max="300" />
+        </el-form-item>
+        <el-form-item label="高度(px)">
+          <el-input-number v-model="cashPositionForm.height" :min="20" :max="300" />
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="showCashPositionSetting = false">取消</el-button>
+        <el-button type="primary" @click="handleUpdateCashPosition" :loading="uploading">
+          保存设置
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -230,6 +336,7 @@ import {
 
 const mySeals = ref([])
 const myBankStamp = ref(null)
+const myCashStamp = ref(null)
 const uploading = ref(false)
 
 // 印章上传
@@ -248,6 +355,18 @@ const bankStampUploadRef = ref()
 const bankStampFileList = ref([])
 const showPositionSetting = ref(false)
 const positionForm = reactive({
+  position_x: 70,
+  position_y: 80,
+  width: 100,
+  height: 50
+})
+
+// 现金付讫章上传
+const showUploadCashStamp = ref(false)
+const cashStampUploadRef = ref()
+const cashStampFileList = ref([])
+const showCashPositionSetting = ref(false)
+const cashPositionForm = reactive({
   position_x: 70,
   position_y: 80,
   width: 100,
@@ -444,6 +563,102 @@ const handleDeleteBankStamp = async () => {
   }
 }
 
+// ==================== 现金付讫章相关 ====================
+
+// 加载我的现金付讫章
+const loadMyCashStamp = async () => {
+  try {
+    const response = await getMyBankStamp('cash')
+    if (response.success) {
+      myCashStamp.value = response.data
+      if (myCashStamp.value) {
+        cashPositionForm.position_x = myCashStamp.value.position_x
+        cashPositionForm.position_y = myCashStamp.value.position_y
+        cashPositionForm.width = myCashStamp.value.width
+        cashPositionForm.height = myCashStamp.value.height
+      }
+    }
+  } catch (error) {
+    console.error('加载现金付讫章失败:', error)
+  }
+}
+
+// 现金付讫章文件选择
+const handleCashStampFileChange = (file, fileList) => {
+  cashStampFileList.value = fileList
+}
+
+const handleCashStampExceed = () => {
+  ElMessage.warning('只能上传一个现金付讫章图片')
+}
+
+// 上传现金付讫章
+const handleCashStampUpload = async () => {
+  if (cashStampFileList.value.length === 0) {
+    ElMessage.warning('请选择现金付讫章图片')
+    return
+  }
+
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('bank_stamp_image', cashStampFileList.value[0].raw)
+
+    const response = await uploadBankStamp(formData, 'cash')
+    if (response.success) {
+      ElMessage.success('现金付讫章上传成功')
+      showUploadCashStamp.value = false
+      cashStampFileList.value = []
+      await loadMyCashStamp()
+    }
+  } catch (error) {
+    console.error('上传现金付讫章失败:', error)
+    ElMessage.error(error.response?.data?.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+// 更新现金付讫章位置
+const handleUpdateCashPosition = async () => {
+  uploading.value = true
+  try {
+    const response = await updateBankStampPosition({ ...cashPositionForm, type: 'cash' })
+    if (response.success) {
+      ElMessage.success('位置设置已保存')
+      showCashPositionSetting.value = false
+      await loadMyCashStamp()
+    }
+  } catch (error) {
+    console.error('更新位置失败:', error)
+    ElMessage.error(error.response?.data?.message || '更新失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+// 删除现金付讫章
+const handleDeleteCashStamp = async () => {
+  try {
+    await ElMessageBox.confirm('确定要删除现金付讫章吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    const response = await deleteBankStamp('cash')
+    if (response.success) {
+      ElMessage.success('现金付讫章删除成功')
+      myCashStamp.value = null
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除现金付讫章失败:', error)
+      ElMessage.error(error.response?.data?.message || '删除失败')
+    }
+  }
+}
+
 // 格式化时间
 const formatDateTime = (dateTimeStr) => {
   if (!dateTimeStr) return '-'
@@ -454,6 +669,7 @@ const formatDateTime = (dateTimeStr) => {
 onMounted(() => {
   loadMySeals()
   loadMyBankStamp()
+  loadMyCashStamp()
 })
 </script>
 

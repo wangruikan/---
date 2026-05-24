@@ -273,8 +273,8 @@ class ApprovalService
                     $instance->id  // 传入审批实例ID
                 );
                 
-                // 自动盖银行付讫章（最后一个审批人）
-                $this->applyBankStampIfExists($instance, $approverId);
+                // 自动盖付讫章（最后一个审批人）
+                $this->applyStampIfExists($instance, $approverId);
                 
                 Log::info('审批流程全部完成', [
                     'instance_id' => $instance->id,
@@ -2688,20 +2688,38 @@ class ApprovalService
     }
 
     /**
-     * 自动盖银行付讫章
-     * 当审批流程最后一个节点通过时，检查审批人是否有银行付讫章
+     * 自动盖付讫章
+     * 当审批流程最后一个节点通过时，根据付款方式选择对应的付讫章
      * 如果有，则在附件中查找名称包含"付款申请单"的PDF文件并自动盖章
      */
-    private function applyBankStampIfExists($instance, $approverId)
+    private function applyStampIfExists($instance, $approverId)
     {
         try {
-            // 检查审批人是否有银行付讫章
-            $bankStamp = \App\Models\UserBankStamp::where('user_id', $approverId)->first();
+            // 尝试从业务数据获取付款方式，默认为银行转账
+            $stampType = 'bank';
+            $businessType = $instance->business_type;
+            $businessId = $instance->business_id;
+
+            // TODO: 当付款申请单添加了 payment_method 字段后，从此处读取
+            // 根据 business_type 查询对应业务数据的付款方式
+            if (in_array($businessType, ['付款申请', '工资付款申请', '报销付款申请', '保险汇总付款申请'])) {
+                // 暂时默认使用银行付讫章，后续从 PaymentApplication 读取 payment_method
+                // $payment = \App\Models\PaymentApplication::find($businessId);
+                // $stampType = ($payment && $payment->payment_method === 'cash') ? 'cash' : 'bank';
+            }
+
+            // 检查审批人是否有对应类型的付讫章
+            $bankStamp = \App\Models\UserBankStamp::where('user_id', $approverId)
+                ->where('type', $stampType)
+                ->first();
+
+            $typeLabel = $stampType === 'cash' ? '现金付讫章' : '银行付讫章';
             
             if (!$bankStamp) {
-                Log::info('审批人未设置银行付讫章，跳过自动盖章', [
+                Log::info("审批人未设置{$typeLabel}，跳过自动盖章", [
                     'instance_id' => $instance->id,
-                    'approver_id' => $approverId
+                    'approver_id' => $approverId,
+                    'stamp_type' => $stampType
                 ]);
                 return;
             }
@@ -2730,11 +2748,11 @@ class ApprovalService
                 return;
             }
             
-            // 银行付讫章图片路径
+            // 付讫章图片路径
             $stampImagePath = storage_path('app/public/' . $bankStamp->image_path);
             
             if (!file_exists($stampImagePath)) {
-                Log::error('银行付讫章图片不存在', [
+                Log::error("{$typeLabel}图片不存在", [
                     'image_path' => $bankStamp->image_path
                 ]);
                 return;
@@ -2742,12 +2760,11 @@ class ApprovalService
             
             // 对每个付款申请单PDF进行盖章
             foreach ($targetAttachments as $attachment) {
-                $this->stampPdfWithBankStamp($attachment, $bankStamp, $stampImagePath);
+                $this->stampPdf($attachment, $bankStamp, $stampImagePath, $typeLabel);
             }
             
         } catch (\Exception $e) {
-            // 盖章失败不影响审批流程
-            Log::error('自动盖银行付讫章失败', [
+            Log::error('自动盖付讫章失败', [
                 'instance_id' => $instance->id,
                 'approver_id' => $approverId,
                 'error' => $e->getMessage(),
@@ -2757,9 +2774,9 @@ class ApprovalService
     }
 
     /**
-     * 在PDF上盖银行付讫章
+     * 在PDF上盖付讫章
      */
-    private function stampPdfWithBankStamp($attachment, $bankStamp, $stampImagePath)
+    private function stampPdf($attachment, $bankStamp, $stampImagePath, $typeLabel = '银行付讫章')
     {
         try {
             $pdfPath = storage_path('app/public/' . $attachment->file_path);
@@ -2799,7 +2816,7 @@ class ApprovalService
             // 保存覆盖原文件
             $pdf->Output($pdfPath, 'F');
             
-            Log::info('银行付讫章盖章成功', [
+            Log::info("{$typeLabel}盖章成功", [
                 'attachment_id' => $attachment->id,
                 'file_name' => $attachment->file_name ?? $attachment->original_name,
                 'position' => [

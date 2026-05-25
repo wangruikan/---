@@ -1070,6 +1070,22 @@ const handleConfirmSubmitReason = async () => {
   }
 }
 
+const getReminderFallbackRoute = (source) => {
+  const routeMap = {
+    contract_reminder: '/assessment',
+    assessment_record: '/assessment',
+    delivery_reminder: '/document-deliveries',
+    payment_reminder: '/payment-applications',
+    invoice_reminder: '/invoice-applications',
+    invoice_reason_submitted: '/invoice-applications',
+    salary_payment_reminder: '/salary-payment-records',
+    insurance_summary_reminder: '/approvals',
+    project_end_reminder: '/projects'
+  }
+
+  return routeMap[source] || null
+}
+
 // 处理提醒点击
 const handleReminderClick = async (reminder) => {
   try {
@@ -1085,19 +1101,11 @@ const handleReminderClick = async (reminder) => {
     if (reminder.action_url) {
       router.push(reminder.action_url)
     } else {
-      // 默认跳转逻辑
-      switch (reminder.source) {
-        case 'contract_reminder':
-          router.push('/assessment') // 合同提醒跳转到考核页面
-          break
-        case 'assessment_record':
-          router.push('/assessment')
-          break
-        case 'delivery_reminder':
-          router.push('/document-delivery')
-          break
-        default:
-          console.log('点击提醒:', reminder.title)
+      const fallbackRoute = getReminderFallbackRoute(reminder.source)
+      if (fallbackRoute) {
+        router.push(fallbackRoute)
+      } else {
+        console.log('提醒暂无跳转路由:', reminder.source, reminder.title)
       }
     }
   } catch (error) {

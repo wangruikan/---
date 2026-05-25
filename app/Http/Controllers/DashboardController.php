@@ -371,7 +371,7 @@ class DashboardController extends Controller
                 'description' => $reminder->employee_name . ' - ' . $this->truncateText($reminder->description, 80),
                 'created_at' => $reminder->created_at->toISOString(),
                 'priority' => $this->getContractReminderPriority($reminder),
-                'action_url' => '/contract-reminders',
+                'action_url' => $this->getReminderActionUrl('contract_reminder'),
                 'source' => 'contract_reminder',
                 'source_id' => $reminder->id
             ];
@@ -425,7 +425,7 @@ class DashboardController extends Controller
                 'description' => "员工 {$delivery->employee_name} 的资料交付需要处理",
                 'created_at' => $reminder->created_at->toISOString(),
                 'priority' => 'medium',
-                'action_url' => '/document-delivery',
+                'action_url' => $this->getReminderActionUrl('delivery_reminder'),
                 'source' => 'delivery_reminder',
                 'source_id' => $reminder->id
             ];
@@ -466,7 +466,7 @@ class DashboardController extends Controller
                 'description' => $assessment->business_name . ' - 截止日期：' . $assessment->deadline_date,
                 'created_at' => $assessment->created_at->toISOString(),
                 'priority' => $isOverdue ? 'high' : 'medium',
-                'action_url' => '/assessment',
+                'action_url' => $this->getReminderActionUrl('assessment_record'),
                 'source' => 'assessment_record',
                 'source_id' => $assessment->id
             ];
@@ -504,7 +504,7 @@ class DashboardController extends Controller
                 'description' => $notification->content,
                 'created_at' => $notification->created_at->toISOString(),
                 'priority' => 'high',
-                'action_url' => '/payment-applications',
+                'action_url' => $this->getReminderActionUrl('payment_reminder'),
                 'source' => 'payment_reminder',
                 'source_id' => $notification->id
             ];
@@ -575,7 +575,7 @@ class DashboardController extends Controller
                 'content' => $notification->content,
                 'created_at' => $notification->created_at->toISOString(),
                 'priority' => 'high',
-                'action_url' => $notification->type === 'project_end_reminder' ? '/projects' : null,
+                'action_url' => $this->getReminderActionUrl($notification->type),
                 'data' => array_merge($data, [
                     'has_reason_submitted' => $hasReasonSubmitted,
                     'submitted_reason' => $submittedReason,
@@ -635,7 +635,7 @@ class DashboardController extends Controller
         }
 
         try {
-            if (in_array($source, ['invoice_reminder', 'invoice_reason_submitted', 'salary_payment_reminder', 'insurance_summary_reminder', 'project_end_reminder'], true)) {
+            if (in_array($source, ['invoice_reminder', 'invoice_reason_submitted', 'salary_payment_reminder', 'insurance_summary_reminder', 'project_end_reminder', 'payment_reminder'], true)) {
                 \App\Models\Notification::where('id', $sourceId)
                     ->update([
                         'is_read' => true,
@@ -1089,5 +1089,22 @@ class DashboardController extends Controller
         
         // 确保进度在合理范围内
         return max(5, min(95, $finalProgress));
+    }
+
+    /**
+     * 统一提醒跳转地址（快速版：跳到对应模块页）
+     */
+    private function getReminderActionUrl(?string $source): ?string
+    {
+        return match ($source) {
+            'contract_reminder', 'assessment_record' => '/assessment',
+            'delivery_reminder' => '/document-deliveries',
+            'payment_reminder' => '/payment-applications',
+            'invoice_reminder', 'invoice_reason_submitted' => '/invoice-applications',
+            'salary_payment_reminder' => '/salary-payment-records',
+            'insurance_summary_reminder' => '/approvals',
+            'project_end_reminder' => '/projects',
+            default => null,
+        };
     }
 }

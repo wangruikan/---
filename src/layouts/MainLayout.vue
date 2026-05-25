@@ -560,6 +560,22 @@ const normalizeReminderToNotification = (reminder) => ({
   action_url: reminder.action_url || ''
 })
 
+const getReminderFallbackRoute = (source) => {
+  const routeMap = {
+    contract_reminder: '/assessment',
+    assessment_record: '/assessment',
+    delivery_reminder: '/document-deliveries',
+    payment_reminder: '/payment-applications',
+    invoice_reminder: '/invoice-applications',
+    invoice_reason_submitted: '/invoice-applications',
+    salary_payment_reminder: '/salary-payment-records',
+    insurance_summary_reminder: '/approvals',
+    project_end_reminder: '/projects'
+  }
+
+  return routeMap[source] || null
+}
+
 const loadNotifications = async () => {
   try {
     if (!accountSetStore.currentAccountSet?.id) {
@@ -598,16 +614,9 @@ const handleNotificationClick = async (notification) => {
       return
     }
 
-    switch (notification.source) {
-      case 'contract_reminder':
-      case 'assessment_record':
-        router.push('/assessment')
-        break
-      case 'delivery_reminder':
-        router.push('/document-delivery')
-        break
-      default:
-        break
+    const fallbackRoute = getReminderFallbackRoute(notification.source)
+    if (fallbackRoute) {
+      router.push(fallbackRoute)
     }
 
     showNotifications.value = false

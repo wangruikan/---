@@ -338,6 +338,18 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="最早开票日期">
+              <el-date-picker
+                v-model="createForm.earliest_invoice_date"
+                type="date"
+                placeholder="选填，限制最早开票时间"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="开票人" prop="invoicer">
               <el-input v-model="createForm.invoicer" placeholder="请输入开票人" />
             </el-form-item>
@@ -761,6 +773,19 @@
                   </el-form-item>
                 </el-col>
 
+                <!-- 最早开票日期 -->
+                <el-col :span="12">
+                  <el-form-item label="最早开票日期" prop="earliest_invoice_date">
+                    <el-date-picker
+                      v-model="invoiceDetailsForm.earliest_invoice_date"
+                      type="date"
+                      placeholder="选填，限制最早开票时间"
+                      value-format="YYYY-MM-DD"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </el-col>
+
                 <!-- 是否完成 -->
                 <el-col :span="12">
                   <el-form-item label="是否完成">
@@ -984,6 +1009,7 @@ const createForm = reactive({
   invoice_amount: 0,
   tax_amount: 0,
   invoice_date: '',
+  earliest_invoice_date: '',
   is_completed: false,
   invoicer: '',
   invoice_number: '',
@@ -1119,6 +1145,7 @@ const invoiceDetailsForm = reactive({
   invoice_amount: 0,
   tax_amount: 0,
   invoice_date: null,
+  earliest_invoice_date: null,
   is_completed: false,
   invoicer: '',
   invoice_number: '',
@@ -1466,6 +1493,7 @@ const resetCreateForm = () => {
   createForm.invoice_amount = 0
   createForm.tax_amount = 0
   createForm.invoice_date = today
+  createForm.earliest_invoice_date = ''
   createForm.is_completed = false
   createForm.invoicer = ''
   createForm.invoice_number = ''
@@ -1492,6 +1520,29 @@ const handleConfirmCreate = async () => {
 
     if (!validateCreateExtraData()) {
       return
+    }
+
+    // 若标记为完成且设置了最早开票日期，检查是否已到开票日期
+    if (createForm.is_completed && createForm.earliest_invoice_date) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const earliest = new Date(createForm.earliest_invoice_date)
+      earliest.setHours(0, 0, 0, 0)
+      if (today < earliest) {
+        try {
+          await ElMessageBox.confirm(
+            `当前日期尚未到达最早开票日期（${createForm.earliest_invoice_date}），确定要标记为完成吗？`,
+            '开票日期提醒',
+            {
+              confirmButtonText: '仍然保存',
+              cancelButtonText: '取消',
+              type: 'warning'
+            }
+          )
+        } catch {
+          return
+        }
+      }
     }
 
     creating.value = true
@@ -1628,6 +1679,7 @@ const loadInvoiceDetailsForm = (data) => {
   invoiceDetailsForm.invoice_amount = data.invoice_amount || 0
   invoiceDetailsForm.tax_amount = data.tax_amount || 0
   invoiceDetailsForm.invoice_date = data.invoice_date
+  invoiceDetailsForm.earliest_invoice_date = data.earliest_invoice_date || null
   invoiceDetailsForm.is_completed = data.is_completed || false
   invoiceDetailsForm.invoicer = data.invoicer || ''
   invoiceDetailsForm.invoice_number = data.invoice_number || ''
@@ -1642,6 +1694,25 @@ const handleSaveInvoiceDetails = async () => {
       await invoiceDetailsFormRef.value.validate()
     }
 
+    // 若标记为完成且设置了最早开票日期，检查是否已到开票日期
+    if (invoiceDetailsForm.is_completed && invoiceDetailsForm.earliest_invoice_date) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const earliest = new Date(invoiceDetailsForm.earliest_invoice_date)
+      earliest.setHours(0, 0, 0, 0)
+      if (today < earliest) {
+        await ElMessageBox.confirm(
+          `当前日期尚未到达最早开票日期（${invoiceDetailsForm.earliest_invoice_date}），确定要标记为完成吗？`,
+          '开票日期提醒',
+          {
+            confirmButtonText: '仍然保存',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        )
+      }
+    }
+
     const response = await request({
       url: `/invoice-applications/${currentApplication.value.id}/update-invoice-details`,
       method: 'put',
@@ -1653,6 +1724,7 @@ const handleSaveInvoiceDetails = async () => {
       await loadApplicationDetail(currentApplication.value.id)
     }
   } catch (error) {
+    if (error === 'cancel') return
     console.error('保存失败', error)
     ElMessage.error(error.response?.data?.message || '保存失败')
   }

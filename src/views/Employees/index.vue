@@ -4601,6 +4601,7 @@ import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import request from '@/api/request'
+import { useFormDraft } from '@/composables/useFormDraft'
 import { PdfFillService } from '@/utils/pdfFillService'
 import { getMySignature, getMySeals } from '@/api/signatures'
 import { useRouter } from 'vue-router'
@@ -5089,6 +5090,9 @@ const form = reactive({
   // 八、备注说明信息
   other_notes: ''
 })
+
+// 新增员工表单草稿暂存（仅新建模式生效，编辑/查看不污染）
+const employeeDraft = useFormDraft('employee-create-v1', form, (f) => !f.name)
 
 const isInsuranceFieldsLocked = computed(() => {
   if (isViewMode.value) {
@@ -7027,6 +7031,7 @@ const handleSubmit = async () => {
           })
           console.log('创建员工响应:', JSON.stringify(response))
           ElMessage.success('创建成功')
+          employeeDraft.clear()
         }
         
         showCreateDialog.value = false
@@ -7239,11 +7244,13 @@ const handleDialogClose = () => {
       }
     ).then(() => {
       // 用户确认关闭
+      if (!isEdit.value) employeeDraft.save()
       resetDialogState()
     }).catch(() => {
       // 用户取消，不关闭对话框
     })
   } else {
+    if (!isEdit.value) employeeDraft.save()
     resetDialogState()
   }
 }
@@ -8927,21 +8934,26 @@ const generateEmployeeNumber = async () => {
 const handleNewEmployee = async () => {
   isEdit.value = false
   isViewMode.value = false
-  // 重置表单
-  Object.keys(form).forEach(key => {
-    if (key === 'project_ids') {
-      form[key] = []
-    } else if (['birth_date', 'hire_date', 'contract_start_date', 'contract_end_date', 'social_insurance_enrollment_date', 'provident_fund_enrollment_date', 'medical_insurance_enrollment_date', 'large_medical_enrollment_date', 'id_card_valid_from', 'id_card_valid_until'].includes(key)) {
-      form[key] = null
-    } else if (['basic_salary', 'comprehensive_salary', 'probation_salary', 'performance_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base'].includes(key)) {
-      form[key] = null
-    } else if (key === 'salary_items') {
-      form[key] = []
-    } else {
-      form[key] = ''
-    }
-  })
-  
+  // 有草稿则恢复，无草稿则重置为默认值
+  const restored = employeeDraft.hasDraft()
+  if (restored) {
+    employeeDraft.restore()
+  } else {
+    Object.keys(form).forEach(key => {
+      if (key === 'project_ids') {
+        form[key] = []
+      } else if (['birth_date', 'hire_date', 'contract_start_date', 'contract_end_date', 'social_insurance_enrollment_date', 'provident_fund_enrollment_date', 'medical_insurance_enrollment_date', 'large_medical_enrollment_date', 'id_card_valid_from', 'id_card_valid_until'].includes(key)) {
+        form[key] = null
+      } else if (['basic_salary', 'comprehensive_salary', 'probation_salary', 'performance_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base'].includes(key)) {
+        form[key] = null
+      } else if (key === 'salary_items') {
+        form[key] = []
+      } else {
+        form[key] = ''
+      }
+    })
+  }
+
   // 工号字段清空，由后端根据项目自动生成（如：AA001, AB001）
   form.employee_number = ''
   
@@ -8954,8 +8966,10 @@ const handleNewEmployee = async () => {
   projectOtherInsurancePolicies.value = []
   selectedLargeMedicalInsuranceConfig.value = null
   availableLargeMedicalInsuranceConfigs.value = []
-  
-  formRef.value?.resetFields()
+
+  if (!restored) {
+    formRef.value?.resetFields()
+  }
   pendingSalaryAdjustment.value = null
   currentSalarySnapshot.value = {
     basic_salary: null,

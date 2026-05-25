@@ -1,103 +1,90 @@
 /**
  * 表单草稿暂存 composable
- * 功能：自动保存表单数据到 localStorage，关闭重开后自动恢复，提交成功后自动清除
  *
- * 使用示例：
- * const draft = useFormDraft('project-create', form)
- * draft.restore()        // 恢复草稿到 form
- * draft.clear()          // 清除草稿
- * draft.save()           // 手动保存（通常不需要手动调用，watch 会自动保存）
+ * 使用方式（每个表单只需 3 行）：
+ *   const draft = useFormDraft('project-create-v1', form)
+ *   // 关闭弹窗时：draft.save()
+ *   // 提交成功时：draft.clear()
+ *   // 打开弹窗时：draft.restore()
  */
-import { watch } from 'vue'
 
 const STORAGE_PREFIX = 'form_draft:'
-const EXPIRE_DAYS = 7 // 草稿7天后过期
+const EXPIRE_DAYS = 7
 
-function getStorageKey(key) {
+function storageKey(key) {
   return STORAGE_PREFIX + key
 }
 
-function load(key) {
+function loadRaw(key) {
   try {
-    const raw = localStorage.getItem(getStorageKey(key))
+    const raw = localStorage.getItem(storageKey(key))
     if (!raw) return null
-    const data = JSON.parse(raw)
-    // 检查是否过期
-    if (data._expire && Date.now() > data._expire) {
-      localStorage.removeItem(getStorageKey(key))
+    const parsed = JSON.parse(raw)
+    if (parsed._expire && Date.now() > parsed._expire) {
+      localStorage.removeItem(storageKey(key))
       return null
     }
-    return data._data ?? null
+    return parsed._data ?? null
   } catch {
     return null
   }
 }
 
-function save(key, data) {
+function saveRaw(key, data) {
   try {
-    const payload = {
+    localStorage.setItem(storageKey(key), JSON.stringify({
       _data: data,
-      _expire: Date.now() + EXPIRE_DAYS * 24 * 60 * 60 * 1000,
-      _version: 1
-    }
-    localStorage.setItem(getStorageKey(key), JSON.stringify(payload))
-  } catch {
-    // 存储满了或其他异常，忽略
-  }
+      _expire: Date.now() + EXPIRE_DAYS * 24 * 60 * 60 * 1000
+    }))
+  } catch {}
 }
 
-function clear(key) {
+function clearRaw(key) {
   try {
-    localStorage.removeItem(getStorageKey(key))
+    localStorage.removeItem(storageKey(key))
   } catch {}
 }
 
 /**
- * @param {string} key - 草稿唯一标识
- * @param {import('vue').Ref | import('vue').ReactiveObject} formRef - 表单 reactive/ref 对象
- * @param {Object} options - 配置项
- * @param {boolean} options.autoSave - 是否自动 watch 保存（默认 true）
- * @param {Function} options.filter - 可选，过滤函数，pick 要保存的字段
+ * @param {string} key        草稿唯一 key（同一表单用同一个 key）
+ * @param {object} form       Vue reactive 表单对象
+ * @param {Function} [isEmpty] 判断表单是否为空，为空时不保存草稿
+ *                             默认：所有字段都是空字符串/null/空数组则视为空
  */
-export function useFormDraft(key, formRef, options = {}) {
-  const { autoSave = true, filter } = options
-
-  // 自动保存：每次 formRef 变化时自动保存草稿
-  if (autoSave) {
-    watch(
-      () => formRef,
-      (newVal) => {
-        if (!newVal) return
-        const data = filter ? filter(Object.assign({}, newVal)) : Object.assign({}, newVal)
-        save(key, data)
-      },
-      { deep: true }
-    )
+export function useFormDraft(key, form, isEmpty) {
+  const defaultIsEmpty = (f) => {
+    return Object.values(f).every(v => {
+      if (Array.isArray(v)) return v.length === 0
+      return v === '' || v === null || v === undefined || v === false || v === 0
+    })
   }
 
+  const checkEmpty = isEmpty ?? defaultIsEmpty
+
   return {
-    /** 从 localStorage 恢复草稿数据并合并到 formRef */
+    /** 手动保存草稿（在弹窗关闭时调用） */
+    save() {
+      const snapshot = JSON.parse(JSON.stringify(form))
+      if (checkEmpty(snapshot)) return  // 表单为空不保存
+      saveRaw(key, snapshot)
+    },
+
+    /** 恢复草稿到 form（在弹窗打开时调用） */
     restore() {
-      const data = load(key)
+      const data = loadRaw(key)
       if (!data) return false
-      Object.assign(formRef, data)
+      Object.assign(form, data)
       return true
     },
 
-    /** 清除本地草稿 */
-    clear() {
-      clear(key)
-    },
-
-    /** 手动保存一次 */
-    save() {
-      const data = filter ? filter(Object.assign({}, formRef)) : Object.assign({}, formRef)
-      save(key, data)
-    },
-
-    /** 检查是否有草稿 */
+    /** 是否存在有效草稿 */
     hasDraft() {
-      return load(key) !== null
+      return loadRaw(key) !== null
+    },
+
+    /** 清除草稿（提交成功后调用） */
+    clear() {
+      clearRaw(key)
     }
   }
 }

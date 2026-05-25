@@ -1316,6 +1316,7 @@ import request from '@/api/request'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
+import { useFormDraft } from '@/composables/useFormDraft'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 
 const userStore = useUserStore()
@@ -1335,15 +1336,10 @@ const groupedPoliciesByType = computed(() => {
   const grouped = {}
   
   availableOtherInsurancePolicies.value.forEach(policy => {
-    // 检查 policy.type 是否存在
-    if (!policy.type) {
-      console.warn('保单缺少类型信息:', policy)
-      return
-    }
-    
-    const typeId = policy.type.id
-    const typeName = policy.type.name
-    
+    const typeId = policy.type?.id ?? policy.type_id
+    const typeName = policy.type?.name ?? `类型${typeId}`
+
+    if (!typeId) return
     if (!grouped[typeId]) {
       grouped[typeId] = {
         typeId,
@@ -1824,6 +1820,9 @@ const form = reactive({
   other_insurance_policies: [],  // 其他保险保单ID列表
   large_medical_insurance_configs: []  // 大额医疗保险配置ID列表
 })
+
+// 新增项目表单草稿暂存（仅新建模式生效，编辑/查看不污染）
+const projectCreateDraft = useFormDraft('project-create-v1', form, (f) => !f.name)
 
 const NO_SOCIAL_SECURITY_OPTION = '__NONE_SOCIAL_SECURITY__'
 const NO_HOUSING_FUND_OPTION = '__NONE_HOUSING_FUND__'
@@ -2335,7 +2334,12 @@ const handleCreate = async () => {
   isEdit.value = false  // 新建时设置为false
   currentProject.value = null
   projectFormActiveTab.value = 'basic'
-  resetForm()
+  // 有草稿则恢复，无草稿则用默认值重置
+  if (!projectCreateDraft.hasDraft()) {
+    resetForm()
+  } else {
+    projectCreateDraft.restore()
+  }
   isProjectCodeManuallyEdited.value = false
   
   // 重置合同模板数据
@@ -2349,7 +2353,7 @@ const handleCreate = async () => {
   
   // 加载所有地区和保险数据
   await loadAvailableRegions()
-  
+
   showCreateDialog.value = true
 }
 
@@ -2850,6 +2854,7 @@ const handleSubmit = async () => {
           const response = await createProject(projectPayload)
           projectId = response.data.id
           ElMessage.success('创建成功')
+          projectCreateDraft.clear()
         }
         
         // 保存社保地区（过滤空值和无效值）
@@ -2945,6 +2950,10 @@ const handleSubmit = async () => {
 }
 
 const handleDialogClose = () => {
+  // 仅新建模式保存草稿
+  if (!isEdit.value) {
+    projectCreateDraft.save()
+  }
   isEdit.value = false
   isProjectCodeManuallyEdited.value = false
   otherInsuranceNoSelection.value = false

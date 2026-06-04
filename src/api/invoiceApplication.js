@@ -87,9 +87,12 @@ export function generateExcel(applicationId) {
 /**
  * 上传附件
  */
-export function uploadAttachment(applicationId, file) {
+export function uploadAttachment(applicationId, file, attachmentType = '') {
   const formData = new FormData()
   formData.append('file', file)
+  if (attachmentType) {
+    formData.append('attachment_type', attachmentType)
+  }
   
   return request({
     url: `/invoice-applications/${applicationId}/attachments`,
@@ -130,6 +133,17 @@ export function resubmitInvoiceApplication(applicationId) {
   return request({
     url: `/invoice-applications/${applicationId}/resubmit`,
     method: 'post'
+  })
+}
+
+/**
+ * 审批通过后填写发票号码
+ */
+export function fillInvoiceApplicationNumber(applicationId, data) {
+  return request({
+    url: `/invoice-applications/${applicationId}/fill-invoice-number`,
+    method: 'post',
+    data
   })
 }
 

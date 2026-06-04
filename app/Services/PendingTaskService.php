@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\PendingTask;
+use App\Models\InvoiceApplication;
 use App\Models\PaymentRequest;
 use App\Models\Employee;
 use App\Models\User;
@@ -10,6 +11,100 @@ use Illuminate\Support\Facades\Log;
 
 class PendingTaskService
 {
+    /**
+     * 发票申请审批通过后，创建填写发票号码待办
+     */
+    public static function createInvoiceFillTask(InvoiceApplication $application)
+    {
+        try {
+            $handler = User::find($application->created_by);
+            if (!$handler) {
+                Log::warning('无法确定发票填写待办处理人', [
+                    'invoice_application_id' => $application->id,
+                    'created_by' => $application->created_by,
+                ]);
+                return null;
+            }
+
+            $existingTask = PendingTask::where('account_set_id', $application->account_set_id)
+                ->where('task_type', 'invoice_fill')
+                ->where('related_id', $application->id)
+                ->where('related_type', 'InvoiceApplication')
+                ->where('status', 'pending')
+                ->first();
+
+            if ($existingTask) {
+                return $existingTask;
+            }
+
+            $title = "{$application->project_name} 发票号码待填写";
+            $description = "发票申请 {$application->application_no} 已审批通过，请填写发票号码。";
+
+            $task = PendingTask::create([
+                'account_set_id' => $application->account_set_id,
+                'task_type' => 'invoice_fill',
+                'title' => $title,
+                'description' => $description,
+                'related_id' => $application->id,
+                'related_type' => 'InvoiceApplication',
+                'handler_id' => $handler->id,
+                'handler_name' => $handler->name,
+                'status' => 'pending',
+                'route_name' => 'invoice-applications',
+                'route_params' => json_encode([
+                    'id' => $application->id,
+                    'action' => 'fill_invoice_number',
+                ]),
+            ]);
+
+            Log::info('创建发票填写待办任务', [
+                'task_id' => $task->id,
+                'invoice_application_id' => $application->id,
+                'handler_id' => $handler->id,
+            ]);
+
+            return $task;
+        } catch (\Exception $e) {
+            Log::error('创建发票填写待办任务失败', [
+                'invoice_application_id' => $application->id,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * 完成发票填写待办
+     */
+    public static function checkAndCompleteInvoiceFillTask(InvoiceApplication $application)
+    {
+        if (!$application->is_completed) {
+            return 0;
+        }
+
+        $tasks = PendingTask::where('account_set_id', $application->account_set_id)
+            ->where('task_type', 'invoice_fill')
+            ->where('related_id', $application->id)
+            ->where('related_type', 'InvoiceApplication')
+            ->where('status', 'pending')
+            ->get();
+
+        $completedCount = 0;
+        foreach ($tasks as $task) {
+            $task->markAsCompleted();
+            $completedCount++;
+        }
+
+        if ($completedCount > 0) {
+            Log::info('发票填写待办任务已完成', [
+                'invoice_application_id' => $application->id,
+                'completed_count' => $completedCount,
+            ]);
+        }
+
+        return $completedCount;
+    }
+
     /**
      * 为付款申请创建回执任务
      * 当付款申请审批通过后调用

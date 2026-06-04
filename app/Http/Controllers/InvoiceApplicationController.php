@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\InvoiceApplication;
 use App\Models\InvoiceItem;
 use App\Models\InvoiceProject;
+use App\Models\PendingTask;
 use App\Models\ProcessApproval;
 use App\Models\ApprovalNode;
+use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -89,7 +91,7 @@ class InvoiceApplicationController extends Controller
         $applications = $query->paginate($perPage);
 
         // 添加总金额和审批状态
-        $applications->getCollection()->transform(function ($application) {
+        $applications->getCollection()->transform(function ($application) use ($user) {
             $application->total_amount = $application->items->sum('amount');
             
             // 添加审批状态
@@ -101,6 +103,7 @@ class InvoiceApplicationController extends Controller
             
             // 确保 can_resubmit 字段被包含（通过访问 accessor 触发计算）
             $application->makeVisible(['can_resubmit']);
+            $application->can_fill_invoice = $this->canFillApprovedInvoice($application, $user);
             
             return $application;
         });
@@ -130,15 +133,15 @@ class InvoiceApplicationController extends Controller
             'invoice_type' => 'required|string|max:50',
             'deduction_amount' => 'nullable|numeric|min:0',
             'tax_rate' => 'required|numeric|min:0|max:1',
-            'amount_excluding_tax' => 'required|numeric|min:0',
-            'invoice_tax_amount' => 'required|numeric|min:0',
+            'amount_excluding_tax' => 'nullable|numeric|min:0',
+            'invoice_tax_amount' => 'nullable|numeric|min:0',
             'invoice_amount' => 'required|numeric|min:0',
-            'tax_amount' => 'required|numeric|min:0',
+            'tax_amount' => 'nullable|numeric|min:0',
             'invoice_date' => 'required|date',
             'earliest_invoice_date' => 'nullable|date',
             'is_completed' => 'nullable|boolean',
-            'invoicer' => 'required|string|max:100',
-            'invoice_number' => 'required|string|max:100',
+            'invoicer' => 'nullable|string|max:100',
+            'invoice_number' => 'nullable|string|max:100',
             'invoice_remark' => 'nullable|string',
         ], [
             'task_name.required' => '任务名称不能为空',
@@ -154,13 +157,8 @@ class InvoiceApplicationController extends Controller
             'invoice_method.required' => '请选择开票方式',
             'invoice_type.required' => '请输入开票种类',
             'tax_rate.required' => '请选择税率',
-            'amount_excluding_tax.required' => '请输入不含税金额',
-            'invoice_tax_amount.required' => '请输入开票税额',
             'invoice_amount.required' => '请输入开票金额',
-            'tax_amount.required' => '请输入税金',
             'invoice_date.required' => '请选择开票日期',
-            'invoicer.required' => '请输入开票人',
-            'invoice_number.required' => '请输入发票号码',
         ]);
 
         if ($validator->fails()) {
@@ -201,6 +199,27 @@ class InvoiceApplicationController extends Controller
             ? $invoiceMethodMap[$normalizedKey]
             : $rawInvoiceMethod;
 
+        $deductionAmount = $this->normalizeDeductionAmount(
+            $normalizedInvoiceMethod,
+            $request->input('deduction_amount', 0)
+        );
+
+        if ($deductionAmount > (float) $request->input('invoice_amount', 0)) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => [
+                    'deduction_amount' => ['扣除额不能大于开票金额']
+                ]
+            ], 422);
+        }
+
+        $calculatedAmounts = $this->calculateInvoiceAmounts(
+            $request->input('invoice_amount'),
+            $deductionAmount,
+            $request->input('tax_rate')
+        );
+
         $application = InvoiceApplication::create([
             'account_set_id' => $accountSetId,
             'application_no' => $applicationNo,
@@ -217,17 +236,17 @@ class InvoiceApplicationController extends Controller
             'application_date' => $request->input('application_date'),
             'invoice_method' => $normalizedInvoiceMethod,
             'invoice_type' => $request->input('invoice_type'),
-            'deduction_amount' => $request->input('deduction_amount', 0),
+            'deduction_amount' => $deductionAmount,
             'tax_rate' => $request->input('tax_rate'),
-            'amount_excluding_tax' => $request->input('amount_excluding_tax'),
-            'invoice_tax_amount' => $request->input('invoice_tax_amount'),
+            'amount_excluding_tax' => $calculatedAmounts['amount_excluding_tax'],
+            'invoice_tax_amount' => $calculatedAmounts['invoice_tax_amount'],
             'invoice_amount' => $request->input('invoice_amount'),
-            'tax_amount' => $request->input('tax_amount'),
+            'tax_amount' => $calculatedAmounts['tax_amount'],
             'invoice_date' => $request->input('invoice_date'),
             'earliest_invoice_date' => $request->input('earliest_invoice_date'),
-            'is_completed' => $request->boolean('is_completed', false),
-            'invoicer' => $request->input('invoicer'),
-            'invoice_number' => $request->input('invoice_number'),
+            'is_completed' => false,
+            'invoicer' => null,
+            'invoice_number' => null,
             'invoice_remark' => $request->input('invoice_remark'),
             'submitter_id' => $user->id,
             'created_by' => $user->id,
@@ -261,6 +280,7 @@ class InvoiceApplicationController extends Controller
 
         // 计算总金额
         $application->total_amount = $application->items->sum('amount');
+        $application->can_fill_invoice = $this->canFillApprovedInvoice($application, Auth::user());
 
         return response()->json([
             'success' => true,
@@ -315,6 +335,21 @@ class InvoiceApplicationController extends Controller
         // 获取当前最大序号
         $maxSequence = $application->items()->max('sequence') ?? 0;
 
+        $currentDeductionAmount = round((float) $application->items()->sum('amount'), 2);
+        $newDeductionAmount = $application->invoice_method === 'full' || $application->invoice_method === 'diff'
+            ? round($currentDeductionAmount + (float) $request->input('amount'), 2)
+            : 0;
+
+        if ($newDeductionAmount > (float) $application->invoice_amount) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => [
+                    'amount' => ['扣除额不能大于开票金额']
+                ]
+            ], 422);
+        }
+
         // 使用项目名称作为 item_name
         $item = InvoiceItem::create([
             'application_id' => $application->id,
@@ -325,6 +360,9 @@ class InvoiceApplicationController extends Controller
             'amount' => $request->input('amount'),
             'remark' => $request->input('remark'),
         ]);
+
+        $this->syncAmountsFromItems($application);
+        $this->syncInvoiceSummary($application->fresh());
 
         return response()->json([
             'success' => true,
@@ -380,6 +418,21 @@ class InvoiceApplicationController extends Controller
         // 获取项目名称
         $project = InvoiceProject::find($request->input('invoice_project_id'));
 
+        $currentDeductionAmount = round((float) $application->items()->sum('amount'), 2);
+        $newDeductionAmount = $application->invoice_method === 'full' || $application->invoice_method === 'diff'
+            ? round($currentDeductionAmount - (float) $item->amount + (float) $request->input('amount'), 2)
+            : 0;
+
+        if ($newDeductionAmount > (float) $application->invoice_amount) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => [
+                    'amount' => ['扣除额不能大于开票金额']
+                ]
+            ], 422);
+        }
+
         // 使用项目名称作为 item_name
         $item->update([
             'invoice_project_id' => $request->input('invoice_project_id'),
@@ -388,6 +441,9 @@ class InvoiceApplicationController extends Controller
             'amount' => $request->input('amount'),
             'remark' => $request->input('remark'),
         ]);
+
+        $this->syncAmountsFromItems($application);
+        $this->syncInvoiceSummary($application->fresh());
 
         return response()->json([
             'success' => true,
@@ -427,6 +483,9 @@ class InvoiceApplicationController extends Controller
         }
 
         $item->delete();
+
+        $this->syncAmountsFromItems($application);
+        $this->syncInvoiceSummary($application->fresh());
 
         return response()->json([
             'success' => true,
@@ -593,6 +652,7 @@ class InvoiceApplicationController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'file' => 'required|file|max:10240', // 10MB
+            'attachment_type' => 'nullable|string|max:50',
         ], [
             'file.required' => '请选择文件',
             'file.max' => '文件大小不能超过10MB',
@@ -615,7 +675,8 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        if (!$application->canEdit()) {
+        $canFillApprovedInvoice = $this->canFillApprovedInvoice($application, Auth::user());
+        if (!$application->canEdit() && !$canFillApprovedInvoice) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -628,16 +689,24 @@ class InvoiceApplicationController extends Controller
             // 使用 public 磁盘保存
             $path = $file->storeAs('invoice_attachments', $filename, 'public');
 
+            $attachmentType = $request->input('attachment_type');
+            if (!$attachmentType) {
+                $attachmentType = $canFillApprovedInvoice ? 'invoice' : 'supporting';
+            }
+
             $attachments = $application->attachments ?? [];
             $attachments[] = [
                 'filename' => $file->getClientOriginalName(),
                 'path' => $path,
                 'url' => Storage::disk('public')->url($path),
                 'size' => $file->getSize(),
+                'attachment_type' => $attachmentType,
                 'uploaded_at' => now()->toDateTimeString(),
             ];
 
             $application->update(['attachments' => $attachments]);
+            $this->syncInvoiceCompletionStatus($application->fresh());
+            $this->syncInvoiceSummary($application->fresh());
 
             return response()->json([
                 'success' => true,
@@ -672,7 +741,8 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        if (!$application->canEdit()) {
+        $canFillApprovedInvoice = $this->canFillApprovedInvoice($application, Auth::user());
+        if (!$application->canEdit() && !$canFillApprovedInvoice) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -692,6 +762,8 @@ class InvoiceApplicationController extends Controller
         }
 
         $application->update(['attachments' => array_values($attachments)]);
+        $this->syncInvoiceCompletionStatus($application->fresh());
+        $this->syncInvoiceSummary($application->fresh());
 
         return response()->json([
             'success' => true,
@@ -1128,9 +1200,6 @@ class InvoiceApplicationController extends Controller
             'tax_amount' => 'nullable|numeric|min:0',
             'invoice_date' => 'nullable|date',
             'earliest_invoice_date' => 'nullable|date',
-            'is_completed' => 'nullable|boolean',
-            'invoicer' => 'nullable|string|max:100',
-            'invoice_number' => 'nullable|string|max:100',
             'invoice_remark' => 'nullable|string',
         ], [
             'period_year.integer' => '所属期年份必须是整数',
@@ -1168,9 +1237,6 @@ class InvoiceApplicationController extends Controller
             'tax_amount',
             'invoice_date',
             'earliest_invoice_date',
-            'is_completed',
-            'invoicer',
-            'invoice_number',
             'invoice_remark',
         ]);
 
@@ -1197,12 +1263,102 @@ class InvoiceApplicationController extends Controller
             }
         }
 
+        $invoiceMethod = $updateData['invoice_method'] ?? $application->invoice_method;
+        $deductionAmount = array_key_exists('deduction_amount', $updateData)
+            ? $updateData['deduction_amount']
+            : $application->deduction_amount;
+        $invoiceAmount = array_key_exists('invoice_amount', $updateData)
+            ? $updateData['invoice_amount']
+            : $application->invoice_amount;
+        $taxRate = array_key_exists('tax_rate', $updateData)
+            ? $updateData['tax_rate']
+            : $application->tax_rate;
+
+        $deductionAmount = $this->normalizeDeductionAmount($invoiceMethod, $deductionAmount);
+
+        if ($deductionAmount > (float) $invoiceAmount) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => [
+                    'deduction_amount' => ['扣除额不能大于开票金额']
+                ]
+            ], 422);
+        }
+
+        $calculatedAmounts = $this->calculateInvoiceAmounts(
+            $invoiceAmount,
+            $deductionAmount,
+            $taxRate
+        );
+
+        $updateData['deduction_amount'] = $deductionAmount;
+        $updateData['amount_excluding_tax'] = $calculatedAmounts['amount_excluding_tax'];
+        $updateData['invoice_tax_amount'] = $calculatedAmounts['invoice_tax_amount'];
+        $updateData['tax_amount'] = $calculatedAmounts['tax_amount'];
+        $updateData['is_completed'] = false;
+        $updateData['invoicer'] = null;
+        $updateData['invoice_number'] = null;
+
         $application->update($updateData);
+        $this->syncInvoiceSummary($application->fresh());
 
         return response()->json([
             'success' => true,
             'message' => '更新成功',
             'data' => $application
+        ]);
+    }
+
+    /**
+     * 审批通过后填写发票号码
+     */
+    public function fillInvoiceNumber($id, Request $request)
+    {
+        $application = InvoiceApplication::find($id);
+
+        if (!$application) {
+            return response()->json([
+                'success' => false,
+                'message' => '申请不存在'
+            ], 404);
+        }
+
+        $user = Auth::user();
+        if (!$this->canFillApprovedInvoice($application, $user)) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前状态不允许填写发票号码'
+            ], 400);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'invoice_number' => 'required|string|max:100',
+        ], [
+            'invoice_number.required' => '请输入发票号码',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $application->update([
+            'invoice_number' => $request->input('invoice_number'),
+            'invoicer' => $user->name,
+        ]);
+
+        $application = $application->fresh();
+        $this->syncInvoiceCompletionStatus($application);
+        $this->syncInvoiceSummary($application->fresh());
+
+        return response()->json([
+            'success' => true,
+            'message' => '发票号码已保存',
+            'data' => $application->fresh()
         ]);
     }
 
@@ -1219,6 +1375,139 @@ class InvoiceApplicationController extends Controller
             'has_access' => true,
             'role' => $user ? $user->role : null
         ]);
+    }
+
+    private function normalizeDeductionAmount($invoiceMethod, $deductionAmount)
+    {
+        if ($invoiceMethod !== 'full' && $invoiceMethod !== 'diff') {
+            return 0;
+        }
+
+        return round(max(0, (float) $deductionAmount), 2);
+    }
+
+    private function calculateInvoiceAmounts($invoiceAmount, $deductionAmount, $taxRate)
+    {
+        $invoiceAmount = round(max(0, (float) $invoiceAmount), 2);
+        $deductionAmount = round(max(0, (float) $deductionAmount), 2);
+        $taxRate = max(0, (float) $taxRate);
+
+        $taxableAmount = max(0, $invoiceAmount - $deductionAmount);
+        $amountExcludingTax = $taxRate > 0
+            ? round($taxableAmount / (1 + $taxRate), 2)
+            : round($taxableAmount, 2);
+        $invoiceTaxAmount = round($taxableAmount - $amountExcludingTax, 2);
+
+        return [
+            'amount_excluding_tax' => $amountExcludingTax,
+            'invoice_tax_amount' => $invoiceTaxAmount,
+            'tax_amount' => $invoiceTaxAmount,
+        ];
+    }
+
+    private function syncAmountsFromItems(InvoiceApplication $application)
+    {
+        if (!$application->exists) {
+            return;
+        }
+
+        $invoiceMethod = $application->invoice_method;
+        if ($invoiceMethod !== 'full' && $invoiceMethod !== 'diff') {
+            $deductionAmount = 0;
+        } else {
+            $deductionAmount = round((float) $application->items()->sum('amount'), 2);
+        }
+
+        if ($deductionAmount > (float) $application->invoice_amount) {
+            throw new \RuntimeException('扣除额不能大于开票金额');
+        }
+
+        $calculatedAmounts = $this->calculateInvoiceAmounts(
+            $application->invoice_amount,
+            $deductionAmount,
+            $application->tax_rate
+        );
+
+        $application->update([
+            'deduction_amount' => $deductionAmount,
+            'amount_excluding_tax' => $calculatedAmounts['amount_excluding_tax'],
+            'invoice_tax_amount' => $calculatedAmounts['invoice_tax_amount'],
+            'tax_amount' => $calculatedAmounts['tax_amount'],
+        ]);
+    }
+
+    private function syncInvoiceSummary(InvoiceApplication $application)
+    {
+        $summary = $application->invoiceSummary()->first();
+        if (!$summary) {
+            return;
+        }
+
+        $period = null;
+        if ($application->period_year && $application->period_month) {
+            $period = $application->period_year . '-' . str_pad($application->period_month, 2, '0', STR_PAD_LEFT);
+        }
+
+        $summary->update([
+            'period' => $period,
+            'unit_name' => $application->company_name ?? '',
+            'apply_date' => $application->application_date ?? now(),
+            'invoice_method' => $application->invoice_method ?? 'none',
+            'invoice_type' => $application->invoice_type ?? '',
+            'status' => $application->is_completed ? 'completed' : 'pending',
+            'project_name' => $application->project_name ?? '',
+            'invoice_amount' => $application->invoice_amount ?? 0,
+            'deduction_amount' => $application->deduction_amount ?? 0,
+            'tax_rate' => $application->tax_rate ?? 0,
+            'amount_without_tax' => $application->amount_excluding_tax ?? 0,
+            'invoice_tax' => $application->invoice_tax_amount ?? 0,
+            'tax_amount' => $application->tax_amount ?? 0,
+            'invoice_date' => $application->invoice_date,
+            'is_completed' => $application->is_completed ?? false,
+            'invoicer' => $application->invoicer,
+            'invoice_number' => $application->invoice_number,
+            'remarks' => $application->invoice_remark ?? '',
+        ]);
+    }
+
+    private function canFillApprovedInvoice(InvoiceApplication $application, $user)
+    {
+        if ($application->approval_status !== InvoiceApplication::APPROVAL_STATUS_APPROVED) {
+            return false;
+        }
+
+        if ((int) $application->created_by === (int) $user->id) {
+            return true;
+        }
+
+        return PendingTask::where('account_set_id', $application->account_set_id)
+            ->where('task_type', 'invoice_fill')
+            ->where('related_id', $application->id)
+            ->where('related_type', 'InvoiceApplication')
+            ->where('handler_id', $user->id)
+            ->exists();
+    }
+
+    private function syncInvoiceCompletionStatus(InvoiceApplication $application)
+    {
+        if ($application->approval_status !== InvoiceApplication::APPROVAL_STATUS_APPROVED) {
+            return;
+        }
+
+        $shouldComplete = !empty($application->invoice_number);
+
+        if ((bool) $application->is_completed !== $shouldComplete) {
+            $application->update([
+                'is_completed' => $shouldComplete
+            ]);
+            $application->refresh();
+        }
+
+        if ($shouldComplete) {
+            PendingTaskService::checkAndCompleteInvoiceFillTask($application);
+        } else {
+            PendingTaskService::createInvoiceFillTask($application);
+        }
     }
 
     /**

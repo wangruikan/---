@@ -1139,8 +1139,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [InvoiceApplicationController::class, 'store']);                     // 创建申请
         Route::get('/{id}', [InvoiceApplicationController::class, 'show']);                   // 获取详情
         Route::delete('/{id}', [InvoiceApplicationController::class, 'destroy']);             // 删除申请
-        Route::put('/{id}/update-project', [InvoiceApplicationController::class, 'updateProject']); // 更新项目名称
-        Route::put('/{id}/update-invoice-details', [InvoiceApplicationController::class, 'updateInvoiceDetails']); // 更新开票详情
+Route::put('/{id}/update-project', [InvoiceApplicationController::class, 'updateProject']); // 更新项目名称
+Route::put('/{id}/update-invoice-details', [InvoiceApplicationController::class, 'updateInvoiceDetails']); // 更新开票详情
+Route::post('/{id}/fill-invoice-number', [InvoiceApplicationController::class, 'fillInvoiceNumber']); // 审批通过后填写发票号
         
         // 明细项管理
         Route::post('/{id}/items', [InvoiceApplicationController::class, 'addItem']);         // 添加明细

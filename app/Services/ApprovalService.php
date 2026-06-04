@@ -873,6 +873,18 @@ class ApprovalService
                                 'error' => $e->getMessage()
                             ]);
                         }
+
+                        try {
+                            PendingTaskService::createInvoiceFillTask($invoiceApplication->fresh());
+                            Log::info('发票申请审批通过，已创建发票填写待办任务', [
+                                'invoice_application_id' => $businessId
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('创建发票填写待办任务失败', [
+                                'invoice_application_id' => $businessId,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
                         
                         Log::info('发票申请审批已通过', [
                             'invoice_application_id' => $businessId,

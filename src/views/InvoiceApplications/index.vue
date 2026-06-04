@@ -108,6 +108,14 @@
         <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleDetail(row)">查看</el-button>
+            <el-button
+              v-if="row.can_fill_invoice && row.approval_status === 'approved' && !row.is_completed"
+              type="success"
+              link
+              @click="handleOpenInvoiceFill(row)"
+            >
+              填写发票号
+            </el-button>
             <el-button 
               v-if="canEditInvoice && (!row.approval_status || row.approval_status === 'rejected')" 
               type="primary" 
@@ -294,7 +302,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
-                :disabled="!createNeedsDeductionAmount"
+                disabled
                 style="width: 100%"
               />
             </el-form-item>
@@ -306,6 +314,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
+                disabled
                 style="width: 100%"
               />
             </el-form-item>
@@ -317,6 +326,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
+                disabled
                 style="width: 100%"
               />
             </el-form-item>
@@ -328,6 +338,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
+                disabled
                 style="width: 100%"
               />
             </el-form-item>
@@ -357,18 +368,18 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="开票人" prop="invoicer">
-              <el-input v-model="createForm.invoicer" placeholder="请输入开票人" />
+            <el-form-item label="开票人">
+              <el-input :model-value="'审批通过后自动带出当前账号'" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="发票号码" prop="invoice_number">
-              <el-input v-model="createForm.invoice_number" placeholder="请输入发票号码" />
+            <el-form-item label="发票号码">
+              <el-input :model-value="'创建时不需要填写'" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="是否完成">
-              <el-switch v-model="createForm.is_completed" />
+              <el-input :model-value="'审批通过后填写发票号后自动更新'" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -714,9 +725,8 @@
                       :precision="2"
                       :min="0"
                       :controls="false"
-                      :disabled="!needsDeductionAmount"
+                      disabled
                       style="width: 100%"
-                      placeholder="仅全额和差额需要填写"
                     />
                   </el-form-item>
                 </el-col>
@@ -729,6 +739,7 @@
                       :precision="2"
                       :min="0"
                       :controls="false"
+                      disabled
                       style="width: 100%"
                     />
                   </el-form-item>
@@ -742,6 +753,7 @@
                       :precision="2"
                       :min="0"
                       :controls="false"
+                      disabled
                       style="width: 100%"
                     />
                   </el-form-item>
@@ -755,6 +767,7 @@
                       :precision="2"
                       :min="0"
                       :controls="false"
+                      disabled
                       style="width: 100%"
                     />
                   </el-form-item>
@@ -776,15 +789,15 @@
 
                 <!-- 开票人 -->
                 <el-col :span="12">
-                  <el-form-item label="开票人" prop="invoicer">
-                    <el-input v-model="invoiceDetailsForm.invoicer" placeholder="请输入开票人" />
+                  <el-form-item label="开票人">
+                    <el-input v-model="invoiceDetailsForm.invoicer" placeholder="审批通过后自动带出" disabled />
                   </el-form-item>
                 </el-col>
 
                 <!-- 发票号码 -->
                 <el-col :span="12">
-                  <el-form-item label="发票号码" prop="invoice_number">
-                    <el-input v-model="invoiceDetailsForm.invoice_number" placeholder="请输入发票号码" />
+                  <el-form-item label="发票号码">
+                    <el-input v-model="invoiceDetailsForm.invoice_number" placeholder="审批通过后填写" disabled />
                   </el-form-item>
                 </el-col>
 
@@ -804,7 +817,10 @@
                 <!-- 是否完成 -->
                 <el-col :span="12">
                   <el-form-item label="是否完成">
-                    <el-switch v-model="invoiceDetailsForm.is_completed" />
+                    <el-input
+                      :model-value="invoiceDetailsForm.is_completed ? '已完成' : '填写发票号后自动更新'"
+                      disabled
+                    />
                   </el-form-item>
                 </el-col>
 
@@ -849,6 +865,41 @@
 
       <template #footer>
         <el-button @click="detailDialogVisible = false">关闭</el-button>
+        <el-button
+          v-if="currentApplication.can_fill_invoice && currentApplication.approval_status === 'approved' && !currentApplication.is_completed"
+          type="primary"
+          @click="openInvoiceFillDialog"
+        >
+          填写发票号
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="invoiceFillDialogVisible"
+      title="填写发票号码"
+      width="620px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        title="保存发票号码时会自动把当前登录账号写入开票人，并自动更新完成状态。"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 16px"
+      />
+      <el-form :model="invoiceFillForm" label-width="100px">
+        <el-form-item label="开票人">
+          <el-input :model-value="currentApplication.invoicer || '保存时自动带出当前账号'" disabled />
+        </el-form-item>
+        <el-form-item label="发票号码" required>
+          <el-input v-model="invoiceFillForm.invoice_number" placeholder="请输入发票号码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="invoiceFillDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveInvoiceNumber" :loading="invoiceFillSaving">
+          保存发票号码
+        </el-button>
       </template>
     </el-dialog>
 
@@ -938,6 +989,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download } from '@element-plus/icons-vue'
 import {
@@ -952,7 +1004,8 @@ import {
   uploadAttachment,
   deleteAttachment,
   submitInvoiceApplication,
-  resubmitInvoiceApplication
+  resubmitInvoiceApplication,
+  fillInvoiceApplicationNumber
 } from '@/api/invoiceApplication'
 import { getAllInvoiceProjects } from '@/api/invoiceProject'
 import request from '@/api/request'
@@ -961,6 +1014,8 @@ import { usePermissionStore } from '@/stores/permission'
 import * as XLSX from 'xlsx'
 
 // 账套store
+const route = useRoute()
+const router = useRouter()
 const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
 
@@ -1049,9 +1104,7 @@ const createFormRules = {
   invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
   invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
   tax_amount: [{ required: true, message: '请输入税金', trigger: 'blur' }],
-  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }],
-  invoicer: [{ required: true, message: '请输入开票人', trigger: 'blur' }],
-  invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
+  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }]
 }
 
 const createItems = ref([
@@ -1095,6 +1148,11 @@ const validateCreateExtraData = () => {
 
     if (invalidIndex !== -1) {
       ElMessage.warning('\u8bf7\u5b8c\u6210\u6263\u9664\u660e\u7ec6\u7b2c ' + (invalidIndex + 1) + ' \u884c\u7684\u9879\u76ee\u548c\u91d1\u989d')
+      return false
+    }
+
+    if (Number(createForm.deduction_amount || 0) > Number(createForm.invoice_amount || 0)) {
+      ElMessage.warning('扣除额不能大于开票金额')
       return false
     }
   }
@@ -1189,13 +1247,16 @@ const invoiceDetailsFormRules = {
   invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
   invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
   tax_amount: [{ required: true, message: '请输入税金', trigger: 'blur' }],
-  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }],
-  invoicer: [{ required: true, message: '请输入开票人', trigger: 'blur' }],
-  invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
+  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }]
 }
 
 // 开票详情表单ref
 const invoiceDetailsFormRef = ref(null)
+const invoiceFillDialogVisible = ref(false)
+const invoiceFillSaving = ref(false)
+const invoiceFillForm = reactive({
+  invoice_number: ''
+})
 
 // 计算属性
 const canEdit = computed(() => {
@@ -1249,6 +1310,61 @@ const resetCreateItems = () => {
   createItems.value = [
     { invoice_project_id: null, amount: 0, remark: '' }
   ]
+}
+
+const roundAmount = (value) => {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
+}
+
+const calculateInvoiceDerivedAmounts = (invoiceAmount, deductionAmount, taxRate) => {
+  const safeInvoiceAmount = roundAmount(Math.max(0, Number(invoiceAmount || 0)))
+  const safeDeductionAmount = roundAmount(Math.max(0, Number(deductionAmount || 0)))
+  const safeTaxRate = Math.max(0, Number(taxRate || 0))
+  const taxableAmount = Math.max(0, safeInvoiceAmount - safeDeductionAmount)
+  const amountExcludingTax = safeTaxRate > 0
+    ? roundAmount(taxableAmount / (1 + safeTaxRate))
+    : roundAmount(taxableAmount)
+  const invoiceTaxAmount = roundAmount(taxableAmount - amountExcludingTax)
+
+  return {
+    amountExcludingTax,
+    invoiceTaxAmount,
+    taxAmount: invoiceTaxAmount
+  }
+}
+
+const sumDeductionItems = (items = []) => {
+  return roundAmount(items.reduce((sum, item) => sum + Number(item?.amount || 0), 0))
+}
+
+const syncCreateCalculatedAmounts = () => {
+  createForm.deduction_amount = createNeedsDeductionAmount.value ? sumDeductionItems(createItems.value) : 0
+
+  const { amountExcludingTax, invoiceTaxAmount, taxAmount } = calculateInvoiceDerivedAmounts(
+    createForm.invoice_amount,
+    createForm.deduction_amount,
+    createForm.tax_rate
+  )
+
+  createForm.amount_excluding_tax = amountExcludingTax
+  createForm.invoice_tax_amount = invoiceTaxAmount
+  createForm.tax_amount = taxAmount
+}
+
+const syncInvoiceDetailsCalculatedAmounts = () => {
+  invoiceDetailsForm.deduction_amount = needsDeductionAmount.value
+    ? sumDeductionItems(currentApplication.value.items || [])
+    : 0
+
+  const { amountExcludingTax, invoiceTaxAmount, taxAmount } = calculateInvoiceDerivedAmounts(
+    invoiceDetailsForm.invoice_amount,
+    invoiceDetailsForm.deduction_amount,
+    invoiceDetailsForm.tax_rate
+  )
+
+  invoiceDetailsForm.amount_excluding_tax = amountExcludingTax
+  invoiceDetailsForm.invoice_tax_amount = invoiceTaxAmount
+  invoiceDetailsForm.tax_amount = taxAmount
 }
 
 const scrollToCreateDeductionSection = async () => {
@@ -1610,6 +1726,7 @@ const handleCreate = () => {
 // 确认创建
 const handleConfirmCreate = async () => {
   try {
+    syncCreateCalculatedAmounts()
     const selectedProject = validProjects.value.find(project => project.id === createForm.project_id)
     createForm.task_name = (selectedProject?.name || '开票') + `${createForm.year}年${createForm.month}月`
 
@@ -1617,29 +1734,6 @@ const handleConfirmCreate = async () => {
 
     if (!validateCreateExtraData()) {
       return
-    }
-
-    // 若标记为完成且设置了最早开票日期，检查是否已到开票日期
-    if (createForm.is_completed && createForm.earliest_invoice_date) {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const earliest = new Date(createForm.earliest_invoice_date)
-      earliest.setHours(0, 0, 0, 0)
-      if (today < earliest) {
-        try {
-          await ElMessageBox.confirm(
-            `当前日期尚未到达最早开票日期（${createForm.earliest_invoice_date}），确定要标记为完成吗？`,
-            '开票日期提醒',
-            {
-              confirmButtonText: '仍然保存',
-              cancelButtonText: '取消',
-              type: 'warning'
-            }
-          )
-        } catch {
-          return
-        }
-      }
     }
 
     creating.value = true
@@ -1783,33 +1877,16 @@ const loadInvoiceDetailsForm = (data) => {
   invoiceDetailsForm.invoicer = data.invoicer || ''
   invoiceDetailsForm.invoice_number = data.invoice_number || ''
   invoiceDetailsForm.invoice_remark = data.invoice_remark || ''
+  syncInvoiceDetailsCalculatedAmounts()
 }
 
 // 保存开票详情
 const handleSaveInvoiceDetails = async () => {
   try {
+    syncInvoiceDetailsCalculatedAmounts()
     // 校验表单
     if (invoiceDetailsFormRef.value) {
       await invoiceDetailsFormRef.value.validate()
-    }
-
-    // 若标记为完成且设置了最早开票日期，检查是否已到开票日期
-    if (invoiceDetailsForm.is_completed && invoiceDetailsForm.earliest_invoice_date) {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const earliest = new Date(invoiceDetailsForm.earliest_invoice_date)
-      earliest.setHours(0, 0, 0, 0)
-      if (today < earliest) {
-        await ElMessageBox.confirm(
-          `当前日期尚未到达最早开票日期（${invoiceDetailsForm.earliest_invoice_date}），确定要标记为完成吗？`,
-          '开票日期提醒',
-          {
-            confirmButtonText: '仍然保存',
-            cancelButtonText: '取消',
-            type: 'warning'
-          }
-        )
-      }
     }
 
     const response = await request({
@@ -1839,19 +1916,13 @@ const fillInvoiceTestData = () => {
   invoiceDetailsForm.period_month = currentMonth
   invoiceDetailsForm.company_name = '鄂尔多斯市汇邦人力资源有限责任公司'
   invoiceDetailsForm.application_date = today
-  invoiceDetailsForm.invoice_method = '电子发票'
+  invoiceDetailsForm.invoice_method = 'full'
   invoiceDetailsForm.invoice_type = '普票'
-  invoiceDetailsForm.deduction_amount = 5000.00
   invoiceDetailsForm.tax_rate = 0.06
-  invoiceDetailsForm.amount_excluding_tax = 4716.98
-  invoiceDetailsForm.invoice_tax_amount = 5000.00
   invoiceDetailsForm.invoice_amount = 5000.00
-  invoiceDetailsForm.tax_amount = 283.02
   invoiceDetailsForm.invoice_date = today
-  invoiceDetailsForm.is_completed = false
-  invoiceDetailsForm.invoicer = '张三'
-  invoiceDetailsForm.invoice_number = 'FP' + Date.now()
   invoiceDetailsForm.invoice_remark = '人力资源服务费'
+  syncInvoiceDetailsCalculatedAmounts()
   
   ElMessage.success('开票详情测试数据已填充')
 }
@@ -1860,6 +1931,53 @@ const fillInvoiceTestData = () => {
 const handleDetailDialogClose = () => {
   currentApplication.value = {}
   activeTab.value = 'items'
+}
+
+const openInvoiceFillDialog = () => {
+  if (!currentApplication.value?.id) return
+  invoiceFillForm.invoice_number = currentApplication.value.invoice_number || ''
+  invoiceFillDialogVisible.value = true
+}
+
+const handleOpenInvoiceFill = async (row) => {
+  isEditMode.value = false
+  await loadApplicationDetail(row.id)
+  detailDialogTitle.value = `发票申请详情 - ${currentApplication.value.application_no}`
+  activeTab.value = 'invoice_details'
+  detailDialogVisible.value = true
+  openInvoiceFillDialog()
+}
+
+const handleSaveInvoiceNumber = async () => {
+  const invoiceNumber = invoiceFillForm.invoice_number?.trim()
+  if (!invoiceNumber) {
+    ElMessage.warning('请输入发票号码')
+    return
+  }
+
+  invoiceFillSaving.value = true
+  try {
+    const response = await fillInvoiceApplicationNumber(currentApplication.value.id, {
+      invoice_number: invoiceNumber
+    })
+
+    if (response.success) {
+      await loadApplicationDetail(currentApplication.value.id)
+      await loadData()
+
+      if (currentApplication.value.is_completed) {
+        ElMessage.success('发票信息已填写完成')
+        invoiceFillDialogVisible.value = false
+      } else {
+        ElMessage.success('发票号码已保存')
+      }
+    }
+  } catch (error) {
+    console.error('保存发票号码失败', error)
+    ElMessage.error(error.response?.data?.message || '保存发票号码失败')
+  } finally {
+    invoiceFillSaving.value = false
+  }
 }
 
 // 删除申请
@@ -2278,6 +2396,29 @@ const checkCreatePermission = async () => {
   }
 }
 
+const handleRouteInvoiceFill = async () => {
+  const action = route.query.action
+  const invoiceId = route.query.id
+  if (action !== 'fill_invoice_number' || !invoiceId) {
+    return
+  }
+
+  try {
+    isEditMode.value = false
+    await loadApplicationDetail(invoiceId)
+    detailDialogTitle.value = `发票申请详情 - ${currentApplication.value.application_no}`
+    activeTab.value = 'invoice_details'
+    detailDialogVisible.value = true
+    openInvoiceFillDialog()
+  } finally {
+    const nextQuery = { ...route.query }
+    delete nextQuery.id
+    delete nextQuery.action
+    delete nextQuery.task_id
+    router.replace({ path: route.path, query: nextQuery })
+  }
+}
+
 // 格式化日期时间
 const formatDateTime = (dateTime) => {
   if (!dateTime) return '-'
@@ -2310,12 +2451,15 @@ watch(
     if (newMethod !== 'full' && newMethod !== 'diff') {
       createForm.deduction_amount = 0
       resetCreateItems()
+      syncCreateCalculatedAmounts()
       return
     }
 
     if (oldMethod !== 'full' && oldMethod !== 'diff') {
       await scrollToCreateDeductionSection()
     }
+
+    syncCreateCalculatedAmounts()
   }
 )
 
@@ -2339,7 +2483,46 @@ watch(
     if (newMethod !== 'full' && newMethod !== 'diff') {
       invoiceDetailsForm.deduction_amount = 0
     }
+    syncInvoiceDetailsCalculatedAmounts()
   }
+)
+
+watch(
+  () => [createForm.invoice_amount, createForm.tax_rate, createForm.invoice_method],
+  () => {
+    syncCreateCalculatedAmounts()
+  }
+)
+
+watch(
+  createItems,
+  () => {
+    syncCreateCalculatedAmounts()
+  },
+  { deep: true }
+)
+
+watch(
+  () => [invoiceDetailsForm.invoice_amount, invoiceDetailsForm.tax_rate, invoiceDetailsForm.invoice_method],
+  () => {
+    syncInvoiceDetailsCalculatedAmounts()
+  }
+)
+
+watch(
+  () => currentApplication.value.items,
+  () => {
+    syncInvoiceDetailsCalculatedAmounts()
+  },
+  { deep: true }
+)
+
+watch(
+  () => [route.query.id, route.query.action],
+  () => {
+    handleRouteInvoiceFill()
+  },
+  { immediate: true }
 )
 
 // 初始化
@@ -2348,6 +2531,7 @@ onMounted(() => {
   loadInvoiceProjects()
   loadProjects()
   checkCreatePermission()
+  syncCreateCalculatedAmounts()
 })
 </script>
 
@@ -2406,4 +2590,5 @@ onMounted(() => {
   color: #909399;
   font-size: 14px;
 }
+
 </style>

@@ -2232,6 +2232,8 @@ const resetForm = () => {
     social_security_location: '',
     insurance_types: [],
     salary_payment_date: null,
+    salary_payment_month: 'current',
+    insurance_import_month: 'current',
     requires_attendance: true,
     requires_salary_basis: false,
     requires_attendance_basis: false,
@@ -2334,12 +2336,16 @@ const handleCreate = async () => {
   isEdit.value = false  // 新建时设置为false
   currentProject.value = null
   projectFormActiveTab.value = 'basic'
+  resetForm()
   // 有草稿则恢复，无草稿则用默认值重置
-  if (!projectCreateDraft.hasDraft()) {
-    resetForm()
-  } else {
+  if (projectCreateDraft.hasDraft()) {
     projectCreateDraft.restore()
+    if (form.id) {
+      projectCreateDraft.clear()
+      resetForm()
+    }
   }
+  form.id = undefined
   isProjectCodeManuallyEdited.value = false
   
   // 重置合同模板数据
@@ -2350,9 +2356,10 @@ const handleCreate = async () => {
     confidentiality: [],
     other: []
   }
-  
+
   // 加载所有地区和保险数据
   await loadAvailableRegions()
+  formRef.value?.clearValidate?.()
 
   showCreateDialog.value = true
 }
@@ -2918,6 +2925,8 @@ const handleSubmit = async () => {
           }
         }
         
+        resetForm()
+        formRef.value?.clearValidate?.()
         showCreateDialog.value = false
         loadProjects() // 刷新列表
       } catch (error) {
@@ -2950,37 +2959,15 @@ const handleSubmit = async () => {
 }
 
 const handleDialogClose = () => {
-  // 仅新建模式保存草稿
-  if (!isEdit.value) {
+  const shouldSaveCreateDraft = !isEdit.value && !currentProject.value
+
+  // 仅“新建项目”模式保存草稿，查看模式不保存
+  if (shouldSaveCreateDraft) {
     projectCreateDraft.save()
   }
+  currentProject.value = null
   isEdit.value = false
-  isProjectCodeManuallyEdited.value = false
-  otherInsuranceNoSelection.value = false
-  projectFormActiveTab.value = 'basic'
-  Object.assign(form, {
-    name: '',
-    code: '',
-    description: '',
-    status: 'active',
-    invoice_company_name: '',
-    invoice_tax_number: '',
-    invoice_company_address: '',
-    invoice_company_phone: '',
-    invoice_bank_name: '',
-    invoice_bank_account: '',
-    invoice_bank_code: '',
-    social_security_location: '',
-    insurance_types: [],
-    salary_payment_date: null,
-    requires_attendance: true,
-    requires_salary_basis: false,
-    requires_attendance_basis: false,
-    registration_form_type: 'onboarding',
-    delivery_frequency: 'monthly',
-    delivery_method: 'electronic',
-    delivery_requirements: []
-  })
+  resetForm()
   formRef.value?.resetFields()
 }
 

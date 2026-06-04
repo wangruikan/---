@@ -96,6 +96,18 @@ export class PdfFillService {
         'contact_address': employeeData.contact_address,
         'signature': employeeData.signature || employeeData.signature_url
       }
+
+      const integerFieldSet = new Set([
+        'basic_salary',
+        'comprehensive_salary',
+        'probation_salary',
+        'performance_salary',
+        'social_security_base',
+        'medical_insurance_base',
+        'housing_fund_base',
+        'large_medical_base',
+        'large_medical_company_base'
+      ])
       
       // 前端渲染PDF时使用的缩放比例
       const renderScale = 1.5
@@ -119,6 +131,14 @@ export class PdfFillService {
         
         // 获取字段值
         let fieldValue = employeeData[fieldName] ?? fieldMapping[fieldName]
+
+        // 合同占位符中的金额/数值字段统一渲染为整数（去掉小数）
+        if (integerFieldSet.has(fieldName)) {
+          const num = Number(fieldValue)
+          if (Number.isFinite(num)) {
+            fieldValue = String(Math.round(num))
+          }
+        }
 
         // 签订日期（年月日分离）兜底为当前日期，避免空白
         if (['contract_sign_year', 'contract_sign_month', 'contract_sign_day'].includes(fieldName)) {

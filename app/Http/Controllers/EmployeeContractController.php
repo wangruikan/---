@@ -1471,7 +1471,7 @@ class EmployeeContractController extends Controller
     }
     
     /**
-     * 上传已签署的合同（线下入职专用）
+     * 上传已签署的合同
      * 直接上传已经签好字的纸质合同扫描件，无需电子签署流程
      */
     public function uploadSignedContract(Request $request)
@@ -1479,13 +1479,20 @@ class EmployeeContractController extends Controller
         $validator = Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
-            'contract_file' => 'required|file|mimes:pdf|max:10240',
+            'contract_file' => 'required|file|max:10240',
+            'target_status' => 'nullable|in:employee_signed,completed',
             'notes' => 'nullable|string',
         ], [
             'contract_file.required' => '请上传合同文件',
-            'contract_file.mimes' => '合同文件必须是PDF格式',
             'contract_file.max' => '合同文件大小不能超过10MB',
         ]);
+
+        $validator->after(function ($validator) use ($request) {
+            $file = $request->file('contract_file');
+            if ($file && !$this->isPdfUpload($file)) {
+                $validator->errors()->add('contract_file', '合同文件必须是PDF格式');
+            }
+        });
 
         if ($validator->fails()) {
             return response()->json([
@@ -1498,25 +1505,38 @@ class EmployeeContractController extends Controller
         try {
             $employee = Employee::findOrFail($request->employee_id);
             $user = $request->user();
+            $autoCompleteTypes = ['confidentiality', 'non_compete'];
+            $targetStatus = $request->input('target_status', 'completed');
+
+            if (in_array($request->contract_type, $autoCompleteTypes, true)) {
+                $targetStatus = 'completed';
+            }
             
             // 上传文件
             $file = $request->file('contract_file');
             $filename = time() . '_' . $file->getClientOriginalName();
             $path = $file->storeAs('contracts', $filename, 'public');
             
-            // 创建合同记录，直接设置为已完成状态
-            $contract = EmployeeContract::create([
+            $contractData = [
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $employee->account_set_id,
                 'contract_type' => $request->contract_type,
+                'stamp_method' => 'offline',
+                'source_type' => 'offline',
                 'contract_file' => $path,
                 'original_filename' => $file->getClientOriginalName(),
-                'status' => 'completed', // 直接设置为已完成
+                'status' => $targetStatus,
                 'notes' => $request->notes,
                 'created_by' => $user->id,
                 'uploaded_at' => now(),
-                'completed_at' => now(), // 直接设置完成时间
-            ]);
+                'employee_signed_at' => now(),
+            ];
+
+            if ($targetStatus === 'completed') {
+                $contractData['completed_at'] = now();
+            }
+
+            $contract = EmployeeContract::create($contractData);
             
             // 如果员工是线下入职，标记合同已上传
             if ($employee->is_offline_onboarding && !$employee->contract_uploaded) {
@@ -1559,5 +1579,44 @@ class EmployeeContractController extends Controller
                 'message' => '上传失败：' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function isPdfUpload($file): bool
+    {
+        $allowedMimeTypes = [
+            'application/pdf',
+            'application/x-pdf',
+            'application/acrobat',
+            'applications/vnd.pdf',
+            'text/pdf',
+            'text/x-pdf',
+            'application/octet-stream',
+        ];
+
+        $originalExtension = strtolower((string) $file->getClientOriginalExtension());
+        if ($originalExtension === 'pdf') {
+            return true;
+        }
+
+        $mimeType = strtolower((string) $file->getMimeType());
+        $clientMimeType = strtolower((string) $file->getClientMimeType());
+        if (in_array($mimeType, $allowedMimeTypes, true) || in_array($clientMimeType, $allowedMimeTypes, true)) {
+            return true;
+        }
+
+        $realPath = $file->getRealPath();
+        if (!$realPath || !is_file($realPath)) {
+            return false;
+        }
+
+        $handle = @fopen($realPath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        $signature = fread($handle, 4);
+        fclose($handle);
+
+        return $signature === '%PDF';
     }
 }

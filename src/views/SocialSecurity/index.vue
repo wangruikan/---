@@ -291,7 +291,7 @@
       <!-- 医保细分标签页 -->
       <el-tab-pane label="医保细分" name="medical">
         <div class="tab-header">
-          <el-button type="primary" @click="showCreateMedicalDialog = true">
+          <el-button type="primary" @click="openCreateMedicalRegionDialog">
             <el-icon><Plus /></el-icon>
             新建医保地区
           </el-button>
@@ -331,29 +331,26 @@
             </el-table-column>
             <el-table-column prop="creator.name" label="创建人" width="120" />
             <el-table-column prop="created_at" label="创建时间" width="180" />
-            <el-table-column label="公司缴纳比例" width="130">
+            <el-table-column label="医保类型" min-width="220">
               <template #default="{ row }">
-                <span v-if="row.medical_insurance_types?.[0]">
-                  {{ (Number(row.medical_insurance_types[0].company_ratio || 0) * 100).toFixed(2) }}%
-                </span>
-                <span v-else>-</span>
+                {{ getMedicalTypeNamesText(row.medical_insurance_types) }}
               </template>
             </el-table-column>
-            <el-table-column label="员工缴纳比例" width="130">
+            <el-table-column label="类型数量" width="100" align="center">
               <template #default="{ row }">
-                <span v-if="row.medical_insurance_types?.[0]">
-                  {{ (Number(row.medical_insurance_types[0].employee_ratio || 0) * 100).toFixed(2) }}%
-                </span>
-                <span v-else>-</span>
+                {{ row.medical_insurance_types?.length || 0 }} 种
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="360">
+            <el-table-column label="操作" width="440">
               <template #default="{ row }">
                 <el-button type="info" size="small" @click="showMedicalRegionHistory(row)">
                   历史
                 </el-button>
                 <el-button type="warning" size="small" @click="editMedicalRegion(row)">
                   编辑
+                </el-button>
+                <el-button type="primary" size="small" @click="openMedicalTypesDialog(row)">
+                  类型管理
                 </el-button>
                 <el-button type="success" size="small" @click="openMedicalLimitDialog(row)">
                   设置上下限
@@ -371,6 +368,7 @@
           v-model="showCreateMedicalDialog"
           :title="editingMedicalRegion ? '编辑医保地区' : '新建医保地区'"
           width="500px"
+          @closed="resetMedicalRegionForm"
         >
           <el-form :model="medicalRegionForm" :rules="regionRules" ref="medicalRegionFormRef" label-width="120px">
             <el-form-item label="地区名称" prop="name">
@@ -410,7 +408,7 @@
                 style="width: 100%"
               />
             </el-form-item>
-            <el-form-item label="公司缴纳比例">
+            <el-form-item v-if="!editingMedicalRegion" label="公司缴纳比例">
               <el-input-number
                 v-model="medicalRegionForm.type_company_ratio"
                 :min="0"
@@ -421,7 +419,7 @@
                 style="width: 100%"
               />
             </el-form-item>
-            <el-form-item label="员工缴纳比例">
+            <el-form-item v-if="!editingMedicalRegion" label="员工缴纳比例">
               <el-input-number
                 v-model="medicalRegionForm.type_employee_ratio"
                 :min="0"
@@ -432,6 +430,12 @@
                 style="width: 100%"
               />
             </el-form-item>
+            <div v-if="!editingMedicalRegion" class="form-tip">
+              创建地区时会同步创建默认医保类型“医疗保险”，如需配置第 2 种医保类型，请创建后在“类型管理”中维护。
+            </div>
+            <div v-else class="form-tip">
+              编辑地区仅修改地区信息；医保类型及比例请在“类型管理”中维护。
+            </div>
           </el-form>
           <template #footer>
             <el-button @click="showCreateMedicalDialog = false">取消</el-button>
@@ -496,14 +500,14 @@
         >
           <div class="types-header">
             <el-button
-              v-if="(currentMedicalRegion?.medical_insurance_types?.length || 0) === 0"
+              v-if="(currentMedicalRegion?.medical_insurance_types?.length || 0) < MAX_MEDICAL_INSURANCE_TYPES"
               type="primary"
-              @click="showAddMedicalTypeDialog = true"
+              @click="openCreateMedicalTypeDialog"
             >
               <el-icon><Plus /></el-icon>
               添加医保类型
             </el-button>
-            <div v-else class="form-tip">该地区已存在配置，如需调整请编辑当前配置</div>
+            <div v-else class="form-tip">该地区最多配置 2 种医保类型，如需调整请编辑现有类型。</div>
           </div>
 
           <el-table :data="currentMedicalRegion?.medical_insurance_types || []" stripe class="types-table">
@@ -544,6 +548,7 @@
           v-model="showAddMedicalTypeDialog"
           :title="editingMedicalType ? '编辑医保类型' : '添加医保类型'"
           width="500px"
+          @closed="resetMedicalTypeForm"
         >
           <el-form :model="medicalTypeForm" :rules="typeRules" ref="medicalTypeFormRef" label-width="120px">
             <el-form-item label="保险名称" prop="name">
@@ -665,7 +670,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Back, Right, Grid, Document, Close, Edit } from '@element-plus/icons-vue'
@@ -1039,6 +1044,7 @@ const editingMedicalRegion = ref(null)
 const editingMedicalType = ref(null)
 const currentMedicalRegion = ref(null)
 const currentMedicalLimitRegion = ref(null)
+const MAX_MEDICAL_INSURANCE_TYPES = 2
 
 // 表单数据
 const regionForm = ref({
@@ -1115,7 +1121,7 @@ const medicalRegionForm = ref({
   min_base_amount: null,
   max_base_amount: null,
   type_id: null,
-  type_name: '默认配置',
+  type_name: '医疗保险',
   type_employee_ratio: 0,
   type_company_ratio: 0
 })
@@ -1355,6 +1361,49 @@ const percentToDecimal = (value) => {
   return Number((Number(value) / 100).toFixed(4))
 }
 
+const getMedicalTypeNamesText = (types) => {
+  if (!types || types.length === 0) return '-'
+  return types.map(type => type.name).filter(Boolean).join('、') || '-'
+}
+
+const openCreateMedicalRegionDialog = async () => {
+  resetMedicalRegionForm()
+  showCreateMedicalDialog.value = true
+  await nextTick()
+  medicalRegionFormRef.value?.clearValidate()
+}
+
+const refreshCurrentMedicalRegion = async (regionId = currentMedicalRegion.value?.id) => {
+  if (!regionId) return null
+
+  const response = await getMedicalInsuranceRegion(regionId)
+  currentMedicalRegion.value = response.data
+  return response.data
+}
+
+const openMedicalTypesDialog = async (region) => {
+  try {
+    await refreshCurrentMedicalRegion(region.id)
+    resetMedicalTypeForm()
+    showMedicalTypesDialog.value = true
+  } catch (error) {
+    console.error('获取医保地区详情失败:', error)
+    ElMessage.error('获取医保地区详情失败')
+  }
+}
+
+const openCreateMedicalTypeDialog = async () => {
+  if ((currentMedicalRegion.value?.medical_insurance_types?.length || 0) >= MAX_MEDICAL_INSURANCE_TYPES) {
+    ElMessage.warning(`一个地区最多只能配置${MAX_MEDICAL_INSURANCE_TYPES}种医保类型`)
+    return
+  }
+
+  resetMedicalTypeForm()
+  showAddMedicalTypeDialog.value = true
+  await nextTick()
+  medicalTypeFormRef.value?.clearValidate()
+}
+
 const handleOnlyCompanyPayChange = (value) => {
   if (value) {
     typeForm.value.employee_ratio = 0
@@ -1457,6 +1506,7 @@ const resetTypeForm = () => {
 const unwatchAccountSet = accountSetStore.$subscribe((mutation, state) => {
   if (state.currentAccountSetId) {
     loadRegions()
+    loadMedicalRegions()
   }
 })
 
@@ -1595,7 +1645,6 @@ const editMedicalRegion = async (region) => {
     // 从服务器获取最新数据
     const response = await getMedicalInsuranceRegion(region.id)
     const latestRegion = response.data
-    const firstType = latestRegion.medical_insurance_types?.[0] || null
     
     editingMedicalRegion.value = latestRegion
     medicalRegionForm.value = {
@@ -1604,12 +1653,14 @@ const editMedicalRegion = async (region) => {
       company: latestRegion.company || '',
       min_base_amount: null,
       max_base_amount: null,
-      type_id: firstType?.id || null,
-      type_name: firstType?.name || '默认配置',
-      type_employee_ratio: decimalToPercent(firstType?.employee_ratio || 0),
-      type_company_ratio: decimalToPercent(firstType?.company_ratio || 0)
+      type_id: null,
+      type_name: '医疗保险',
+      type_employee_ratio: 0,
+      type_company_ratio: 0
     }
     showCreateMedicalDialog.value = true
+    await nextTick()
+    medicalRegionFormRef.value?.clearValidate()
   } catch (error) {
     console.error('获取医保地区详情失败:', error)
     ElMessage.error('获取医保地区详情失败')
@@ -1649,13 +1700,15 @@ const handleSubmitMedicalRegion = async () => {
   try {
     await medicalRegionFormRef.value.validate()
 
-    if (medicalRegionForm.value.type_employee_ratio === null || medicalRegionForm.value.type_employee_ratio === undefined) {
-      ElMessage.warning('请输入员工缴纳比例')
-      return
-    }
-    if (medicalRegionForm.value.type_company_ratio === null || medicalRegionForm.value.type_company_ratio === undefined) {
-      ElMessage.warning('请输入公司缴纳比例')
-      return
+    if (!editingMedicalRegion.value) {
+      if (medicalRegionForm.value.type_employee_ratio === null || medicalRegionForm.value.type_employee_ratio === undefined) {
+        ElMessage.warning('请输入员工缴纳比例')
+        return
+      }
+      if (medicalRegionForm.value.type_company_ratio === null || medicalRegionForm.value.type_company_ratio === undefined) {
+        ElMessage.warning('请输入公司缴纳比例')
+        return
+      }
     }
 
     submitting.value = true
@@ -1672,27 +1725,21 @@ const handleSubmitMedicalRegion = async () => {
       data.max_base_amount = medicalRegionForm.value.max_base_amount
     }
 
-    const typePayload = {
-      name: (medicalRegionForm.value.type_name || medicalRegionForm.value.name || '默认配置').trim(),
-      employee_ratio: percentToDecimal(medicalRegionForm.value.type_employee_ratio),
-      company_ratio: percentToDecimal(medicalRegionForm.value.type_company_ratio),
-      account_set_id: currentAccountSetId.value
-    }
-
     if (editingMedicalRegion.value) {
       await updateMedicalInsuranceRegion(editingMedicalRegion.value.id, {
         ...data,
         account_set_id: currentAccountSetId.value
       })
 
-      if (medicalRegionForm.value.type_id) {
-        await updateMedicalInsuranceType(medicalRegionForm.value.type_id, typePayload)
-      } else {
-        await addMedicalInsuranceType(editingMedicalRegion.value.id, typePayload)
-      }
-
       ElMessage.success('更新成功')
     } else {
+      const typePayload = {
+        name: (medicalRegionForm.value.type_name || '医疗保险').trim(),
+        employee_ratio: percentToDecimal(medicalRegionForm.value.type_employee_ratio),
+        company_ratio: percentToDecimal(medicalRegionForm.value.type_company_ratio),
+        account_set_id: currentAccountSetId.value
+      }
+
       data.type_name = typePayload.name
       data.type_employee_ratio = typePayload.employee_ratio
       data.type_company_ratio = typePayload.company_ratio
@@ -1701,11 +1748,10 @@ const handleSubmitMedicalRegion = async () => {
     }
 
     showCreateMedicalDialog.value = false
-    resetMedicalRegionForm()
     loadMedicalRegions()
   } catch (error) {
     console.error('提交医保地区表单失败:', error)
-    ElMessage.error(editingMedicalRegion.value ? '更新失败' : '创建失败')
+    ElMessage.error(error?.response?.data?.message || (editingMedicalRegion.value ? '更新失败' : '创建失败'))
   } finally {
     submitting.value = false
   }
@@ -1721,17 +1767,15 @@ const resetMedicalRegionForm = () => {
     min_base_amount: null,
     max_base_amount: null,
     type_id: null,
-    type_name: '默认配置',
+    type_name: '医疗保险',
     type_employee_ratio: 0,
     type_company_ratio: 0
   }
-  if (medicalRegionFormRef.value) {
-    medicalRegionFormRef.value.resetFields()
-  }
+  medicalRegionFormRef.value?.clearValidate()
 }
 
 // 编辑医保类型
-const editMedicalType = (type) => {
+const editMedicalType = async (type) => {
   editingMedicalType.value = type
   medicalTypeForm.value = {
     name: type.name,
@@ -1739,6 +1783,8 @@ const editMedicalType = (type) => {
     company_ratio: decimalToPercent(type.company_ratio)
   }
   showAddMedicalTypeDialog.value = true
+  await nextTick()
+  medicalTypeFormRef.value?.clearValidate()
 }
 
 // 删除医保类型
@@ -1758,11 +1804,12 @@ const deleteMedicalType = async (type) => {
       account_set_id: currentAccountSetId.value
     })
     ElMessage.success('删除成功')
-    loadMedicalRegions() // 重新加载以更新类型列表
+    await loadMedicalRegions()
+    await refreshCurrentMedicalRegion()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除医保类型失败:', error)
-      ElMessage.error('删除失败')
+      ElMessage.error(error?.response?.data?.message || '删除失败')
     }
   }
 }
@@ -1774,8 +1821,8 @@ const handleSubmitMedicalType = async () => {
   try {
     await medicalTypeFormRef.value.validate()
 
-    if (!editingMedicalType.value && (currentMedicalRegion.value?.medical_insurance_types?.length || 0) > 0) {
-      ElMessage.warning('该地区已存在配置，请直接编辑')
+    if (!editingMedicalType.value && (currentMedicalRegion.value?.medical_insurance_types?.length || 0) >= MAX_MEDICAL_INSURANCE_TYPES) {
+      ElMessage.warning(`一个地区最多只能配置${MAX_MEDICAL_INSURANCE_TYPES}种医保类型`)
       return
     }
 
@@ -1797,12 +1844,11 @@ const handleSubmitMedicalType = async () => {
     }
 
     showAddMedicalTypeDialog.value = false
-    showMedicalTypesDialog.value = false
-    resetMedicalTypeForm()
-    loadMedicalRegions() // 重新加载以更新类型列表
+    await loadMedicalRegions()
+    await refreshCurrentMedicalRegion()
   } catch (error) {
     console.error('提交医保类型表单失败:', error)
-    ElMessage.error(editingMedicalType.value ? '更新失败' : '添加失败')
+    ElMessage.error(error?.response?.data?.message || (editingMedicalType.value ? '更新失败' : '添加失败'))
   } finally {
     submitting.value = false
   }
@@ -1813,15 +1859,10 @@ const resetMedicalTypeForm = () => {
   editingMedicalType.value = null
   medicalTypeForm.value = {
     name: '',
-    min_base_amount: 0,
-    max_base_amount: 0,
     employee_ratio: 0,
-    company_ratio: 0,
-    unit: '元'
+    company_ratio: 0
   }
-  if (medicalTypeFormRef.value) {
-    medicalTypeFormRef.value.resetFields()
-  }
+  medicalTypeFormRef.value?.clearValidate()
 }
 
 // 医保模板相关函数

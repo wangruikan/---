@@ -50,6 +50,22 @@ class InvoiceApplicationController extends Controller
             $query->where('month', $request->input('month'));
         }
 
+        if ($request->filled('project_name')) {
+            $query->where('project_name', $request->input('project_name'));
+        }
+
+        if ($request->filled('period_year')) {
+            $query->where('period_year', $request->input('period_year'));
+        }
+
+        if ($request->filled('period_month')) {
+            $query->where('period_month', $request->input('period_month'));
+        }
+
+        if ($request->filled('exclude_id')) {
+            $query->where('id', '<>', $request->input('exclude_id'));
+        }
+
         // 按状态筛选
         if ($request->has('status')) {
             $query->where('status', $request->input('status'));

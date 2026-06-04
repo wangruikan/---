@@ -118,7 +118,10 @@ export function uploadSignedContract(data) {
   const formData = new FormData()
   formData.append('employee_id', data.employee_id)
   formData.append('contract_type', data.contract_type)
-  formData.append('contract_file', data.contract_file)
+  formData.append('contract_file', data.contract_file, data.contract_file?.name || 'contract.pdf')
+  if (data.target_status) {
+    formData.append('target_status', data.target_status)
+  }
   if (data.notes) {
     formData.append('notes', data.notes)
   }

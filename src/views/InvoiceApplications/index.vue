@@ -247,17 +247,23 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="开票种类" prop="invoice_type">
-              <el-input v-model="createForm.invoice_type" placeholder="默认：普票" />
+              <el-select v-model="createForm.invoice_type" placeholder="请选择开票种类" style="width: 100%">
+                <el-option
+                  v-for="option in invoiceTypeOptions"
+                  :key="'create-invoice-type-' + option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="扣除额" prop="deduction_amount">
+            <el-form-item label="开票金额" prop="invoice_amount">
               <el-input-number
-                v-model="createForm.deduction_amount"
+                v-model="createForm.invoice_amount"
                 :precision="2"
                 :min="0"
                 :controls="false"
-                :disabled="!createNeedsDeductionAmount"
                 style="width: 100%"
               />
             </el-form-item>
@@ -282,12 +288,13 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="不含税金额" prop="amount_excluding_tax">
+            <el-form-item label="扣除额" prop="deduction_amount">
               <el-input-number
-                v-model="createForm.amount_excluding_tax"
+                v-model="createForm.deduction_amount"
                 :precision="2"
                 :min="0"
                 :controls="false"
+                :disabled="!createNeedsDeductionAmount"
                 style="width: 100%"
               />
             </el-form-item>
@@ -304,9 +311,9 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="开票金额" prop="invoice_amount">
+            <el-form-item label="不含税金额" prop="amount_excluding_tax">
               <el-input-number
-                v-model="createForm.invoice_amount"
+                v-model="createForm.amount_excluding_tax"
                 :precision="2"
                 :min="0"
                 :controls="false"
@@ -376,60 +383,61 @@
           </el-col>
         </el-row>
       
-
-        <el-divider content-position="left">扣除明细</el-divider>
-        <div class="section-header">
-          <span>扣除明细项</span>
-          <el-button type="primary" link @click="addCreateItem">添加明细</el-button>
-        </div>
-        <el-table :data="createItems" border size="small" style="margin-top: 10px">
-          <el-table-column type="index" label="序号" width="70" align="center" />
-          <el-table-column label="项目" min-width="220">
-            <template #default="{ row }">
-              <el-select
-                v-model="row.invoice_project_id"
-                placeholder="请选择项目"
-                filterable
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="project in invoiceProjects"
-                  :key="project.id"
-                  :label="project.project_name"
-                  :value="project.id"
+        <div v-if="createNeedsDeductionAmount" ref="createDeductionSectionRef">
+          <el-divider content-position="left">扣除明细</el-divider>
+          <div class="section-header">
+            <span>扣除明细项</span>
+            <el-button type="primary" link @click="addCreateItem">添加明细</el-button>
+          </div>
+          <el-table :data="createItems" border size="small" style="margin-top: 10px">
+            <el-table-column type="index" label="序号" width="70" align="center" />
+            <el-table-column label="项目" min-width="220">
+              <template #default="{ row }">
+                <el-select
+                  v-model="row.invoice_project_id"
+                  placeholder="请选择项目"
+                  filterable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="project in invoiceProjects"
+                    :key="project.id"
+                    :label="project.project_name"
+                    :value="project.id"
+                  />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="金额" width="220">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.amount"
+                  :precision="2"
+                  :min="0"
+                  :controls="false"
+                  style="width: 100%"
                 />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="金额" width="220">
-            <template #default="{ row }">
-              <el-input-number
-                v-model="row.amount"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                style="width: 100%"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="备注" min-width="240">
-            <template #default="{ row }">
-              <el-input v-model="row.remark" placeholder="请输入备注（可选）" />
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="120" align="center">
-            <template #default="{ $index }">
-              <el-button
-                type="danger"
-                link
-                @click="removeCreateItem($index)"
-                :disabled="createItems.length <= 1"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+              </template>
+            </el-table-column>
+            <el-table-column label="备注" min-width="240">
+              <template #default="{ row }">
+                <el-input v-model="row.remark" placeholder="请输入备注（可选）" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" align="center">
+              <template #default="{ $index }">
+                <el-button
+                  type="danger"
+                  link
+                  @click="removeCreateItem($index)"
+                  :disabled="createItems.length <= 1"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
 
         <el-divider content-position="left">附件上传</el-divider>
         <el-upload
@@ -649,21 +657,26 @@
                 <!-- 开票种类 -->
                 <el-col :span="12">
                   <el-form-item label="开票种类" prop="invoice_type">
-                    <el-input v-model="invoiceDetailsForm.invoice_type" placeholder="默认：普票" />
+                    <el-select v-model="invoiceDetailsForm.invoice_type" placeholder="请选择开票种类" style="width: 100%">
+                      <el-option
+                        v-for="option in invoiceTypeOptions"
+                        :key="'detail-invoice-type-' + option.value"
+                        :label="option.label"
+                        :value="option.value"
+                      />
+                    </el-select>
                   </el-form-item>
                 </el-col>
 
-                <!-- 扣除额 -->
+                <!-- 开票金额 -->
                 <el-col :span="12">
-                  <el-form-item label="扣除额" prop="deduction_amount">
+                  <el-form-item label="开票金额" prop="invoice_amount">
                     <el-input-number
-                      v-model="invoiceDetailsForm.deduction_amount"
+                      v-model="invoiceDetailsForm.invoice_amount"
                       :precision="2"
                       :min="0"
                       :controls="false"
-                      :disabled="!needsDeductionAmount"
                       style="width: 100%"
-                      placeholder="仅全额和差额需要填写"
                     />
                   </el-form-item>
                 </el-col>
@@ -693,15 +706,17 @@
                   </el-form-item>
                 </el-col>
 
-                <!-- 不含税金额 -->
+                <!-- 扣除额 -->
                 <el-col :span="12">
-                  <el-form-item label="不含税金额" prop="amount_excluding_tax">
+                  <el-form-item label="扣除额" prop="deduction_amount">
                     <el-input-number
-                      v-model="invoiceDetailsForm.amount_excluding_tax"
+                      v-model="invoiceDetailsForm.deduction_amount"
                       :precision="2"
                       :min="0"
                       :controls="false"
+                      :disabled="!needsDeductionAmount"
                       style="width: 100%"
+                      placeholder="仅全额和差额需要填写"
                     />
                   </el-form-item>
                 </el-col>
@@ -719,11 +734,11 @@
                   </el-form-item>
                 </el-col>
 
-                <!-- 开票金额 -->
+                <!-- 不含税金额 -->
                 <el-col :span="12">
-                  <el-form-item label="开票金额" prop="invoice_amount">
+                  <el-form-item label="不含税金额" prop="amount_excluding_tax">
                     <el-input-number
-                      v-model="invoiceDetailsForm.invoice_amount"
+                      v-model="invoiceDetailsForm.amount_excluding_tax"
                       :precision="2"
                       :min="0"
                       :controls="false"
@@ -922,7 +937,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download } from '@element-plus/icons-vue'
 import {
@@ -957,6 +972,11 @@ const canApproveInvoice = computed(() => permissionStore.hasPermission('invoice_
 
 // 权限控制：是否可以创建任务（只有审批人可以）
 const canCreateTask = ref(false)
+
+const invoiceTypeOptions = [
+  { label: '普票', value: '普票' },
+  { label: '专票', value: '专票' }
+]
 
 // 年份列表
 const currentYear = new Date().getFullYear()
@@ -1023,7 +1043,7 @@ const createFormRules = {
   company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
   application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
   invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
-  invoice_type: [{ required: true, message: '请输入开票种类', trigger: 'blur' }],
+  invoice_type: [{ required: true, message: '请选择开票种类', trigger: 'change' }],
   tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
   amount_excluding_tax: [{ required: true, message: '请输入不含税金额', trigger: 'blur' }],
   invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
@@ -1038,6 +1058,8 @@ const createItems = ref([
   { invoice_project_id: null, amount: 0, remark: '' }
 ])
 const createAttachmentFileList = ref([])
+const createDeductionSectionRef = ref(null)
+const lastCreateDuplicateWarnKey = ref('')
 
 const addCreateItem = () => {
   createItems.value.push({
@@ -1061,18 +1083,20 @@ const beforeCreateAttachmentUpload = (file) => {
 }
 
 const validateCreateExtraData = () => {
-  if (!createItems.value.length) {
-    ElMessage.warning('\u8bf7\u81f3\u5c11\u6dfb\u52a01\u6761\u6263\u9664\u660e\u7ec6')
-    return false
-  }
+  if (createNeedsDeductionAmount.value) {
+    if (!createItems.value.length) {
+      ElMessage.warning('\u8bf7\u81f3\u5c11\u6dfb\u52a01\u6761\u6263\u9664\u660e\u7ec6')
+      return false
+    }
 
-  const invalidIndex = createItems.value.findIndex(item => {
-    return !item.invoice_project_id || Number(item.amount) <= 0
-  })
+    const invalidIndex = createItems.value.findIndex(item => {
+      return !item.invoice_project_id || Number(item.amount) <= 0
+    })
 
-  if (invalidIndex !== -1) {
-    ElMessage.warning('\u8bf7\u5b8c\u6210\u6263\u9664\u660e\u7ec6\u7b2c ' + (invalidIndex + 1) + ' \u884c\u7684\u9879\u76ee\u548c\u91d1\u989d')
-    return false
+    if (invalidIndex !== -1) {
+      ElMessage.warning('\u8bf7\u5b8c\u6210\u6263\u9664\u660e\u7ec6\u7b2c ' + (invalidIndex + 1) + ' \u884c\u7684\u9879\u76ee\u548c\u91d1\u989d')
+      return false
+    }
   }
 
   if (!createAttachmentFileList.value.length) {
@@ -1159,7 +1183,7 @@ const invoiceDetailsFormRules = {
   company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
   application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
   invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
-  invoice_type: [{ required: true, message: '请输入开票种类', trigger: 'blur' }],
+  invoice_type: [{ required: true, message: '请选择开票种类', trigger: 'change' }],
   tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
   amount_excluding_tax: [{ required: true, message: '请输入不含税金额', trigger: 'blur' }],
   invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
@@ -1219,6 +1243,80 @@ const fillCreateInvoiceInfoByProject = (projectId) => {
     selectedProject.invoice_company ||
     selectedProject.company_name ||
     ''
+}
+
+const resetCreateItems = () => {
+  createItems.value = [
+    { invoice_project_id: null, amount: 0, remark: '' }
+  ]
+}
+
+const scrollToCreateDeductionSection = async () => {
+  await nextTick()
+  createDeductionSectionRef.value?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start'
+  })
+}
+
+const checkExistingInvoicePeriod = async ({
+  projectName,
+  periodYear,
+  periodMonth,
+  excludeId = null
+}) => {
+  if (!projectName || !periodYear || !periodMonth) {
+    return { exists: false, total: 0 }
+  }
+
+  const response = await getInvoiceApplications({
+    project_name: projectName,
+    period_year: periodYear,
+    period_month: periodMonth,
+    exclude_id: excludeId,
+    per_page: 5
+  })
+
+  if (!response?.success) {
+    return { exists: false, total: 0 }
+  }
+
+  const total = Number(response.data?.total || 0)
+  return {
+    exists: total > 0,
+    total
+  }
+}
+
+const warnDuplicateCreatePeriodIfNeeded = async () => {
+  const project = findProjectById(createForm.project_id)
+  const projectName = project?.name
+  const periodYear = createForm.period_year
+  const periodMonth = createForm.period_month
+
+  if (!projectName || !periodYear || !periodMonth) {
+    return
+  }
+
+  const warnKey = `${projectName}_${periodYear}_${periodMonth}`
+  if (lastCreateDuplicateWarnKey.value === warnKey) {
+    return
+  }
+
+  try {
+    const { exists, total } = await checkExistingInvoicePeriod({
+      projectName,
+      periodYear,
+      periodMonth
+    })
+
+    if (exists) {
+      lastCreateDuplicateWarnKey.value = warnKey
+      ElMessage.warning(`${projectName}${periodYear}年${periodMonth}月已存在 ${total} 条开票任务，本次仍可继续选择`)
+    }
+  } catch (error) {
+    console.error('检查开票月份重复失败', error)
+  }
 }
 
 // 状态类型
@@ -1498,10 +1596,9 @@ const resetCreateForm = () => {
   createForm.invoicer = ''
   createForm.invoice_number = ''
   createForm.invoice_remark = ''
-  createItems.value = [
-    { invoice_project_id: null, amount: 0, remark: '' }
-  ]
+  resetCreateItems()
   createAttachmentFileList.value = []
+  lastCreateDuplicateWarnKey.value = ''
   createFormRef.value?.clearValidate()
 }
 
@@ -1560,15 +1657,17 @@ const handleConfirmCreate = async () => {
     }
 
     try {
-      for (const item of createItems.value) {
-        const itemRes = await addInvoiceItem(createdId, {
-          invoice_project_id: item.invoice_project_id,
-          amount: Number(item.amount || 0),
-          remark: item.remark || ''
-        })
+      if (createNeedsDeductionAmount.value) {
+        for (const item of createItems.value) {
+          const itemRes = await addInvoiceItem(createdId, {
+            invoice_project_id: item.invoice_project_id,
+            amount: Number(item.amount || 0),
+            remark: item.remark || ''
+          })
 
-        if (!itemRes?.success) {
-          throw new Error(itemRes?.message || '扣除明细保存失败')
+          if (!itemRes?.success) {
+            throw new Error(itemRes?.message || '扣除明细保存失败')
+          }
         }
       }
 
@@ -2207,9 +2306,15 @@ watch(
 // 监听开票方式变化，自动清空扣除额（如果不是全额或差额）
 watch(
   () => createForm.invoice_method,
-  (newMethod) => {
+  async (newMethod, oldMethod) => {
     if (newMethod !== 'full' && newMethod !== 'diff') {
       createForm.deduction_amount = 0
+      resetCreateItems()
+      return
+    }
+
+    if (oldMethod !== 'full' && oldMethod !== 'diff') {
+      await scrollToCreateDeductionSection()
     }
   }
 )
@@ -2218,6 +2323,13 @@ watch(
   () => createForm.project_id,
   (newProjectId) => {
     fillCreateInvoiceInfoByProject(newProjectId)
+  }
+)
+
+watch(
+  () => [createForm.project_id, createForm.period_year, createForm.period_month],
+  () => {
+    warnDuplicateCreatePeriodIfNeeded()
   }
 )
 

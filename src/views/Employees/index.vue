@@ -4178,7 +4178,7 @@
           <div class="form-tip">选择盖章方式后，提交审批时将自动使用此方式</div>
         </el-form-item>
 
-        <el-form-item label="选择模板" required v-if="uploadForm.contract_type">
+        <el-form-item label="选择模板" required v-if="uploadForm.contract_type && uploadForm.stamp_method !== 'offline'">
           <el-select
             v-model="uploadForm.template_id"
             placeholder="请选择合同模板"
@@ -4197,6 +4197,28 @@
           </el-select>
           <div class="form-tip">系统将使用选中的模板创建合同</div>
         </el-form-item>
+
+        <el-form-item label="上传合同" required v-if="uploadForm.stamp_method === 'offline'">
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :limit="1"
+            accept=".pdf"
+            :on-change="handleFileChange"
+            :on-remove="handleFileRemove"
+            :on-exceed="handleFileExceed"
+          >
+            <el-button type="primary">
+              <el-icon><Upload /></el-icon>
+              选择PDF文件
+            </el-button>
+            <template #tip>
+              <div class="el-upload__tip">
+                线下签署场景直接上传已签署完成的 PDF，创建后状态将变为“乙方已签署”
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
         
         <el-form-item label="备注">
           <el-input
@@ -4211,7 +4233,7 @@
       <template #footer>
         <el-button @click="showUploadDialog = false">取消</el-button>
         <el-button type="primary" @click="handleCreateContract" :loading="uploading">
-          创建合同
+          {{ uploadForm.stamp_method === 'offline' ? '上传并创建合同' : '创建合同' }}
         </el-button>
       </template>
     </el-dialog>
@@ -7736,6 +7758,9 @@ const handleContractTypeSelect = async (contractType) => {
   uploadForm.template_id = null
   uploadForm.notes = ''
   fileList.value = []
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
   
   console.log('4. 设置后的 uploadForm:', {
     contract_type: uploadForm.contract_type,
@@ -7844,13 +7869,58 @@ const handleCreateContract = async () => {
     return
   }
 
-  if (!uploadForm.template_id) {
-    ElMessage.warning('请选择合同模板')
-    return
-  }
-
   uploading.value = true
   try {
+    if (uploadForm.stamp_method === 'offline') {
+      const selectedFile = fileList.value[0]?.raw
+
+      if (!selectedFile) {
+        ElMessage.warning('请上传合同文件')
+        return
+      }
+
+      const fileName = selectedFile.name?.toLowerCase() || ''
+      if (selectedFile.type !== 'application/pdf' && !fileName.endsWith('.pdf')) {
+        ElMessage.error('只能上传PDF格式的文件')
+        return
+      }
+
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        ElMessage.error('文件大小不能超过10MB')
+        return
+      }
+
+      const response = await uploadSignedContract({
+        employee_id: uploadForm.employee_id,
+        contract_type: uploadForm.contract_type,
+        contract_file: selectedFile,
+        target_status: 'employee_signed',
+        notes: uploadForm.notes || ''
+      })
+
+      if (!response.success) {
+        throw new Error(response.message || '创建合同失败')
+      }
+
+      ElMessage.success(
+        response.data?.status === 'employee_signed'
+          ? '合同已上传，状态已更新为乙方已签署'
+          : '合同创建成功'
+      )
+      showUploadDialog.value = false
+      fileList.value = []
+      if (uploadRef.value) {
+        uploadRef.value.clearFiles()
+      }
+      await loadEmployeeContracts(currentEmployee.value.id)
+      return
+    }
+
+    if (!uploadForm.template_id) {
+      ElMessage.warning('请选择合同模板')
+      return
+    }
+
     console.log('📤 开始创建带数据填充的合同...')
     
     // 1. 调用新的API获取模板和员工数据
@@ -8063,6 +8133,16 @@ const handleDeleteContract = async (contract) => {
 const handleContractDialogClose = () => {
   currentEmployee.value = null
   contracts.value = []
+  showUploadDialog.value = false
+  showUploadSignedDialog.value = false
+  fileList.value = []
+  signedContractFile.value = null
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
+  if (uploadSignedRef.value) {
+    uploadSignedRef.value.clearFiles()
+  }
 }
 
 // ========== 上传已签署合同相关方法 ==========

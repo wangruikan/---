@@ -71,8 +71,8 @@
           stripe
           border
         >
-          <el-table-column v-if="isColumnGroupVisible('basic')" prop="code" label="&#39033;&#30446;&#32534;&#21495;" width="100" />
-          <el-table-column v-if="isColumnGroupVisible('basic')" prop="name" label="&#39033;&#30446;&#21517;&#31216;" width="200" />
+          <el-table-column prop="code" label="&#39033;&#30446;&#32534;&#21495;" width="100" fixed="left" />
+          <el-table-column prop="name" label="&#39033;&#30446;&#21517;&#31216;" width="200" fixed="left" />
           <el-table-column v-if="isColumnGroupVisible('basic')" prop="status" label="&#29366;&#24577;" width="100">
             <template #default="{ row }">
               <el-tag :type="getStatusType(row.status)">

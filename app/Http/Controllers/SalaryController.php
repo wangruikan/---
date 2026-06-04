@@ -2431,7 +2431,6 @@ class SalaryController extends Controller
             - $cumulativeBasicDeduction
             - $cumulativeSpecialDeductionInsurance
             - $cumulativeSpecialDeduction
-            + $cumulativeOtherTaxable
         ), 2);
 
         $taxData = $this->calculateTaxRateAndQuickDeduction($cumulativeTaxableIncome);

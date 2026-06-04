@@ -1269,7 +1269,7 @@ const salaryFieldFormulaMap = {
   special_deduction_group: '展示员工本月各项专项附加扣除金额。',
   special_deduction_monthly: '直接取员工本月专项附加扣除金额。',
   special_deduction: '累计专项附加扣除 = 之前月份专项附加扣除合计 + 本月专项附加扣除。',
-  taxable_income: '累计应纳税所得额 = max(0, 累计收入 - 累计减除费用 - 累计专项扣除 - 累计专项附加扣除 + 累计其他应纳税项)。',
+  taxable_income: '累计应纳税所得额 = max(0, 累计收入 - 累计减除费用 - 累计专项扣除 - 累计专项附加扣除)。',
   tax_rate: '根据累计应纳税所得额匹配个税税率表得到当前税率。',
   quick_deduction: '根据累计应纳税所得额匹配个税税率表得到速算扣除数。',
   cumulative_tax_payable: '累计应扣缴税额 = max(0, 累计应纳税所得额 × 税率 - 速算扣除数)。',

@@ -1,7 +1,7 @@
 // API请求封装
 // 本地开发地址
-// const BASE_URL = 'http://127.0.0.1:8000/api/mini'   //本地开发
-const BASE_URL = 'https://renli.cyygg.cn/api/mini'   //人事域名（生产环境）
+const BASE_URL = 'http://127.0.0.1:8000/api/mini'   //本地开发
+// const BASE_URL = 'https://renli.cyygg.cn/api/mini'   //人事域名（生产环境）
 // const BASE_URL = 'https://xjz.cyygkj.cn/api/mini' //包小筑域名
 
 // 导出 BASE_URL 供其他模块使用

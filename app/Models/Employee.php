@@ -154,6 +154,8 @@ class Employee extends Model
         'medical_insurance_enrollment_date', 'large_medical_enrollment_date',
         // 线下入职相关字段
         'is_offline_onboarding', 'offline_onboarding_date', 'contract_upload_deadline', 'contract_uploaded',
+        // 跳过小程序表单填写（开启后生成工资表时不校验表单填写状态）
+        'skip_form_filling',
     ];
 
     protected $casts = [
@@ -194,6 +196,7 @@ class Employee extends Model
         'is_annual_deduction' => 'boolean',
         'is_offline_onboarding' => 'boolean',
         'contract_uploaded' => 'boolean',
+        'skip_form_filling' => 'boolean',
         'created_at' => 'datetime:Y-m-d H:i:s',
         'updated_at' => 'datetime:Y-m-d H:i:s',
     ];

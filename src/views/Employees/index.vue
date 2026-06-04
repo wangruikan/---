@@ -1323,6 +1323,12 @@
               <el-switch v-model="form.is_elderly_alone" :disabled="isViewMode" />
             </el-form-item>
           </el-col>
+          <el-col :span="8">
+            <el-form-item label="跳过小程序表单" prop="skip_form_filling">
+              <el-switch v-model="form.skip_form_filling" :disabled="isViewMode" />
+              <div class="form-tip" style="color: #909399;">开启后生成工资表时不校验表单填写</div>
+            </el-form-item>
+          </el-col>
         </el-row>
         
         <!-- 四、涉税与投资信息 -->
@@ -5054,7 +5060,10 @@ const form = reactive({
   is_martyr_family: false,
   martyr_family_cert_number: '',
   is_elderly_alone: false,
-  
+
+  // 小程序表单填写跳过开关
+  skip_form_filling: false,
+
   // 四、涉税与投资信息
   tax_matter: '',
   deduct_expense: true,
@@ -9233,6 +9242,7 @@ const getChangeComparison = (detail) => {
     is_disabled: '是否残疾',
     is_martyr_family: '是否烈属',
     is_elderly_alone: '是否孤老',
+    skip_form_filling: '跳过小程序表单',
     employment_type: '从业类型',
     nationality: '国籍',
     country_region: '国家/地区',

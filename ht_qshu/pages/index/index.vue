@@ -229,7 +229,24 @@ import request from '@/utils/request.js'
 		async checkBeforeSign() {
 			try {
 				uni.showLoading({ title: '检查中...' })
-				
+
+				// 0. 检查是否跳过小程序表单填写
+				const employeeInfo = uni.getStorageSync('employeeInfo') || {}
+				if (employeeInfo.skip_form_filling) {
+					uni.hideLoading()
+					const documentsComplete = await this.checkDocumentsComplete()
+					if (!documentsComplete) {
+						uni.showModal({
+							title: '提示',
+							content: '请先上传完整资料',
+							showCancel: false,
+							confirmText: '知道了'
+						})
+						return false
+					}
+					return true
+				}
+
 				// 1. 检查从业人员登记表是否已提交
 				let hasRegistrationForm = false
 				try {

@@ -203,14 +203,14 @@
 
       <el-table :data="currentRegion?.social_security_types || []" stripe class="types-table">
         <el-table-column prop="name" label="保险名称" width="200" />
-        <el-table-column prop="employee_ratio" label="员工缴纳比例" width="150">
-          <template #default="{ row }">
-            {{ (row.employee_ratio * 100).toFixed(2) }}%
-          </template>
-        </el-table-column>
         <el-table-column prop="company_ratio" label="公司缴纳比例" width="150">
           <template #default="{ row }">
             {{ (row.company_ratio * 100).toFixed(2) }}%
+          </template>
+        </el-table-column>
+        <el-table-column prop="employee_ratio" label="员工缴纳比例" width="150">
+          <template #default="{ row }">
+            {{ (row.employee_ratio * 100).toFixed(2) }}%
           </template>
         </el-table-column>
         <el-table-column prop="unit" label="单位" width="100">
@@ -249,6 +249,18 @@
         <el-form-item label="仅单位缴纳">
           <el-switch v-model="typeForm.only_company_pay" @change="handleOnlyCompanyPayChange" />
         </el-form-item>
+        <el-form-item label="公司缴纳比例" prop="company_ratio">
+          <el-input-number
+            v-model="typeForm.company_ratio"
+            :min="0"
+            :max="100"
+            :precision="2"
+            :step="0.01"
+            placeholder="请输入公司缴纳比例（%）"
+            style="width: 100%"
+          />
+          <div class="form-tip">例如：16 表示 16%</div>
+        </el-form-item>
         <el-form-item label="员工缴纳比例" prop="employee_ratio">
           <el-input-number
             v-model="typeForm.employee_ratio"
@@ -261,18 +273,6 @@
             :disabled="typeForm.only_company_pay"
           />
           <div class="form-tip">例如：8 表示 8%</div>
-        </el-form-item>
-        <el-form-item label="公司缴纳比例" prop="company_ratio">
-          <el-input-number
-            v-model="typeForm.company_ratio"
-            :min="0"
-            :max="100"
-            :precision="2"
-            :step="0.01"
-            placeholder="请输入公司缴纳比例（%）"
-            style="width: 100%"
-          />
-          <div class="form-tip">例如：16 表示 16%</div>
         </el-form-item>
         <el-form-item label="单位" prop="unit">
           <el-input v-model="typeForm.unit" placeholder="请输入单位，如：元" />
@@ -331,18 +331,18 @@
             </el-table-column>
             <el-table-column prop="creator.name" label="创建人" width="120" />
             <el-table-column prop="created_at" label="创建时间" width="180" />
-            <el-table-column label="员工缴纳比例" width="130">
-              <template #default="{ row }">
-                <span v-if="row.medical_insurance_types?.[0]">
-                  {{ (Number(row.medical_insurance_types[0].employee_ratio || 0) * 100).toFixed(2) }}%
-                </span>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
             <el-table-column label="公司缴纳比例" width="130">
               <template #default="{ row }">
                 <span v-if="row.medical_insurance_types?.[0]">
                   {{ (Number(row.medical_insurance_types[0].company_ratio || 0) * 100).toFixed(2) }}%
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="员工缴纳比例" width="130">
+              <template #default="{ row }">
+                <span v-if="row.medical_insurance_types?.[0]">
+                  {{ (Number(row.medical_insurance_types[0].employee_ratio || 0) * 100).toFixed(2) }}%
                 </span>
                 <span v-else>-</span>
               </template>
@@ -410,17 +410,6 @@
                 style="width: 100%"
               />
             </el-form-item>
-            <el-form-item label="员工缴纳比例">
-              <el-input-number
-                v-model="medicalRegionForm.type_employee_ratio"
-                :min="0"
-                :max="100"
-                :precision="2"
-                :step="0.01"
-                placeholder="请输入员工缴纳比例（%）"
-                style="width: 100%"
-              />
-            </el-form-item>
             <el-form-item label="公司缴纳比例">
               <el-input-number
                 v-model="medicalRegionForm.type_company_ratio"
@@ -429,6 +418,17 @@
                 :precision="2"
                 :step="0.01"
                 placeholder="请输入公司缴纳比例（%）"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="员工缴纳比例">
+              <el-input-number
+                v-model="medicalRegionForm.type_employee_ratio"
+                :min="0"
+                :max="100"
+                :precision="2"
+                :step="0.01"
+                placeholder="请输入员工缴纳比例（%）"
                 style="width: 100%"
               />
             </el-form-item>
@@ -508,14 +508,14 @@
 
           <el-table :data="currentMedicalRegion?.medical_insurance_types || []" stripe class="types-table">
             <el-table-column prop="name" label="保险名称" width="200" />
-            <el-table-column prop="employee_ratio" label="员工缴纳比例" width="150">
-              <template #default="{ row }">
-                {{ (row.employee_ratio * 100).toFixed(2) }}%
-              </template>
-            </el-table-column>
             <el-table-column prop="company_ratio" label="公司缴纳比例" width="150">
               <template #default="{ row }">
                 {{ (row.company_ratio * 100).toFixed(2) }}%
+              </template>
+            </el-table-column>
+            <el-table-column prop="employee_ratio" label="员工缴纳比例" width="150">
+              <template #default="{ row }">
+                {{ (row.employee_ratio * 100).toFixed(2) }}%
               </template>
             </el-table-column>
             <el-table-column prop="unit" label="单位" width="100">
@@ -550,18 +550,6 @@
               <el-input v-model="medicalTypeForm.name" placeholder="请输入保险名称，如：医疗保险" />
               <div class="form-tip">基数上下限已在地区层级统一设置</div>
             </el-form-item>
-            <el-form-item label="员工缴纳比例" prop="employee_ratio">
-              <el-input-number
-                v-model="medicalTypeForm.employee_ratio"
-                :min="0"
-                :max="100"
-                :precision="2"
-                :step="0.01"
-                placeholder="请输入员工缴纳比例（%）"
-                style="width: 100%"
-              />
-              <div class="form-tip">例如：2 表示 2%</div>
-            </el-form-item>
             <el-form-item label="公司缴纳比例" prop="company_ratio">
               <el-input-number
                 v-model="medicalTypeForm.company_ratio"
@@ -573,6 +561,18 @@
                 style="width: 100%"
               />
               <div class="form-tip">例如：10 表示 10%</div>
+            </el-form-item>
+            <el-form-item label="员工缴纳比例" prop="employee_ratio">
+              <el-input-number
+                v-model="medicalTypeForm.employee_ratio"
+                :min="0"
+                :max="100"
+                :precision="2"
+                :step="0.01"
+                placeholder="请输入员工缴纳比例（%）"
+                style="width: 100%"
+              />
+              <div class="form-tip">例如：2 表示 2%</div>
             </el-form-item>
           </el-form>
           <template #footer>

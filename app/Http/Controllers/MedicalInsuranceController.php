@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Validator;
 
 class MedicalInsuranceController extends Controller
 {
+    private const MAX_TYPES_PER_REGION = 2;
+
     /**
      * 获取医保地区列表
      */
@@ -287,7 +289,7 @@ class MedicalInsuranceController extends Controller
             ->where('status', 'pending')
             ->first();
 
-        $region->load('creator');
+        $region->load(['creator', 'medicalInsuranceTypes']);
         $region->current_limits = [
             'min_base_amount' => $region->min_base_amount,
             'max_base_amount' => $region->max_base_amount,
@@ -369,11 +371,11 @@ class MedicalInsuranceController extends Controller
             ], 404);
         }
 
-        $existsType = MedicalInsuranceType::where('region_id', $regionId)->exists();
-        if ($existsType) {
+        $typeCount = MedicalInsuranceType::where('region_id', $regionId)->count();
+        if ($typeCount >= self::MAX_TYPES_PER_REGION) {
             return response()->json([
                 'success' => false,
-                'message' => '该地区已存在配置，不允许重复新增'
+                'message' => '一个地区最多只能配置2种医保类型'
             ], 422);
         }
 
@@ -475,6 +477,14 @@ class MedicalInsuranceController extends Controller
                 'success' => false,
                 'message' => '无权限访问该医保类型'
             ], 403);
+        }
+
+        $typeCount = MedicalInsuranceType::where('region_id', $type->region_id)->count();
+        if ($typeCount <= 1) {
+            return response()->json([
+                'success' => false,
+                'message' => '地区至少保留1种医保类型，如需停用请直接删除地区'
+            ], 422);
         }
 
         // 保存删除前的数据用于变更检测

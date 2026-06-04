@@ -112,14 +112,14 @@
             {{ row.pending_limits?.effective_date || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="employee_ratio" label="员工缴纳比例" width="120">
-          <template #default="{ row }">
-            {{ (row.employee_ratio * 100).toFixed(2) }}%
-          </template>
-        </el-table-column>
         <el-table-column prop="company_ratio" label="公司缴纳比例" width="120">
           <template #default="{ row }">
             {{ (row.company_ratio * 100).toFixed(2) }}%
+          </template>
+        </el-table-column>
+        <el-table-column prop="employee_ratio" label="员工缴纳比例" width="120">
+          <template #default="{ row }">
+            {{ (row.employee_ratio * 100).toFixed(2) }}%
           </template>
         </el-table-column>
         <el-table-column prop="creator.name" label="创建人" width="100" />
@@ -209,18 +209,6 @@
           />
         </el-form-item>
 
-        <el-form-item label="员工缴纳比例" prop="employee_ratio">
-          <el-input-number
-            v-model="configForm.employee_ratio"
-            :min="0"
-            :max="100"
-            :precision="2"
-            :step="0.01"
-            placeholder="请输入员工缴纳比例"
-            style="width: 100%"
-          />
-          <div class="form-tip">例如：12 表示 12%</div>
-        </el-form-item>
         <el-form-item label="公司缴纳比例" prop="company_ratio">
           <el-input-number
             v-model="configForm.company_ratio"
@@ -229,6 +217,18 @@
             :precision="2"
             :step="0.01"
             placeholder="请输入公司缴纳比例"
+            style="width: 100%"
+          />
+          <div class="form-tip">例如：12 表示 12%</div>
+        </el-form-item>
+        <el-form-item label="员工缴纳比例" prop="employee_ratio">
+          <el-input-number
+            v-model="configForm.employee_ratio"
+            :min="0"
+            :max="100"
+            :precision="2"
+            :step="0.01"
+            placeholder="请输入员工缴纳比例"
             style="width: 100%"
           />
           <div class="form-tip">例如：12 表示 12%</div>

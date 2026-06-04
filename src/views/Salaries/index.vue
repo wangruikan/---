@@ -870,22 +870,25 @@
               </template>
             </el-table-column>
             
-            <!-- 累计专项附加扣除（6项扣除） - 当月的6项扣除合计 - 已隐藏 -->
-            <!-- <el-table-column label="累计专项附加扣除（6项扣除）" width="180" align="right">
+            <!-- 当月专项附加扣除（6项扣除） -->
+            <el-table-column width="130" align="right">
+              <template #header>
+                <FormulaHeader label="累计专项附加扣除（6项扣除）" :formula="salaryFieldFormulaMap.special_deduction_monthly" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #409EFF;">{{ formatMoney(row.special_deduction_monthly) }}</span>
               </template>
-            </el-table-column> -->
-            
-            <!-- 累计专项附加扣除 - 1月到当前月的累计值 -->
-            <el-table-column width="130" align="right">
+            </el-table-column>
+
+            <!-- 累计专项附加扣除 - 1月到当前月的累计值 - 已隐藏 -->
+            <!-- <el-table-column width="130" align="right">
               <template #header>
                 <FormulaHeader label="累计专项附加扣除" :formula="salaryFieldFormulaMap.special_deduction" />
               </template>
               <template #default="{ row }">
                 <span style="color: #67C23A; font-weight: bold;">{{ formatMoney(row.special_deduction) }}</span>
               </template>
-            </el-table-column>
+            </el-table-column> -->
             
             <!-- 累计应纳税所得额 -->
             <el-table-column prop="taxable_income" width="140" align="right">
@@ -1264,6 +1267,7 @@ const salaryFieldFormulaMap = {
   personal_housing_fund_compensation: '公积金补差（个人）= 当月公积金补差记录中的个人部分合计。',
   personal_total: '个人合计 = 各社保险种个人部分 + 公积金个人部分 + 大额医疗个人部分。',
   special_deduction_group: '展示员工本月各项专项附加扣除金额。',
+  special_deduction_monthly: '直接取员工本月专项附加扣除金额。',
   special_deduction: '累计专项附加扣除 = 之前月份专项附加扣除合计 + 本月专项附加扣除。',
   taxable_income: '累计应纳税所得额 = max(0, 累计收入 - 累计减除费用 - 累计专项扣除 - 累计专项附加扣除 + 累计其他应纳税项)。',
   tax_rate: '根据累计应纳税所得额匹配个税税率表得到当前税率。',
@@ -1271,7 +1275,7 @@ const salaryFieldFormulaMap = {
   cumulative_tax_payable: '累计应扣缴税额 = max(0, 累计应纳税所得额 × 税率 - 速算扣除数)。',
   tax_already_withheld: '已扣缴税额 = 上个月的累计应扣缴税额。',
   cumulative_other_taxable: '直接取“累计其他应纳税项（合并扣税）”字段当前值。',
-  tax_payable_or_refundable: '应补（退）税额 = 本月应发工资 - 5000 - 本月社保个人部分 - 本月公积金个人部分 - 本月专项附加扣除；大额医疗不参与该公式。',
+  tax_payable_or_refundable: '应补（退）税额 = 累计应扣缴税额 - 已扣缴税额。',
   net_salary: '实发工资 = 本月应发工资 - 个人合计 - 应补（退）税额。',
   employee_signature: '员工签字展示栏，不参与系统计算。'
 }

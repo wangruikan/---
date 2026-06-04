@@ -2451,12 +2451,7 @@ class SalaryController extends Controller
             $taxAlreadyWithheld = $lastMonthSalary ? round(floatval($lastMonthSalary->cumulative_tax_payable), 2) : 0.0;
         }
 
-        $taxPayableOrRefundable = round($this->calculateTaxPayableOrRefundable(
-            $grossSalary,
-            $socialSecurity,
-            $housingFund,
-            $specialDeductionMonthly
-        ), 2);
+        $taxPayableOrRefundable = round($cumulativeTaxPayable - $taxAlreadyWithheld, 2);
 
         $netSalary = round($grossSalary - $personalInsuranceTotal - $taxPayableOrRefundable, 2);
 

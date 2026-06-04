@@ -228,6 +228,7 @@ class MiniController extends Controller
                     'account_set_id' => $employee->account_set_id,
                     'registration_form_type' => $registrationFormType,
                     'contract_status' => $employee->contract_status,
+                    'skip_form_filling' => $employee->skip_form_filling ?? false,
                 ],
             ]
         ]);

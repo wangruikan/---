@@ -422,8 +422,9 @@ class EmployeeController extends ApiController
             'signing_location', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
-            'is_disabled', 'disability_cert_type', 'disability_cert_number', 
+            'is_disabled', 'disability_cert_type', 'disability_cert_number',
             'is_martyr_family', 'martyr_family_cert_number', 'is_elderly_alone',
+            'skip_form_filling',
             
             // 四、涉税与投资信息
             'tax_matter', 'deduct_expense', 'personal_investment_amount', 'personal_investment_ratio',
@@ -676,8 +677,9 @@ class EmployeeController extends ApiController
             'signing_location', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
-            'is_disabled', 'disability_cert_type', 'disability_cert_number', 
+            'is_disabled', 'disability_cert_type', 'disability_cert_number',
             'is_martyr_family', 'martyr_family_cert_number', 'is_elderly_alone',
+            'skip_form_filling',
             
             // 四、涉税与投资信息
             'tax_matter', 'deduct_expense', 'personal_investment_amount', 'personal_investment_ratio',

@@ -591,46 +591,90 @@
             height="500"
             :row-class-name="() => 'salary-row'"
           >
-            <el-table-column type="index" label="序号" width="60" align="center" :index="index => index + 1" />
-            <el-table-column prop="employee_name" label="姓名" width="100" />
-            <el-table-column prop="id_card" label="身份证号" width="160" />
-            <el-table-column prop="department" label="部门" width="120" />
-            <el-table-column prop="position" label="岗位" width="120" />
-            <el-table-column prop="basic_salary" label="基本工资" width="110" align="right">
+            <el-table-column type="index" width="60" align="center" :index="index => index + 1">
+              <template #header>
+                <FormulaHeader label="序号" :formula="salaryFieldFormulaMap.index" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="employee_name" width="100">
+              <template #header>
+                <FormulaHeader label="姓名" :formula="salaryFieldFormulaMap.employee_name" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="id_card" width="160">
+              <template #header>
+                <FormulaHeader label="身份证号" :formula="salaryFieldFormulaMap.id_card" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="department" width="120">
+              <template #header>
+                <FormulaHeader label="部门" :formula="salaryFieldFormulaMap.department" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="position" width="120">
+              <template #header>
+                <FormulaHeader label="岗位" :formula="salaryFieldFormulaMap.position" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="basic_salary" width="110" align="right">
+              <template #header>
+                <FormulaHeader label="基本工资" :formula="salaryFieldFormulaMap.basic_salary" />
+              </template>
               <template #default="{ row }">{{ formatMoney(row.basic_salary) }}</template>
             </el-table-column>
-            <el-table-column prop="gross_salary" label="应发工资" width="120" align="right">
+            <el-table-column prop="gross_salary" width="120" align="right">
+              <template #header>
+                <FormulaHeader label="应发工资" :formula="salaryFieldFormulaMap.gross_salary" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #409EFF; font-weight: bold;">{{ formatMoney(row.gross_salary) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="cumulative_income" label="累计收入" width="130" align="right">
+            <el-table-column prop="cumulative_income" width="130" align="right">
+              <template #header>
+                <FormulaHeader label="累计收入" :formula="salaryFieldFormulaMap.cumulative_income" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #67C23A; font-weight: bold;">{{ formatMoney(row.cumulative_income) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="cumulative_basic_deduction" label="累计减除费用" width="130" align="right">
+            <el-table-column prop="cumulative_basic_deduction" width="130" align="right">
+              <template #header>
+                <FormulaHeader label="累计减除费用" :formula="salaryFieldFormulaMap.cumulative_basic_deduction" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #E6A23C; font-weight: bold;">{{ formatMoney(row.cumulative_basic_deduction) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="cumulative_special_deduction_insurance" label="累计专项扣除" width="130" align="right">
+            <el-table-column prop="cumulative_special_deduction_insurance" width="130" align="right">
+              <template #header>
+                <FormulaHeader label="累计专项扣除" :formula="salaryFieldFormulaMap.cumulative_special_deduction_insurance" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #F56C6C; font-weight: bold;">{{ formatMoney(row.cumulative_special_deduction_insurance) }}</span>
               </template>
             </el-table-column>
             <template v-for="column in visibleImportExtraColumns" :key="'import-extra-' + column.key">
-              <el-table-column :label="column.label" min-width="130" align="right">
+              <el-table-column min-width="130" align="right">
+                <template #header>
+                  <FormulaHeader :label="column.label" :formula="getImportExtraColumnFormula(column.label)" />
+                </template>
                 <template #default="{ row }">
                   {{ getImportExtraColumnValue(row, column.key) }}
                 </template>
               </el-table-column>
             </template>
             <!-- (X月)单位部分 - 大标题 -->
-            <el-table-column :label="getCurrentMonthLabel()" align="center">
+            <el-table-column align="center">
+              <template #header>
+                <FormulaHeader :label="getCurrentMonthLabel()" :formula="salaryFieldFormulaMap.company_group" />
+              </template>
               <!-- 动态生成社保险种列 - 只显示金额 -->
               <template v-for="(type, typeIndex) in getInsuranceTypes(salaryDetails)" :key="'insurance-' + typeIndex">
-                <el-table-column :label="type.name" width="100" align="right">
+                <el-table-column width="100" align="right">
+                  <template #header>
+                    <FormulaHeader :label="type.name" :formula="getInsuranceColumnFormula(type.name, 'company')" />
+                  </template>
                   <template #default="{ row }">
                     {{ getInsuranceValue(row, type.key, 'company_amount') }}
                   </template>
@@ -638,49 +682,70 @@
               </template>
               
               <!-- 公积金 - 只显示金额 -->
-              <el-table-column label="公积金" width="100" align="right">
+              <el-table-column width="100" align="right">
+                <template #header>
+                  <FormulaHeader label="公积金" :formula="salaryFieldFormulaMap.company_housing_fund" />
+                </template>
                 <template #default="{ row }">
                   {{ row.insurance_details?.housing_fund ? formatMoney(row.insurance_details.housing_fund.company_amount) : '-' }}
                 </template>
               </el-table-column>
               
               <!-- 大额医疗 - 只显示金额 -->
-              <el-table-column label="大额医疗" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="大额医疗" :formula="salaryFieldFormulaMap.company_large_medical" />
+              </template>
               <template #default="{ row }">
                   {{ row.insurance_details?.large_medical ? formatMoney(row.insurance_details.large_medical.company_amount) : '-' }}
               </template>
             </el-table-column>
               
               <!-- 社保基数 -->
-              <el-table-column label="社保基数" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="社保基数" :formula="salaryFieldFormulaMap.social_security_base" />
+              </template>
               <template #default="{ row }">
                   {{ getSocialSecurityBase(row) }}
               </template>
             </el-table-column>
               
               <!-- 公积金基数 -->
-              <el-table-column label="公积金基数" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="公积金基数" :formula="salaryFieldFormulaMap.housing_fund_base" />
+              </template>
               <template #default="{ row }">
                   {{ row.insurance_details?.housing_fund ? formatMoney(row.insurance_details.housing_fund.base) : '-' }}
               </template>
             </el-table-column>
               
               <!-- 医保基数 -->
-              <el-table-column label="医保基数" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="医保基数" :formula="salaryFieldFormulaMap.medical_insurance_base" />
+              </template>
               <template #default="{ row }">
                   {{ getMedicalInsuranceBase(row) }}
               </template>
             </el-table-column>
               
               <!-- 大额基数 -->
-              <el-table-column label="大额基数" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="大额基数" :formula="salaryFieldFormulaMap.large_medical_base" />
+              </template>
               <template #default="{ row }">
                   {{ row.insurance_details?.large_medical ? formatMoney(row.insurance_details.large_medical.base) : '-' }}
               </template>
             </el-table-column>
               
               <!-- 社保补差（单位） -->
-              <el-table-column label="社保补差" width="110" align="right">
+              <el-table-column width="110" align="right">
+              <template #header>
+                <FormulaHeader label="社保补差" :formula="salaryFieldFormulaMap.company_social_security_compensation" />
+              </template>
               <template #default="{ row }">
                   <span v-if="getCompensationAmount(row, 'social_security', 'company') !== 0" style="color: #F56C6C;">
                     {{ formatMoney(getCompensationAmount(row, 'social_security', 'company')) }}
@@ -690,7 +755,10 @@
             </el-table-column>
               
               <!-- 公积金补差（单位） -->
-              <el-table-column label="公积金补差" width="110" align="right">
+              <el-table-column width="110" align="right">
+              <template #header>
+                <FormulaHeader label="公积金补差" :formula="salaryFieldFormulaMap.company_housing_fund_compensation" />
+              </template>
               <template #default="{ row }">
                   <span v-if="getCompensationAmount(row, 'housing_fund', 'company') !== 0" style="color: #F56C6C;">
                     {{ formatMoney(getCompensationAmount(row, 'housing_fund', 'company')) }}
@@ -701,17 +769,26 @@
             </el-table-column>
             
             <!-- 单位合计 -->
-            <el-table-column label="单位合计" width="120" align="right">
+            <el-table-column width="120" align="right">
+              <template #header>
+                <FormulaHeader label="单位合计" :formula="salaryFieldFormulaMap.company_total" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #E6A23C; font-weight: bold;">{{ formatMoney(calculateCompanyTotal(row)) }}</span>
               </template>
             </el-table-column>
             
             <!-- (X月)个人部分 - 大标题 -->
-            <el-table-column :label="getCurrentMonthLabel('个人')" align="center">
+            <el-table-column align="center">
+              <template #header>
+                <FormulaHeader :label="getCurrentMonthLabel('个人')" :formula="salaryFieldFormulaMap.personal_group" />
+              </template>
               <!-- 动态生成社保险种列 - 只显示个人金额 -->
               <template v-for="(type, typeIndex) in getInsuranceTypes(salaryDetails)" :key="'personal-insurance-' + typeIndex">
-                <el-table-column :label="type.name" width="100" align="right">
+                <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader :label="type.name" :formula="getInsuranceColumnFormula(type.name, 'personal')" />
+              </template>
               <template #default="{ row }">
                     {{ getInsuranceValue(row, type.key, 'personal_amount') }}
               </template>
@@ -719,21 +796,30 @@
               </template>
               
               <!-- 公积金个人 - 只显示金额 -->
-              <el-table-column label="公积金" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="公积金" :formula="salaryFieldFormulaMap.personal_housing_fund" />
+              </template>
               <template #default="{ row }">
                   {{ row.insurance_details?.housing_fund ? formatMoney(row.insurance_details.housing_fund.personal_amount) : '-' }}
               </template>
             </el-table-column>
               
               <!-- 大额医疗个人 - 只显示金额 -->
-              <el-table-column label="大额医疗" width="100" align="right">
+              <el-table-column width="100" align="right">
+              <template #header>
+                <FormulaHeader label="大额医疗" :formula="salaryFieldFormulaMap.personal_large_medical" />
+              </template>
               <template #default="{ row }">
                   {{ row.insurance_details?.large_medical ? formatMoney(row.insurance_details.large_medical.personal_amount) : '-' }}
               </template>
             </el-table-column>
               
               <!-- 社保补差（个人） -->
-              <el-table-column label="社保补差" width="110" align="right">
+              <el-table-column width="110" align="right">
+                <template #header>
+                  <FormulaHeader label="社保补差" :formula="salaryFieldFormulaMap.personal_social_security_compensation" />
+                </template>
                 <template #default="{ row }">
                   <span v-if="getCompensationAmount(row, 'social_security', 'personal') !== 0" style="color: #F56C6C;">
                     {{ formatMoney(getCompensationAmount(row, 'social_security', 'personal')) }}
@@ -743,7 +829,10 @@
               </el-table-column>
               
               <!-- 公积金补差（个人） -->
-              <el-table-column label="公积金补差" width="110" align="right">
+              <el-table-column width="110" align="right">
+                <template #header>
+                  <FormulaHeader label="公积金补差" :formula="salaryFieldFormulaMap.personal_housing_fund_compensation" />
+                </template>
                 <template #default="{ row }">
                   <span v-if="getCompensationAmount(row, 'housing_fund', 'personal') !== 0" style="color: #F56C6C;">
                     {{ formatMoney(getCompensationAmount(row, 'housing_fund', 'personal')) }}
@@ -754,17 +843,26 @@
             </el-table-column>
             
             <!-- 个人合计 -->
-            <el-table-column label="个人合计" width="120" align="right">
+            <el-table-column width="120" align="right">
+              <template #header>
+                <FormulaHeader label="个人合计" :formula="salaryFieldFormulaMap.personal_total" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #67C23A; font-weight: bold;">{{ formatMoney(calculatePersonalTotal(row)) }}</span>
               </template>
             </el-table-column>
             
             <!-- 个人所得税专项附加扣除 -->
-            <el-table-column label="个人所得税专项附加扣除" align="center">
+            <el-table-column align="center">
+              <template #header>
+                <FormulaHeader label="个人所得税专项附加扣除" :formula="salaryFieldFormulaMap.special_deduction_group" />
+              </template>
               <!-- 动态生成专项扣除列 -->
               <template v-for="(item, index) in getSpecialDeductionItems(salaryDetails)" :key="'deduction-' + index">
-                <el-table-column :label="item.name" width="110" align="right">
+                <el-table-column width="110" align="right">
+                  <template #header>
+                    <FormulaHeader :label="item.name" :formula="getSpecialDeductionFormula(item.name)" />
+                  </template>
                   <template #default="{ row }">
                     {{ getSpecialDeductionAmount(row, item.id) }}
                   </template>
@@ -780,50 +878,74 @@
             </el-table-column> -->
             
             <!-- 累计专项附加扣除 - 1月到当前月的累计值 -->
-            <el-table-column label="累计专项附加扣除" width="130" align="right">
+            <el-table-column width="130" align="right">
+              <template #header>
+                <FormulaHeader label="累计专项附加扣除" :formula="salaryFieldFormulaMap.special_deduction" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #67C23A; font-weight: bold;">{{ formatMoney(row.special_deduction) }}</span>
               </template>
             </el-table-column>
             
             <!-- 累计应纳税所得额 -->
-            <el-table-column prop="taxable_income" label="累计应纳税所得额" width="140" align="right">
+            <el-table-column prop="taxable_income" width="140" align="right">
+              <template #header>
+                <FormulaHeader label="累计应纳税所得额" :formula="salaryFieldFormulaMap.taxable_income" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #409EFF; font-weight: bold;">{{ formatMoney(row.taxable_income) }}</span>
               </template>
             </el-table-column>
             
-            <el-table-column prop="tax_rate" label="税率(%)" width="90" align="right">
+            <el-table-column prop="tax_rate" width="90" align="right">
+              <template #header>
+                <FormulaHeader label="税率(%)" :formula="salaryFieldFormulaMap.tax_rate" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #F56C6C;">{{ row.tax_rate || 0 }}%</span>
               </template>
             </el-table-column>
             
-            <el-table-column prop="quick_deduction" label="速算扣除数" width="120" align="right">
+            <el-table-column prop="quick_deduction" width="120" align="right">
+              <template #header>
+                <FormulaHeader label="速算扣除数" :formula="salaryFieldFormulaMap.quick_deduction" />
+              </template>
               <template #default="{ row }">
                 {{ formatMoney(row.quick_deduction) }}
               </template>
             </el-table-column>
             
-            <el-table-column prop="cumulative_tax_payable" label="累计应扣缴税额" width="140" align="right">
+            <el-table-column prop="cumulative_tax_payable" width="140" align="right">
+              <template #header>
+                <FormulaHeader label="累计应扣缴税额" :formula="salaryFieldFormulaMap.cumulative_tax_payable" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #E6A23C; font-weight: bold;">{{ formatMoney(row.cumulative_tax_payable) }}</span>
               </template>
             </el-table-column>
             
-            <el-table-column prop="tax_already_withheld" label="已扣缴税额" width="120" align="right">
+            <el-table-column prop="tax_already_withheld" width="120" align="right">
+              <template #header>
+                <FormulaHeader label="已扣缴税额" :formula="salaryFieldFormulaMap.tax_already_withheld" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #67C23A; font-weight: bold;">{{ formatMoney(row.tax_already_withheld) }}</span>
               </template>
             </el-table-column>
             
-            <el-table-column prop="cumulative_other_taxable" label="累计其他应纳税项（合并扣税）" width="180" align="right">
+            <el-table-column prop="cumulative_other_taxable" width="180" align="right">
+              <template #header>
+                <FormulaHeader label="累计其他应纳税项（合并扣税）" :formula="salaryFieldFormulaMap.cumulative_other_taxable" />
+              </template>
               <template #default="{ row }">
                 {{ formatMoney(row.cumulative_other_taxable) }}
               </template>
             </el-table-column>
             
-            <el-table-column prop="tax_payable_or_refundable" label="应补（退）税额" width="130" align="right">
+            <el-table-column prop="tax_payable_or_refundable" width="130" align="right">
+              <template #header>
+                <FormulaHeader label="应补（退）税额" :formula="salaryFieldFormulaMap.tax_payable_or_refundable" />
+              </template>
               <template #default="{ row }">
                 <span :style="{ color: row.tax_payable_or_refundable > 0 ? '#F56C6C' : (row.tax_payable_or_refundable < 0 ? '#67C23A' : '') }">
                   {{ formatMoney(row.tax_payable_or_refundable) }}
@@ -831,13 +953,19 @@
               </template>
             </el-table-column>
             
-            <el-table-column prop="net_salary" label="实发工资" width="120" align="right">
+            <el-table-column prop="net_salary" width="120" align="right">
+              <template #header>
+                <FormulaHeader label="实发工资" :formula="salaryFieldFormulaMap.net_salary" />
+              </template>
               <template #default="{ row }">
                 <span style="color: #67C23A; font-weight: bold;">{{ formatMoney(row.net_salary) }}</span>
               </template>
             </el-table-column>
             
-            <el-table-column prop="employee_signature" label="本人签字" width="120" align="center" fixed="right">
+            <el-table-column prop="employee_signature" width="120" align="center" fixed="right">
+              <template #header>
+                <FormulaHeader label="本人签字" :formula="salaryFieldFormulaMap.employee_signature" />
+              </template>
               <template #default="{ row }">
                 {{ row.employee_signature || '' }}
               </template>
@@ -960,6 +1088,7 @@ import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import request from '@/api/request'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
+import FormulaHeader from '@/components/FormulaHeader.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
 import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
@@ -1105,6 +1234,59 @@ const formatDateTime = (datetime) => {
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
   return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+const salaryFieldFormulaMap = {
+  index: '按当前表格行序号从 1 开始递增，仅用于展示顺序。',
+  employee_name: '直接取员工档案中的姓名字段。',
+  id_card: '直接取员工档案中的身份证号字段。',
+  department: '直接取员工当前归属的项目名称；若命中多个项目，则按“、”拼接显示。',
+  position: '直接取员工档案中的岗位字段。',
+  basic_salary: '直接取员工档案中的基础工资字段。',
+  gross_salary: '直接取导入 Excel 中的“应发工资”列；未导入前该值为 0。',
+  cumulative_income: '累计收入 = 当年 1 月至上月应发工资合计 + 本月应发工资。',
+  cumulative_basic_deduction: '累计减除费用 = 5000 × 实际工作月数；若员工当年入职，则从入职月份开始累计。',
+  cumulative_special_deduction_insurance: '累计专项扣除 = 累计社保个人部分 + 累计公积金个人部分。',
+  company_group: '展示本月单位承担的社保、公积金、大额医疗、对应基数与补差明细。',
+  company_housing_fund: '直接取本月公积金单位缴费金额。',
+  company_large_medical: '直接取本月大额医疗单位缴费金额。',
+  social_security_base: '社保基数 = 当前员工本月社保明细中第一个社保险种的基数。',
+  housing_fund_base: '直接取本月公积金基数字段。',
+  medical_insurance_base: '医保基数 = 当前员工本月社保明细中名称包含“医疗”或“医保”的险种基数。',
+  large_medical_base: '直接取本月大额医疗基数字段。',
+  company_social_security_compensation: '社保补差（单位）= 当月社保补差记录中的单位部分合计。',
+  company_housing_fund_compensation: '公积金补差（单位）= 当月公积金补差记录中的单位部分合计。',
+  company_total: '单位合计 = 各社保险种单位部分 + 公积金单位部分 + 大额医疗单位部分。',
+  personal_group: '展示本月个人承担的社保、公积金、大额医疗与补差明细。',
+  personal_housing_fund: '直接取本月公积金个人缴费金额。',
+  personal_large_medical: '直接取本月大额医疗个人缴费金额。',
+  personal_social_security_compensation: '社保补差（个人）= 当月社保补差记录中的个人部分合计。',
+  personal_housing_fund_compensation: '公积金补差（个人）= 当月公积金补差记录中的个人部分合计。',
+  personal_total: '个人合计 = 各社保险种个人部分 + 公积金个人部分 + 大额医疗个人部分。',
+  special_deduction_group: '展示员工本月各项专项附加扣除金额。',
+  special_deduction: '累计专项附加扣除 = 之前月份专项附加扣除合计 + 本月专项附加扣除。',
+  taxable_income: '累计应纳税所得额 = max(0, 累计收入 - 累计减除费用 - 累计专项扣除 - 累计专项附加扣除 + 累计其他应纳税项)。',
+  tax_rate: '根据累计应纳税所得额匹配个税税率表得到当前税率。',
+  quick_deduction: '根据累计应纳税所得额匹配个税税率表得到速算扣除数。',
+  cumulative_tax_payable: '累计应扣缴税额 = max(0, 累计应纳税所得额 × 税率 - 速算扣除数)。',
+  tax_already_withheld: '已扣缴税额 = 上个月的累计应扣缴税额。',
+  cumulative_other_taxable: '直接取“累计其他应纳税项（合并扣税）”字段当前值。',
+  tax_payable_or_refundable: '应补（退）税额 = 本月应发工资 - 5000 - 本月社保个人部分 - 本月公积金个人部分 - 本月专项附加扣除；大额医疗不参与该公式。',
+  net_salary: '实发工资 = 本月应发工资 - 个人合计 - 应补（退）税额。',
+  employee_signature: '员工签字展示栏，不参与系统计算。'
+}
+
+const getInsuranceColumnFormula = (name, party) => {
+  const roleText = party === 'company' ? '单位' : '个人'
+  return `直接取本月“${name}”险种的${roleText}缴费金额。`
+}
+
+const getSpecialDeductionFormula = (name) => {
+  return `直接取员工本月“${name}”专项附加扣除金额。`
+}
+
+const getImportExtraColumnFormula = (label) => {
+  return `直接取导入 Excel 中“${label}”列的原始值，系统不参与重新计算。`
 }
 
 // 计算单位合计（所有保险的单位部分相加）

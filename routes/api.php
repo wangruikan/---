@@ -466,6 +466,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('attendance')->group(function () {
         Route::get('/', [AttendanceController::class, 'index']);
         Route::post('/', [AttendanceController::class, 'store']);
+        Route::get('/pending-projects', [AttendanceController::class, 'getPendingProjects']);
         Route::get('/{id}', [AttendanceController::class, 'show']);
         Route::put('/{id}', [AttendanceController::class, 'update']);
         Route::delete('/{id}', [AttendanceController::class, 'destroy']);
@@ -1043,6 +1044,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/available-projects', [PayrollController::class, 'getAvailableProjects']);
         // 获取所有项目（带审批状态标识）
         Route::get('/projects-with-approval', [PayrollController::class, 'getProjectsWithApprovalStatus']);
+        Route::get('/pending-projects', [PayrollController::class, 'getPendingProjects']);
     });
     
     // 工资表备注管理

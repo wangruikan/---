@@ -12,6 +12,17 @@ export function getProjectsWithApprovalStatus(period) {
   })
 }
 
+export function getPendingPayrollProjects(month, currentAccountSetId) {
+  return request({
+    url: '/payroll/pending-projects',
+    method: 'get',
+    params: {
+      month,
+      current_account_set_id: currentAccountSetId
+    }
+  })
+}
+
 /**
  * 获取工资表列表（统计视图）
  */

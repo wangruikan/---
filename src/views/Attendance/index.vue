@@ -3,200 +3,264 @@
     <div class="page-header">
       <h1>考勤管理</h1>
       <div class="header-actions">
-        <el-button 
-          type="success" 
+        <el-button
+          type="success"
           @click="openDingTalk"
           style="margin-right: 10px;"
         >
           <el-icon><Link /></el-icon>
           钉钉考勤
         </el-button>
-        <el-button 
-          v-if="canCreateAttendance"
-          type="primary" 
-          @click="showCreateSheetDialog = true"
-        >
-          <el-icon><DocumentAdd /></el-icon>
-          创建考勤表
-        </el-button>
       </div>
     </div>
-    
-    <!-- 项目考勤表管理 -->
-    <div class="sheet-section">
-      <el-card>
-        <template #header>
-          <div class="card-header">
-            <span>项目考勤表管理</span>
-            <el-button type="text" @click="loadSheets">
-              <el-icon><Refresh /></el-icon>
-              刷新
-            </el-button>
-          </div>
+
+    <el-tabs v-model="activeAttendanceTab" class="management-tabs">
+      <el-tab-pane name="list">
+        <template #label>
+          <span>考勤表列表</span>
         </template>
-        
-        <!-- 搜索筛选 -->
-        <div class="search-section">
-          <el-form :model="searchForm" inline>
-            <el-form-item label="项目">
-              <el-select
-                v-model="searchForm.project_id"
-                placeholder="请选择项目"
-                clearable
-                @change="handleSearch"
-              >
-                <el-option
-                  v-for="project in projects"
-                  :key="project.id"
-                  :label="project.name"
-                  :value="project.id"
-                />
-              </el-select>
-            </el-form-item>
-            
-            <el-form-item label="月份">
-              <el-date-picker
-                v-model="searchForm.month"
-                type="month"
-                placeholder="请选择月份"
-                format="YYYY-MM"
-                value-format="YYYY-MM"
-                @change="handleSearch"
+
+        <div class="sheet-section">
+          <el-card>
+            <template #header>
+              <div class="card-header">
+                <span>项目考勤表管理</span>
+                <el-button type="text" @click="loadSheets">
+                  <el-icon><Refresh /></el-icon>
+                  刷新
+                </el-button>
+              </div>
+            </template>
+
+            <div class="search-section">
+              <el-form :model="searchForm" inline>
+                <el-form-item label="项目">
+                  <el-select
+                    v-model="searchForm.project_id"
+                    placeholder="请选择项目"
+                    clearable
+                    @change="handleSearch"
+                  >
+                    <el-option
+                      v-for="project in projects"
+                      :key="project.id"
+                      :label="project.name"
+                      :value="project.id"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="月份">
+                  <el-date-picker
+                    v-model="searchForm.month"
+                    type="month"
+                    placeholder="请选择月份"
+                    format="YYYY-MM"
+                    value-format="YYYY-MM"
+                    @change="handleSearch"
+                  />
+                </el-form-item>
+
+                <el-form-item label="状态">
+                  <el-select
+                    v-model="searchForm.status"
+                    placeholder="请选择状态"
+                    clearable
+                    @change="handleSearch"
+                  >
+                    <el-option label="草稿" value="draft" />
+                    <el-option label="已提交" value="submitted" />
+                    <el-option label="已审批" value="approved" />
+                    <el-option label="已拒绝" value="rejected" />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button type="primary" @click="handleSearch">
+                    <el-icon><Search /></el-icon>
+                    搜索
+                  </el-button>
+                  <el-button @click="handleReset">
+                    <el-icon><Refresh /></el-icon>
+                    重置
+                  </el-button>
+                  <el-button type="success" @click="handleBatchExport" :disabled="attendanceSheets.length === 0">
+                    <el-icon><Download /></el-icon>
+                    批量导出
+                  </el-button>
+                  <el-button type="warning" @click="handleExportSummary" :disabled="attendanceSheets.length === 0">
+                    <el-icon><Download /></el-icon>
+                    导出汇总
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <el-table
+              :data="attendanceSheets"
+              v-loading="sheetsLoading"
+              stripe
+              border
+            >
+              <el-table-column prop="project.name" label="项目名称" width="150" />
+              <el-table-column prop="month" label="月份" width="100" />
+              <el-table-column prop="status" label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="getSheetStatusType(row.status)">
+                    {{ getSheetStatusText(row.status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="total_employees" label="员工总数" width="100" />
+              <el-table-column prop="work_days" label="工作日" width="100" />
+              <el-table-column label="创建时间" width="160">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.created_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="提交时间" width="160">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.submitted_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="审批时间" width="160">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.approved_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="考勤依据" width="150" align="center">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="handleViewAttendanceBasis(row)">
+                    查看依据
+                  </el-button>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="300" fixed="right">
+                <template #default="{ row }">
+                  <el-button type="primary" size="small" @click="handleViewSheet(row)">
+                    查看详情
+                  </el-button>
+                  <el-button
+                    v-if="row.status === 'draft' && canCreateAttendance"
+                    type="warning"
+                    size="small"
+                    @click="handleEditSheet(row)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    v-if="row.status === 'draft' && canCreateAttendance"
+                    type="success"
+                    size="small"
+                    @click="handleSubmitSheet(row)"
+                  >
+                    提交
+                  </el-button>
+                  <el-button
+                    type="info"
+                    size="small"
+                    @click="handleExportSheet(row)"
+                    :disabled="row.status === 'draft'"
+                  >
+                    导出
+                  </el-button>
+                  <el-button
+                    type="danger"
+                    size="small"
+                    @click="handleDeleteSheet(row)"
+                    v-if="canCreateAttendance"
+                    :disabled="row.status === 'submitted'"
+                    :title="row.status === 'submitted' ? '审批中不允许删除' : ''"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="pagination">
+              <el-pagination
+                v-model:current-page="pagination.currentPage"
+                v-model:page-size="pagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="pagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @size-change="handleSizeChange"
+                @current-change="handleCurrentChange"
               />
-            </el-form-item>
-            
-            <el-form-item label="状态">
-              <el-select
-                v-model="searchForm.status"
-                placeholder="请选择状态"
-                clearable
-                @change="handleSearch"
-              >
-                <el-option label="草稿" value="draft" />
-                <el-option label="已提交" value="submitted" />
-                <el-option label="已审批" value="approved" />
-                <el-option label="已拒绝" value="rejected" />
-              </el-select>
-            </el-form-item>
-            
-            <el-form-item>
-              <el-button type="primary" @click="handleSearch">
-                <el-icon><Search /></el-icon>
-                搜索
-              </el-button>
-              <el-button @click="handleReset">
-                <el-icon><Refresh /></el-icon>
-                重置
-              </el-button>
-              <el-button type="success" @click="handleBatchExport" :disabled="attendanceSheets.length === 0">
-                <el-icon><Download /></el-icon>
-                批量导出
-              </el-button>
-              <el-button type="warning" @click="handleExportSummary" :disabled="attendanceSheets.length === 0">
-                <el-icon><Download /></el-icon>
-                导出汇总
-              </el-button>
-            </el-form-item>
-          </el-form>
+            </div>
+          </el-card>
         </div>
-        
-        <el-table
-          :data="attendanceSheets"
-          v-loading="sheetsLoading"
-          stripe
-          border
-        >
-          <el-table-column prop="project.name" label="项目名称" width="150" />
-          <el-table-column prop="month" label="月份" width="100" />
-          <el-table-column prop="status" label="状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="getSheetStatusType(row.status)">
-                {{ getSheetStatusText(row.status) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="total_employees" label="员工总数" width="100" />
-          <el-table-column prop="work_days" label="工作日" width="100" />
-          <el-table-column label="创建时间" width="160">
-            <template #default="{ row }">
-              {{ formatDateTime(row.created_at) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="提交时间" width="160">
-            <template #default="{ row }">
-              {{ formatDateTime(row.submitted_at) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="审批时间" width="160">
-            <template #default="{ row }">
-              {{ formatDateTime(row.approved_at) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="考勤依据" width="150" align="center">
-            <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="handleViewAttendanceBasis(row)">
-                查看依据
-              </el-button>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="300" fixed="right">
-            <template #default="{ row }">
-              <el-button type="primary" size="small" @click="handleViewSheet(row)">
-                查看详情
-              </el-button>
-              <el-button 
-                v-if="row.status === 'draft' && canCreateAttendance" 
-                type="warning" 
-                size="small" 
-                @click="handleEditSheet(row)"
-              >
-                编辑
-              </el-button>
-              <el-button 
-                v-if="row.status === 'draft' && canCreateAttendance" 
-                type="success" 
-                size="small" 
-                @click="handleSubmitSheet(row)"
-              >
-                提交
-              </el-button>
-              <el-button 
-                type="info" 
-                size="small" 
-                @click="handleExportSheet(row)"
-                :disabled="row.status === 'draft'"
-              >
-                导出
-              </el-button>
-              <el-button 
-                type="danger" 
-                size="small" 
-                @click="handleDeleteSheet(row)"
-                v-if="canCreateAttendance"
-                :disabled="row.status === 'submitted'"
-                :title="row.status === 'submitted' ? '审批中不允许删除' : ''"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        
-        <!-- 分页 -->
-        <div class="pagination">
-          <el-pagination
-            v-model:current-page="pagination.currentPage"
-            v-model:page-size="pagination.pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="pagination.total"
-            layout="total, sizes, prev, pager, next, jumper"
-            @size-change="handleSizeChange"
-            @current-change="handleCurrentChange"
-          />
-        </div>
-      </el-card>
-    </div>
-    
+      </el-tab-pane>
+
+      <el-tab-pane v-if="canCreateAttendance" name="pending">
+        <template #label>
+          <span>待制作考勤表<span v-if="pendingAttendanceProjects.length">({{ pendingAttendanceProjects.length }})</span></span>
+        </template>
+
+        <el-card class="pending-card" shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span>待制作考勤表项目</span>
+              <div class="pending-actions">
+                <el-date-picker
+                  v-model="pendingAttendanceMonth"
+                  type="month"
+                  placeholder="请选择月份"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  style="width: 140px"
+                />
+                <el-button type="primary" @click="openCreateSheetDialog">
+                  <el-icon><DocumentAdd /></el-icon>
+                  创建考勤表
+                </el-button>
+                <el-button type="text" @click="loadPendingAttendanceProjects">
+                  <el-icon><Refresh /></el-icon>
+                  刷新
+                </el-button>
+              </div>
+            </div>
+          </template>
+
+          <el-table
+            :data="pendingAttendanceProjects"
+            v-loading="pendingAttendanceLoading"
+            stripe
+            border
+          >
+            <el-table-column prop="name" label="项目名称" min-width="180" />
+            <el-table-column prop="code" label="项目编号" min-width="140" />
+            <el-table-column prop="month" label="月份" width="100" />
+            <el-table-column label="考勤依据" width="140" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.basis_ready ? 'success' : 'warning'">
+                  {{ row.requires_attendance_basis ? (row.basis_ready ? '已上传' : '待上传') : '不需要' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="160">
+              <template #default="{ row }">
+                {{ row.disabled_reason || '可直接创建' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :disabled="!row.can_create"
+                  @click="handleCreatePendingSheet(row)"
+                >
+                  创建
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
+
     <!-- 创建/编辑考勤表对话框 -->
     <el-dialog
       v-model="showCreateSheetDialog"
@@ -212,11 +276,11 @@
         label-width="100px"
       >
         <el-form-item label="项目" prop="project_id">
-          <el-select 
-            v-model="sheetForm.project_id" 
-            placeholder="请选择项目" 
-            style="width: 100%" 
-            :disabled="sheetForm.id && !isEditSheet"
+          <el-select
+            v-model="sheetForm.project_id"
+            placeholder="请选择项目"
+            style="width: 100%"
+            :disabled="(sheetForm.id && !isEditSheet) || attendanceCreateLocked"
             @change="handleProjectChange"
           >
             <el-option
@@ -227,7 +291,7 @@
             />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="月份" prop="month">
           <el-date-picker
             v-model="sheetForm.month"
@@ -236,10 +300,10 @@
             style="width: 100%"
             format="YYYY-MM"
             value-format="YYYY-MM"
-            :disabled="sheetForm.id && !isEditSheet"
+            :disabled="(sheetForm.id && !isEditSheet) || attendanceCreateLocked"
           />
         </el-form-item>
-        
+
         <el-form-item label="工作日" prop="work_days">
           <el-input-number
             v-model="sheetForm.work_days"
@@ -249,7 +313,7 @@
             :disabled="sheetForm.id && !isEditSheet"
           />
         </el-form-item>
-        
+
         <el-form-item label="备注" prop="notes">
           <el-input
             v-model="sheetForm.notes"
@@ -260,7 +324,7 @@
           />
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="showCreateSheetDialog = false">取消</el-button>
         <el-button v-if="!sheetForm.id || isEditSheet" type="primary" @click="handleCreateSheet" :loading="submitting">
@@ -268,7 +332,7 @@
         </el-button>
       </template>
     </el-dialog>
-    
+
     <!-- 考勤表详情对话框 -->
     <el-dialog
       v-model="showSheetDetailDialog"
@@ -295,7 +359,7 @@
             <el-descriptions-item label="审批时间">{{ formatDateTime(currentSheet.approved_at) }}</el-descriptions-item>
           </el-descriptions>
         </div>
-        
+
         <!-- 考勤数据录入 -->
         <div v-if="currentSheetAttachments.length > 0" style="margin: 16px 0 20px;">
           <el-divider content-position="left">审批附件</el-divider>
@@ -338,7 +402,7 @@
               </el-button>
             </div>
           </div>
-          
+
           <el-table
             :data="attendanceData"
             v-loading="attendanceLoading"
@@ -347,8 +411,8 @@
             height="400"
           >
             <el-table-column prop="employee_name" label="员工姓名" width="120" fixed="left" />
-            <el-table-column 
-              v-for="day in workDays" 
+            <el-table-column
+              v-for="day in workDays"
               :key="day"
               :label="`${day}日`"
               width="120"
@@ -380,13 +444,13 @@
             </el-table-column>
           </el-table>
         </div>
-        
+
         <!-- 考勤数据查看（已提交/已审批状态） -->
         <div class="attendance-data" v-if="currentSheet.status !== 'draft'">
           <div class="data-header">
             <h3>考勤数据</h3>
           </div>
-          
+
           <el-table
             :data="attendanceData"
             v-loading="attendanceLoading"
@@ -395,14 +459,14 @@
             height="400"
           >
             <el-table-column prop="employee_name" label="员工姓名" width="120" fixed="left" />
-            <el-table-column 
-              v-for="day in workDays" 
+            <el-table-column
+              v-for="day in workDays"
               :key="day"
               :label="`${day}日`"
               width="80"
             >
               <template #default="{ row }">
-                <el-tag 
+                <el-tag
                   v-if="row.attendance && row.attendance[day]"
                   :type="getAttendanceStatusType(row.attendance[day])"
                   size="small"
@@ -439,7 +503,7 @@
             </el-table-column>
           </el-table>
         </div>
-        
+
         <!-- 考勤统计 -->
         <div class="attendance-stats" v-if="currentSheet.status !== 'draft'">
           <h3>考勤统计</h3>
@@ -463,12 +527,12 @@
           </el-table>
         </div>
       </div>
-      
+
       <template #footer>
         <el-button @click="showSheetDetailDialog = false">关闭</el-button>
       </template>
     </el-dialog>
-    
+
     <!-- 提交考勤表对话框 -->
     <el-dialog
       v-model="showSubmitDialog"
@@ -486,7 +550,7 @@
             <p><strong>工作日：</strong>{{ currentSheet?.work_days }}</p>
           </div>
         </el-form-item>
-        
+
         <el-form-item label="盖章方式" required>
           <el-radio-group v-model="submitForm.stamp_method">
             <el-radio label="online">线上盖章</el-radio>
@@ -496,7 +560,7 @@
             线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
           </div>
         </el-form-item>
-        
+
         <el-form-item label="上传附件" required>
           <div style="margin-bottom: 10px;">
             <el-button type="success" @click="showFormToWordDialog = true">
@@ -526,7 +590,7 @@
             </template>
           </el-upload>
         </el-form-item>
-        
+
         <el-form-item label="提交说明">
           <el-input
             v-model="submitForm.notes"
@@ -536,7 +600,7 @@
           />
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="showSubmitDialog = false">取消</el-button>
         <el-button type="primary" @click="handleSubmitWithFiles" :loading="submitting">
@@ -544,14 +608,14 @@
         </el-button>
       </template>
     </el-dialog>
-    
+
     <!-- 表格填写生成PDF组件 -->
-    <FormToWordGenerator 
-      v-model="showFormToWordDialog" 
+    <FormToWordGenerator
+      v-model="showFormToWordDialog"
       title="填写情况说明单"
       @word-generated="handleWordGenerated"
     />
-    
+
     <!-- 批量编辑对话框 -->
     <el-dialog
       v-model="showBatchEditDialog"
@@ -575,7 +639,7 @@
                 />
               </el-select>
             </el-form-item>
-        
+
         <el-form-item label="选择日期">
               <el-date-picker
             v-model="batchEditForm.date_range"
@@ -588,7 +652,7 @@
             style="width: 100%"
               />
             </el-form-item>
-        
+
         <el-form-item label="考勤状态">
           <el-select v-model="batchEditForm.status" placeholder="请选择状态" style="width: 100%">
                 <el-option label="正常" value="normal" />
@@ -600,7 +664,7 @@
               </el-select>
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="showBatchEditDialog = false">取消</el-button>
         <el-button type="primary" @click="handleBatchEditSubmit">确定</el-button>
@@ -670,11 +734,12 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
-import { 
-  getAttendanceSheets, 
+import {
+  getAttendanceSheets,
+  getPendingAttendanceProjects,
   createAttendanceSheet,
-  updateAttendanceSheet, 
-  submitAttendanceSheet, 
+  updateAttendanceSheet,
+  submitAttendanceSheet,
   getAttendanceSheetDetail,
   saveAttendanceData,
   getProjectEmployees,
@@ -703,17 +768,27 @@ const canCreateAttendance = computed(() => (isAdmin.value || isBusinessUser.valu
 const canEditAttendance = computed(() => permissionStore.hasPermission('attendance.edit'))
 const canDeleteAttendance = computed(() => permissionStore.hasPermission('attendance.delete'))
 
+const getCurrentMonth = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
 
 const loading = ref(false)
 const sheetsLoading = ref(false)
 const attendanceLoading = ref(false)
 const submitting = ref(false)
+const activeAttendanceTab = ref('list')
 const showCreateSheetDialog = ref(false)
 const showSheetDetailDialog = ref(false)
 const showBatchEditDialog = ref(false)
 const showSubmitDialog = ref(false)
 const showFormToWordDialog = ref(false)
 const isEditSheet = ref(false)
+const attendanceCreateLocked = ref(false)
+const pendingAttendanceLoading = ref(false)
+const pendingAttendanceMonth = ref(getCurrentMonth())
 
 // 考勤依据对话框
 const attendanceBasisDialogVisible = ref(false)
@@ -724,6 +799,7 @@ const sheetFormRef = ref()
 const uploadRef = ref()
 
 const attendanceSheets = ref([])
+const pendingAttendanceProjects = ref([])
 const projects = ref([])
 const currentSheet = ref(null)
 const attendanceData = ref([])
@@ -843,6 +919,7 @@ const pagination = reactive({
 })
 
 const sheetForm = reactive({
+  id: null,
   project_id: '',
   month: '',
   work_days: 22,
@@ -892,7 +969,7 @@ const loadSheets = async () => {
       current_account_set_id: currentAccountSetId.value,
       ...searchForm
     }
-    
+
     const response = await getAttendanceSheets(params)
     if (response && response.success) {
       attendanceSheets.value = response.data.data || []
@@ -905,6 +982,34 @@ const loadSheets = async () => {
     ElMessage.error('加载考勤表失败: ' + error.message)
   } finally {
     sheetsLoading.value = false
+  }
+}
+
+const loadPendingAttendanceProjects = async () => {
+  if (!currentAccountSetId.value) {
+    pendingAttendanceProjects.value = []
+    return
+  }
+
+  pendingAttendanceLoading.value = true
+  try {
+    const response = await getPendingAttendanceProjects({
+      month: pendingAttendanceMonth.value,
+      current_account_set_id: currentAccountSetId.value
+    })
+
+    if (response && response.success) {
+      pendingAttendanceProjects.value = response.data || []
+    } else {
+      pendingAttendanceProjects.value = []
+      ElMessage.error(response?.message || '加载待制作项目失败')
+    }
+  } catch (error) {
+    console.error('Load pending attendance projects error:', error)
+    pendingAttendanceProjects.value = []
+    ElMessage.error('加载待制作项目失败')
+  } finally {
+    pendingAttendanceLoading.value = false
   }
 }
 
@@ -921,17 +1026,31 @@ const loadProjects = async () => {
   }
 }
 
+const openCreateSheetDialog = () => {
+  attendanceCreateLocked.value = false
+  isEditSheet.value = false
+  Object.assign(sheetForm, {
+    id: null,
+    project_id: '',
+    month: '',
+    work_days: 22,
+    notes: ''
+  })
+  sheetFormRef.value?.clearValidate?.()
+  showCreateSheetDialog.value = true
+}
+
 const loadSheetDetail = async (sheetId) => {
   attendanceLoading.value = true
   try {
     const response = await getAttendanceSheetDetail(sheetId)
     console.log('加载考勤表详情响应:', response)
-    
+
     if (response && response.success) {
       currentSheet.value = response.data.sheet
       attendanceData.value = response.data.attendance_data || []
       attendanceStats.value = response.data.attendance_stats || []
-      
+
       console.log('设置后的数据:', {
         currentSheet: currentSheet.value,
         attendanceDataLength: attendanceData.value.length,
@@ -990,6 +1109,30 @@ const handleProjectChange = async (projectId) => {
   }
 }
 
+const handleCreatePendingSheet = (row) => {
+  attendanceCreateLocked.value = true
+  isEditSheet.value = false
+
+  if (!projects.value.find(project => project.id === row.id)) {
+    projects.value.unshift({
+      id: row.id,
+      name: row.name,
+      code: row.code
+    })
+  }
+
+  Object.assign(sheetForm, {
+    id: null,
+    project_id: row.id,
+    month: row.month || pendingAttendanceMonth.value,
+    work_days: 22,
+    notes: ''
+  })
+
+  sheetFormRef.value?.clearValidate?.()
+  showCreateSheetDialog.value = true
+}
+
 const handleViewSheet = async (row) => {
   currentSheet.value = row
   showSheetDetailDialog.value = true
@@ -1009,7 +1152,7 @@ const handleViewAttendanceBasis = async (row) => {
         current_account_set_id: accountSetStore.currentAccountSetId
       }
     })
-    
+
     if (response.success && response.data && response.data.length > 0) {
       currentAttendanceBasis.value = response.data[0]
       attendanceBasisDialogVisible.value = true
@@ -1096,6 +1239,7 @@ const formatFileSize = (bytes) => {
 }
 
 const handleEditSheet = (row) => {
+  attendanceCreateLocked.value = false
   isEditSheet.value = true
   Object.assign(sheetForm, {
     id: row.id,
@@ -1125,14 +1269,15 @@ const handleDeleteSheet = async (row) => {
         type: 'warning'
       }
     )
-    
+
     // 调用删除API
     const response = await deleteAttendanceSheet(row.id)
-    
+
     if (response && response.success) {
       ElMessage.success('删除成功')
       // 重新加载考勤表列表
       loadSheets()
+      loadPendingAttendanceProjects()
     } else {
       ElMessage.error(response?.message || '删除失败')
     }
@@ -1152,9 +1297,9 @@ const handleSubmitWithFiles = async () => {
       ElMessage.warning('请至少上传1个附件才能提交')
       return
     }
-    
+
     submitting.value = true
-    
+
     // 准备提交数据
     const submitData = {
       notes: submitForm.notes,
@@ -1164,7 +1309,7 @@ const handleSubmitWithFiles = async () => {
         type: file.raw?.type || 'application/octet-stream'
       }))
     }
-    
+
     // 如果有文件，先上传文件
     const uploadedFiles = []
     if (submitForm.files.length > 0) {
@@ -1174,21 +1319,21 @@ const handleSubmitWithFiles = async () => {
           formData.append(`files[${index}]`, file.raw)
         }
       })
-      
+
       // 上传文件
       const uploadResponse = await uploadAttendanceFiles(currentSheet.value.id, formData)
       if (uploadResponse.success) {
         uploadedFiles.push(...uploadResponse.data.files)
       }
     }
-    
+
     // 提交考勤表
     await submitAttendanceSheet(currentSheet.value.id, {
       ...submitData,
       attachments: uploadedFiles,
       stamp_method: submitForm.stamp_method  // 传递盖章方式
     })
-    
+
     ElMessage.success('提交成功')
     showSubmitDialog.value = false
     showSheetDetailDialog.value = false
@@ -1204,7 +1349,7 @@ const handleSubmitWithFiles = async () => {
 // 处理PDF文档生成
 const handleWordGenerated = ({ file, fileName }) => {
   console.log('PDF文档已生成:', fileName)
-  
+
   // 将生成的PDF文件添加到附件列表
   const fileObj = {
     name: fileName,
@@ -1212,9 +1357,9 @@ const handleWordGenerated = ({ file, fileName }) => {
     raw: file,
     uid: Date.now()
   }
-  
+
   submitForm.files.push(fileObj)
-  
+
   ElMessage.success('Word文档已添加到附件列表')
 }
 
@@ -1225,10 +1370,10 @@ const handleExportAttendanceData = async () => {
       ElMessage.warning('请先选择考勤表')
       return
     }
-    
+
     // 准备导出数据
     const exportData = []
-    
+
     // 添加表头
     const headers = ['员工姓名']
     for (let day = 1; day <= currentSheet.value.work_days; day++) {
@@ -1236,11 +1381,11 @@ const handleExportAttendanceData = async () => {
     }
     headers.push('出勤天数', '缺勤天数', '迟到次数', '早退次数', '请假天数')
     exportData.push(headers)
-    
+
     // 添加考勤数据
     attendanceData.value.forEach(employee => {
       const row = [employee.employee_name]
-      
+
       // 添加每日考勤状态
       for (let day = 1; day <= currentSheet.value.work_days; day++) {
         const status = employee.attendance[day] || 'normal'
@@ -1254,7 +1399,7 @@ const handleExportAttendanceData = async () => {
         }[status] || '正常'
         row.push(statusText)
       }
-      
+
       // 添加统计数据
       row.push(
         calculateWorkDays(employee),
@@ -1263,15 +1408,15 @@ const handleExportAttendanceData = async () => {
         calculateEarlyCount(employee),
         calculateLeaveDays(employee)
       )
-      
+
       exportData.push(row)
     })
-    
+
     // 创建工作簿
     const ws = XLSX.utils.aoa_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '考勤数据')
-    
+
     // 设置列宽
     const colWidths = [{ wch: 12 }] // 员工姓名列
     for (let i = 0; i < currentSheet.value.work_days; i++) {
@@ -1279,11 +1424,11 @@ const handleExportAttendanceData = async () => {
     }
     colWidths.push({ wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }) // 统计列
     ws['!cols'] = colWidths
-    
+
     // 导出文件
     const fileName = `${currentSheet.value.project?.name || '考勤表'}_${currentSheet.value.month}_考勤数据.xlsx`
     XLSX.writeFile(wb, fileName)
-    
+
     ElMessage.success('导出成功')
   } catch (error) {
     console.error('Export attendance data error:', error)
@@ -1298,17 +1443,17 @@ const handleExportSheet = async (row) => {
       ElMessage.warning('草稿状态的考勤表无法导出')
       return
     }
-    
+
     ElMessage.info('正在导出考勤数据，请稍候...')
-    
+
     console.log('开始导出考勤表:', row)
-    
+
     // 检查XLSX是否可用
     if (typeof XLSX === 'undefined') {
       ElMessage.error('XLSX库未正确加载')
       return
     }
-    
+
     // 使用当前行数据创建导出内容，不调用API
     const exportData = [
       ['考勤表基本信息'],
@@ -1331,14 +1476,14 @@ const handleExportSheet = async (row) => {
       ['李四', 'E002', row.work_days || 0, row.work_days || 0, 0, '100.0%'],
       ['王五', 'E003', row.work_days || 0, Math.floor((row.work_days || 0) * 0.90), Math.floor((row.work_days || 0) * 0.10), '90.0%']
     ]
-    
+
     console.log('准备导出数据:', exportData)
-    
+
     // 创建工作表
     const ws = XLSX.utils.aoa_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '考勤数据')
-    
+
     // 设置列宽
     const colWidths = [
       { wch: 15 }, // 项目名称等
@@ -1351,13 +1496,13 @@ const handleExportSheet = async (row) => {
       { wch: 10 }  // 出勤率
     ]
     ws['!cols'] = colWidths
-    
+
     // 导出文件
     const fileName = `${row.project?.name || '考勤表'}_${row.month}_考勤数据.xlsx`
     console.log('准备导出文件:', fileName)
-    
+
     XLSX.writeFile(wb, fileName)
-    
+
     console.log('导出完成')
     ElMessage.success('考勤数据导出成功')
   } catch (error) {
@@ -1373,16 +1518,16 @@ const handleBatchExport = async () => {
       ElMessage.warning('没有可导出的考勤表')
       return
     }
-    
+
     ElMessage.info('正在准备批量导出，请稍候...')
-    
+
     // 创建工作簿
     const wb = XLSX.utils.book_new()
-    
+
     // 为每个考勤表创建一个工作表
     for (let i = 0; i < attendanceSheets.value.length; i++) {
       const sheet = attendanceSheets.value[i]
-      
+
       try {
         // 获取考勤表详情数据
         const response = await getAttendanceSheetDetail(sheet.id)
@@ -1390,14 +1535,14 @@ const handleBatchExport = async () => {
           console.warn(`获取考勤表 ${sheet.id} 数据失败`)
           continue
         }
-        
+
         const sheetData = response.data.sheet
         const attendanceData = response.data.attendance_data || []
         const attendanceStats = response.data.attendance_stats || []
-        
+
         // 准备导出数据
         const exportData = []
-        
+
         // 添加考勤表基本信息
         exportData.push(['考勤表基本信息'])
         exportData.push(['项目名称', sheetData.project?.name || ''])
@@ -1406,7 +1551,7 @@ const handleBatchExport = async () => {
         exportData.push(['工作日', sheetData.work_days || 0])
         exportData.push(['状态', getSheetStatusText(sheetData.status)])
         exportData.push([]) // 空行分隔
-        
+
         // 添加考勤数据表头
         const headers = ['员工姓名']
         for (let day = 1; day <= sheetData.work_days; day++) {
@@ -1415,11 +1560,11 @@ const handleBatchExport = async () => {
         headers.push('应出勤天数', '实际出勤天数', '缺勤天数', '迟到次数', '早退次数', '请假天数', '出勤率')
         exportData.push(['考勤详细数据'])
         exportData.push(headers)
-        
+
         // 添加考勤统计数据
         attendanceStats.forEach(stat => {
           const row = [stat.employee?.name || '未知']
-          
+
           // 添加每日考勤状态
           if (attendanceData[stat.employee_id]) {
             const empData = attendanceData[stat.employee_id]
@@ -1440,7 +1585,7 @@ const handleBatchExport = async () => {
               row.push('-')
             }
           }
-          
+
           // 添加统计数据
           row.push(
             stat.work_days || 0,
@@ -1451,13 +1596,13 @@ const handleBatchExport = async () => {
             stat.leave_days || 0,
             stat.attendance_rate ? `${(stat.attendance_rate * 100).toFixed(1)}%` : '0%'
           )
-          
+
           exportData.push(row)
         })
-        
+
         // 创建工作表
         const ws = XLSX.utils.aoa_to_sheet(exportData)
-        
+
         // 设置列宽
         const colWidths = [{ wch: 12 }]
         for (let day = 0; day < sheetData.work_days; day++) {
@@ -1465,20 +1610,20 @@ const handleBatchExport = async () => {
         }
         colWidths.push({ wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 })
         ws['!cols'] = colWidths
-        
+
         // 添加工作表到工作簿
         const sheetName = `${sheetData.project?.name || '考勤表'}_${sheetData.month}`.substring(0, 31) // Excel工作表名称限制31字符
         XLSX.utils.book_append_sheet(wb, ws, sheetName)
-        
+
   } catch (error) {
         console.error(`处理考勤表 ${sheet.id} 时出错:`, error)
       }
     }
-    
+
     // 导出文件
     const fileName = `考勤表批量导出_${new Date().toISOString().slice(0, 10)}.xlsx`
     XLSX.writeFile(wb, fileName)
-    
+
     ElMessage.success(`批量导出成功，共导出 ${attendanceSheets.value.length} 个考勤表`)
   } catch (error) {
     console.error('Batch export error:', error)
@@ -1493,16 +1638,16 @@ const handleExportSummary = async () => {
       ElMessage.warning('没有可导出的考勤表')
       return
     }
-    
+
     ElMessage.info('正在准备汇总数据，请稍候...')
-    
+
     // 准备汇总数据
     const summaryData = []
-    
+
     // 添加汇总表头
     summaryData.push(['考勤表汇总统计'])
     summaryData.push(['项目名称', '月份', '员工总数', '工作日', '状态', '创建时间', '提交时间', '审批时间'])
-    
+
     // 添加考勤表汇总信息
     attendanceSheets.value.forEach(sheet => {
       summaryData.push([
@@ -1516,14 +1661,14 @@ const handleExportSummary = async () => {
         sheet.approved_at || ''
       ])
     })
-    
+
     // 添加空行分隔
     summaryData.push([])
-    
+
     // 添加项目统计汇总
     summaryData.push(['项目统计汇总'])
     summaryData.push(['项目名称', '考勤表数量', '总员工数', '平均工作日', '已审批数量', '待审批数量'])
-    
+
     // 按项目分组统计
     const projectStats = {}
     attendanceSheets.value.forEach(sheet => {
@@ -1537,18 +1682,18 @@ const handleExportSummary = async () => {
           pendingCount: 0
         }
       }
-      
+
       projectStats[projectName].count++
       projectStats[projectName].totalEmployees += sheet.total_employees || 0
       projectStats[projectName].totalWorkDays += sheet.work_days || 0
-      
+
       if (sheet.status === 'approved') {
         projectStats[projectName].approvedCount++
       } else if (sheet.status === 'submitted') {
         projectStats[projectName].pendingCount++
       }
     })
-    
+
     // 添加项目统计行
     Object.keys(projectStats).forEach(projectName => {
       const stats = projectStats[projectName]
@@ -1561,14 +1706,14 @@ const handleExportSummary = async () => {
         stats.pendingCount
       ])
     })
-    
+
     // 添加空行分隔
     summaryData.push([])
-    
+
     // 添加月份统计汇总
     summaryData.push(['月份统计汇总'])
     summaryData.push(['月份', '考勤表数量', '总员工数', '平均工作日', '已审批数量', '待审批数量'])
-    
+
     // 按月份分组统计
     const monthStats = {}
     attendanceSheets.value.forEach(sheet => {
@@ -1582,18 +1727,18 @@ const handleExportSummary = async () => {
           pendingCount: 0
         }
       }
-      
+
       monthStats[month].count++
       monthStats[month].totalEmployees += sheet.total_employees || 0
       monthStats[month].totalWorkDays += sheet.work_days || 0
-      
+
       if (sheet.status === 'approved') {
         monthStats[month].approvedCount++
       } else if (sheet.status === 'submitted') {
         monthStats[month].pendingCount++
       }
     })
-    
+
     // 添加月份统计行
     Object.keys(monthStats).forEach(month => {
       const stats = monthStats[month]
@@ -1606,12 +1751,12 @@ const handleExportSummary = async () => {
         stats.pendingCount
       ])
     })
-    
+
     // 创建工作簿
     const ws = XLSX.utils.aoa_to_sheet(summaryData)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '考勤汇总')
-    
+
     // 设置列宽
     const colWidths = [
       { wch: 20 }, // 项目名称/月份
@@ -1624,11 +1769,11 @@ const handleExportSummary = async () => {
       { wch: 18 }  // 提交时间/审批时间
     ]
     ws['!cols'] = colWidths
-    
+
     // 导出文件
     const fileName = `考勤汇总统计_${new Date().toISOString().slice(0, 10)}.xlsx`
     XLSX.writeFile(wb, fileName)
-    
+
     ElMessage.success('汇总导出成功')
   } catch (error) {
     console.error('Export summary error:', error)
@@ -1638,7 +1783,7 @@ const handleExportSummary = async () => {
 
 const handleCreateSheet = async () => {
   if (!sheetFormRef.value) return
-  
+
   await sheetFormRef.value.validate(async (valid) => {
     if (valid) {
       submitting.value = true
@@ -1652,6 +1797,7 @@ const handleCreateSheet = async () => {
         }
         showCreateSheetDialog.value = false
         loadSheets()
+        loadPendingAttendanceProjects()
       } catch (error) {
         console.error('Submit sheet error:', error)
         ElMessage.error(isEditSheet.value ? '更新失败' : '创建失败')
@@ -1680,21 +1826,21 @@ const handleBatchEditSubmit = async () => {
       ElMessage.warning('请选择员工')
       return
     }
-    
+
     if (!batchEditForm.date_range || batchEditForm.date_range.length !== 2) {
       ElMessage.warning('请选择日期范围')
       return
     }
-    
+
     if (!batchEditForm.status) {
       ElMessage.warning('请选择考勤状态')
       return
     }
-    
+
     // 批量更新考勤数据
     const startDate = new Date(batchEditForm.date_range[0])
     const endDate = new Date(batchEditForm.date_range[1])
-    
+
     // 更新前端数据
     attendanceData.value.forEach(employee => {
       if (batchEditForm.employee_ids.includes(employee.employee_id)) {
@@ -1707,15 +1853,15 @@ const handleBatchEditSubmit = async () => {
         }
       }
     })
-    
+
     ElMessage.success('批量编辑成功')
     showBatchEditDialog.value = false
-    
+
     // 重置表单
     batchEditForm.employee_ids = []
     batchEditForm.date_range = []
     batchEditForm.status = ''
-    
+
   } catch (error) {
     console.error('Batch edit error:', error)
     ElMessage.error('批量编辑失败')
@@ -1729,10 +1875,10 @@ const handleSaveAttendance = async () => {
       dataLength: attendanceData.value.length,
       sampleData: attendanceData.value[0]
     })
-    
+
     const response = await saveAttendanceData(currentSheet.value.id, attendanceData.value)
     console.log('保存响应:', response)
-    
+
     if (response && response.success) {
       ElMessage.success('保存成功')
       // 重新加载数据以确保显示最新保存的数据
@@ -1748,48 +1894,50 @@ const handleSaveAttendance = async () => {
 
 const calculateWorkDays = (row) => {
   if (!row.attendance) return 0
-  return Object.values(row.attendance).filter(status => 
+  return Object.values(row.attendance).filter(status =>
     ['normal', 'late', 'early'].includes(status)
   ).length
 }
 
 const calculateAbsentDays = (row) => {
   if (!row.attendance) return 0
-  return Object.values(row.attendance).filter(status => 
+  return Object.values(row.attendance).filter(status =>
     ['absent'].includes(status)
   ).length
 }
 
 const calculateLateCount = (row) => {
   if (!row.attendance) return 0
-  return Object.values(row.attendance).filter(status => 
+  return Object.values(row.attendance).filter(status =>
     ['late'].includes(status)
   ).length
 }
 
 const calculateEarlyCount = (row) => {
   if (!row.attendance) return 0
-  return Object.values(row.attendance).filter(status => 
+  return Object.values(row.attendance).filter(status =>
     ['early'].includes(status)
   ).length
 }
 
 const calculateLeaveDays = (row) => {
   if (!row.attendance) return 0
-  return Object.values(row.attendance).filter(status => 
+  return Object.values(row.attendance).filter(status =>
     ['leave'].includes(status)
   ).length
 }
 
 const handleSheetDialogClose = () => {
   isEditSheet.value = false
+  attendanceCreateLocked.value = false
   Object.assign(sheetForm, {
+    id: null,
     project_id: '',
     month: '',
     work_days: 22,
     notes: ''
   })
-  sheetFormRef.value?.resetFields()
+  sheetFormRef.value?.clearValidate?.()
 }
 
 const handleSheetDetailClose = () => {
@@ -1807,25 +1955,25 @@ const beforeFileUpload = (file) => {
     'application/vnd.ms-excel',
     'application/msword'
   ]
-  
-  const isAllowedType = allowedTypes.includes(file.type) || 
-    file.name.endsWith('.pdf') || 
-    file.name.endsWith('.doc') || 
-    file.name.endsWith('.docx') || 
-    file.name.endsWith('.xls') || 
+
+  const isAllowedType = allowedTypes.includes(file.type) ||
+    file.name.endsWith('.pdf') ||
+    file.name.endsWith('.doc') ||
+    file.name.endsWith('.docx') ||
+    file.name.endsWith('.xls') ||
     file.name.endsWith('.xlsx')
-  
+
   if (!isAllowedType) {
     ElMessage.error('只能上传 PDF、Word、Excel 文件!')
     return false
   }
-  
+
   const isLt10M = file.size / 1024 / 1024 < 10
   if (!isLt10M) {
     ElMessage.error('文件大小不能超过 10MB!')
     return false
   }
-  
+
   return true
 }
 
@@ -1908,6 +2056,7 @@ const openDingTalk = () => {
 onMounted(() => {
   loadSheets()
   loadProjects()
+  loadPendingAttendanceProjects()
 })
 
 // 监听账套切换，自动刷新数据
@@ -1918,7 +2067,12 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
     pagination.currentPage = 1
     loadSheets()
     loadProjects()
+    loadPendingAttendanceProjects()
   }
+})
+
+watch(pendingAttendanceMonth, () => {
+  loadPendingAttendanceProjects()
 })
 </script>
 
@@ -1943,6 +2097,24 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
 .header-actions {
   display: flex;
   gap: 10px;
+}
+
+.management-tabs {
+  margin-bottom: 20px;
+}
+
+.management-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+}
+
+.pending-card {
+  margin-bottom: 20px;
+}
+
+.pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .sheet-section {

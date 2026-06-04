@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BasisRecord;
 use App\Models\Project;
 use App\Models\AttendanceSheet;
+use App\Models\Salary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +20,110 @@ class PayrollController extends Controller
         return $request->header('X-Account-Set-Id') 
             ?: $request->input('current_account_set_id') 
             ?: Auth::user()->account_set_id;
+    }
+
+    private function projectRequiresAttendance(Project $project): bool
+    {
+        if (!is_null($project->require_attendance)) {
+            return (bool) $project->require_attendance;
+        }
+
+        if (!is_null($project->requires_attendance)) {
+            return (bool) $project->requires_attendance;
+        }
+
+        return true;
+    }
+
+    /**
+     * 获取待制作工资表的项目列表
+     */
+    public function getPendingProjects(Request $request)
+    {
+        try {
+            $accountSetId = $this->getAccountSetId($request);
+            $month = $request->input('month', now()->format('Y-m'));
+
+            $validator = \Validator::make(
+                ['month' => $month],
+                ['month' => 'required|date_format:Y-m']
+            );
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '验证失败',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $generatedProjectIds = Salary::where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->pluck('project_id')
+                ->unique()
+                ->toArray();
+
+            $approvedProjectIds = AttendanceSheet::where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->where('status', AttendanceSheet::STATUS_APPROVED)
+                ->pluck('project_id')
+                ->unique()
+                ->toArray();
+
+            $projects = Project::where('account_set_id', $accountSetId)
+                ->where('status', 'active')
+                ->select('id', 'name', 'code', 'status', 'require_attendance', 'requires_attendance', 'requires_salary_basis')
+                ->orderBy('name')
+                ->get()
+                ->filter(function (Project $project) use ($generatedProjectIds) {
+                    return !in_array($project->id, $generatedProjectIds);
+                })
+                ->map(function (Project $project) use ($accountSetId, $approvedProjectIds, $month) {
+                    $requireAttendance = $this->projectRequiresAttendance($project);
+                    $attendanceApproved = !$requireAttendance || in_array($project->id, $approvedProjectIds);
+                    $requiresSalaryBasis = (bool) $project->requires_salary_basis;
+                    $salaryBasisReady = !$requiresSalaryBasis || BasisRecord::where('account_set_id', $accountSetId)
+                        ->where('project_id', $project->id)
+                        ->where('month', $month)
+                        ->where('type', 'salary')
+                        ->whereHas('attachments')
+                        ->exists();
+
+                    $disabledReason = null;
+                    if (!$attendanceApproved) {
+                        $disabledReason = '请先审批本月考勤表';
+                    } elseif (!$salaryBasisReady) {
+                        $disabledReason = '请先上传本月工资依据';
+                    }
+
+                    return [
+                        'id' => $project->id,
+                        'name' => $project->name,
+                        'code' => $project->code,
+                        'month' => $month,
+                        'require_attendance' => $requireAttendance,
+                        'attendance_approved' => $attendanceApproved,
+                        'requires_salary_basis' => $requiresSalaryBasis,
+                        'salary_basis_ready' => $salaryBasisReady,
+                        'has_generated_salary' => false,
+                        'can_create' => $attendanceApproved && $salaryBasisReady,
+                        'disabled_reason' => $disabledReason,
+                    ];
+                })
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $projects,
+                'count' => $projects->count(),
+                'can_create_count' => $projects->where('can_create', true)->count(),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '获取待制作工资项目失败: ' . $e->getMessage()
+            ], 500);
+        }
     }
     
     /**

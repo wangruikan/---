@@ -9,6 +9,14 @@ export const getAttendanceSheets = (params) => {
   })
 }
 
+export const getPendingAttendanceProjects = (params) => {
+  return request({
+    url: '/attendance/pending-projects',
+    method: 'get',
+    params
+  })
+}
+
 export const createAttendanceSheet = (data) => {
   return request({
     url: '/attendance',

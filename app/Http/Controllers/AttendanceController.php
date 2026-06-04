@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AttendanceSheet;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceStatistics;
+use App\Models\BasisRecord;
 use App\Models\Project;
 use App\Models\Employee;
 use Illuminate\Http\Request;
@@ -26,6 +27,19 @@ class AttendanceController extends Controller
         return $request->header('X-Account-Set-Id') 
             ?: $request->input('current_account_set_id') 
             ?: Auth::user()->account_set_id;
+    }
+
+    private function projectRequiresAttendance(Project $project): bool
+    {
+        if (!is_null($project->require_attendance)) {
+            return (bool) $project->require_attendance;
+        }
+
+        if (!is_null($project->requires_attendance)) {
+            return (bool) $project->requires_attendance;
+        }
+
+        return true;
     }
     
     /**
@@ -73,6 +87,85 @@ class AttendanceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '获取考勤表列表失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * 获取待制作考勤表的项目列表
+     */
+    public function getPendingProjects(Request $request)
+    {
+        if ($response = $this->checkPermission('attendance.view')) {
+            return $response;
+        }
+
+        try {
+            $accountSetId = $this->getAccountSetId($request);
+            $month = $request->input('month', now()->format('Y-m'));
+
+            $validator = Validator::make(
+                ['month' => $month],
+                ['month' => 'required|date_format:Y-m']
+            );
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '验证失败',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $existingProjectIds = AttendanceSheet::byAccountSet($accountSetId)
+                ->where('month', $month)
+                ->pluck('project_id')
+                ->unique()
+                ->toArray();
+
+            $projects = Project::where('account_set_id', $accountSetId)
+                ->where('status', 'active')
+                ->select('id', 'name', 'code', 'require_attendance', 'requires_attendance', 'requires_attendance_basis')
+                ->orderBy('name')
+                ->get()
+                ->filter(function (Project $project) use ($existingProjectIds) {
+                    return $this->projectRequiresAttendance($project)
+                        && !in_array($project->id, $existingProjectIds);
+                })
+                ->map(function (Project $project) use ($accountSetId, $month) {
+                    $requiresAttendanceBasis = (bool) $project->requires_attendance_basis;
+                    $basisReady = !$requiresAttendanceBasis || BasisRecord::where('account_set_id', $accountSetId)
+                        ->where('project_id', $project->id)
+                        ->where('month', $month)
+                        ->where('type', 'attendance')
+                        ->whereHas('attachments')
+                        ->exists();
+
+                    return [
+                        'id' => $project->id,
+                        'name' => $project->name,
+                        'code' => $project->code,
+                        'month' => $month,
+                        'requires_attendance_basis' => $requiresAttendanceBasis,
+                        'basis_ready' => $basisReady,
+                        'can_create' => $basisReady,
+                        'disabled_reason' => $basisReady
+                            ? null
+                            : '请先上传本月考勤依据',
+                    ];
+                })
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $projects,
+                'count' => $projects->count(),
+                'can_create_count' => $projects->where('can_create', true)->count(),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '获取待制作项目失败: ' . $e->getMessage()
             ], 500);
         }
     }

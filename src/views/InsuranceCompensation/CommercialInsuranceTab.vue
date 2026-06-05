@@ -22,6 +22,7 @@
     <!-- 列表 -->
     <el-table :data="records" v-loading="loading" stripe border>
       <el-table-column prop="employee_name" label="员工姓名" width="120" />
+      <el-table-column prop="project_name" label="项目名称" width="160" show-overflow-tooltip />
       <el-table-column prop="policy_name" label="保单名称" width="200" show-overflow-tooltip />
       <el-table-column prop="incident_date" label="事故日期" width="120">
         <template #default="{ row }">
@@ -191,6 +192,7 @@
     <el-dialog v-model="viewDialogVisible" title="商业险申报详情" width="800px">
       <el-descriptions :column="2" border v-if="currentRecord">
         <el-descriptions-item label="员工姓名">{{ currentRecord.employee_name }}</el-descriptions-item>
+        <el-descriptions-item label="项目名称">{{ currentRecord.project_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="保单名称">{{ currentRecord.policy_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="事故日期">{{ currentRecord.incident_date }}</el-descriptions-item>
         <el-descriptions-item label="登记时间">{{ formatDateTime(currentRecord.registration_date) }}</el-descriptions-item>

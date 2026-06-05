@@ -1901,6 +1901,90 @@ const formRules = {
   ]
 }
 
+const projectFormTabLabelMap = {
+  basic: '基础配置',
+  invoice: '开票信息',
+  insurance: '保险设置',
+  contract: '合同模板'
+}
+
+const projectFormFieldTabMap = {
+  name: 'basic',
+  code: 'basic',
+  description: 'basic',
+  start_date: 'basic',
+  end_date: 'basic',
+  salary_payment_date: 'basic',
+  requires_attendance: 'basic',
+  salary_payment_month: 'basic',
+  insurance_import_month: 'basic',
+  delivery_frequency: 'basic',
+  delivery_method: 'basic',
+  requires_salary_basis: 'basic',
+  requires_attendance_basis: 'basic',
+  registration_form_type: 'basic',
+  invoice_company_name: 'invoice',
+  invoice_tax_number: 'invoice',
+  invoice_company_address: 'invoice',
+  invoice_company_phone: 'invoice',
+  invoice_bank_name: 'invoice',
+  invoice_bank_account: 'invoice',
+  invoice_bank_code: 'invoice',
+  social_security_regions: 'insurance',
+  housing_fund_regions: 'insurance',
+  medical_insurance_regions: 'insurance',
+  other_insurance_policies: 'insurance',
+  large_medical_insurance_configs: 'insurance'
+}
+
+const projectFormFieldLabelMap = {
+  name: '项目名称',
+  code: '项目编号',
+  description: '项目描述',
+  start_date: '开始时间',
+  end_date: '结束时间',
+  salary_payment_date: '工资发放日期',
+  requires_attendance: '需要考勤表',
+  salary_payment_month: '工资发放',
+  insurance_import_month: '保险导入',
+  delivery_frequency: '交付频率',
+  delivery_method: '交付方式',
+  requires_salary_basis: '是否需要上传工资依据',
+  requires_attendance_basis: '是否需要上传考勤依据',
+  registration_form_type: '员工登记表类型',
+  invoice_company_name: '企业名称',
+  invoice_tax_number: '企业税号',
+  invoice_company_address: '企业地址',
+  invoice_company_phone: '企业电话',
+  invoice_bank_name: '开户银行',
+  invoice_bank_account: '银行账户',
+  invoice_bank_code: '行号',
+  social_security_regions: '社保地区',
+  housing_fund_regions: '公积金地区',
+  medical_insurance_regions: '医保参保地区',
+  other_insurance_policies: '绑定其他保险保单',
+  large_medical_insurance_configs: '大额医疗保险'
+}
+
+const showProjectFormValidationMessage = (invalidFields) => {
+  const firstInvalidField = Object.keys(invalidFields || {})[0]?.split('.')?.[0]
+  if (!firstInvalidField) {
+    ElMessage.warning('请先完善必填信息后再更新')
+    return
+  }
+
+  const tabKey = projectFormFieldTabMap[firstInvalidField]
+  const tabLabel = projectFormTabLabelMap[tabKey]
+  const fieldLabel = projectFormFieldLabelMap[firstInvalidField] || firstInvalidField
+
+  if (tabLabel) {
+    ElMessage.warning(`请先完善${tabLabel}中的“${fieldLabel}”`)
+    return
+  }
+
+  ElMessage.warning(`请先完善“${fieldLabel}”`)
+}
+
 const isProjectCodeManuallyEdited = ref(false)
 const normalizeProjectCode = (value) => {
   if (typeof value !== 'string') {
@@ -2839,123 +2923,126 @@ const deleteTemplate = async (templateId) => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
-  
-  await formRef.value.validate(async (valid) => {
-    if (valid) {
-      submitting.value = true
-      try {
-        let projectId
-        const projectPayload = {
-          ...form,
-          social_security_regions: (form.social_security_regions || []).filter(id => id !== NO_SOCIAL_SECURITY_OPTION),
-          housing_fund_regions: (form.housing_fund_regions || []).filter(id => id !== NO_HOUSING_FUND_OPTION),
-          medical_insurance_regions: (form.medical_insurance_regions || []).filter(id => id !== NO_MEDICAL_INSURANCE_OPTION),
-          large_medical_insurance_configs: (form.large_medical_insurance_configs || []).filter(id => id !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
-        }
-        // 使用 form.id 来判断是编辑还是新建，更可靠
-        if (isEdit.value && form.id) {
-          await updateProject(form.id, projectPayload)
-          projectId = form.id
-          ElMessage.success('更新成功')
-        } else {
-          const response = await createProject(projectPayload)
-          projectId = response.data.id
-          ElMessage.success('创建成功')
-          projectCreateDraft.clear()
-        }
-        
-        // 保存社保地区（过滤空值和无效值）
-        if (form.social_security_regions && form.social_security_regions.length > 0) {
-          const validRegions = form.social_security_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_SOCIAL_SECURITY_OPTION)
-          if (validRegions.length > 0 || form.social_security_regions.includes(NO_SOCIAL_SECURITY_OPTION)) {
-            try {
-              await setProjectSocialSecurityRegions(projectId, {
-                region_ids: validRegions
-              })
-            } catch (error) {
-              console.warn('保存社保地区失败:', error)
-            }
-          }
-        }
-        
-        // 保存公积金地区（过滤空值和无效值）
-        if (form.housing_fund_regions && form.housing_fund_regions.length > 0) {
-          const validRegions = form.housing_fund_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_HOUSING_FUND_OPTION)
-          if (validRegions.length > 0 || form.housing_fund_regions.includes(NO_HOUSING_FUND_OPTION)) {
-            try {
-              await setProjectHousingFundRegions(projectId, {
-                region_ids: validRegions
-              })
-            } catch (error) {
-              console.warn('保存公积金地区失败:', error)
-            }
-          }
-        }
-        
-        // 保存医保地区（过滤空值和无效值）
-        if (form.medical_insurance_regions && form.medical_insurance_regions.length > 0) {
-          const validRegions = form.medical_insurance_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_MEDICAL_INSURANCE_OPTION)
-          if (validRegions.length > 0 || form.medical_insurance_regions.includes(NO_MEDICAL_INSURANCE_OPTION)) {
-            try {
-              await setProjectMedicalInsuranceRegions(projectId, {
-                region_ids: validRegions
-              })
-            } catch (error) {
-              console.warn('保存医保地区失败:', error)
-            }
-          }
-        }
-        
-        // 保存其他保险保单（即使为空也要同步，以便清除之前的绑定）
-        await setProjectOtherInsurancePolicies(projectId, {
-          policy_ids: form.other_insurance_policies || []
-        })
-        
-        // 保存大额医疗保险配置（过滤空值和无效值）
-        if (form.large_medical_insurance_configs && form.large_medical_insurance_configs.length > 0) {
-          const validConfigs = form.large_medical_insurance_configs.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
-          if (validConfigs.length > 0 || form.large_medical_insurance_configs.includes(NO_LARGE_MEDICAL_INSURANCE_OPTION)) {
-            try {
-              await request.post(`/projects/${projectId}/large-medical-insurance-configs`, {
-                config_ids: validConfigs
-              })
-            } catch (error) {
-              console.warn('保存大额医疗保险配置失败:', error)
-            }
-          }
-        }
-        
-        resetForm()
-        formRef.value?.clearValidate?.()
-        showCreateDialog.value = false
-        loadProjects() // 刷新列表
-      } catch (error) {
-        console.error('Submit error:', error)
-        
-        // 处理验证错误
-        if (error.response && error.response.data && error.response.data.errors) {
-          const errors = error.response.data.errors
-          let errorMessage = '提交失败：\n'
-          
-          Object.keys(errors).forEach(key => {
-            errorMessage += `• ${errors[key].join(', ')}\n`
+
+  try {
+    await formRef.value.validate()
+  } catch (invalidFields) {
+    showProjectFormValidationMessage(invalidFields)
+    return
+  }
+
+  submitting.value = true
+  try {
+    let projectId
+    const projectPayload = {
+      ...form,
+      social_security_regions: (form.social_security_regions || []).filter(id => id !== NO_SOCIAL_SECURITY_OPTION),
+      housing_fund_regions: (form.housing_fund_regions || []).filter(id => id !== NO_HOUSING_FUND_OPTION),
+      medical_insurance_regions: (form.medical_insurance_regions || []).filter(id => id !== NO_MEDICAL_INSURANCE_OPTION),
+      large_medical_insurance_configs: (form.large_medical_insurance_configs || []).filter(id => id !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
+    }
+    // 使用 form.id 来判断是编辑还是新建，更可靠
+    if (isEdit.value && form.id) {
+      await updateProject(form.id, projectPayload)
+      projectId = form.id
+      ElMessage.success('更新成功')
+    } else {
+      const response = await createProject(projectPayload)
+      projectId = response.data.id
+      ElMessage.success('创建成功')
+      projectCreateDraft.clear()
+    }
+
+    // 保存社保地区（过滤空值和无效值）
+    if (form.social_security_regions && form.social_security_regions.length > 0) {
+      const validRegions = form.social_security_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_SOCIAL_SECURITY_OPTION)
+      if (validRegions.length > 0 || form.social_security_regions.includes(NO_SOCIAL_SECURITY_OPTION)) {
+        try {
+          await setProjectSocialSecurityRegions(projectId, {
+            region_ids: validRegions
           })
-          
-          ElMessage.error({
-            message: errorMessage,
-            duration: 5000,
-            showClose: true
-          })
-        } else if (error.response && error.response.data && error.response.data.message) {
-          ElMessage.error(error.response.data.message)
-        } else {
-          ElMessage.error('操作失败，请重试')
+        } catch (error) {
+          console.warn('保存社保地区失败:', error)
         }
-      } finally {
-        submitting.value = false
       }
     }
-  })
+
+    // 保存公积金地区（过滤空值和无效值）
+    if (form.housing_fund_regions && form.housing_fund_regions.length > 0) {
+      const validRegions = form.housing_fund_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_HOUSING_FUND_OPTION)
+      if (validRegions.length > 0 || form.housing_fund_regions.includes(NO_HOUSING_FUND_OPTION)) {
+        try {
+          await setProjectHousingFundRegions(projectId, {
+            region_ids: validRegions
+          })
+        } catch (error) {
+          console.warn('保存公积金地区失败:', error)
+        }
+      }
+    }
+
+    // 保存医保地区（过滤空值和无效值）
+    if (form.medical_insurance_regions && form.medical_insurance_regions.length > 0) {
+      const validRegions = form.medical_insurance_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_MEDICAL_INSURANCE_OPTION)
+      if (validRegions.length > 0 || form.medical_insurance_regions.includes(NO_MEDICAL_INSURANCE_OPTION)) {
+        try {
+          await setProjectMedicalInsuranceRegions(projectId, {
+            region_ids: validRegions
+          })
+        } catch (error) {
+          console.warn('保存医保地区失败:', error)
+        }
+      }
+    }
+
+    // 保存其他保险保单（即使为空也要同步，以便清除之前的绑定）
+    await setProjectOtherInsurancePolicies(projectId, {
+      policy_ids: form.other_insurance_policies || []
+    })
+
+    // 保存大额医疗保险配置（过滤空值和无效值）
+    if (form.large_medical_insurance_configs && form.large_medical_insurance_configs.length > 0) {
+      const validConfigs = form.large_medical_insurance_configs.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_LARGE_MEDICAL_INSURANCE_OPTION)
+      if (validConfigs.length > 0 || form.large_medical_insurance_configs.includes(NO_LARGE_MEDICAL_INSURANCE_OPTION)) {
+        try {
+          await request.post(`/projects/${projectId}/large-medical-insurance-configs`, {
+            config_ids: validConfigs
+          })
+        } catch (error) {
+          console.warn('保存大额医疗保险配置失败:', error)
+        }
+      }
+    }
+
+    resetForm()
+    formRef.value?.clearValidate?.()
+    showCreateDialog.value = false
+    loadProjects() // 刷新列表
+  } catch (error) {
+    console.error('Submit error:', error)
+
+    // 处理验证错误
+    if (error.response && error.response.data && error.response.data.errors) {
+      const errors = error.response.data.errors
+      let errorMessage = '提交失败：\n'
+
+      Object.keys(errors).forEach(key => {
+        errorMessage += `• ${errors[key].join(', ')}\n`
+      })
+
+      ElMessage.error({
+        message: errorMessage,
+        duration: 5000,
+        showClose: true
+      })
+    } else if (error.response && error.response.data && error.response.data.message) {
+      ElMessage.error(error.response.data.message)
+    } else {
+      ElMessage.error('操作失败，请重试')
+    }
+  } finally {
+    submitting.value = false
+  }
 }
 
 const handleDialogClose = () => {

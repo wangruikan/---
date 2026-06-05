@@ -188,7 +188,7 @@
                     <ResubmitButton
                       :record="scope.row"
                       business-type="工资表审批"
-                      @success="fetchData"
+                      @success="handleSearch"
                     />
                   </template>
 
@@ -454,6 +454,9 @@
             />
             <div v-if="!createForm.month" style="color: #999; font-size: 12px; margin-top: 5px;">
               请先选择工资期间
+            </div>
+            <div v-else-if="createPeriodHelperText" style="color: #909399; font-size: 12px; margin-top: 5px;">
+              {{ createPeriodHelperText }}
             </div>
         </el-form-item>
 
@@ -1222,6 +1225,30 @@ const buildPeriodDate = (month, day) => {
   return `${month}-${safeDay}`
 }
 
+const getMonthFromDate = (dateValue) => {
+  if (!dateValue) return ''
+  return String(dateValue).slice(0, 7)
+}
+
+const compareDateStrings = (left, right) => {
+  if (left === right) return 0
+  return left > right ? 1 : -1
+}
+
+const clampDateString = (dateValue, minDate, maxDate) => {
+  let nextDate = dateValue || minDate
+
+  if (compareDateStrings(nextDate, minDate) < 0) {
+    nextDate = minDate
+  }
+
+  if (compareDateStrings(nextDate, maxDate) > 0) {
+    nextDate = maxDate
+  }
+
+  return nextDate
+}
+
 const isFullDateString = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 
 const getSalaryPeriodDisplay = (month, periodStart, periodEnd) => {
@@ -1281,6 +1308,61 @@ const createForm = reactive({
   period_end: 30,    // 默认结束日期
   period_range: [],
   project_id: null  // 单选项目
+})
+
+const selectedCreateProject = computed(() => {
+  return availableProjects.value.find(project => Number(project.id) === Number(createForm.project_id)) || null
+})
+
+const isFirstSalaryForSelectedProject = computed(() => {
+  return !!selectedCreateProject.value && !selectedCreateProject.value.has_salary_history
+})
+
+const getCreatePeriodBounds = (project = selectedCreateProject.value, month = createForm.month) => {
+  if (!project || !month) {
+    return null
+  }
+
+  let startDate = `${month}-01`
+  let endDate = buildPeriodDate(month, getMonthMaxDay(month))
+  const projectStartDate = project.start_date ? String(project.start_date).slice(0, 10) : ''
+  const projectEndDate = project.end_date ? String(project.end_date).slice(0, 10) : ''
+
+  if (projectStartDate && getMonthFromDate(projectStartDate) === month && compareDateStrings(projectStartDate, startDate) > 0) {
+    startDate = projectStartDate
+  }
+
+  if (projectEndDate && getMonthFromDate(projectEndDate) === month && compareDateStrings(projectEndDate, endDate) < 0) {
+    endDate = projectEndDate
+  }
+
+  if (compareDateStrings(startDate, endDate) > 0) {
+    return null
+  }
+
+  return {
+    startDate,
+    endDate,
+    projectStartDate,
+    projectEndDate
+  }
+}
+
+const createPeriodHelperText = computed(() => {
+  const project = selectedCreateProject.value
+  if (!project) {
+    return ''
+  }
+
+  const tips = []
+  if (isFirstSalaryForSelectedProject.value && project.start_date) {
+    tips.push(`首次工资表开始日期固定为 ${String(project.start_date).slice(0, 10)}`)
+  }
+  if (project.end_date) {
+    tips.push(`工资周期不能晚于项目结束日期 ${String(project.end_date).slice(0, 10)}`)
+  }
+
+  return tips.join('；')
 })
 
 // 工资明细对话框
@@ -1678,7 +1760,88 @@ const isCreatePeriodDateDisabled = (date) => {
 
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
-  return `${year}-${month}` !== createForm.month
+  const dateString = `${year}-${month}-${String(date.getDate()).padStart(2, '0')}`
+
+  if (`${year}-${month}` !== createForm.month) {
+    return true
+  }
+
+  const bounds = getCreatePeriodBounds()
+  if (!bounds) {
+    return false
+  }
+
+  return compareDateStrings(dateString, bounds.startDate) < 0 || compareDateStrings(dateString, bounds.endDate) > 0
+}
+
+const normalizeCreatePeriodRange = (showLockedStartWarning = false) => {
+  const project = selectedCreateProject.value
+  const bounds = getCreatePeriodBounds(project)
+
+  if (!project || !bounds) {
+    return
+  }
+
+  const currentRange = Array.isArray(createForm.period_range) ? createForm.period_range : []
+  const defaultStartDate = buildPeriodDate(createForm.month, createForm.period_start || 19) || bounds.startDate
+  const defaultEndDate = buildPeriodDate(createForm.month, createForm.period_end || 30) || bounds.endDate
+
+  let nextStartDate = currentRange[0] || defaultStartDate
+  let nextEndDate = currentRange[1] || defaultEndDate
+
+  if (isFirstSalaryForSelectedProject.value && bounds.projectStartDate) {
+    if (showLockedStartWarning && currentRange[0] && currentRange[0] !== bounds.projectStartDate) {
+      ElMessage.warning(`首次工资表开始日期固定为项目开始日期 ${bounds.projectStartDate}`)
+    }
+    nextStartDate = bounds.projectStartDate
+  } else {
+    nextStartDate = clampDateString(nextStartDate, bounds.startDate, bounds.endDate)
+  }
+
+  nextEndDate = clampDateString(nextEndDate, nextStartDate, bounds.endDate)
+
+  if (
+    currentRange.length !== 2 ||
+    currentRange[0] !== nextStartDate ||
+    currentRange[1] !== nextEndDate
+  ) {
+    createForm.period_range = [nextStartDate, nextEndDate]
+  }
+}
+
+const validateCreatePeriodRange = () => {
+  const project = selectedCreateProject.value
+  if (!project) {
+    return ''
+  }
+
+  const bounds = getCreatePeriodBounds(project)
+  if (!bounds) {
+    return '当前工资期间不在项目起止范围内'
+  }
+
+  const [startDate, endDate] = createForm.period_range
+  if (!startDate || !endDate) {
+    return '请选择完整的工资周期'
+  }
+
+  if (compareDateStrings(startDate, endDate) > 0) {
+    return '开始日期不能大于结束日期'
+  }
+
+  if (compareDateStrings(startDate, bounds.startDate) < 0) {
+    return `工资周期开始日期不能早于 ${bounds.startDate}`
+  }
+
+  if (compareDateStrings(endDate, bounds.endDate) > 0) {
+    return `工资周期结束日期不能晚于 ${bounds.endDate}`
+  }
+
+  if (isFirstSalaryForSelectedProject.value && bounds.projectStartDate && startDate !== bounds.projectStartDate) {
+    return `首次工资表开始日期必须等于项目开始日期 ${bounds.projectStartDate}`
+  }
+
+  return ''
 }
 
 // 加载可用项目列表（考勤已审批）
@@ -1724,7 +1887,14 @@ watch(() => createForm.month, () => {
 
 watch(() => createForm.period_range, (value) => {
   syncCreatePeriodDaysFromRange(value)
+  if (selectedCreateProject.value) {
+    normalizeCreatePeriodRange(true)
+  }
 }, { deep: true })
+
+watch(() => createForm.project_id, () => {
+  normalizeCreatePeriodRange()
+})
 
 // 查询
 const handleSearch = async () => {
@@ -1787,9 +1957,15 @@ const handleCreatePendingPayroll = (row) => {
   createForm.project_id = row.id
   availableProjects.value = [{
     id: row.id,
+    name: row.name,
+    code: row.code,
     label: row.code ? `${row.name} (${row.code})` : row.name,
-    disabled: false
+    disabled: false,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    has_salary_history: row.has_salary_history
   }]
+  normalizeCreatePeriodRange()
 }
 
 // 确认生成
@@ -1808,6 +1984,11 @@ const handleConfirmCreate = async () => {
   }
   if (!createForm.project_id) {
     ElMessage.warning('请选择项目')
+    return
+  }
+  const periodValidationMessage = validateCreatePeriodRange()
+  if (periodValidationMessage) {
+    ElMessage.warning(periodValidationMessage)
     return
   }
 

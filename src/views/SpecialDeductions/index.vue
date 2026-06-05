@@ -13,18 +13,6 @@
             <div class="toolbar">
               <el-form :model="itemSearchForm" inline>
 
-                <el-form-item label="状态">
-                  <el-select
-                    v-model="itemSearchForm.is_active"
-                    placeholder="请选择状态"
-                    clearable
-                    style="width: 120px"
-                  >
-                    <el-option label="启用" :value="1" />
-                    <el-option label="停用" :value="0" />
-                  </el-select>
-                </el-form-item>
-
                 <el-form-item label="名称">
                   <el-input
                     v-model="itemSearchForm.search"
@@ -63,13 +51,6 @@
                 </template>
               </el-table-column>
               <el-table-column prop="description" label="说明描述" show-overflow-tooltip />
-              <el-table-column prop="is_active" label="状态" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="row.is_active ? 'success' : 'danger'">
-                    {{ row.is_active ? '启用' : '停用' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
               <el-table-column prop="sort_order" label="排序" width="80" />
               <el-table-column prop="creator_name" label="创建人" width="100" />
               <el-table-column prop="created_at" label="创建时间" width="160">
@@ -180,7 +161,6 @@
                   ¥{{ row.total_amount || '0.00' }}
                 </template>
               </el-table-column>
-              <el-table-column prop="effective_date" label="生效日期" width="120" />
               <el-table-column prop="is_active" label="状态" width="100">
                 <template #default="{ row }">
                   <el-tag :type="row.has_deduction ? 'success' : 'warning'">
@@ -268,13 +248,6 @@
           />
         </el-form-item>
 
-        <el-form-item label="状态" prop="is_active">
-          <el-switch
-            v-model="itemForm.is_active"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -357,22 +330,6 @@
           </el-input>
         </el-form-item>
 
-        <el-form-item label="生效日期" prop="effective_date">
-          <el-date-picker
-            v-model="employeeForm.effective_date"
-            type="date"
-            placeholder="请选择生效日期"
-            style="width: 100%"
-          />
-        </el-form-item>
-
-        <el-form-item label="状态" prop="is_active">
-          <el-switch
-            v-model="employeeForm.is_active"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -487,22 +444,6 @@
           </el-input>
         </el-form-item>
 
-        <el-form-item label="生效日期" prop="effective_date">
-          <el-date-picker
-            v-model="batchForm.effective_date"
-            type="date"
-            placeholder="请选择生效日期"
-            style="width: 100%"
-          />
-        </el-form-item>
-
-        <el-form-item label="状态" prop="is_active">
-          <el-switch
-            v-model="batchForm.is_active"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -551,7 +492,6 @@ const deductionItems = ref([])
 const safeDeductionItems = computed(() => Array.isArray(deductionItems.value) ? deductionItems.value : [])
 const itemsLoading = ref(false)
 const itemSearchForm = reactive({
-  is_active: '',
   search: ''
 })
 const itemPagination = reactive({
@@ -601,7 +541,6 @@ const employeeForm = reactive({
   employee_id: null,
   project_id: null,
   deduction_items: [],
-  effective_date: null,
   is_active: true
 })
 const employeeFormRules = {
@@ -618,7 +557,6 @@ const batchForm = reactive({
   employee_ids: [],
   project_id: null,
   deduction_items: [],
-  effective_date: null,
   is_active: true
 })
 const batchFormRules = {
@@ -714,7 +652,7 @@ const handleEditItem = (row) => {
     amount: row.amount,
     description: row.description,
     sort_order: row.sort_order,
-    is_active: row.is_active
+    is_active: true
   })
   showCreateItemDialog.value = true
 }
@@ -745,6 +683,7 @@ const handleItemSubmit = async () => {
 
     const data = { 
       ...itemForm,
+      is_active: true,
       current_account_set_id: currentAccountSetId.value
     }
     let res
@@ -837,8 +776,7 @@ const handleSetEmployee = async (row) => {
 
   employeeForm.employee_id = row.employee_id
   employeeForm.project_id = row.project_id
-  employeeForm.effective_date = row.effective_date || new Date().toISOString().split('T')[0]
-  employeeForm.is_active = row.is_active !== undefined ? row.is_active : true
+  employeeForm.is_active = true
 
   // 加载可用扣除项目
   await loadAvailableDeductionItems(row.project_id)
@@ -926,8 +864,7 @@ const handleEmployeeSubmit = async () => {
       employee_id: employeeForm.employee_id,
       project_id: employeeForm.project_id,
       deduction_items: employeeForm.deduction_items,
-      effective_date: employeeForm.effective_date,
-      is_active: employeeForm.is_active,
+      is_active: true,
       current_account_set_id: currentAccountSetId.value
     }
 
@@ -953,7 +890,6 @@ const handleEmployeeDialogClose = () => {
     employee_id: null,
     project_id: null,
     deduction_items: [],
-    effective_date: null,
     is_active: true
   })
   employeeFormRef.value?.clearValidate()
@@ -1033,8 +969,7 @@ const handleBatchSubmit = async () => {
       employee_ids: batchForm.employee_ids,
       project_id: employeeSearchForm.project_id,
       deduction_items: batchForm.deduction_items,
-      effective_date: batchForm.effective_date,
-      is_active: batchForm.is_active,
+      is_active: true,
       current_account_set_id: currentAccountSetId.value
     }
 
@@ -1059,7 +994,6 @@ const handleBatchDialogClose = () => {
     employee_ids: [],
     project_id: null,
     deduction_items: [],
-    effective_date: null,
     is_active: true
   })
   batchFormRef.value?.clearValidate()

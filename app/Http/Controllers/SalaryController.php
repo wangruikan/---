@@ -655,6 +655,73 @@ class SalaryController extends Controller
         ]);
     }
 
+    private function buildSalaryPeriodDate(string $month, int $day): ?Carbon
+    {
+        [$year, $monthValue] = explode('-', $month);
+        $year = intval($year);
+        $monthValue = intval($monthValue);
+        $day = intval($day);
+
+        if (!checkdate($monthValue, $day, $year)) {
+            return null;
+        }
+
+        return Carbon::create($year, $monthValue, $day, 0, 0, 0, 'Asia/Shanghai')->startOfDay();
+    }
+
+    private function validateMainProjectSalaryPeriod(Project $project, string $month, $periodStart, $periodEnd, int $accountSetId): ?string
+    {
+        if (!is_numeric($periodStart) || !is_numeric($periodEnd)) {
+            return '请选择完整的工资周期';
+        }
+
+        $periodStart = intval($periodStart);
+        $periodEnd = intval($periodEnd);
+
+        if ($periodStart > $periodEnd) {
+            return '工资周期开始日期不能大于结束日期';
+        }
+
+        $projectStartDate = $project->start_date ? Carbon::parse($project->start_date)->startOfDay() : null;
+        $projectEndDate = $project->end_date ? Carbon::parse($project->end_date)->startOfDay() : null;
+        $hasSalaryHistory = Salary::where('account_set_id', $accountSetId)
+            ->where('project_id', $project->id)
+            ->exists();
+
+        if ($projectStartDate && !$hasSalaryHistory && $month !== $projectStartDate->format('Y-m')) {
+            return "项目「{$project->name}」首次工资表的工资期间必须是 {$projectStartDate->format('Y-m')}";
+        }
+
+        if ($projectStartDate && $month < $projectStartDate->format('Y-m')) {
+            return "项目「{$project->name}」工资期间不能早于项目开始日期 {$projectStartDate->format('Y-m-d')}";
+        }
+
+        if ($projectEndDate && $month > $projectEndDate->format('Y-m')) {
+            return "项目「{$project->name}」工资期间不能晚于项目结束日期 {$projectEndDate->format('Y-m-d')}";
+        }
+
+        $periodStartDate = $this->buildSalaryPeriodDate($month, $periodStart);
+        $periodEndDate = $this->buildSalaryPeriodDate($month, $periodEnd);
+
+        if (!$periodStartDate || !$periodEndDate) {
+            return '工资周期日期不合法';
+        }
+
+        if ($projectStartDate && $periodStartDate->lt($projectStartDate)) {
+            return "项目「{$project->name}」工资周期开始日期不能早于项目开始日期 {$projectStartDate->format('Y-m-d')}";
+        }
+
+        if ($projectEndDate && $periodEndDate->gt($projectEndDate)) {
+            return "项目「{$project->name}」工资周期结束日期不能晚于项目结束日期 {$projectEndDate->format('Y-m-d')}";
+        }
+
+        if (!$hasSalaryHistory && $projectStartDate && !$periodStartDate->equalTo($projectStartDate)) {
+            return "项目「{$project->name}」首次工资表开始日期必须等于项目开始日期 {$projectStartDate->format('Y-m-d')}";
+        }
+
+        return null;
+    }
+
     /**
      * 生成工资表（新版）
      */
@@ -667,6 +734,8 @@ class SalaryController extends Controller
         // 兼容旧的单项目和新的多项目两种方式
         $validator = Validator::make($request->all(), [
             'month' => 'required|date_format:Y-m',
+            'period_start' => 'required|integer|min:1|max:31',
+            'period_end' => 'required|integer|min:1|max:31',
         ]);
 
         if ($validator->fails()) {
@@ -717,6 +786,13 @@ class SalaryController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '项目不存在'
+            ], 422);
+        }
+
+        if ($periodValidationMessage = $this->validateMainProjectSalaryPeriod($mainProject, $month, $periodStart, $periodEnd, intval($accountSetId))) {
+            return response()->json([
+                'success' => false,
+                'message' => $periodValidationMessage
             ], 422);
         }
         

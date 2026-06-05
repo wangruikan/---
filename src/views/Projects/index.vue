@@ -12,7 +12,44 @@
         新增项目
       </el-button>
     </div>
-    
+
+    <div class="stats-section">
+      <el-row :gutter="16">
+        <el-col :span="6">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-item">
+              <div class="stat-value" style="color: #409eff;">{{ projectStats.total }}</div>
+              <div class="stat-label">项目总数</div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-item">
+              <div class="stat-value" style="color: #67c23a;">{{ projectStats.active }}</div>
+              <div class="stat-label">进行中项目</div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-item">
+              <div class="stat-value" style="color: #909399;">{{ projectStats.completed }}</div>
+              <div class="stat-label">已结束项目</div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="hover" class="stat-card">
+            <div class="stat-item">
+              <div class="stat-value" style="color: #e6a23c;">{{ projectStats.inactive }}</div>
+              <div class="stat-label">已停用项目</div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
+
     <!-- 搜索和筛选 -->
     <div class="search-section">
       <el-card>
@@ -78,6 +115,21 @@
               <el-tag :type="getStatusType(row.status)">
                 {{ getStatusText(row.status) }}
               </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="start_date" label="开始日期" width="120">
+            <template #default="{ row }">
+              {{ formatDate(row.start_date) }}
+            </template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="end_date" label="结束日期" width="120">
+            <template #default="{ row }">
+              {{ formatDate(row.end_date) }}
+            </template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('basic')" label="剩余天数" width="110" align="center">
+            <template #default="{ row }">
+              <span class="remaining-days-text">{{ getRemainingDaysText(row.end_date) }}</span>
             </template>
           </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('basic')" prop="salary_payment_date" label="&#24037;&#36164;&#21457;&#25918;&#26085;&#26399;" width="120">
@@ -1772,6 +1824,12 @@ const getDocumentTypeTagType = (type) => {
 }
 
 const projects = ref([])
+const projectStats = ref({
+  total: 0,
+  active: 0,
+  completed: 0,
+  inactive: 0
+})
 
 const searchForm = reactive({
   search: '',
@@ -2049,11 +2107,25 @@ const loadProjects = async () => {
     if (response && response.success) {
       projects.value = response.data.data || []
       pagination.total = response.data.total || 0
+      projectStats.value = {
+        total: response.stats?.total || 0,
+        active: response.stats?.active || 0,
+        completed: response.stats?.completed || 0,
+        inactive: response.stats?.inactive || 0
+      }
       console.log('Loaded projects:', projects.value.length)
       console.log('Projects data:', projects.value)
     } else {
       console.error('API returned success: false or no response')
       console.error('Response:', response)
+      projects.value = []
+      pagination.total = 0
+      projectStats.value = {
+        total: 0,
+        active: 0,
+        completed: 0,
+        inactive: 0
+      }
       ElMessage.error('加载项目数据失败')
     }
   } catch (error) {
@@ -2063,6 +2135,14 @@ const loadProjects = async () => {
       response: error.response,
       request: error.request
     })
+    projects.value = []
+    pagination.total = 0
+    projectStats.value = {
+      total: 0,
+      active: 0,
+      completed: 0,
+      inactive: 0
+    }
     ElMessage.error('加载项目数据失败: ' + error.message)
   } finally {
     loading.value = false
@@ -3172,6 +3252,32 @@ const formatDateTime = (dateTime) => {
   })
 }
 
+const formatDate = (dateValue) => {
+  if (!dateValue) return '-'
+  return String(dateValue).slice(0, 10)
+}
+
+const getRemainingDaysText = (endDate) => {
+  if (!endDate) return '-'
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const targetDate = new Date(endDate)
+  if (Number.isNaN(targetDate.getTime())) {
+    return '-'
+  }
+
+  targetDate.setHours(0, 0, 0, 0)
+  const diffDays = Math.ceil((targetDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+
+  if (diffDays < 0) {
+    return '已结束'
+  }
+
+  return `${diffDays}天`
+}
+
 
 // 加载所有可用的地区和保险数据
 const loadAvailableRegions = async () => {
@@ -3270,6 +3376,30 @@ watch(otherInsuranceNoSelection, (newVal) => {
   margin: 0;
 }
 
+.stats-section {
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  border-radius: 8px;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.stat-label {
+  margin-top: 8px;
+  color: #606266;
+  font-size: 14px;
+}
+
 .search-section {
   margin-bottom: 20px;
 }
@@ -3310,6 +3440,11 @@ watch(otherInsuranceNoSelection, (newVal) => {
 
 :deep(.el-form-item) {
   margin-bottom: 20px;
+}
+
+.remaining-days-text {
+  color: #f56c6c;
+  font-weight: 600;
 }
 
 /* 合同模板管理样式 */

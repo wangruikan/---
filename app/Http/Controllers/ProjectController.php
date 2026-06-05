@@ -45,16 +45,41 @@ class ProjectController extends Controller
         return Carbon::parse($endDate)->lt(Carbon::today('Asia/Shanghai')) ? 'completed' : 'active';
     }
 
+    private function applyProjectIndexFilters($query, Request $request): void
+    {
+        $currentAccountSetId = $request->input('current_account_set_id');
+
+        if ($currentAccountSetId) {
+            $query->where('account_set_id', $currentAccountSetId);
+        } elseif ($request->user()->role !== 'admin') {
+            $query->whereRaw('1 = 0');
+        }
+
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+    }
+
     public function index(Request $request)
     {
         if ($response = $this->checkPermission('projects.view')) {
             return $response;
         }
+
         
-        // 【账套过滤】根据当前账套过滤项目
-        $currentAccountSetId = $request->input('current_account_set_id');
-        
-        $query = Project::withCount([
+        $query = Project::query();
+        $this->applyProjectIndexFilters($query, $request);
+        $statsQuery = clone $query;
+
+        $query->withCount([
                 'employees',
                 'employees as active_employees_count' => function ($query) {
                     $query->where('employee_projects.status', 'active');
@@ -64,31 +89,26 @@ class ProjectController extends Controller
                 },
             ])
             ->with(['medicalInsuranceRegions', 'otherInsurancePolicies.type', 'largeMedicalInsuranceConfigs']);
-        
-        if ($currentAccountSetId) {
-            $query->where('account_set_id', $currentAccountSetId);
-        } elseif ($request->user()->role !== 'admin') {
-            // 非管理员必须有账套ID，否则返回空
-            $query->whereRaw('1 = 0');
-        }
-        
-        if ($request->has('status') && $request->status) {
-            $query->where('status', $request->status);
-        }
-        
-        if ($request->has('search') && $request->search) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('code', 'like', "%{$search}%");
-            });
-        }
-        
+
+        $stats = $statsQuery->selectRaw("
+                COUNT(*) as total_count,
+                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
+                SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactive_count
+            ")
+            ->first();
+
         $projects = $query->orderBy('created_at', 'desc')->paginate(10);
         
         return response()->json([
             'success' => true,
-            'data' => $projects
+            'data' => $projects,
+            'stats' => [
+                'total' => intval($stats->total_count ?? 0),
+                'active' => intval($stats->active_count ?? 0),
+                'completed' => intval($stats->completed_count ?? 0),
+                'inactive' => intval($stats->inactive_count ?? 0),
+            ]
         ]);
     }
 

@@ -35,6 +35,26 @@ class PayrollController extends Controller
         return true;
     }
 
+    private function projectCanCreateSalaryForMonth(Project $project, string $month, bool $hasSalaryHistory): bool
+    {
+        $startMonth = !empty($project->start_date) ? substr((string) $project->start_date, 0, 7) : null;
+        $endMonth = !empty($project->end_date) ? substr((string) $project->end_date, 0, 7) : null;
+
+        if (!$hasSalaryHistory) {
+            return !$startMonth || $month === $startMonth;
+        }
+
+        if ($startMonth && $month < $startMonth) {
+            return false;
+        }
+
+        if ($endMonth && $month > $endMonth) {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * 获取待制作工资表的项目列表
      */
@@ -70,18 +90,30 @@ class PayrollController extends Controller
                 ->unique()
                 ->toArray();
 
+            $salaryHistoryProjectIds = Salary::where('account_set_id', $accountSetId)
+                ->distinct()
+                ->pluck('project_id')
+                ->map(fn ($projectId) => intval($projectId))
+                ->toArray();
+
             $projects = Project::where('account_set_id', $accountSetId)
                 ->where('status', 'active')
-                ->select('id', 'name', 'code', 'status', 'require_attendance', 'requires_attendance', 'requires_salary_basis')
+                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'require_attendance', 'requires_attendance', 'requires_salary_basis')
                 ->orderBy('name')
                 ->get()
-                ->filter(function (Project $project) use ($generatedProjectIds) {
-                    return !in_array($project->id, $generatedProjectIds);
+                ->filter(function (Project $project) use ($generatedProjectIds, $salaryHistoryProjectIds, $month) {
+                    if (in_array($project->id, $generatedProjectIds)) {
+                        return false;
+                    }
+
+                    $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
+                    return $this->projectCanCreateSalaryForMonth($project, $month, $hasSalaryHistory);
                 })
-                ->map(function (Project $project) use ($accountSetId, $approvedProjectIds, $month) {
+                ->map(function (Project $project) use ($accountSetId, $approvedProjectIds, $month, $salaryHistoryProjectIds) {
                     $requireAttendance = $this->projectRequiresAttendance($project);
                     $attendanceApproved = !$requireAttendance || in_array($project->id, $approvedProjectIds);
                     $requiresSalaryBasis = (bool) $project->requires_salary_basis;
+                    $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
                     $salaryBasisReady = !$requiresSalaryBasis || BasisRecord::where('account_set_id', $accountSetId)
                         ->where('project_id', $project->id)
                         ->where('month', $month)
@@ -100,6 +132,9 @@ class PayrollController extends Controller
                         'id' => $project->id,
                         'name' => $project->name,
                         'code' => $project->code,
+                        'start_date' => $project->start_date,
+                        'end_date' => $project->end_date,
+                        'has_salary_history' => $hasSalaryHistory,
                         'month' => $month,
                         'require_attendance' => $requireAttendance,
                         'attendance_approved' => $attendanceApproved,
@@ -213,10 +248,16 @@ class PayrollController extends Controller
                 'account_set_id' => $accountSetId,
                 'period' => $period
             ]);
+
+            $salaryHistoryProjectIds = Salary::where('account_set_id', $accountSetId)
+                ->distinct()
+                ->pluck('project_id')
+                ->map(fn ($projectId) => intval($projectId))
+                ->toArray();
             
             // 获取所有项目（包含是否需要考勤字段）
             $allProjects = Project::where('account_set_id', $accountSetId)
-                ->select('id', 'name', 'code', 'status', 'require_attendance', 'requires_attendance')
+                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'require_attendance', 'requires_attendance')
                 ->get();
             
             \Log::info('查询到的项目数量', ['count' => $allProjects->count()]);
@@ -252,7 +293,12 @@ class PayrollController extends Controller
             ]);
             
             // 为每个项目添加考勤审批状态
-            $projects = $allProjects->map(function ($project) use ($approvedProjectIds, $period) {
+            $projects = $allProjects
+                ->filter(function (Project $project) use ($period, $salaryHistoryProjectIds) {
+                    $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
+                    return $this->projectCanCreateSalaryForMonth($project, $period, $hasSalaryHistory);
+                })
+                ->map(function ($project) use ($approvedProjectIds, $period, $salaryHistoryProjectIds) {
                 // 判断项目是否需要考勤（兼容两个字段名）
                 // 优先使用 require_attendance，如果不存在或为null，则使用 requires_attendance，默认为true
                 if (isset($project->require_attendance)) {
@@ -270,6 +316,7 @@ class PayrollController extends Controller
                 // 如果需要考勤，则必须考勤已审批才能创建
                 $isApproved = in_array($project->id, $approvedProjectIds);
                 $canCreate = !$requireAttendance || $isApproved;
+                $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
                 
                 // 生成提示标签
                 $label = $project->name;
@@ -284,6 +331,9 @@ class PayrollController extends Controller
                     'name' => $project->name,
                     'code' => $project->code,
                     'status' => $project->status,
+                    'start_date' => $project->start_date,
+                    'end_date' => $project->end_date,
+                    'has_salary_history' => $hasSalaryHistory,
                     'period' => $period,
                     'require_attendance' => $requireAttendance,  // 是否需要考勤
                     'attendance_approved' => $isApproved,        // 考勤是否已审批
@@ -291,7 +341,7 @@ class PayrollController extends Controller
                     'disabled' => !$canCreate,                   // 是否禁用（前端使用）
                     'label' => $label                            // 带提示的标签
                 ];
-            });
+                });
             
             // 统计可创建工资表的项目数量
             $canCreateCount = $projects->filter(function ($project) {

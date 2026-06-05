@@ -5143,7 +5143,11 @@ const form = reactive({
 })
 
 // 新增员工表单草稿暂存（仅新建模式生效，编辑/查看不污染）
-const employeeDraft = useFormDraft('employee-create-v1', form, (f) => !f.name)
+const employeeDraft = useFormDraft(
+  () => `employee-create-v1:${currentAccountSetId.value || 'no-account-set'}`,
+  form,
+  (f) => !f.name
+)
 
 const isInsuranceFieldsLocked = computed(() => {
   if (isViewMode.value) {

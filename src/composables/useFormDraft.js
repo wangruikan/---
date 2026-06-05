@@ -15,6 +15,10 @@ function storageKey(key) {
   return STORAGE_PREFIX + key
 }
 
+function resolveKey(key) {
+  return typeof key === 'function' ? key() : key
+}
+
 function loadRaw(key) {
   try {
     const raw = localStorage.getItem(storageKey(key))
@@ -64,14 +68,15 @@ export function useFormDraft(key, form, isEmpty) {
   return {
     /** 手动保存草稿（在弹窗关闭时调用） */
     save() {
+      const currentKey = resolveKey(key)
       const snapshot = JSON.parse(JSON.stringify(form))
       if (checkEmpty(snapshot)) return  // 表单为空不保存
-      saveRaw(key, snapshot)
+      saveRaw(currentKey, snapshot)
     },
 
     /** 恢复草稿到 form（在弹窗打开时调用） */
     restore() {
-      const data = loadRaw(key)
+      const data = loadRaw(resolveKey(key))
       if (!data) return false
       Object.assign(form, data)
       return true
@@ -79,12 +84,12 @@ export function useFormDraft(key, form, isEmpty) {
 
     /** 是否存在有效草稿 */
     hasDraft() {
-      return loadRaw(key) !== null
+      return loadRaw(resolveKey(key)) !== null
     },
 
     /** 清除草稿（提交成功后调用） */
     clear() {
-      clearRaw(key)
+      clearRaw(resolveKey(key))
     }
   }
 }

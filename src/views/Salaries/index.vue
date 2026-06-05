@@ -74,12 +74,9 @@
               style="width: 100%"
             >
               <el-table-column prop="month" label="工资期间" width="120" />
-              <el-table-column label="工资周期" width="150" align="center">
+              <el-table-column label="工资周期" width="240" align="center">
                 <template #default="scope">
-                  <span v-if="scope.row.period_start && scope.row.period_end">
-                    {{ scope.row.period_start }} - {{ scope.row.period_end }}
-                  </span>
-                  <span v-else>-</span>
+                  {{ getSalaryPeriodDisplay(scope.row.month, scope.row.period_start, scope.row.period_end) }}
                 </template>
               </el-table-column>
               <el-table-column prop="project_name" label="项目名称" min-width="200" show-overflow-tooltip>
@@ -443,30 +440,22 @@
         </el-form-item>
 
           <el-form-item label="工资周期" required>
-            <el-row :gutter="10">
-              <el-col :span="11">
-                <el-input-number
-                  v-model="createForm.period_start"
-                  :min="1"
-                  :max="31"
-                  :controls="false"
-                  placeholder="开始日期"
-                  style="width: 100%"
-                />
-              </el-col>
-              <el-col :span="2" style="text-align: center; line-height: 32px;">-</el-col>
-              <el-col :span="11">
-                <el-input-number
-                  v-model="createForm.period_end"
-                  :min="1"
-                  :max="31"
-                  :controls="false"
-                  placeholder="结束日期"
-                  style="width: 100%"
-                />
-              </el-col>
-            </el-row>
-          </el-form-item>
+            <el-date-picker
+              v-model="createForm.period_range"
+              type="daterange"
+              range-separator="-"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+              :disabled="!createForm.month"
+              :disabled-date="isCreatePeriodDateDisabled"
+            />
+            <div v-if="!createForm.month" style="color: #999; font-size: 12px; margin-top: 5px;">
+              请先选择工资期间
+            </div>
+        </el-form-item>
 
           <el-form-item label="项目" required>
           <el-select
@@ -532,7 +521,7 @@
           <el-button
             type="primary"
             @click="handleConfirmCreate"
-            :disabled="!createForm.month || !createForm.period_start || !createForm.period_end || !createForm.project_id"
+            :disabled="!createForm.month || createForm.period_range.length !== 2 || !createForm.project_id"
           >
             确定生成
         </el-button>
@@ -576,10 +565,7 @@
             </el-descriptions-item>
             <el-descriptions-item label="工资期间">{{ currentSheet.month }}</el-descriptions-item>
             <el-descriptions-item label="工资周期">
-              <span v-if="currentSheet.period_start && currentSheet.period_end">
-                {{ currentSheet.period_start }} - {{ currentSheet.period_end }}
-              </span>
-              <span v-else>-</span>
+              {{ getSalaryPeriodDisplay(currentSheet.month, currentSheet.period_start, currentSheet.period_end) }}
             </el-descriptions-item>
             <el-descriptions-item label="员工人数">{{ currentSheet.employee_count }}</el-descriptions-item>
             <el-descriptions-item label="状态">
@@ -1222,6 +1208,43 @@ const getCurrentMonth = () => {
   return `${year}-${month}`
 }
 
+const getMonthMaxDay = (month) => {
+  if (!month) return 31
+  const [year, monthValue] = month.split('-').map(Number)
+  return new Date(year, monthValue, 0).getDate()
+}
+
+const buildPeriodDate = (month, day) => {
+  if (!month || !day) return ''
+
+  const maxDay = getMonthMaxDay(month)
+  const safeDay = String(Math.min(Math.max(Number(day), 1), maxDay)).padStart(2, '0')
+  return `${month}-${safeDay}`
+}
+
+const isFullDateString = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+
+const getSalaryPeriodDisplay = (month, periodStart, periodEnd) => {
+  if (!periodStart || !periodEnd) return '-'
+
+  if (isFullDateString(periodStart) && isFullDateString(periodEnd)) {
+    return `${periodStart} - ${periodEnd}`
+  }
+
+  if (!month) {
+    return `${periodStart} - ${periodEnd}`
+  }
+
+  const startDate = buildPeriodDate(month, periodStart)
+  const endDate = buildPeriodDate(month, periodEnd)
+
+  if (!startDate || !endDate) {
+    return `${periodStart} - ${periodEnd}`
+  }
+
+  return `${startDate} - ${endDate}`
+}
+
 // 搜索表单
 const searchForm = reactive({
   month: null,
@@ -1256,6 +1279,7 @@ const createForm = reactive({
   month: null,
   period_start: 19,  // 默认开始日期
   period_end: 30,    // 默认结束日期
+  period_range: [],
   project_id: null  // 单选项目
 })
 
@@ -1625,6 +1649,38 @@ const loadPendingPayrollProjects = async () => {
   }
 }
 
+const setCreatePeriodRangeFromDays = (month = createForm.month) => {
+  if (!month) {
+    createForm.period_range = []
+    return
+  }
+
+  const startDate = buildPeriodDate(month, createForm.period_start || 19)
+  const endDate = buildPeriodDate(month, createForm.period_end || 30)
+  createForm.period_range = startDate && endDate ? [startDate, endDate] : []
+}
+
+const syncCreatePeriodDaysFromRange = (range) => {
+  if (!Array.isArray(range) || range.length !== 2) {
+    createForm.period_start = null
+    createForm.period_end = null
+    return
+  }
+
+  createForm.period_start = Number(range[0].slice(-2))
+  createForm.period_end = Number(range[1].slice(-2))
+}
+
+const isCreatePeriodDateDisabled = (date) => {
+  if (!createForm.month) {
+    return true
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}` !== createForm.month
+}
+
 // 加载可用项目列表（考勤已审批）
 const loadAvailableProjects = async () => {
   if (!createForm.month) {
@@ -1662,8 +1718,13 @@ watch(() => createForm.month, () => {
     return
   }
   createForm.project_id = null // 重置项目选择
+  setCreatePeriodRangeFromDays()
   loadAvailableProjects()
 })
+
+watch(() => createForm.period_range, (value) => {
+  syncCreatePeriodDaysFromRange(value)
+}, { deep: true })
 
 // 查询
 const handleSearch = async () => {
@@ -1703,15 +1764,26 @@ const handleReset = () => {
 const handleCreate = () => {
   createDialogLocked.value = false
   createDialogVisible.value = true
-  createForm.month = null
+  createForm.month = activeSalaryTab.value === 'pending' ? pendingPayrollMonth.value : null
+  createForm.period_start = 19
+  createForm.period_end = 30
   createForm.project_id = null
   availableProjects.value = []
+
+  if (createForm.month) {
+    setCreatePeriodRangeFromDays(createForm.month)
+  } else {
+    createForm.period_range = []
+  }
 }
 
 const handleCreatePendingPayroll = (row) => {
   createDialogLocked.value = true
   createDialogVisible.value = true
   createForm.month = row.month || pendingPayrollMonth.value
+  createForm.period_start = 19
+  createForm.period_end = 30
+  setCreatePeriodRangeFromDays(createForm.month)
   createForm.project_id = row.id
   availableProjects.value = [{
     id: row.id,
@@ -1726,8 +1798,8 @@ const handleConfirmCreate = async () => {
     ElMessage.warning('请选择工资期间')
     return
   }
-  if (!createForm.period_start || !createForm.period_end) {
-    ElMessage.warning('请输入工资周期')
+  if (!Array.isArray(createForm.period_range) || createForm.period_range.length !== 2) {
+    ElMessage.warning('请选择工资周期')
     return
   }
   if (createForm.period_start > createForm.period_end) {

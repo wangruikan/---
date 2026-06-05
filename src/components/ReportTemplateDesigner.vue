@@ -259,7 +259,8 @@
               <!-- 合计行 -->
               <div v-if="hasAnyTotal()" class="table-total-row">
                 <table class="total-table" border="1">
-                  <tr>
+                  <tbody>
+                    <tr>
                     <template v-for="(col, index) in totalRowColumns" :key="index">
                       <td 
                         v-if="col.visible"
@@ -273,7 +274,8 @@
                         <span :class="{ 'total-label': col.isLabel }">{{ col.value }}</span>
                       </td>
                     </template>
-                  </tr>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               

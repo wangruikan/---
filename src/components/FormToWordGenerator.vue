@@ -707,6 +707,7 @@
       </div>
       
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #000;">
+        <tbody>
         <tr>
           <td style="border: 1px solid #000; padding: 10px; width: 80px; text-align: center; font-weight: bold; vertical-align: middle;">项目</td>
           <td style="border: 1px solid #000; padding: 10px; white-space: pre-wrap; line-height: 1.6;">{{ situationForm.project }}</td>
@@ -719,6 +720,7 @@
           <td style="border: 1px solid #000; padding: 10px; text-align: center; font-weight: bold; vertical-align: middle;">备注</td>
           <td style="border: 1px solid #000; padding: 10px; white-space: pre-wrap; line-height: 1.6;">{{ situationForm.remarks || '' }}</td>
         </tr>
+        </tbody>
       </table>
     </div>
 
@@ -733,6 +735,7 @@
       </div>
       
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #000; font-size: 14px;">
+        <tbody>
         <tr>
           <td style="border: 1px solid #000; padding: 8px; width: 100px; text-align: center; font-weight: bold;">付款日期</td>
           <td style="border: 1px solid #000; padding: 8px;" colspan="5">{{ formatDateChinese(paymentForm.paymentDate) }}</td>
@@ -794,6 +797,7 @@
           <td style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: top;">备注</td>
           <td style="border: 1px solid #000; padding: 8px; white-space: pre-wrap; line-height: 1.6;" colspan="5">{{ paymentForm.remarks || '' }}</td>
         </tr>
+        </tbody>
       </table>
       
       <!-- 底部无边框的签名行 -->
@@ -816,6 +820,7 @@
       </div>
       
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #000; font-size: 14px; margin-bottom: 20px;">
+        <tbody>
         <!-- 支付日期 - 放在第1行 -->
         <tr>
           <td style="border: 1px solid #000; padding: 10px; width: 120px; text-align: center; font-weight: bold; background-color: #f5f5f5;">支付日期</td>
@@ -888,6 +893,7 @@
           <td style="border: 1px solid #000; padding: 10px; text-align: center; font-weight: bold; background-color: #f5f5f5;">入账</td>
           <td style="border: 1px solid #000; padding: 10px; text-align: center; font-size: 18px;" colspan="3">{{ reimbursementForm.accounted ? '✓' : '' }}</td>
         </tr>
+        </tbody>
       </table>
 
       <!-- 底部签名行 -->
@@ -909,6 +915,7 @@
       </div>
       
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #000; font-size: 14px;">
+        <tbody>
         <tr>
           <td style="border: 1px solid #000; padding: 8px; width: 100px; text-align: center; font-weight: bold;">付款日期</td>
           <td style="border: 1px solid #000; padding: 8px;" colspan="5">{{ testTravelApplicationData.paymentDate }}</td>
@@ -946,6 +953,7 @@
           <td style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: top;">备注</td>
           <td style="border: 1px solid #000; padding: 8px; white-space: pre-wrap; line-height: 1.6;" colspan="5">{{ testTravelApplicationData.remarks }}</td>
         </tr>
+        </tbody>
       </table>
       
       <!-- 底部签名行 -->
@@ -967,6 +975,7 @@
       </div>
       
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #000; font-size: 14px;">
+        <tbody>
         <tr>
           <td style="border: 1px solid #000; padding: 8px; width: 100px; text-align: center; font-weight: bold;">付款日期</td>
           <td style="border: 1px solid #000; padding: 8px;" colspan="5">{{ formatDateChinese(travelApplicationForm.paymentDate) || '' }}</td>
@@ -1004,6 +1013,7 @@
           <td style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; vertical-align: top;">备注</td>
           <td style="border: 1px solid #000; padding: 8px; white-space: pre-wrap; line-height: 1.6;" colspan="5">{{ travelApplicationForm.remarks || '' }}</td>
         </tr>
+        </tbody>
       </table>
       
       <!-- 底部签名行 -->
@@ -1033,6 +1043,7 @@
 
       <!-- 主表格 -->
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #000; font-size: 11px;">
+        <tbody>
         <!-- 第一行：起日、止日、合计天数、各项补助费、车船杂支费、合计、附件 -->
         <tr>
           <td colspan="2" rowspan="2" style="border: 1px solid #000; padding: 4px; text-align: center; font-weight: bold; vertical-align: middle;">起日</td>
@@ -1209,6 +1220,7 @@
           <td colspan="4" style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold; font-size: 11px;">出差事由</td>
           <td colspan="21" style="border: 1px solid #000; padding: 8px; white-space: pre-wrap; line-height: 1.5; min-height: 40px; font-size: 11px;">{{ travelForm.reason || '' }}</td>
         </tr>
+        </tbody>
       </table>
 
       <!-- 底部签名行 -->

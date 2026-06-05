@@ -4,17 +4,36 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 
 class UserController extends Controller
 {
+    private function getCurrentAccountSetId(Request $request)
+    {
+        return $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
+    }
+
     /**
      * 获取用户列表（用于账套分配等）
      */
     public function index(Request $request)
     {
         $query = User::query();
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
+
+        $query->where('role', '!=', 'super_admin');
+
+        if ($request->boolean('current_account_set_only')) {
+            if ($currentAccountSetId) {
+                $query->whereHas('accountSets', function ($accountSetQuery) use ($currentAccountSetId) {
+                    $accountSetQuery->where('account_set_users.account_set_id', $currentAccountSetId);
+                });
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        }
         
         // 搜索
         if ($request->filled('search')) {
@@ -74,6 +93,7 @@ class UserController extends Controller
             'role' => 'required|in:' . $validRolesStr,
             'phone' => 'nullable|string|max:20',
             'avatar' => 'nullable|string|max:500',
+            'current_account_set_id' => 'required|exists:account_sets,id',
         ]);
 
         if ($validator->fails()) {
@@ -84,6 +104,8 @@ class UserController extends Controller
             ], 422);
         }
 
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
+
         $user = User::create([
             'name' => $request->name,
             'nickname' => $request->nickname,
@@ -93,7 +115,21 @@ class UserController extends Controller
             'phone' => $request->phone,
             'avatar' => $request->avatar,
             'is_active' => true,
+            'current_account_set_id' => $currentAccountSetId,
         ]);
+
+        DB::table('account_set_users')->updateOrInsert(
+            [
+                'account_set_id' => $currentAccountSetId,
+                'user_id' => $user->id,
+            ],
+            [
+                'role' => 'viewer',
+                'is_default' => 1,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
 
         return response()->json([
             'success' => true,

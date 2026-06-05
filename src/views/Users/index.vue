@@ -260,23 +260,30 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { useAccountSetStore } from '@/stores/accountSet'
 import { useRouter } from 'vue-router'
 import request from '@/api/request'
 
 const router = useRouter()
 const userStore = useUserStore()
+const accountSetStore = useAccountSetStore()
 
 // 权限检查
 const isAdmin = computed(() => ['super_admin', 'admin'].includes(userStore.userInfo?.role))
 const currentUserId = computed(() => userStore.userInfo?.id)
+const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 
 onMounted(() => {
   if (!isAdmin.value) {
     ElMessage.error('只有管理员可以访问用户管理')
     router.push('/')
+    return
+  }
+  if (!currentAccountSetId.value) {
+    ElMessage.warning('请先选择账套')
     return
   }
   loadUsers()
@@ -356,11 +363,18 @@ const passwordRules = {
 }
 
 const loadUsers = async () => {
+  if (!currentAccountSetId.value) {
+    users.value = []
+    pagination.total = 0
+    return
+  }
+
   loading.value = true
   try {
     const params = {
       page: pagination.currentPage,
       per_page: pagination.pageSize,
+      current_account_set_only: true,
       ...searchForm
     }
     
@@ -430,6 +444,10 @@ const handleEdit = (row) => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
+  if (!isEdit.value && !currentAccountSetId.value) {
+    ElMessage.warning('请先选择账套')
+    return
+  }
   
   await formRef.value.validate(async (valid) => {
     if (!valid) return
@@ -447,7 +465,10 @@ const handleSubmit = async () => {
         await request({
           url: '/users',
           method: 'post',
-          data: form
+          data: {
+            ...form,
+            current_account_set_id: currentAccountSetId.value
+          }
         })
         ElMessage.success('用户创建成功')
       }
@@ -596,6 +617,13 @@ const formatDateTime = (dateTime) => {
     minute: '2-digit'
   })
 }
+
+watch(currentAccountSetId, (newValue, oldValue) => {
+  if (newValue !== oldValue) {
+    pagination.currentPage = 1
+    loadUsers()
+  }
+})
 </script>
 
 <style scoped>

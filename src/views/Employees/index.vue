@@ -3793,6 +3793,9 @@
             
             <!-- 新增模式：批量创建 -->
             <template v-if="!isEdit && !isViewMode">
+              <el-button @click="handleResetCreateForm">
+                重置
+              </el-button>
               <el-button 
                 v-if="batchEmployees.length > 0"
                 type="primary" 
@@ -4724,6 +4727,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const showCreateDialog = ref(false)
 const isEdit = ref(false)
+const skipDraftSaveOnClose = ref(false)
 
 // 删除审批相关
 const showDeleteApprovalDialog = ref(false)
@@ -7077,10 +7081,14 @@ const handleSubmit = async () => {
           })
           console.log('创建员工响应:', JSON.stringify(response))
           ElMessage.success('创建成功')
+          skipDraftSaveOnClose.value = true
           employeeDraft.clear()
+          resetDialogState()
         }
-        
-        showCreateDialog.value = false
+
+        if (isEdit.value) {
+          showCreateDialog.value = false
+        }
         loadEmployees() // 刷新列表
       } catch (error) {
         console.error('Submit error:', error)
@@ -7278,6 +7286,12 @@ const fillSampleData = () => {
 }
 
 const handleDialogClose = () => {
+  if (skipDraftSaveOnClose.value) {
+    skipDraftSaveOnClose.value = false
+    resetDialogState()
+    return
+  }
+
   // 如果有待创建的员工，提醒用户
   if (batchEmployees.value.length > 0 && !isEdit.value) {
     ElMessageBox.confirm(
@@ -7301,12 +7315,23 @@ const handleDialogClose = () => {
   }
 }
 
+const handleResetCreateForm = () => {
+  skipDraftSaveOnClose.value = true
+  employeeDraft.clear()
+  resetDialogState()
+  showCreateDialog.value = true
+}
+
 // 重置对话框状态
 const resetDialogState = () => {
   isEdit.value = false
   isViewMode.value = false // 重置查看模式
+  skipDraftSaveOnClose.value = false
   activeTab.value = 'employee' // 重置tab
   onboardingForm.value = null // 清空入职登记表数据
+  registrationForm.value = null
+  registrationFormType.value = 'onboarding'
+  registrationFormLoading.value = false
   pendingSalaryAdjustment.value = null
   currentSalarySnapshot.value = {
     basic_salary: null,
@@ -7318,6 +7343,14 @@ const resetDialogState = () => {
   salaryApprovalForm.reason = ''
   salaryApprovalForm.stamp_method = 'online'
   showSalaryApprovalDialog.value = false
+  selectedSocialSecurityRegion.value = null
+  selectedMedicalInsuranceRegion.value = null
+  selectedHousingFundRegion.value = null
+  selectedHousingFundConfig.value = null
+  selectedLargeMedicalInsuranceConfig.value = null
+  availableHousingFundConfigs.value = []
+  availableLargeMedicalInsuranceConfigs.value = []
+  projectOtherInsurancePolicies.value = []
   Object.assign(form, {
     name: '',
     employee_number: '',
@@ -7360,6 +7393,8 @@ const resetDialogState = () => {
     large_medical_insurance_config_id: null,
     social_insurance_enrollment_date: null,
     provident_fund_enrollment_date: null,
+    medical_insurance_enrollment_date: null,
+    large_medical_enrollment_date: null,
     id_card_valid_from: null,
     id_card_valid_until: null,
     
@@ -7388,7 +7423,7 @@ const resetDialogState = () => {
     is_martyr_family: false,
     martyr_family_cert_number: '',
     is_elderly_alone: false,
-    
+
     // 四、涉税与投资信息
     tax_matter: '',
     deduct_expense: true,
@@ -7422,9 +7457,10 @@ const resetDialogState = () => {
     remarks: '',
     
     // 八、备注说明信息
-    other_notes: ''
+    other_notes: '',
+    skip_form_filling: false
   })
-  formRef.value?.resetFields()
+  formRef.value?.clearValidate()
   showCreateDialog.value = false // 关闭对话框
 }
 

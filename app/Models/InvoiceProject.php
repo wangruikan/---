@@ -17,11 +17,23 @@ class InvoiceProject extends Model
     protected $fillable = [
         'account_set_id',
         'project_name',
+        'spec_model',
+        'unit',
+        'quantity',
+        'unit_price',
+        'amount',
+        'tax_rate',
+        'tax_amount',
         'remark',
         'created_by',
     ];
 
     protected $casts = [
+        'quantity' => 'decimal:4',
+        'unit_price' => 'decimal:2',
+        'amount' => 'decimal:2',
+        'tax_rate' => 'decimal:4',
+        'tax_amount' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

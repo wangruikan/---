@@ -123,7 +123,8 @@ class InvoiceApplicationController extends Controller
             'task_name' => 'required|string|max:100',
             'year' => 'required|integer|min:2000|max:2100',
             'month' => 'required|integer|min:1|max:12',
-            'project_id' => 'required|exists:projects,id',
+            'project_id' => 'nullable|exists:projects,id',
+            'project_name' => 'required|string|max:100',
             'remark' => 'nullable|string|max:500',
             'period_year' => 'required|integer|min:2000|max:2100',
             'period_month' => 'required|integer|min:1|max:12',
@@ -148,8 +149,9 @@ class InvoiceApplicationController extends Controller
             'task_name.max' => '任务名称不能超过100个字符',
             'year.required' => '年份不能为空',
             'month.required' => '月份不能为空',
-            'project_id.required' => '请选择项目',
             'project_id.exists' => '项目不存在',
+            'project_name.required' => '请输入项目',
+            'project_name.max' => '项目不能超过100个字符',
             'period_year.required' => '请选择所属期-年份',
             'period_month.required' => '请选择所属期-月份',
             'company_name.required' => '请输入单位名称',
@@ -173,11 +175,17 @@ class InvoiceApplicationController extends Controller
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
         $project = \App\Models\Project::find($request->input('project_id'));
-        if (!$project) {
+        $projectName = trim((string) $request->input('project_name'));
+
+        if ($request->filled('project_id') && !$project) {
             return response()->json([
                 'success' => false,
                 'message' => '项目不存在'
             ], 404);
+        }
+
+        if ($project) {
+            $projectName = $project->name;
         }
 
         $applicationNo = InvoiceApplication::generateApplicationNo();
@@ -226,7 +234,7 @@ class InvoiceApplicationController extends Controller
             'task_name' => $request->input('task_name'),
             'year' => $request->input('year'),
             'month' => $request->input('month'),
-            'project_name' => $project->name,
+            'project_name' => $projectName,
             'remark' => $request->input('remark'),
             'status' => InvoiceApplication::STATUS_NORMAL,
             'approval_status' => null,
@@ -294,15 +302,23 @@ class InvoiceApplicationController extends Controller
     public function addItem(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'invoice_project_id' => 'required|exists:invoice_projects,id',
+            'invoice_project_id' => 'nullable|exists:invoice_projects,id',
+            'item_name' => 'required|string|max:255',
+            'spec_model' => 'nullable|string|max:255',
+            'unit' => 'nullable|string|max:50',
+            'quantity' => 'nullable|numeric|min:0',
+            'unit_price' => 'nullable|numeric|min:0',
             'amount' => 'required|numeric|min:0',
+            'tax_rate' => 'nullable|numeric|min:0|max:1',
+            'tax_amount' => 'nullable|numeric|min:0',
             'remark' => 'nullable|string|max:500',
         ], [
-            'invoice_project_id.required' => '请选择项目',
             'invoice_project_id.exists' => '项目不存在',
+            'item_name.required' => '请输入项目名称',
             'amount.required' => '金额不能为空',
             'amount.numeric' => '金额必须是数字',
             'amount.min' => '金额不能小于0',
+            'tax_rate.max' => '税率不能超过100%',
         ]);
 
         if ($validator->fails()) {
@@ -329,8 +345,10 @@ class InvoiceApplicationController extends Controller
             ], 400);
         }
 
-        // 获取项目名称
-        $project = InvoiceProject::find($request->input('invoice_project_id'));
+        $project = null;
+        if ($request->filled('invoice_project_id')) {
+            $project = InvoiceProject::find($request->input('invoice_project_id'));
+        }
         
         // 获取当前最大序号
         $maxSequence = $application->items()->max('sequence') ?? 0;
@@ -350,14 +368,22 @@ class InvoiceApplicationController extends Controller
             ], 422);
         }
 
-        // 使用项目名称作为 item_name
+        $amount = round((float) $request->input('amount'), 2);
+        $taxRate = max(0, (float) $request->input('tax_rate', 0));
+
         $item = InvoiceItem::create([
             'application_id' => $application->id,
             'invoice_project_id' => $request->input('invoice_project_id'),
-            'project_name' => $project->project_name,
+            'project_name' => $project?->project_name ?: $request->input('item_name'),
             'sequence' => $maxSequence + 1,
-            'item_name' => $project->project_name, // 自动使用项目名称
-            'amount' => $request->input('amount'),
+            'item_name' => $request->input('item_name'),
+            'spec_model' => $request->input('spec_model'),
+            'unit' => $request->input('unit'),
+            'quantity' => $request->input('quantity'),
+            'unit_price' => $request->input('unit_price'),
+            'amount' => $amount,
+            'tax_rate' => $taxRate,
+            'tax_amount' => $this->calculateItemTaxAmount($amount, $taxRate),
             'remark' => $request->input('remark'),
         ]);
 
@@ -377,9 +403,20 @@ class InvoiceApplicationController extends Controller
     public function updateItem(Request $request, $id, $itemId)
     {
         $validator = Validator::make($request->all(), [
-            'invoice_project_id' => 'required|exists:invoice_projects,id',
+            'invoice_project_id' => 'nullable|exists:invoice_projects,id',
+            'item_name' => 'required|string|max:255',
+            'spec_model' => 'nullable|string|max:255',
+            'unit' => 'nullable|string|max:50',
+            'quantity' => 'nullable|numeric|min:0',
+            'unit_price' => 'nullable|numeric|min:0',
             'amount' => 'required|numeric|min:0',
+            'tax_rate' => 'nullable|numeric|min:0|max:1',
+            'tax_amount' => 'nullable|numeric|min:0',
             'remark' => 'nullable|string|max:500',
+        ], [
+            'invoice_project_id.exists' => '项目不存在',
+            'item_name.required' => '请输入项目名称',
+            'tax_rate.max' => '税率不能超过100%',
         ]);
 
         if ($validator->fails()) {
@@ -415,8 +452,10 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        // 获取项目名称
-        $project = InvoiceProject::find($request->input('invoice_project_id'));
+        $project = null;
+        if ($request->filled('invoice_project_id')) {
+            $project = InvoiceProject::find($request->input('invoice_project_id'));
+        }
 
         $currentDeductionAmount = round((float) $application->items()->sum('amount'), 2);
         $newDeductionAmount = $application->invoice_method === 'full' || $application->invoice_method === 'diff'
@@ -433,12 +472,20 @@ class InvoiceApplicationController extends Controller
             ], 422);
         }
 
-        // 使用项目名称作为 item_name
+        $amount = round((float) $request->input('amount'), 2);
+        $taxRate = max(0, (float) $request->input('tax_rate', 0));
+
         $item->update([
             'invoice_project_id' => $request->input('invoice_project_id'),
-            'project_name' => $project->project_name,
-            'item_name' => $project->project_name, // 自动使用项目名称
-            'amount' => $request->input('amount'),
+            'project_name' => $project?->project_name ?: $request->input('item_name'),
+            'item_name' => $request->input('item_name'),
+            'spec_model' => $request->input('spec_model'),
+            'unit' => $request->input('unit'),
+            'quantity' => $request->input('quantity'),
+            'unit_price' => $request->input('unit_price'),
+            'amount' => $amount,
+            'tax_rate' => $taxRate,
+            'tax_amount' => $this->calculateItemTaxAmount($amount, $taxRate),
             'remark' => $request->input('remark'),
         ]);
 
@@ -523,12 +570,18 @@ class InvoiceApplicationController extends Controller
             // 设置列宽
             $sheet->getColumnDimension('A')->setWidth(8);
             $sheet->getColumnDimension('B')->setWidth(25);
-            $sheet->getColumnDimension('C')->setWidth(15);
-            $sheet->getColumnDimension('D')->setWidth(30);
+            $sheet->getColumnDimension('C')->setWidth(18);
+            $sheet->getColumnDimension('D')->setWidth(12);
+            $sheet->getColumnDimension('E')->setWidth(12);
+            $sheet->getColumnDimension('F')->setWidth(15);
+            $sheet->getColumnDimension('G')->setWidth(15);
+            $sheet->getColumnDimension('H')->setWidth(12);
+            $sheet->getColumnDimension('I')->setWidth(15);
+            $sheet->getColumnDimension('J')->setWidth(30);
 
             // 标题
             $sheet->setCellValue('A1', '扣除明细表');
-            $sheet->mergeCells('A1:D1');
+            $sheet->mergeCells('A1:J1');
             $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
@@ -540,9 +593,15 @@ class InvoiceApplicationController extends Controller
 
             // 表头
             $sheet->setCellValue('A4', '序号');
-            $sheet->setCellValue('B4', '名称');
-            $sheet->setCellValue('C4', '金额');
-            $sheet->setCellValue('D4', '备注');
+            $sheet->setCellValue('B4', '项目名称');
+            $sheet->setCellValue('C4', '规格型号');
+            $sheet->setCellValue('D4', '单位');
+            $sheet->setCellValue('E4', '数量');
+            $sheet->setCellValue('F4', '单价(不含税)');
+            $sheet->setCellValue('G4', '金额(不含税)');
+            $sheet->setCellValue('H4', '税率/征收率');
+            $sheet->setCellValue('I4', '税额');
+            $sheet->setCellValue('J4', '备注');
 
             // 设置表头样式
             $headerStyle = [
@@ -558,7 +617,7 @@ class InvoiceApplicationController extends Controller
                     'startColor' => ['rgb' => 'E0E0E0'],
                 ],
             ];
-            $sheet->getStyle('A4:D4')->applyFromArray($headerStyle);
+            $sheet->getStyle('A4:J4')->applyFromArray($headerStyle);
 
             // 填充数据
             $row = 5;
@@ -566,8 +625,14 @@ class InvoiceApplicationController extends Controller
             foreach ($application->items as $item) {
                 $sheet->setCellValue('A' . $row, $item->sequence);
                 $sheet->setCellValue('B' . $row, $item->item_name);
-                $sheet->setCellValue('C' . $row, number_format($item->amount, 2));
-                $sheet->setCellValue('D' . $row, $item->remark ?? '');
+                $sheet->setCellValue('C' . $row, $item->spec_model ?? '');
+                $sheet->setCellValue('D' . $row, $item->unit ?? '');
+                $sheet->setCellValue('E' . $row, $item->quantity !== null ? (float) $item->quantity : '');
+                $sheet->setCellValue('F' . $row, number_format((float) $item->unit_price, 2));
+                $sheet->setCellValue('G' . $row, number_format((float) $item->amount, 2));
+                $sheet->setCellValue('H' . $row, $item->tax_rate ? ($item->tax_rate * 100) . '%' : '0%');
+                $sheet->setCellValue('I' . $row, number_format((float) $item->tax_amount, 2));
+                $sheet->setCellValue('J' . $row, $item->remark ?? '');
                 
                 $totalAmount += $item->amount;
                 $row++;
@@ -576,8 +641,14 @@ class InvoiceApplicationController extends Controller
             // 合计行
             $sheet->setCellValue('A' . $row, '');
             $sheet->setCellValue('B' . $row, '合计');
-            $sheet->setCellValue('C' . $row, number_format($totalAmount, 2));
+            $sheet->setCellValue('C' . $row, '');
             $sheet->setCellValue('D' . $row, '');
+            $sheet->setCellValue('E' . $row, '');
+            $sheet->setCellValue('F' . $row, '');
+            $sheet->setCellValue('G' . $row, number_format($totalAmount, 2));
+            $sheet->setCellValue('H' . $row, '');
+            $sheet->setCellValue('I' . $row, number_format((float) $application->items->sum('tax_amount'), 2));
+            $sheet->setCellValue('J' . $row, '');
 
             // 设置数据区域样式
             $dataStyle = [
@@ -587,11 +658,12 @@ class InvoiceApplicationController extends Controller
                     ],
                 ],
             ];
-            $sheet->getStyle('A4:D' . $row)->applyFromArray($dataStyle);
+            $sheet->getStyle('A4:J' . $row)->applyFromArray($dataStyle);
 
             // 合计行加粗
             $sheet->getStyle('B' . $row)->getFont()->setBold(true);
-            $sheet->getStyle('C' . $row)->getFont()->setBold(true);
+            $sheet->getStyle('G' . $row)->getFont()->setBold(true);
+            $sheet->getStyle('I' . $row)->getFont()->setBold(true);
 
             // 保存文件到 public 磁盘
             $filename = '扣除明细表_' . $application->application_no . '_' . date('YmdHis') . '.xlsx';
@@ -1403,6 +1475,14 @@ class InvoiceApplicationController extends Controller
             'invoice_tax_amount' => $invoiceTaxAmount,
             'tax_amount' => $invoiceTaxAmount,
         ];
+    }
+
+    private function calculateItemTaxAmount($amount, $taxRate)
+    {
+        $amount = round(max(0, (float) $amount), 2);
+        $taxRate = max(0, (float) $taxRate);
+
+        return round($amount * $taxRate, 2);
     }
 
     private function syncAmountsFromItems(InvoiceApplication $application)

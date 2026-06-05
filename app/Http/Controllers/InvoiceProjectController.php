@@ -54,10 +54,18 @@ class InvoiceProjectController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'project_name' => 'required|string|max:255',
+            'spec_model' => 'nullable|string|max:255',
+            'unit' => 'nullable|string|max:50',
+            'quantity' => 'nullable|numeric|min:0',
+            'unit_price' => 'nullable|numeric|min:0',
+            'amount' => 'nullable|numeric|min:0',
+            'tax_rate' => 'nullable|numeric|min:0|max:1',
+            'tax_amount' => 'nullable|numeric|min:0',
             'remark' => 'nullable|string',
         ], [
             'project_name.required' => '项目名称不能为空',
             'project_name.max' => '项目名称不能超过255个字符',
+            'tax_rate.max' => '税率不能超过100%',
         ]);
 
         if ($validator->fails()) {
@@ -74,6 +82,16 @@ class InvoiceProjectController extends Controller
         $project = InvoiceProject::create([
             'account_set_id' => $accountSetId,
             'project_name' => $request->input('project_name'),
+            'spec_model' => $request->input('spec_model'),
+            'unit' => $request->input('unit'),
+            'quantity' => $request->input('quantity'),
+            'unit_price' => $request->input('unit_price'),
+            'amount' => $request->input('amount'),
+            'tax_rate' => $request->input('tax_rate', 0),
+            'tax_amount' => $this->calculateTaxAmount(
+                $request->input('amount'),
+                $request->input('tax_rate')
+            ),
             'remark' => $request->input('remark'),
             'created_by' => $user->id,
         ]);
@@ -92,10 +110,18 @@ class InvoiceProjectController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'project_name' => 'required|string|max:255',
+            'spec_model' => 'nullable|string|max:255',
+            'unit' => 'nullable|string|max:50',
+            'quantity' => 'nullable|numeric|min:0',
+            'unit_price' => 'nullable|numeric|min:0',
+            'amount' => 'nullable|numeric|min:0',
+            'tax_rate' => 'nullable|numeric|min:0|max:1',
+            'tax_amount' => 'nullable|numeric|min:0',
             'remark' => 'nullable|string',
         ], [
             'project_name.required' => '项目名称不能为空',
             'project_name.max' => '项目名称不能超过255个字符',
+            'tax_rate.max' => '税率不能超过100%',
         ]);
 
         if ($validator->fails()) {
@@ -117,6 +143,16 @@ class InvoiceProjectController extends Controller
 
         $project->update([
             'project_name' => $request->input('project_name'),
+            'spec_model' => $request->input('spec_model'),
+            'unit' => $request->input('unit'),
+            'quantity' => $request->input('quantity'),
+            'unit_price' => $request->input('unit_price'),
+            'amount' => $request->input('amount'),
+            'tax_rate' => $request->input('tax_rate', 0),
+            'tax_amount' => $this->calculateTaxAmount(
+                $request->input('amount'),
+                $request->input('tax_rate')
+            ),
             'remark' => $request->input('remark'),
         ]);
 
@@ -168,12 +204,30 @@ class InvoiceProjectController extends Controller
 
         $projects = InvoiceProject::where('account_set_id', $accountSetId)
             ->orderBy('project_name')
-            ->get(['id', 'project_name']);
+            ->get([
+                'id',
+                'project_name',
+                'spec_model',
+                'unit',
+                'quantity',
+                'unit_price',
+                'amount',
+                'tax_rate',
+                'tax_amount'
+            ]);
 
         return response()->json([
             'success' => true,
             'data' => $projects
         ]);
+    }
+
+    private function calculateTaxAmount($amount, $taxRate)
+    {
+        $amount = round(max(0, (float) $amount), 2);
+        $taxRate = max(0, (float) $taxRate);
+
+        return round($amount * $taxRate, 2);
     }
 }
 

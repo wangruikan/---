@@ -11,7 +11,6 @@
         </div>
       </template>
 
-      <!-- 搜索栏 -->
       <el-form :inline="true" class="search-form">
         <el-form-item label="关键词">
           <el-input
@@ -28,7 +27,6 @@
         </el-form-item>
       </el-form>
 
-      <!-- 表格 -->
       <el-table
         :data="tableData"
         v-loading="loading"
@@ -36,8 +34,19 @@
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="project_name" label="项目名称" min-width="200" />
-        <el-table-column prop="remark" label="备注" min-width="250" show-overflow-tooltip />
+        <el-table-column prop="project_name" label="项目名称" min-width="180" />
+        <el-table-column prop="spec_model" label="规格型号" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="90" />
+        <el-table-column prop="quantity" label="数量" width="110" align="right" />
+        <el-table-column prop="unit_price" label="单价(不含税)" width="130" align="right" />
+        <el-table-column prop="amount" label="金额(不含税)" width="130" align="right" />
+        <el-table-column label="税率/征收率" width="120" align="center">
+          <template #default="{ row }">
+            {{ formatRate(row.tax_rate) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="tax_amount" label="税额" width="120" align="right" />
+        <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
         <el-table-column prop="creator.name" label="创建人" width="120" />
         <el-table-column prop="created_at" label="创建时间" width="180">
           <template #default="{ row }">
@@ -52,7 +61,6 @@
         </el-table-column>
       </el-table>
 
-      <!-- 分页 -->
       <el-pagination
         v-model:current-page="pagination.current"
         v-model:page-size="pagination.pageSize"
@@ -65,18 +73,17 @@
       />
     </el-card>
 
-    <!-- 新建/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      width="600px"
+      width="680px"
       @close="handleDialogClose"
     >
       <el-form
         ref="formRef"
         :model="form"
         :rules="formRules"
-        label-width="100px"
+        label-width="120px"
       >
         <el-form-item label="项目名称" prop="project_name">
           <el-input
@@ -84,6 +91,59 @@
             placeholder="请输入项目名称"
             maxlength="255"
             show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="规格型号" prop="spec_model">
+          <el-input v-model="form.spec_model" placeholder="请输入规格型号" maxlength="255" />
+        </el-form-item>
+        <el-form-item label="单位" prop="unit">
+          <el-input v-model="form.unit" placeholder="请输入单位" maxlength="50" />
+        </el-form-item>
+        <el-form-item label="数量" prop="quantity">
+          <el-input-number
+            v-model="form.quantity"
+            :min="0"
+            :precision="4"
+            :controls="false"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="单价(不含税)" prop="unit_price">
+          <el-input-number
+            v-model="form.unit_price"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="金额(不含税)" prop="amount">
+          <el-input-number
+            v-model="form.amount"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="税率/征收率" prop="tax_rate">
+          <el-select v-model="form.tax_rate" placeholder="请选择税率/征收率" style="width: 100%">
+            <el-option
+              v-for="option in taxRateOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="税额" prop="tax_amount">
+          <el-input-number
+            v-model="form.tax_amount"
+            :min="0"
+            :precision="2"
+            :controls="false"
+            disabled
+            style="width: 100%"
           />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
@@ -107,7 +167,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
@@ -118,45 +178,72 @@ import {
 } from '@/api/invoiceProject'
 import { formatDate } from '@/utils/dateFormat'
 
-// 搜索表单
 const searchForm = reactive({
   keyword: ''
 })
 
-// 表格数据
 const tableData = ref([])
 const loading = ref(false)
 
-// 分页
 const pagination = reactive({
   current: 1,
   pageSize: 15,
   total: 0
 })
 
-// 对话框
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const isEdit = ref(false)
 const formRef = ref(null)
 const submitting = ref(false)
 
-// 表单数据
+const taxRateOptions = [
+  { label: '0%', value: 0 },
+  { label: '1%', value: 0.01 },
+  { label: '2%', value: 0.02 },
+  { label: '3%', value: 0.03 },
+  { label: '4%', value: 0.04 },
+  { label: '5%', value: 0.05 },
+  { label: '6%', value: 0.06 },
+  { label: '9%', value: 0.09 },
+  { label: '13%', value: 0.13 }
+]
+
 const form = reactive({
   id: null,
   project_name: '',
+  spec_model: '',
+  unit: '',
+  quantity: null,
+  unit_price: null,
+  amount: 0,
+  tax_rate: 0,
+  tax_amount: 0,
   remark: ''
 })
 
-// 表单验证规则
 const formRules = {
   project_name: [
     { required: true, message: '请输入项目名称', trigger: 'blur' },
     { max: 255, message: '项目名称不能超过255个字符', trigger: 'blur' }
+  ],
+  tax_rate: [
+    { required: true, message: '请选择税率/征收率', trigger: 'change' }
   ]
 }
 
-// 加载数据
+const roundAmount = (value) => {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
+}
+
+const syncTaxAmount = () => {
+  form.tax_amount = roundAmount(Number(form.amount || 0) * Number(form.tax_rate || 0))
+}
+
+const formatRate = (value) => {
+  return `${roundAmount(Number(value || 0) * 100)}%`
+}
+
 const loadData = async () => {
   loading.value = true
   try {
@@ -166,14 +253,9 @@ const loadData = async () => {
       per_page: pagination.pageSize
     })
 
-    console.log('API响应:', response)
-
-    // 响应拦截器已经返回了 data，所以直接使用 response
     if (response.success) {
       const paginationData = response.data
-      
       if (paginationData && paginationData.data) {
-        // 分页数据格式
         tableData.value = paginationData.data
         pagination.total = paginationData.total
         pagination.current = paginationData.current_page
@@ -191,19 +273,16 @@ const loadData = async () => {
   }
 }
 
-// 搜索
 const handleSearch = () => {
   pagination.current = 1
   loadData()
 }
 
-// 重置
 const handleReset = () => {
   searchForm.keyword = ''
   handleSearch()
 }
 
-// 新建
 const handleCreate = () => {
   isEdit.value = false
   dialogTitle.value = '新建项目'
@@ -211,17 +290,22 @@ const handleCreate = () => {
   dialogVisible.value = true
 }
 
-// 编辑
 const handleEdit = (row) => {
   isEdit.value = true
   dialogTitle.value = '编辑项目'
   form.id = row.id
-  form.project_name = row.project_name
-  form.remark = row.remark
+  form.project_name = row.project_name || ''
+  form.spec_model = row.spec_model || ''
+  form.unit = row.unit || ''
+  form.quantity = row.quantity === null || row.quantity === undefined ? null : Number(row.quantity)
+  form.unit_price = row.unit_price === null || row.unit_price === undefined ? null : Number(row.unit_price)
+  form.amount = Number(row.amount || 0)
+  form.tax_rate = Number(row.tax_rate || 0)
+  form.tax_amount = Number(row.tax_amount || 0)
+  form.remark = row.remark || ''
   dialogVisible.value = true
 }
 
-// 删除
 const handleDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
@@ -235,8 +319,6 @@ const handleDelete = async (row) => {
     )
 
     const response = await deleteInvoiceProject(row.id)
-    console.log('删除响应:', response)
-    
     if (response.success) {
       ElMessage.success(response.message || '删除成功')
       loadData()
@@ -251,14 +333,20 @@ const handleDelete = async (row) => {
   }
 }
 
-// 提交表单
 const handleSubmit = async () => {
   try {
     await formRef.value.validate()
-    
+
     submitting.value = true
     const data = {
       project_name: form.project_name,
+      spec_model: form.spec_model,
+      unit: form.unit,
+      quantity: form.quantity,
+      unit_price: form.unit_price,
+      amount: form.amount,
+      tax_rate: form.tax_rate,
+      tax_amount: form.tax_amount,
       remark: form.remark
     }
 
@@ -269,9 +357,6 @@ const handleSubmit = async () => {
       response = await createInvoiceProject(data)
     }
 
-    console.log('提交响应:', response)
-
-    // 响应拦截器已经返回了 data，所以直接使用 response.success
     if (response.success) {
       ElMessage.success(response.message || (isEdit.value ? '更新成功' : '创建成功'))
       dialogVisible.value = false
@@ -280,7 +365,7 @@ const handleSubmit = async () => {
       ElMessage.error(response.message || '操作失败')
     }
   } catch (error) {
-    if (error !== false) { // 验证失败会返回false
+    if (error !== false) {
       console.error('提交失败', error)
       ElMessage.error(error.response?.data?.message || error.message || '操作失败')
     }
@@ -289,20 +374,31 @@ const handleSubmit = async () => {
   }
 }
 
-// 重置表单
 const resetForm = () => {
   form.id = null
   form.project_name = ''
+  form.spec_model = ''
+  form.unit = ''
+  form.quantity = null
+  form.unit_price = null
+  form.amount = 0
+  form.tax_rate = 0
+  form.tax_amount = 0
   form.remark = ''
   formRef.value?.clearValidate()
 }
 
-// 对话框关闭
 const handleDialogClose = () => {
   resetForm()
 }
 
-// 初始化
+watch(
+  () => [form.amount, form.tax_rate],
+  () => {
+    syncTaxAmount()
+  }
+)
+
 onMounted(() => {
   loadData()
 })
@@ -328,4 +424,3 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 </style>
-

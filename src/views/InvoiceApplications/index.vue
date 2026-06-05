@@ -182,20 +182,16 @@
       >
         <el-row :gutter="20">
           <el-col :span="24">
-            <el-form-item label="项目" prop="project_id">
-              <el-select
-                v-model="createForm.project_id"
-                placeholder="请选择项目"
-                filterable
+            <el-form-item label="项目" prop="project_name">
+              <el-autocomplete
+                v-model="createForm.project_name"
+                :fetch-suggestions="querySearchCreateProjects"
+                placeholder="请输入或选择项目"
+                clearable
                 style="width: 100%"
-              >
-                <el-option
-                  v-for="project in validProjects"
-                  :key="project.id"
-                  :label="project.name"
-                  :value="project.id"
-                />
-              </el-select>
+                @input="handleCreateProjectInput"
+                @select="handleCreateProjectSelect"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -247,8 +243,8 @@
           <el-col :span="12">
             <el-form-item label="开票方式" prop="invoice_method">
               <el-select v-model="createForm.invoice_method" placeholder="请选择开票方式" style="width: 100%">
-                <el-option label="全额" value="full" />
-                <el-option label="差额" value="diff" />
+                <el-option label="差额征税-全额开票" value="full" />
+                <el-option label="差额征税-差额开票" value="diff" />
                 <el-option label="无" value="none" />
               </el-select>
             </el-form-item>
@@ -404,28 +400,80 @@
             <el-table-column type="index" label="序号" width="70" align="center" />
             <el-table-column label="项目" min-width="220">
               <template #default="{ row }">
-                <el-select
-                  v-model="row.invoice_project_id"
-                  placeholder="请选择项目"
-                  filterable
+                <el-autocomplete
+                  v-model="row.item_name"
+                  :fetch-suggestions="querySearchInvoiceProjects"
+                  placeholder="请输入项目"
+                  clearable
                   style="width: 100%"
-                >
-                  <el-option
-                    v-for="project in invoiceProjects"
-                    :key="project.id"
-                    :label="project.project_name"
-                    :value="project.id"
-                  />
-                </el-select>
+                  @input="value => handleInvoiceProjectInput(row, value)"
+                  @select="item => handleInvoiceProjectSelect(row, item)"
+                />
               </template>
             </el-table-column>
-            <el-table-column label="金额" width="220">
+            <el-table-column label="规格型号" min-width="160">
+              <template #default="{ row }">
+                <el-input v-model="row.spec_model" placeholder="请输入规格型号" />
+              </template>
+            </el-table-column>
+            <el-table-column label="单位" width="100">
+              <template #default="{ row }">
+                <el-input v-model="row.unit" placeholder="单位" />
+              </template>
+            </el-table-column>
+            <el-table-column label="数量" width="130">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.quantity"
+                  :precision="4"
+                  :min="0"
+                  :controls="false"
+                  style="width: 100%"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="单价(不含税)" width="150">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.unit_price"
+                  :precision="2"
+                  :min="0"
+                  :controls="false"
+                  style="width: 100%"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="金额(不含税)" width="150">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.amount"
                   :precision="2"
                   :min="0"
                   :controls="false"
+                  style="width: 100%"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="税率/征收率" width="140">
+              <template #default="{ row }">
+                <el-select v-model="row.tax_rate" placeholder="税率" style="width: 100%">
+                  <el-option
+                    v-for="option in invoiceItemTaxRateOptions"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="税额" width="140">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.tax_amount"
+                  :precision="2"
+                  :min="0"
+                  :controls="false"
+                  disabled
                   style="width: 100%"
                 />
               </template>
@@ -523,11 +571,29 @@
 
             <el-table :data="currentApplication.items" border style="margin-top: 10px">
               <el-table-column prop="sequence" label="序号" width="70" align="center" />
-              <el-table-column prop="project_name" label="项目" width="150" />
-              <el-table-column prop="item_name" label="名称" width="150" />
-              <el-table-column prop="amount" label="金额" width="120" align="right">
+              <el-table-column prop="project_name" label="模板项目" width="150" />
+              <el-table-column prop="item_name" label="项目名称" width="160" />
+              <el-table-column prop="spec_model" label="规格型号" width="150" show-overflow-tooltip />
+              <el-table-column prop="unit" label="单位" width="90" />
+              <el-table-column prop="quantity" label="数量" width="100" align="right" />
+              <el-table-column prop="unit_price" label="单价(不含税)" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.unit_price || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="amount" label="金额(不含税)" width="130" align="right">
                 <template #default="{ row }">
                   ¥{{ Number(row.amount).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="tax_rate" label="税率/征收率" width="120" align="center">
+                <template #default="{ row }">
+                  {{ formatInvoiceItemRate(row.tax_rate) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="tax_amount" label="税额" width="120" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
                 </template>
               </el-table-column>
               <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
@@ -658,8 +724,8 @@
                       placeholder="请选择"
                       style="width: 100%"
                     >
-                      <el-option label="全额" value="full" />
-                      <el-option label="差额" value="diff" />
+                      <el-option label="差额征税-全额开票" value="full" />
+                      <el-option label="差额征税-差额开票" value="diff" />
                       <el-option label="无" value="none" />
                     </el-select>
                   </el-form-item>
@@ -935,27 +1001,47 @@
       :title="itemDialogTitle"
       width="600px"
       @close="handleItemDialogClose"
-    >
-      <el-form
-        ref="itemFormRef"
-        :model="itemForm"
-        :rules="itemFormRules"
+      >
+        <el-form
+          ref="itemFormRef"
+          :model="itemForm"
+          :rules="itemFormRules"
         label-width="100px"
       >
-        <el-form-item label="项目" prop="invoice_project_id">
-          <el-select 
-            v-model="itemForm.invoice_project_id" 
-            placeholder="请选择项目" 
+        <el-form-item label="项目">
+          <el-autocomplete
+            v-model="itemForm.item_name"
+            :fetch-suggestions="querySearchInvoiceProjects"
+            placeholder="请输入项目"
             style="width: 100%"
-            @change="handleProjectChange"
-          >
-            <el-option
-              v-for="project in invoiceProjects"
-              :key="project.id"
-              :label="project.project_name"
-              :value="project.id"
-            />
-          </el-select>
+            clearable
+            @input="handleProjectInput"
+            @select="handleProjectSelect"
+          />
+        </el-form-item>
+        <el-form-item label="规格型号" prop="spec_model">
+          <el-input v-model="itemForm.spec_model" placeholder="请输入规格型号" />
+        </el-form-item>
+        <el-form-item label="单位" prop="unit">
+          <el-input v-model="itemForm.unit" placeholder="请输入单位" />
+        </el-form-item>
+        <el-form-item label="数量" prop="quantity">
+          <el-input-number
+            v-model="itemForm.quantity"
+            :precision="4"
+            :min="0"
+            :controls="false"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="单价(不含税)" prop="unit_price">
+          <el-input-number
+            v-model="itemForm.unit_price"
+            :precision="2"
+            :min="0"
+            :controls="false"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="金额" prop="amount">
           <el-input-number
@@ -963,6 +1049,26 @@
             :precision="2"
             :step="100"
             :min="0"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="税率/征收率" prop="tax_rate">
+          <el-select v-model="itemForm.tax_rate" placeholder="请选择税率/征收率" style="width: 100%">
+            <el-option
+              v-for="option in invoiceItemTaxRateOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="税额" prop="tax_amount">
+          <el-input-number
+            v-model="itemForm.tax_amount"
+            :precision="2"
+            :min="0"
+            :controls="false"
+            disabled
             style="width: 100%"
           />
         </el-form-item>
@@ -1029,8 +1135,20 @@ const canApproveInvoice = computed(() => permissionStore.hasPermission('invoice_
 const canCreateTask = ref(false)
 
 const invoiceTypeOptions = [
-  { label: '普票', value: '普票' },
-  { label: '专票', value: '专票' }
+  { label: '普通发票', value: '普通发票' },
+  { label: '增值税专用发票', value: '增值税专用发票' }
+]
+
+const invoiceItemTaxRateOptions = [
+  { label: '0%', value: 0 },
+  { label: '1%', value: 0.01 },
+  { label: '2%', value: 0.02 },
+  { label: '3%', value: 0.03 },
+  { label: '4%', value: 0.04 },
+  { label: '5%', value: 0.05 },
+  { label: '6%', value: 0.06 },
+  { label: '9%', value: 0.09 },
+  { label: '13%', value: 0.13 }
 ]
 
 // 年份列表
@@ -1070,13 +1188,14 @@ const createForm = reactive({
   year: currentYear,
   month: currentMonth,
   project_id: null,
+  project_name: '',
   remark: '',
   period_year: currentYear,
   period_month: currentMonth,
   company_name: '',
   application_date: '',
   invoice_method: null,
-  invoice_type: '普票',
+  invoice_type: '普通发票',
   deduction_amount: 0,
   tax_rate: null,
   amount_excluding_tax: 0,
@@ -1092,7 +1211,7 @@ const createForm = reactive({
 })
 
 const createFormRules = {
-  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  project_name: [{ required: true, message: '请输入项目', trigger: 'blur' }],
   period_year: [{ required: true, message: '请选择所属期年份', trigger: 'change' }],
   period_month: [{ required: true, message: '请选择所属期月份', trigger: 'change' }],
   company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
@@ -1108,18 +1227,25 @@ const createFormRules = {
 }
 
 const createItems = ref([
-  { invoice_project_id: null, amount: 0, remark: '' }
+  {
+    invoice_project_id: null,
+    item_name: '',
+    spec_model: '',
+    unit: '',
+    quantity: null,
+    unit_price: null,
+    amount: 0,
+    tax_rate: 0,
+    tax_amount: 0,
+    remark: ''
+  }
 ])
 const createAttachmentFileList = ref([])
 const createDeductionSectionRef = ref(null)
 const lastCreateDuplicateWarnKey = ref('')
 
 const addCreateItem = () => {
-  createItems.value.push({
-    invoice_project_id: null,
-    amount: 0,
-    remark: ''
-  })
+  createItems.value.push(buildInvoiceItemFromProject(null))
 }
 
 const removeCreateItem = (index) => {
@@ -1143,11 +1269,11 @@ const validateCreateExtraData = () => {
     }
 
     const invalidIndex = createItems.value.findIndex(item => {
-      return !item.invoice_project_id || Number(item.amount) <= 0
+      return !String(item.item_name || '').trim() || Number(item.amount) <= 0
     })
 
     if (invalidIndex !== -1) {
-      ElMessage.warning('\u8bf7\u5b8c\u6210\u6263\u9664\u660e\u7ec6\u7b2c ' + (invalidIndex + 1) + ' \u884c\u7684\u9879\u76ee\u548c\u91d1\u989d')
+      ElMessage.warning('\u8bf7\u5b8c\u6210\u6263\u9664\u660e\u7ec6\u7b2c ' + (invalidIndex + 1) + ' \u884c\u7684\u9879\u76ee\u540d\u79f0\u548c\u91d1\u989d')
       return false
     }
 
@@ -1197,12 +1323,19 @@ const isEditItem = ref(false)
 const itemForm = reactive({
   id: null,
   invoice_project_id: null,
+  item_name: '',
+  spec_model: '',
+  unit: '',
+  quantity: null,
+  unit_price: null,
   amount: 0,
+  tax_rate: 0,
+  tax_amount: 0,
   remark: ''
 })
 
 const itemFormRules = {
-  invoice_project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  item_name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
   amount: [{ required: true, message: '请输入金额', trigger: 'blur' }]
 }
 
@@ -1219,7 +1352,7 @@ const invoiceDetailsForm = reactive({
   company_name: '',
   application_date: null,
   invoice_method: null,
-  invoice_type: '普票',
+  invoice_type: '普通发票',
   deduction_amount: 0,
   tax_rate: 0,
   amount_excluding_tax: 0,
@@ -1292,13 +1425,26 @@ const findProjectById = (projectId) => {
   return validProjects.value.find(project => String(project.id) === targetId) || null
 }
 
-const fillCreateInvoiceInfoByProject = (projectId) => {
-  const selectedProject = findProjectById(projectId)
+const findProjectByName = (projectName) => {
+  const targetName = String(projectName || '').trim()
+  if (!targetName) return null
+  return validProjects.value.find(project => String(project.name || '').trim() === targetName) || null
+}
+
+const fillCreateInvoiceInfoByProject = (project) => {
+  const selectedProject = typeof project === 'object' && project !== null
+    ? project
+    : findProjectById(project)
+
   if (!selectedProject) {
-    createForm.company_name = ''
+    if (!createForm.project_name?.trim()) {
+      createForm.company_name = ''
+    }
     return
   }
 
+  createForm.project_id = selectedProject.id
+  createForm.project_name = selectedProject.name || ''
   createForm.company_name =
     selectedProject.invoice_company_name ||
     selectedProject.invoice_company ||
@@ -1306,14 +1452,134 @@ const fillCreateInvoiceInfoByProject = (projectId) => {
     ''
 }
 
+const querySearchCreateProjects = (queryString, cb) => {
+  const keyword = String(queryString || '').trim().toLowerCase()
+  const result = validProjects.value
+    .filter(project => {
+      const name = String(project.name || '').trim().toLowerCase()
+      return !keyword || name.includes(keyword)
+    })
+    .map(project => ({
+      value: project.name || '',
+      project
+    }))
+  cb(result)
+}
+
+const handleCreateProjectInput = (value) => {
+  createForm.project_name = String(value || '')
+  const matchedProject = findProjectByName(createForm.project_name)
+  createForm.project_id = matchedProject?.id || null
+
+  if (matchedProject) {
+    fillCreateInvoiceInfoByProject(matchedProject)
+  }
+}
+
+const handleCreateProjectSelect = (selected) => {
+  const selectedProject = selected?.project || findProjectByName(selected?.value)
+  if (!selectedProject) {
+    createForm.project_name = selected?.value || ''
+    createForm.project_id = null
+    return
+  }
+
+  fillCreateInvoiceInfoByProject(selectedProject)
+}
+
 const resetCreateItems = () => {
-  createItems.value = [
-    { invoice_project_id: null, amount: 0, remark: '' }
-  ]
+  createItems.value = [buildInvoiceItemFromProject(null)]
 }
 
 const roundAmount = (value) => {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
+}
+
+const formatInvoiceItemRate = (value) => {
+  return `${roundAmount(Number(value || 0) * 100)}%`
+}
+
+const syncInvoiceItemAmounts = (item) => {
+  if (!item) return
+
+  item.amount = roundAmount(item.amount)
+  item.tax_amount = roundAmount(Number(item.amount || 0) * Number(item.tax_rate || 0))
+}
+
+const buildInvoiceItemFromProject = (project) => {
+  if (!project) {
+    return {
+      invoice_project_id: null,
+      item_name: '',
+      spec_model: '',
+      unit: '',
+      quantity: null,
+      unit_price: null,
+      amount: 0,
+      tax_rate: 0,
+      tax_amount: 0,
+      remark: ''
+    }
+  }
+
+  return {
+    invoice_project_id: project.id,
+    item_name: project.project_name || '',
+    spec_model: project.spec_model || '',
+    unit: project.unit || '',
+    quantity: project.quantity === null || project.quantity === undefined ? null : Number(project.quantity),
+    unit_price: project.unit_price === null || project.unit_price === undefined ? null : Number(project.unit_price),
+    amount: Number(project.amount || 0),
+    tax_rate: Number(project.tax_rate || 0),
+    tax_amount: Number(project.tax_amount || 0),
+    remark: ''
+  }
+}
+
+const findInvoiceProjectByKeyword = (keyword) => {
+  const normalizedKeyword = String(keyword || '').trim()
+  if (!normalizedKeyword) return null
+  return invoiceProjects.value.find(item => String(item.project_name || '').trim() === normalizedKeyword) || null
+}
+
+const querySearchInvoiceProjects = (queryString, cb) => {
+  const keyword = String(queryString || '').trim().toLowerCase()
+  const result = invoiceProjects.value
+    .filter(item => {
+      const name = String(item.project_name || '').trim().toLowerCase()
+      return !keyword || name.includes(keyword)
+    })
+    .map(item => ({
+      value: item.project_name || '',
+      project: item
+    }))
+  cb(result)
+}
+
+const applyInvoiceProjectToItem = (targetItem, keyword) => {
+  const project = findInvoiceProjectByKeyword(keyword)
+  if (!targetItem) return
+
+  if (!project) {
+    targetItem.invoice_project_id = null
+    targetItem.item_name = String(keyword || '').trim()
+    return
+  }
+
+  const mapped = buildInvoiceItemFromProject(project)
+  Object.assign(targetItem, mapped)
+  syncInvoiceItemAmounts(targetItem)
+}
+
+const handleInvoiceProjectInput = (targetItem, keyword) => {
+  if (!targetItem) return
+  targetItem.invoice_project_id = null
+  targetItem.item_name = String(keyword || '')
+}
+
+const handleInvoiceProjectSelect = (targetItem, selected) => {
+  const keyword = selected?.value || ''
+  applyInvoiceProjectToItem(targetItem, keyword)
 }
 
 const calculateInvoiceDerivedAmounts = (invoiceAmount, deductionAmount, taxRate) => {
@@ -1405,8 +1671,7 @@ const checkExistingInvoicePeriod = async ({
 }
 
 const warnDuplicateCreatePeriodIfNeeded = async () => {
-  const project = findProjectById(createForm.project_id)
-  const projectName = project?.name
+  const projectName = String(createForm.project_name || '').trim()
   const periodYear = createForm.period_year
   const periodMonth = createForm.period_month
 
@@ -1587,8 +1852,8 @@ const handleExport = async () => {
     const dataRows = exportData.map((item, index) => {
       // 开票方式映射
       const invoiceMethodMap = {
-        'full': '全额',
-        'diff': '差额',
+        'full': '差额征税-全额开票',
+        'diff': '差额征税-差额开票',
         'partial': '缺额', // 兼容旧数据
         'none': '无' // 兼容旧数据
       }
@@ -1599,7 +1864,7 @@ const handleExport = async () => {
         item.company_name || '', // 单位名称
         item.application_date || '', // 申请日期
         invoiceMethodMap[item.invoice_method] || '', // 开票方式
-        item.invoice_type || '普票', // 开票种类
+        item.invoice_type || '普通发票', // 开票种类
         item.status_text || '', // 状态
         item.project_name || '', // 项目名称
         item.amount_excluding_tax || 0, // 开票金额
@@ -1693,13 +1958,14 @@ const resetCreateForm = () => {
   createForm.year = currentYear
   createForm.month = currentMonth
   createForm.project_id = null
+  createForm.project_name = ''
   createForm.remark = ''
   createForm.period_year = currentYear
   createForm.period_month = currentMonth
   createForm.company_name = ''
   createForm.application_date = today
   createForm.invoice_method = null
-  createForm.invoice_type = '普票'
+  createForm.invoice_type = '普通发票'
   createForm.deduction_amount = 0
   createForm.tax_rate = null
   createForm.amount_excluding_tax = 0
@@ -1727,8 +1993,9 @@ const handleCreate = () => {
 const handleConfirmCreate = async () => {
   try {
     syncCreateCalculatedAmounts()
-    const selectedProject = validProjects.value.find(project => project.id === createForm.project_id)
-    createForm.task_name = (selectedProject?.name || '开票') + `${createForm.year}年${createForm.month}月`
+    const projectName = String(createForm.project_name || '').trim()
+    createForm.project_name = projectName
+    createForm.task_name = (projectName || '开票') + `${createForm.year}年${createForm.month}月`
 
     await createFormRef.value.validate()
 
@@ -1755,7 +2022,14 @@ const handleConfirmCreate = async () => {
         for (const item of createItems.value) {
           const itemRes = await addInvoiceItem(createdId, {
             invoice_project_id: item.invoice_project_id,
+            item_name: item.item_name,
+            spec_model: item.spec_model,
+            unit: item.unit,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
             amount: Number(item.amount || 0),
+            tax_rate: Number(item.tax_rate || 0),
+            tax_amount: Number(item.tax_amount || 0),
             remark: item.remark || ''
           })
 
@@ -1864,7 +2138,7 @@ const loadInvoiceDetailsForm = (data) => {
   invoiceDetailsForm.company_name = data.company_name || ''
   invoiceDetailsForm.application_date = data.application_date
   invoiceDetailsForm.invoice_method = data.invoice_method
-  invoiceDetailsForm.invoice_type = data.invoice_type || '普票'
+  invoiceDetailsForm.invoice_type = data.invoice_type || '普通发票'
   invoiceDetailsForm.deduction_amount = data.deduction_amount || 0
   invoiceDetailsForm.tax_rate = data.tax_rate || 0
   invoiceDetailsForm.amount_excluding_tax = data.amount_excluding_tax || 0
@@ -1917,7 +2191,7 @@ const fillInvoiceTestData = () => {
   invoiceDetailsForm.company_name = '鄂尔多斯市汇邦人力资源有限责任公司'
   invoiceDetailsForm.application_date = today
   invoiceDetailsForm.invoice_method = 'full'
-  invoiceDetailsForm.invoice_type = '普票'
+  invoiceDetailsForm.invoice_type = '普通发票'
   invoiceDetailsForm.tax_rate = 0.06
   invoiceDetailsForm.invoice_amount = 5000.00
   invoiceDetailsForm.invoice_date = today
@@ -2020,7 +2294,14 @@ const handleEditItem = (row) => {
   itemDialogTitle.value = '编辑明细项'
   itemForm.id = row.id
   itemForm.invoice_project_id = row.invoice_project_id
+  itemForm.item_name = row.item_name || ''
+  itemForm.spec_model = row.spec_model || ''
+  itemForm.unit = row.unit || ''
+  itemForm.quantity = row.quantity === null || row.quantity === undefined ? null : Number(row.quantity)
+  itemForm.unit_price = row.unit_price === null || row.unit_price === undefined ? null : Number(row.unit_price)
   itemForm.amount = row.amount
+  itemForm.tax_rate = Number(row.tax_rate || 0)
+  itemForm.tax_amount = Number(row.tax_amount || 0)
   itemForm.remark = row.remark
   itemDialogVisible.value = true
 }
@@ -2080,7 +2361,14 @@ const handleItemSubmit = async () => {
 const resetItemForm = () => {
   itemForm.id = null
   itemForm.invoice_project_id = null
+  itemForm.item_name = ''
+  itemForm.spec_model = ''
+  itemForm.unit = ''
+  itemForm.quantity = null
+  itemForm.unit_price = null
   itemForm.amount = 0
+  itemForm.tax_rate = 0
+  itemForm.tax_amount = 0
   itemForm.remark = ''
   itemFormRef.value?.clearValidate()
 }
@@ -2090,12 +2378,12 @@ const handleItemDialogClose = () => {
   resetItemForm()
 }
 
-// 项目变更
-const handleProjectChange = (projectId) => {
-  const project = invoiceProjects.value.find(p => p.id === projectId)
-  if (project && !itemForm.item_name) {
-    // 可以设置默认名称
-  }
+const handleProjectInput = (keyword) => {
+  handleInvoiceProjectInput(itemForm, keyword)
+}
+
+const handleProjectSelect = (selected) => {
+  handleInvoiceProjectSelect(itemForm, selected)
 }
 
 const hasDeductionExcelAttachment = () => {
@@ -2464,14 +2752,7 @@ watch(
 )
 
 watch(
-  () => createForm.project_id,
-  (newProjectId) => {
-    fillCreateInvoiceInfoByProject(newProjectId)
-  }
-)
-
-watch(
-  () => [createForm.project_id, createForm.period_year, createForm.period_month],
+  () => [createForm.project_name, createForm.period_year, createForm.period_month],
   () => {
     warnDuplicateCreatePeriodIfNeeded()
   }
@@ -2497,9 +2778,17 @@ watch(
 watch(
   createItems,
   () => {
+    createItems.value.forEach(item => syncInvoiceItemAmounts(item))
     syncCreateCalculatedAmounts()
   },
   { deep: true }
+)
+
+watch(
+  () => [itemForm.quantity, itemForm.unit_price, itemForm.amount, itemForm.tax_rate],
+  () => {
+    syncInvoiceItemAmounts(itemForm)
+  }
 )
 
 watch(

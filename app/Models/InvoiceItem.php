@@ -17,7 +17,13 @@ class InvoiceItem extends Model
     
     protected $auditableFields = [
         'item_name' => '项目名称',
+        'spec_model' => '规格型号',
+        'unit' => '单位',
+        'quantity' => '数量',
+        'unit_price' => '单价（不含税）',
         'amount' => '金额',
+        'tax_rate' => '税率/征收率',
+        'tax_amount' => '税额',
         'sequence' => '序号',
         'remark' => '备注'
     ];
@@ -30,13 +36,23 @@ class InvoiceItem extends Model
         'project_name',
         'sequence',
         'item_name',
+        'spec_model',
+        'unit',
+        'quantity',
+        'unit_price',
         'amount',
+        'tax_rate',
+        'tax_amount',
         'remark',
     ];
 
     protected $casts = [
         'sequence' => 'integer',
+        'quantity' => 'decimal:4',
+        'unit_price' => 'decimal:2',
         'amount' => 'decimal:2',
+        'tax_rate' => 'decimal:4',
+        'tax_amount' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

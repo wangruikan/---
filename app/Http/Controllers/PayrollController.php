@@ -6,12 +6,18 @@ use App\Models\BasisRecord;
 use App\Models\Project;
 use App\Models\AttendanceSheet;
 use App\Models\Salary;
+use App\Models\SalaryApproval;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 
 class PayrollController extends Controller
 {
+    private const PROGRESS_STATUS_ALL = 'all';
+    private const PROGRESS_STATUS_PENDING = 'pending';
+    private const PROGRESS_STATUS_COMPLETED = 'completed';
+
     /**
      * 获取账套ID（优先从请求头/参数获取，其次从用户获取）
      */
@@ -53,6 +59,312 @@ class PayrollController extends Controller
         }
 
         return true;
+    }
+
+    private function projectRequiresSalaryBasis(Project $project): bool
+    {
+        return (bool) $project->requires_salary_basis;
+    }
+
+    private function normalizeProgressFilter(?string $status): string
+    {
+        return match ($status) {
+            self::PROGRESS_STATUS_COMPLETED => self::PROGRESS_STATUS_COMPLETED,
+            self::PROGRESS_STATUS_PENDING => self::PROGRESS_STATUS_PENDING,
+            default => self::PROGRESS_STATUS_ALL,
+        };
+    }
+
+    private function shouldIncludeProjectForProgress(Project $project, string $month, bool $hasSalaryHistory): bool
+    {
+        $startMonth = !empty($project->start_date) ? substr((string) $project->start_date, 0, 7) : null;
+        $endMonth = !empty($project->end_date) ? substr((string) $project->end_date, 0, 7) : null;
+
+        if ($startMonth && $month < $startMonth) {
+            return false;
+        }
+
+        if ($hasSalaryHistory && $endMonth && $month > $endMonth) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function buildProgressRoute(string $stageKey): string
+    {
+        return match ($stageKey) {
+            'attendance_basis_missing', 'attendance_basis_ready' => '/attendance-basis',
+            'attendance_pending_create', 'attendance_draft', 'attendance_submitted' => '/attendance',
+            'salary_basis_missing', 'salary_basis_ready' => '/salary-basis',
+            'salary_pending_create', 'salary_draft', 'salary_approval_pending', 'salary_approval_rejected', 'completed' => '/salaries',
+            default => '/salaries',
+        };
+    }
+
+    private function buildProgressStep(
+        string $stageKey,
+        string $label,
+        bool $completed,
+        array $extra = []
+    ): array {
+        return array_merge([
+            'stage_key' => $stageKey,
+            'stage_label' => $label,
+            'is_completed' => $completed,
+            'route_path' => $this->buildProgressRoute($stageKey),
+        ], $extra);
+    }
+
+    private function resolveProjectProgress(
+        Project $project,
+        string $month,
+        bool $hasSalaryHistory,
+        ?BasisRecord $attendanceBasis,
+        ?AttendanceSheet $attendanceSheet,
+        ?BasisRecord $salaryBasis,
+        ?SalaryApproval $salaryApproval,
+        bool $hasSalaryDraft
+    ): array {
+        $requiresAttendance = $this->projectRequiresAttendance($project);
+        $requiresAttendanceBasis = (bool) $project->requires_attendance_basis;
+        $requiresSalaryBasis = $this->projectRequiresSalaryBasis($project);
+
+        $attendanceBasisReady = !$requiresAttendanceBasis
+            || ($attendanceBasis && $attendanceBasis->attachments_count > 0);
+        $salaryBasisReady = !$requiresSalaryBasis
+            || ($salaryBasis && $salaryBasis->attachments_count > 0);
+
+        $attendanceStatus = $attendanceSheet?->status;
+        $salaryApprovalStatus = $salaryApproval?->status;
+
+        $step = null;
+        $progressGroup = self::PROGRESS_STATUS_PENDING;
+
+        if ($requiresAttendance && !$attendanceBasisReady) {
+            $step = $this->buildProgressStep(
+                'attendance_basis_missing',
+                '待上传考勤依据',
+                false,
+                ['basis_record_id' => $attendanceBasis?->id]
+            );
+        } elseif ($requiresAttendance && !$attendanceSheet) {
+            $step = $this->buildProgressStep('attendance_pending_create', '待制作考勤表', false);
+        } elseif ($requiresAttendance && $attendanceStatus === AttendanceSheet::STATUS_DRAFT) {
+            $step = $this->buildProgressStep(
+                'attendance_draft',
+                '考勤表待提交',
+                false,
+                ['attendance_sheet_id' => $attendanceSheet->id]
+            );
+        } elseif ($requiresAttendance && $attendanceStatus === AttendanceSheet::STATUS_SUBMITTED) {
+            $step = $this->buildProgressStep(
+                'attendance_submitted',
+                '考勤表待审核',
+                false,
+                ['attendance_sheet_id' => $attendanceSheet->id]
+            );
+        } elseif ($requiresAttendance && $attendanceStatus === AttendanceSheet::STATUS_REJECTED) {
+            $step = $this->buildProgressStep(
+                'attendance_draft',
+                '考勤表已驳回，待处理',
+                false,
+                ['attendance_sheet_id' => $attendanceSheet->id]
+            );
+        } elseif (!$salaryBasisReady) {
+            $step = $this->buildProgressStep(
+                'salary_basis_missing',
+                '待上传工资依据',
+                false,
+                ['basis_record_id' => $salaryBasis?->id]
+            );
+        } elseif (!$salaryApproval && !$hasSalaryDraft) {
+            $step = $this->buildProgressStep('salary_pending_create', '待生成工资表', false);
+        } elseif (!$salaryApproval && $hasSalaryDraft) {
+            $step = $this->buildProgressStep('salary_draft', '工资表待提交审批', false);
+        } elseif ($salaryApprovalStatus === 'pending') {
+            $step = $this->buildProgressStep(
+                'salary_approval_pending',
+                '工资表待审核',
+                false,
+                ['salary_approval_id' => $salaryApproval->id]
+            );
+        } elseif ($salaryApprovalStatus === 'rejected') {
+            $step = $this->buildProgressStep(
+                'salary_approval_rejected',
+                '工资表已驳回，待处理',
+                false,
+                ['salary_approval_id' => $salaryApproval->id]
+            );
+        } else {
+            $step = $this->buildProgressStep(
+                'completed',
+                '已完成',
+                true,
+                ['salary_approval_id' => $salaryApproval?->id]
+            );
+            $progressGroup = self::PROGRESS_STATUS_COMPLETED;
+        }
+
+        return [
+            'project_id' => $project->id,
+            'project_name' => $project->name,
+            'project_code' => $project->code,
+            'project_status' => $project->status,
+            'month' => $month,
+            'start_date' => $project->start_date ? Carbon::parse($project->start_date)->format('Y-m-d') : null,
+            'end_date' => $project->end_date ? Carbon::parse($project->end_date)->format('Y-m-d') : null,
+            'has_salary_history' => $hasSalaryHistory,
+            'requires_attendance' => $requiresAttendance,
+            'requires_attendance_basis' => $requiresAttendanceBasis,
+            'requires_salary_basis' => $requiresSalaryBasis,
+            'attendance_basis_id' => $attendanceBasis?->id,
+            'attendance_sheet_id' => $attendanceSheet?->id,
+            'salary_basis_id' => $salaryBasis?->id,
+            'salary_approval_id' => $salaryApproval?->id,
+            'has_salary_draft' => $hasSalaryDraft,
+            'progress_status' => $progressGroup,
+            'current_step' => $step,
+        ];
+    }
+
+    /**
+     * 获取工资流程进度总览
+     */
+    public function getPayrollProgress(Request $request)
+    {
+        try {
+            $accountSetId = $this->getAccountSetId($request);
+            $month = $request->input('month', now()->format('Y-m'));
+            $progressStatus = $this->normalizeProgressFilter($request->input('progress_status'));
+
+            $validator = \Validator::make(
+                ['month' => $month],
+                ['month' => 'required|date_format:Y-m']
+            );
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '验证失败',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $salaryHistoryProjectIds = Salary::where('account_set_id', $accountSetId)
+                ->distinct()
+                ->pluck('project_id')
+                ->map(fn ($projectId) => intval($projectId))
+                ->toArray();
+
+            $projects = Project::where('account_set_id', $accountSetId)
+                ->whereIn('status', ['active', 'completed'])
+                ->select([
+                    'id',
+                    'name',
+                    'code',
+                    'status',
+                    'start_date',
+                    'end_date',
+                    'require_attendance',
+                    'requires_attendance',
+                    'requires_attendance_basis',
+                    'requires_salary_basis',
+                ])
+                ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
+                ->orderBy('name')
+                ->get();
+
+            $attendanceBases = BasisRecord::withCount('attachments')
+                ->where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->where('type', 'attendance')
+                ->get()
+                ->keyBy('project_id');
+
+            $salaryBases = BasisRecord::withCount('attachments')
+                ->where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->where('type', 'salary')
+                ->get()
+                ->keyBy('project_id');
+
+            $attendanceSheets = AttendanceSheet::where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->orderByRaw("FIELD(status, 'submitted', 'draft', 'approved', 'rejected')")
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('project_id')
+                ->map(fn ($items) => $items->first());
+
+            $salaryApprovals = SalaryApproval::where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->orderByRaw("FIELD(status, 'pending', 'rejected', 'approved')")
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('project_id')
+                ->map(fn ($items) => $items->first());
+
+            $salaryDraftProjectIds = Salary::where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->whereNull('salary_approval_id')
+                ->pluck('project_id')
+                ->map(fn ($projectId) => intval($projectId))
+                ->unique()
+                ->toArray();
+
+            $rows = $projects
+                ->filter(function (Project $project) use ($month, $salaryHistoryProjectIds) {
+                    $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
+                    return $this->shouldIncludeProjectForProgress($project, $month, $hasSalaryHistory);
+                })
+                ->map(function (Project $project) use (
+                    $month,
+                    $salaryHistoryProjectIds,
+                    $attendanceBases,
+                    $attendanceSheets,
+                    $salaryBases,
+                    $salaryApprovals,
+                    $salaryDraftProjectIds
+                ) {
+                    $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
+
+                    return $this->resolveProjectProgress(
+                        $project,
+                        $month,
+                        $hasSalaryHistory,
+                        $attendanceBases->get($project->id),
+                        $attendanceSheets->get($project->id),
+                        $salaryBases->get($project->id),
+                        $salaryApprovals->get($project->id),
+                        in_array(intval($project->id), $salaryDraftProjectIds, true)
+                    );
+                })
+                ->filter(function (array $row) use ($progressStatus) {
+                    if ($progressStatus === self::PROGRESS_STATUS_ALL) {
+                        return true;
+                    }
+
+                    return $row['progress_status'] === $progressStatus;
+                })
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $rows,
+                'summary' => [
+                    'total' => $rows->count(),
+                    'completed' => $rows->where('progress_status', self::PROGRESS_STATUS_COMPLETED)->count(),
+                    'pending' => $rows->where('progress_status', self::PROGRESS_STATUS_PENDING)->count(),
+                ],
+                'month' => $month,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '获取工资流程进度失败: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

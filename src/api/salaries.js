@@ -23,6 +23,14 @@ export function getPendingPayrollProjects(month, currentAccountSetId) {
   })
 }
 
+export function getPayrollProgress(params) {
+  return request({
+    url: '/payroll/progress',
+    method: 'get',
+    params
+  })
+}
+
 /**
  * 获取工资表列表（统计视图）
  */

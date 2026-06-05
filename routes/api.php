@@ -1046,6 +1046,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // 获取所有项目（带审批状态标识）
         Route::get('/projects-with-approval', [PayrollController::class, 'getProjectsWithApprovalStatus']);
         Route::get('/pending-projects', [PayrollController::class, 'getPendingProjects']);
+        Route::get('/progress', [PayrollController::class, 'getPayrollProgress']);
     });
     
     // 工资表备注管理

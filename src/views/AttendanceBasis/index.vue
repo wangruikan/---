@@ -242,9 +242,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
 import {
   getBasisRecords,
   getAvailableProjects,
@@ -261,6 +262,7 @@ import { useUserStore } from '@/stores/user'
 
 const accountSetStore = useAccountSetStore()
 const userStore = useUserStore()
+const route = useRoute()
 // 动态获取当前服务器地址，自动适配环境
 const apiBaseUrl = window.location.origin
 
@@ -395,6 +397,23 @@ const handleCreate = () => {
     description: ''
   })
   dialogVisible.value = true
+}
+
+const applyRouteQuery = () => {
+  const { project_id, month, action } = route.query
+  const nextProjectId = project_id ? Number(project_id) : null
+  const nextMonth = typeof month === 'string' ? month : null
+
+  searchForm.project_id = Number.isNaN(nextProjectId) ? null : nextProjectId
+  searchForm.month = nextMonth || getCurrentMonth()
+  pagination.currentPage = 1
+  loadRecords()
+
+  if (action === 'create') {
+    handleCreate()
+    form.project_id = Number.isNaN(nextProjectId) ? null : nextProjectId
+    form.month = nextMonth || getCurrentMonth()
+  }
 }
 
 // 编辑
@@ -673,9 +692,16 @@ const formatDateTime = (dateTime) => {
 }
 
 onMounted(() => {
-  loadRecords()
   loadAvailableProjects()
+  applyRouteQuery()
 })
+
+watch(
+  () => route.query,
+  () => {
+    applyRouteQuery()
+  }
+)
 </script>
 
 <style scoped>

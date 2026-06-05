@@ -730,7 +730,7 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, DocumentAdd, Download, Edit, Check, Link, Refresh } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
@@ -753,6 +753,7 @@ import * as XLSX from 'xlsx'
 import { usePermissionStore } from '@/stores/permission'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
@@ -1166,7 +1167,14 @@ const handleViewAttendanceBasis = async (row) => {
           type: 'info'
         }
       ).then(() => {
-        router.push('/attendance-basis')
+        router.push({
+          path: '/attendance-basis',
+          query: {
+            project_id: row.project_id,
+            month: row.month,
+            action: 'create'
+          }
+        })
       }).catch(() => {})
     }
   } catch (error) {
@@ -2053,10 +2061,37 @@ const openDingTalk = () => {
   window.open('https://www.dingtalk.com/', '_blank')
 }
 
-onMounted(() => {
+const applyRouteQuery = () => {
+  const { tab, project_id, month } = route.query
+  const nextTab = tab === 'pending' ? 'pending' : 'list'
+  const nextProjectId = project_id ? Number(project_id) : ''
+  const nextMonth = typeof month === 'string' ? month : ''
+
+  activeAttendanceTab.value = nextTab
+
+  if (nextTab === 'pending') {
+    const targetMonth = nextMonth || getCurrentMonth()
+    const shouldLoadImmediately = pendingAttendanceMonth.value === targetMonth
+    pendingAttendanceMonth.value = targetMonth
+    if (shouldLoadImmediately) {
+      loadPendingAttendanceProjects()
+    }
+    return
+  }
+
+  searchForm.project_id = Number.isNaN(nextProjectId) ? '' : nextProjectId
+  searchForm.month = nextMonth
+  searchForm.status = ''
+  pagination.currentPage = 1
   loadSheets()
+}
+
+onMounted(() => {
   loadProjects()
-  loadPendingAttendanceProjects()
+  applyRouteQuery()
+  if (activeAttendanceTab.value !== 'pending') {
+    loadPendingAttendanceProjects()
+  }
 })
 
 // 监听账套切换，自动刷新数据
@@ -2074,6 +2109,21 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
 watch(pendingAttendanceMonth, () => {
   loadPendingAttendanceProjects()
 })
+
+watch(activeAttendanceTab, (tab) => {
+  if (tab === 'pending') {
+    loadPendingAttendanceProjects()
+  } else if (tab === 'list') {
+    loadSheets()
+  }
+})
+
+watch(
+  () => route.query,
+  () => {
+    applyRouteQuery()
+  }
+)
 </script>
 
 <style scoped>

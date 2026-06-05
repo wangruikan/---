@@ -781,7 +781,7 @@ Route::prefix('recruitment')->group(function () {
         Route::delete('/{id}', [AccountSetController::class, 'destroy']);
         Route::post('/{id}/set-default', [AccountSetController::class, 'setDefault']);
         Route::post('/{id}/archive', [AccountSetController::class, 'archive']);
-        
+
         // 账套管理员分配
         Route::post('/{id}/assign-users', [AccountSetController::class, 'assignUsers']);
         Route::get('/{id}/users', [AccountSetController::class, 'getUsers']);

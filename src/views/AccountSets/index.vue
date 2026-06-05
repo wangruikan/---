@@ -130,6 +130,10 @@
             <template #default="{ row }">
               <el-button size="small" @click="handleView(row)">查看</el-button>
               <el-button size="small" type="primary" @click="handleEdit(row)">编辑</el-button>
+              <el-button size="small" type="info" @click="handleManageUsers(row)">
+                <el-icon><User /></el-icon>
+                人员设置
+              </el-button>
               <el-button
                 v-if="!row.is_default"
                 size="small"
@@ -165,6 +169,69 @@
         </div>
       </el-card>
     </div>
+
+    <!-- 人员分配对话框 -->
+    <el-dialog
+      v-model="showUsersDialog"
+      title="账套人员设置"
+      width="700px"
+    >
+      <div class="users-section">
+        <div class="current-users">
+          <h3>当前人员</h3>
+          <el-table :data="currentUsers" border style="margin-bottom: 20px;">
+            <el-table-column label="姓名" width="160">
+              <template #default="{ row }">
+                {{ row.nickname || row.name }}<span style="color: #909399; font-size: 12px;"> ({{ row.name }})</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="email" label="邮箱" width="200" />
+            <el-table-column prop="system_role" label="系统角色" width="100">
+              <template #default="{ row }">
+                <el-tag size="small">{{ getRoleText(row.system_role) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="审批级别" width="240">
+              <template #default="{ row }">
+                <el-select
+                  v-model="row.approval_level"
+                  placeholder="不参与审批"
+                  clearable
+                  size="small"
+                  @change="handleApprovalLevelChange(row)"
+                  style="width: 150px"
+                >
+                  <el-option label="第1级-经办" :value="1" />
+                  <el-option label="第2级-复核" :value="2" />
+                  <el-option label="第3级-审核" :value="3" />
+                  <el-option label="第4级-终审" :value="4" />
+                </el-select>
+                <el-tag
+                  v-if="row.approval_level"
+                  type="warning"
+                  size="small"
+                  style="margin-left: 5px"
+                >
+                  {{ getApprovalLevelText(row.approval_level) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  size="small"
+                  type="danger"
+                  @click="handleRemoveUser(row.id)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+      </div>
+    </el-dialog>
 
     <!-- 创建/编辑对话框 -->
     <el-dialog
@@ -283,7 +350,9 @@ import {
   deleteAccountSet,
   setDefaultAccountSet,
   archiveAccountSet,
-  getAccountSetStatistics
+  getAccountSetStatistics,
+  getAccountSetUsers,
+  removeAccountSetUser
 } from '@/api/accountSets'
 import { useUserStore } from '@/stores/user'
 import { useRouter, useRoute } from 'vue-router'
@@ -311,11 +380,14 @@ onMounted(() => {
 const loading = ref(false)
 const submitting = ref(false)
 const showCreateDialog = ref(false)
+const showUsersDialog = ref(false)
 const isEdit = ref(false)
 const isViewMode = ref(false)
 const formRef = ref()
 
 const accountSets = ref([])
+const currentUsers = ref([])
+const currentAccountSetId = ref(null)
 
 const statistics = ref({
   total: 0,
@@ -648,6 +720,49 @@ const formatDateTime = (dateTime) => {
   })
 }
 
+const handleManageUsers = async (row) => {
+  currentAccountSetId.value = row.id
+  showUsersDialog.value = true
+
+  await loadAccountSetUsers(row.id)
+}
+
+const loadAccountSetUsers = async (accountSetId) => {
+  try {
+    const response = await getAccountSetUsers(accountSetId)
+    if (response.success) {
+      currentUsers.value = response.data || []
+    }
+  } catch (error) {
+    console.error('Load users error:', error)
+    ElMessage.error('加载人员列表失败')
+  }
+}
+
+const handleRemoveUser = async (userId) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定移除该人员吗？',
+      '确认操作',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    await removeAccountSetUser(currentAccountSetId.value, userId)
+    ElMessage.success('人员已移除')
+
+    await loadAccountSetUsers(currentAccountSetId.value)
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Remove user error:', error)
+      ElMessage.error('移除失败')
+    }
+  }
+}
+
 const getRoleText = (role) => {
   const texts = {
     super_admin: '超级管理员',
@@ -657,6 +772,43 @@ const getRoleText = (role) => {
     finance: '财务'
   }
   return texts[role] || role
+}
+
+const getApprovalLevelText = (level) => {
+  const texts = {
+    1: '经办',
+    2: '复核',
+    3: '审核',
+    4: '终审'
+  }
+  return texts[level] || ''
+}
+
+const handleApprovalLevelChange = async (user) => {
+  try {
+    const levelNames = {
+      1: '经办',
+      2: '复核',
+      3: '审核',
+      4: '终审'
+    }
+
+    await request({
+      url: `/account-sets/${currentAccountSetId.value}/users/${user.id}/approval-level`,
+      method: 'put',
+      data: {
+        approval_level: user.approval_level,
+        approval_level_name: user.approval_level ? levelNames[user.approval_level] : null
+      }
+    })
+
+    ElMessage.success('审批级别设置成功')
+    await loadAccountSetUsers(currentAccountSetId.value)
+  } catch (error) {
+    console.error('Set approval level error:', error)
+    ElMessage.error('设置失败')
+    await loadAccountSetUsers(currentAccountSetId.value)
+  }
 }
 </script>
 

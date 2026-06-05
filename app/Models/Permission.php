@@ -84,13 +84,19 @@ class Permission extends Model
             'basis' => '基础数据',
             'dashboard' => '仪表盘',
             'insurance_change' => '保险变更',
+            'insurance_surrender' => '商业险管理',
             'invoice_projects' => '发票项目',
+            'invoice_summaries' => '发票汇总',
             'other_insurance' => '其他保险',
             'payment_summaries' => '付款汇总',
             'permissions' => '权限管理',
             'settings' => '系统设置',
             'special_deductions' => '专项扣除',
             'users' => '用户管理',
+            'report_templates' => '报表模板',
+            'material_assets' => '资料管理',
+            'material_requests' => '资料申请',
+            'process_approval' => '流程审批',
         ];
         
         return $names[$module] ?? $module;

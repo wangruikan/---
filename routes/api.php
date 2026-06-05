@@ -913,6 +913,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('seals')->group(function () {
         Route::get('/my', [App\Http\Controllers\SignatureController::class, 'getMySeals']);
         Route::post('/upload', [App\Http\Controllers\SignatureController::class, 'uploadSeal']);
+        Route::post('/{id}/update', [App\Http\Controllers\SignatureController::class, 'updateSeal']);
         Route::post('/{id}/set-default', [App\Http\Controllers\SignatureController::class, 'setDefaultSeal']);
         Route::delete('/{id}', [App\Http\Controllers\SignatureController::class, 'deleteSeal']);
     });

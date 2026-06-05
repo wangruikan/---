@@ -59,6 +59,20 @@ export function uploadSeal(data) {
 }
 
 /**
+ * 修改印章
+ */
+export function updateSeal(id, data) {
+  return request({
+    url: `/seals/${id}/update`,
+    method: 'post',
+    data,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+/**
  * 设置默认印章
  */
 export function setDefaultSeal(id) {
@@ -106,6 +120,10 @@ export function uploadBankStamp(data, type = 'bank') {
   })
 }
 
+export function uploadTypedStamp(data, type = 'bank') {
+  return uploadBankStamp(data, type)
+}
+
 /**
  * 更新付讫章位置
  */
@@ -126,4 +144,8 @@ export function deleteBankStamp(type = 'bank') {
     method: 'delete',
     params: { type }
   })
+}
+
+export function deleteTypedStamp(type = 'bank') {
+  return deleteBankStamp(type)
 }

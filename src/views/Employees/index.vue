@@ -4049,6 +4049,14 @@
         <div class="contract-header">
           <h3>员工：{{ currentEmployee?.name }}</h3>
           <div class="header-buttons">
+            <el-button
+              type="success"
+              :disabled="contractSelection.length === 0 || contractApprovalSubmitting"
+              :loading="contractApprovalSubmitting"
+              @click="handleBatchSubmitApproval"
+            >
+              批量发起审批{{ contractSelection.length ? ` (${contractSelection.length})` : '' }}
+            </el-button>
             <el-dropdown @command="handleContractTypeSelect" split-button type="primary">
               上传合同
               <template #dropdown>
@@ -4076,12 +4084,19 @@
         
         <!-- 合同列表 -->
         <el-table
+          ref="contractTableRef"
           :data="contracts"
           v-loading="contractsLoading"
           stripe
           border
           style="margin-top: 20px"
+          @selection-change="handleContractSelectionChange"
         >
+          <el-table-column
+            type="selection"
+            width="55"
+            :selectable="isContractSelectable"
+          />
           <el-table-column prop="contract_type" label="合同类型" width="150">
             <template #default="{ row }">
               <el-tag :type="getContractTypeColor(row.contract_type)">
@@ -4120,7 +4135,7 @@
                 提交签署
               </el-button>
               <el-button
-                v-if="row.status === 'employee_signed' && !['confidentiality', 'non_compete'].includes(row.contract_type)"
+                v-if="canSubmitContractApproval(row)"
                 type="success"
                 size="small"
                 @click="handleSubmitApproval(row)"
@@ -7442,7 +7457,10 @@ const showUploadDialog = ref(false)
 const showUploadSignedDialog = ref(false)
 const currentEmployee = ref(null)
 const contracts = ref([])
+const contractTableRef = ref()
+const contractSelection = ref([])
 const contractsLoading = ref(false)
+const contractApprovalSubmitting = ref(false)
 const transferLogs = ref([])
 const transferLogsLoading = ref(false)
 const uploading = ref(false)
@@ -7501,6 +7519,16 @@ const uploadForm = reactive({
 // 可用模板列表
 const availableTemplates = ref([])
 
+const canSubmitContractApproval = (contract) => {
+  return contract?.status === 'employee_signed' && !['confidentiality', 'non_compete'].includes(contract?.contract_type)
+}
+
+const isContractSelectable = (row) => canSubmitContractApproval(row)
+
+const handleContractSelectionChange = (selection) => {
+  contractSelection.value = selection.filter(canSubmitContractApproval)
+}
+
 // 打开合同管理对话框
 const handleContractManage = async (row) => {
   console.log('=== 打开合同管理 ===')
@@ -7524,6 +7552,10 @@ const loadEmployeeContracts = async (employeeId) => {
     console.log('合同列表响应:', response)
     if (response.success) {
       contracts.value = response.data || []
+      contractSelection.value = []
+      nextTick(() => {
+        contractTableRef.value?.clearSelection?.()
+      })
       console.log('加载到的合同数量:', contracts.value.length)
     }
   } catch (error) {
@@ -8038,6 +8070,75 @@ const handleSubmitApproval = async (contract) => {
   }
 }
 
+const submitContractApproval = async (contract) => {
+  const response = await request({
+    url: '/approvals',
+    method: 'post',
+    data: {
+      business_type: 'employee_contract',
+      business_id: contract.id,
+      employee_id: currentEmployee.value.id,
+      skip_initiator: true,
+      stamp_method: contract.stamp_method || 'online'
+    }
+  })
+
+  if (!response.success) {
+    throw new Error(response.message || '提交失败')
+  }
+
+  return response
+}
+
+const handleBatchSubmitApproval = async () => {
+  if (contractSelection.value.length === 0) {
+    ElMessage.warning('请先勾选可发起审批的合同')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认批量发起 ${contractSelection.value.length} 份合同的审批吗？`,
+      '批量发起审批',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    contractApprovalSubmitting.value = true
+
+    let successCount = 0
+    let failCount = 0
+
+    for (const contract of contractSelection.value) {
+      try {
+        await submitContractApproval(contract)
+        successCount++
+      } catch (error) {
+        failCount++
+        console.error('批量提交合同审批失败:', contract.id, error)
+      }
+    }
+
+    await loadEmployeeContracts(currentEmployee.value.id)
+
+    if (failCount === 0) {
+      ElMessage.success(`已成功发起 ${successCount} 份合同审批`)
+    } else {
+      ElMessage.warning(`批量发起完成，成功 ${successCount} 份，失败 ${failCount} 份`)
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Batch submit contract approval error:', error)
+      ElMessage.error(error.message || '批量发起审批失败')
+    }
+  } finally {
+    contractApprovalSubmitting.value = false
+  }
+}
+
 // 确认完成合同（保留旧函数，以防其他地方还在用）
 const handleCompleteContract = async (contract) => {
   try {
@@ -8133,10 +8234,12 @@ const handleDeleteContract = async (contract) => {
 const handleContractDialogClose = () => {
   currentEmployee.value = null
   contracts.value = []
+  contractSelection.value = []
   showUploadDialog.value = false
   showUploadSignedDialog.value = false
   fileList.value = []
   signedContractFile.value = null
+  contractTableRef.value?.clearSelection?.()
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
   }

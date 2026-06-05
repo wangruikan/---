@@ -14,6 +14,7 @@ class UserBankStamp extends Model
         'user_id',
         'type',
         'name',
+        'company',
         'image_path',
         'original_filename',
         'position_x',

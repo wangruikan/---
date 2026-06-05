@@ -11,6 +11,30 @@ use Illuminate\Support\Facades\Validator;
 
 class SignatureController extends Controller
 {
+    private function getStampTypeLabel(string $type): string
+    {
+        return match ($type) {
+            'cash' => '现金付讫章',
+            'official' => '公章',
+            'finance' => '财务章',
+            'contract' => '合同章',
+            'legal_person' => '法人章',
+            default => '银行付讫章',
+        };
+    }
+
+    private function getDefaultStampName(string $type): string
+    {
+        return match ($type) {
+            'cash' => '现金付讫',
+            'official' => '公章',
+            'finance' => '财务章',
+            'contract' => '合同章',
+            'legal_person' => '法人章',
+            default => '银行付讫',
+        };
+    }
+
     /**
      * 获取我的签名
      */
@@ -238,6 +262,93 @@ class SignatureController extends Controller
     }
 
     /**
+     * 修改印章
+     */
+    public function updateSeal(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:100',
+            'seal_image' => 'nullable|file|mimes:png,jpg,jpeg|max:2048',
+            'is_default' => 'nullable',
+        ], [
+            'name.required' => '请输入印章名称',
+            'seal_image.mimes' => '只支持PNG、JPG格式',
+            'seal_image.max' => '文件大小不能超过2MB',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '用户未认证'
+                ], 401);
+            }
+
+            $seal = UserSeal::where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$seal) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '印章不存在'
+                ], 404);
+            }
+
+            $updateData = [
+                'name' => $request->name,
+            ];
+
+            if ($request->has('is_default')) {
+                $updateData['is_default'] = filter_var($request->is_default, FILTER_VALIDATE_BOOLEAN) || $request->is_default === '1' || $request->is_default === 1;
+            }
+
+            if ($request->hasFile('seal_image')) {
+                $file = $request->file('seal_image');
+                $path = $file->store('seals', 'public');
+                $updateData['image_path'] = $path;
+                $updateData['original_filename'] = $file->getClientOriginalName();
+                $oldPath = $seal->image_path;
+            }
+
+            $seal->update($updateData);
+
+            if (!empty($updateData['is_default'])) {
+                UserSeal::where('user_id', $user->id)
+                    ->where('id', '!=', $seal->id)
+                    ->update(['is_default' => false]);
+            }
+
+            if (!empty($oldPath) && $oldPath !== $seal->image_path && Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
+
+            $seal->image_url = asset('storage/' . $seal->image_path);
+
+            return response()->json([
+                'success' => true,
+                'message' => '印章修改成功',
+                'data' => $seal
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => '修改失败：' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * 设置默认印章
      */
     public function setDefaultSeal(Request $request, $id)
@@ -342,8 +453,9 @@ class SignatureController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'bank_stamp_image' => 'required|file|mimes:png,jpg,jpeg|max:2048',
-            'type' => 'nullable|in:bank,cash',
+            'type' => 'nullable|in:bank,cash,official,finance,contract,legal_person',
             'name' => 'nullable|string|max:100',
+            'company' => 'nullable|string|max:100',
             'position_x' => 'nullable|integer|min:0|max:100',
             'position_y' => 'nullable|integer|min:0|max:100',
             'width' => 'nullable|integer|min:20|max:300',
@@ -378,7 +490,7 @@ class SignatureController extends Controller
             $path = $file->store('bank_stamps', 'public');
 
             $type = $request->type ?? 'bank';
-            $defaultName = $type === 'cash' ? '现金付讫' : '银行付讫';
+            $defaultName = $this->getDefaultStampName($type);
             $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
 
             // 查找或创建付讫章记录（按账套共享）
@@ -392,6 +504,7 @@ class SignatureController extends Controller
                     'user_id' => $user->id,
                     'type' => $type,
                     'name' => $request->name ?? $defaultName,
+                    'company' => $request->company,
                     'image_path' => $path,
                     'original_filename' => $originalFilename,
                     'position_x' => $request->position_x ?? 70,
@@ -411,7 +524,7 @@ class SignatureController extends Controller
 
             $bankStamp->image_url = asset('storage/' . $bankStamp->image_path);
 
-            $typeLabel = $bankStamp->type === 'cash' ? '现金付讫章' : '银行付讫章';
+            $typeLabel = $this->getStampTypeLabel($bankStamp->type);
 
             return response()->json([
                 'success' => true,
@@ -433,7 +546,7 @@ class SignatureController extends Controller
     public function updateBankStampPosition(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'type' => 'nullable|in:bank,cash',
+            'type' => 'nullable|in:bank,cash,official,finance,contract,legal_person',
             'position_x' => 'required|integer|min:0|max:100',
             'position_y' => 'required|integer|min:0|max:100',
             'width' => 'nullable|integer|min:20|max:300',
@@ -457,7 +570,7 @@ class SignatureController extends Controller
         }
 
         $type = $request->type ?? 'bank';
-        $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
+        $typeLabel = $this->getStampTypeLabel($type);
         $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
         $bankStamp = $accountSetId
             ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
@@ -500,7 +613,7 @@ class SignatureController extends Controller
         }
 
         $type = $request->type ?? 'bank';
-        $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
+        $typeLabel = $this->getStampTypeLabel($type);
         $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
         $bankStamp = $accountSetId
             ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
@@ -520,7 +633,7 @@ class SignatureController extends Controller
 
         $bankStamp->delete();
 
-        $typeLabel = $type === 'cash' ? '现金付讫章' : '银行付讫章';
+        $typeLabel = $this->getStampTypeLabel($type);
         return response()->json([
             'success' => true,
             'message' => "{$typeLabel}删除成功"

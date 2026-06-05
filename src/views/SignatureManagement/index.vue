@@ -32,6 +32,13 @@
               <div class="seal-name">{{ seal.name }}</div>
               <div class="seal-actions">
                 <el-button 
+                  type="warning" 
+                  size="small" 
+                  @click="handleEditSeal(seal)"
+                >
+                  修改
+                </el-button>
+                <el-button 
                   v-if="!seal.is_default" 
                   type="primary" 
                   size="small" 
@@ -58,41 +65,45 @@
       </el-card>
     </div>
     
-    <!-- 银行付讫章 -->
-    <div class="section">
+    <div
+      v-for="stampType in fixedStampTypes"
+      :key="stampType.type"
+      class="section"
+    >
       <el-card>
         <template #header>
           <div class="section-header">
-            <span class="section-title">🏦 银行付讫章</span>
-            <span class="section-desc">（审批最后节点通过时自动盖章到付款申请单）</span>
+            <span class="section-title">{{ stampType.icon }} {{ stampType.title }}</span>
+            <span class="section-desc">{{ stampType.desc }}</span>
           </div>
         </template>
-        
+
         <div class="bank-stamp-content">
-          <div v-if="bankStamp" class="bank-stamp-display">
-            <img :src="bankStamp.image_url" alt="银行付讫章" class="bank-stamp-image" />
+          <div v-if="typedStamps[stampType.type]" class="bank-stamp-display">
+            <img :src="typedStamps[stampType.type].image_url" :alt="stampType.title" class="bank-stamp-image" />
             <div class="bank-stamp-info">
-              <p>名称：{{ bankStamp.name }}</p>
-              <p>默认位置：X {{ bankStamp.position_x }}%, Y {{ bankStamp.position_y }}%</p>
-              <p>尺寸：{{ bankStamp.width }} x {{ bankStamp.height }}</p>
-              <p>上传时间：{{ formatDateTime(bankStamp.created_at) }}</p>
+              <p>名称：{{ typedStamps[stampType.type].name }}</p>
+              <p>公司：{{ typedStamps[stampType.type].company || '-' }}</p>
+              <p>默认位置：X {{ typedStamps[stampType.type].position_x }}%, Y {{ typedStamps[stampType.type].position_y }}%</p>
+              <p>尺寸：{{ typedStamps[stampType.type].width }} x {{ typedStamps[stampType.type].height }}</p>
+              <p>上传时间：{{ formatDateTime(typedStamps[stampType.type].created_at) }}</p>
             </div>
             <div class="bank-stamp-actions">
-              <el-button type="primary" @click="showUploadBankStamp = true">
+              <el-button type="primary" @click="openTypedStampUpload(stampType.type)">
                 更换
               </el-button>
-              <el-button type="warning" @click="showPositionSetting = true">
+              <el-button type="warning" @click="openTypedStampPosition(stampType.type)">
                 设置位置
               </el-button>
-              <el-button type="danger" @click="handleDeleteBankStamp">
+              <el-button type="danger" @click="handleDeleteTypedStamp(stampType.type)">
                 删除
               </el-button>
             </div>
           </div>
           <div v-else class="bank-stamp-empty">
-            <el-empty description="还未上传银行付讫章">
-              <el-button type="primary" @click="showUploadBankStamp = true">
-                上传银行付讫章
+            <el-empty :description="`还未上传${stampType.title}`">
+              <el-button type="primary" @click="openTypedStampUpload(stampType.type)">
+                {{ `上传${stampType.title}` }}
               </el-button>
             </el-empty>
           </div>
@@ -103,7 +114,7 @@
     <!-- 上传印章对话框 -->
     <el-dialog
       v-model="showUploadSeal"
-      title="添加印章"
+      :title="editingSealId ? '修改印章' : '添加印章'"
       width="500px"
     >
       <el-form :model="sealForm" label-width="100px">
@@ -111,7 +122,7 @@
           <el-input v-model="sealForm.name" placeholder="例如：公司公章、合同专用章" />
         </el-form-item>
         
-        <el-form-item label="印章图片" required>
+        <el-form-item :label="editingSealId ? '印章图片' : '印章图片'" :required="!editingSealId">
           <el-upload
             ref="sealUploadRef"
             :file-list="sealFileList"
@@ -128,7 +139,7 @@
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                建议使用PNG透明背景图片，文件大小不超过2MB
+                {{ editingSealId ? '不上传则保留原图片，建议使用PNG透明背景图片，文件大小不超过2MB' : '建议使用PNG透明背景图片，文件大小不超过2MB' }}
               </div>
             </template>
           </el-upload>
@@ -140,74 +151,39 @@
       </el-form>
       
       <template #footer>
-        <el-button @click="showUploadSeal = false">取消</el-button>
-        <el-button type="primary" @click="handleSealUpload" :loading="uploading">
-          确认上传
+        <el-button @click="handleSealDialogClose">取消</el-button>
+        <el-button type="primary" @click="handleSealSubmit" :loading="uploading">
+          {{ editingSealId ? '确认修改' : '确认上传' }}
         </el-button>
       </template>
     </el-dialog>
     
-    <!-- 现金付讫章 -->
-    <div class="section">
-      <el-card>
-        <template #header>
-          <div class="section-header">
-            <span class="section-title">💵 现金付讫章</span>
-            <span class="section-desc">（付款方式为现金时自动盖章到付款申请单）</span>
-          </div>
-        </template>
-        
-        <div class="bank-stamp-content">
-          <div v-if="cashStamp" class="bank-stamp-display">
-            <img :src="cashStamp.image_url" alt="现金付讫章" class="bank-stamp-image" />
-            <div class="bank-stamp-info">
-              <p>名称：{{ cashStamp.name }}</p>
-              <p>默认位置：X {{ cashStamp.position_x }}%, Y {{ cashStamp.position_y }}%</p>
-              <p>尺寸：{{ cashStamp.width }} x {{ cashStamp.height }}</p>
-              <p>上传时间：{{ formatDateTime(cashStamp.created_at) }}</p>
-            </div>
-            <div class="bank-stamp-actions">
-              <el-button type="primary" @click="showUploadCashStamp = true">
-                更换
-              </el-button>
-              <el-button type="warning" @click="showCashPositionSetting = true">
-                设置位置
-              </el-button>
-              <el-button type="danger" @click="handleDeleteCashStamp">
-                删除
-              </el-button>
-            </div>
-          </div>
-          <div v-else class="bank-stamp-empty">
-            <el-empty description="还未上传现金付讫章">
-              <el-button type="primary" @click="showUploadCashStamp = true">
-                上传现金付讫章
-              </el-button>
-            </el-empty>
-          </div>
-        </div>
-      </el-card>
-    </div>
-
-    <!-- 上传银行付讫章对话框 -->
     <el-dialog
-      v-model="showUploadBankStamp"
-      title="上传银行付讫章"
+      v-model="showTypedStampUpload"
+      :title="`${currentTypedStampConfig?.stamp ? '更换' : '上传'}${currentTypedStampConfig?.title || '印章'}`"
       width="500px"
     >
+      <el-form :model="typedStampForm" label-width="100px">
+        <el-form-item label="名称">
+          <el-input v-model="typedStampForm.name" placeholder="请输入印章名称" />
+        </el-form-item>
+        <el-form-item label="公司">
+          <el-input v-model="typedStampForm.company" placeholder="请输入公司名称" />
+        </el-form-item>
+      </el-form>
       <el-upload
-        ref="bankStampUploadRef"
-        :file-list="bankStampFileList"
+        ref="typedStampUploadRef"
+        :file-list="typedStampFileList"
         :auto-upload="false"
         :limit="1"
-        :on-change="handleBankStampFileChange"
-        :on-exceed="handleBankStampExceed"
+        :on-change="handleTypedStampFileChange"
+        :on-exceed="handleTypedStampExceed"
         accept=".png,.jpg,.jpeg"
         drag
       >
         <el-icon class="el-icon--upload"><upload-filled /></el-icon>
         <div class="el-upload__text">
-          将银行付讫章图片拖到此处，或<em>点击上传</em>
+          将印章图片拖到此处，或<em>点击上传</em>
         </div>
         <template #tip>
           <div class="el-upload__tip">
@@ -217,101 +193,36 @@
       </el-upload>
       
       <template #footer>
-        <el-button @click="showUploadBankStamp = false">取消</el-button>
-        <el-button type="primary" @click="handleBankStampUpload" :loading="uploading">
-          确认上传
-        </el-button>
-      </template>
-    </el-dialog>
-    
-    <!-- 上传现金付讫章对话框 -->
-    <el-dialog
-      v-model="showUploadCashStamp"
-      title="上传现金付讫章"
-      width="500px"
-    >
-      <el-upload
-        ref="cashStampUploadRef"
-        :file-list="cashStampFileList"
-        :auto-upload="false"
-        :limit="1"
-        :on-change="handleCashStampFileChange"
-        :on-exceed="handleCashStampExceed"
-        accept=".png,.jpg,.jpeg"
-        drag
-      >
-        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-        <div class="el-upload__text">
-          将现金付讫章图片拖到此处，或<em>点击上传</em>
-        </div>
-        <template #tip>
-          <div class="el-upload__tip">
-            建议使用PNG透明背景图片，文件大小不超过2MB
-          </div>
-        </template>
-      </el-upload>
-      
-      <template #footer>
-        <el-button @click="showUploadCashStamp = false">取消</el-button>
-        <el-button type="primary" @click="handleCashStampUpload" :loading="uploading">
+        <el-button @click="handleTypedStampUploadClose">取消</el-button>
+        <el-button type="primary" @click="handleTypedStampUpload" :loading="uploading">
           确认上传
         </el-button>
       </template>
     </el-dialog>
 
-    <!-- 银行付讫章位置设置对话框 -->
     <el-dialog
-      v-model="showPositionSetting"
-      title="设置银行付讫章位置"
+      v-model="showTypedStampPosition"
+      :title="`设置${currentTypedStampConfig?.title || '印章'}位置`"
       width="400px"
     >
-      <el-form :model="positionForm" label-width="100px">
+      <el-form :model="typedStampPositionForm" label-width="100px">
         <el-form-item label="X位置(%)">
-          <el-slider v-model="positionForm.position_x" :min="0" :max="100" show-input />
+          <el-slider v-model="typedStampPositionForm.position_x" :min="0" :max="100" show-input />
         </el-form-item>
         <el-form-item label="Y位置(%)">
-          <el-slider v-model="positionForm.position_y" :min="0" :max="100" show-input />
+          <el-slider v-model="typedStampPositionForm.position_y" :min="0" :max="100" show-input />
         </el-form-item>
         <el-form-item label="宽度(px)">
-          <el-input-number v-model="positionForm.width" :min="20" :max="300" />
+          <el-input-number v-model="typedStampPositionForm.width" :min="20" :max="300" />
         </el-form-item>
         <el-form-item label="高度(px)">
-          <el-input-number v-model="positionForm.height" :min="20" :max="300" />
+          <el-input-number v-model="typedStampPositionForm.height" :min="20" :max="300" />
         </el-form-item>
       </el-form>
       
       <template #footer>
-        <el-button @click="showPositionSetting = false">取消</el-button>
-        <el-button type="primary" @click="handleUpdatePosition" :loading="uploading">
-          保存设置
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 现金付讫章位置设置对话框 -->
-    <el-dialog
-      v-model="showCashPositionSetting"
-      title="设置现金付讫章位置"
-      width="400px"
-    >
-      <el-form :model="cashPositionForm" label-width="100px">
-        <el-form-item label="X位置(%)">
-          <el-slider v-model="cashPositionForm.position_x" :min="0" :max="100" show-input />
-        </el-form-item>
-        <el-form-item label="Y位置(%)">
-          <el-slider v-model="cashPositionForm.position_y" :min="0" :max="100" show-input />
-        </el-form-item>
-        <el-form-item label="宽度(px)">
-          <el-input-number v-model="cashPositionForm.width" :min="20" :max="300" />
-        </el-form-item>
-        <el-form-item label="高度(px)">
-          <el-input-number v-model="cashPositionForm.height" :min="20" :max="300" />
-        </el-form-item>
-      </el-form>
-      
-      <template #footer>
-        <el-button @click="showCashPositionSetting = false">取消</el-button>
-        <el-button type="primary" @click="handleUpdateCashPosition" :loading="uploading">
+        <el-button @click="showTypedStampPosition = false">取消</el-button>
+        <el-button type="primary" @click="handleUpdateTypedStampPosition" :loading="uploading">
           保存设置
         </el-button>
       </template>
@@ -320,27 +231,37 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, UploadFilled } from '@element-plus/icons-vue'
 import {
   getMySeals,
   uploadSeal,
+  updateSeal,
   setDefaultSeal,
   deleteSeal,
   getMyBankStamp,
-  uploadBankStamp,
+  uploadTypedStamp,
   updateBankStampPosition,
-  deleteBankStamp
+  deleteTypedStamp
 } from '@/api/signatures'
 
 const mySeals = ref([])
-const bankStamp = ref(null)
-const cashStamp = ref(null)
+const typedStamps = reactive({})
 const uploading = ref(false)
+
+const fixedStampTypes = [
+  { type: 'bank', title: '银行付讫章', icon: '🏦', desc: '（审批最后节点通过时自动盖章到付款申请单）' },
+  { type: 'cash', title: '现金付讫章', icon: '💵', desc: '（付款方式为现金时自动盖章到付款申请单）' },
+  { type: 'official', title: '公章', icon: '🔴', desc: '（固定类型印章）' },
+  { type: 'finance', title: '财务章', icon: '🧾', desc: '（固定类型印章）' },
+  { type: 'contract', title: '合同章', icon: '📄', desc: '（固定类型印章）' },
+  { type: 'legal_person', title: '法人章', icon: '👤', desc: '（固定类型印章）' }
+]
 
 // 印章上传
 const showUploadSeal = ref(false)
+const editingSealId = ref(null)
 const sealUploadRef = ref()
 const sealFileList = ref([])
 const sealForm = reactive({
@@ -349,24 +270,16 @@ const sealForm = reactive({
   is_default: false
 })
 
-// 银行付讫章上传
-const showUploadBankStamp = ref(false)
-const bankStampUploadRef = ref()
-const bankStampFileList = ref([])
-const showPositionSetting = ref(false)
-const positionForm = reactive({
-  position_x: 70,
-  position_y: 80,
-  width: 100,
-  height: 50
+const showTypedStampUpload = ref(false)
+const typedStampUploadRef = ref()
+const typedStampFileList = ref([])
+const currentTypedStampType = ref('bank')
+const showTypedStampPosition = ref(false)
+const typedStampForm = reactive({
+  name: '',
+  company: ''
 })
-
-// 现金付讫章上传
-const showUploadCashStamp = ref(false)
-const cashStampUploadRef = ref()
-const cashStampFileList = ref([])
-const showCashPositionSetting = ref(false)
-const cashPositionForm = reactive({
+const typedStampPositionForm = reactive({
   position_x: 70,
   position_y: 80,
   width: 100,
@@ -395,14 +308,38 @@ const handleSealExceed = () => {
   ElMessage.warning('只能上传一个印章图片')
 }
 
-// 上传印章
-const handleSealUpload = async () => {
+const resetSealForm = () => {
+  editingSealId.value = null
+  sealFileList.value = []
+  sealForm.name = ''
+  sealForm.seal_image = null
+  sealForm.is_default = false
+  sealUploadRef.value?.clearFiles?.()
+}
+
+const handleSealDialogClose = () => {
+  showUploadSeal.value = false
+  resetSealForm()
+}
+
+const handleEditSeal = (seal) => {
+  editingSealId.value = seal.id
+  sealForm.name = seal.name || ''
+  sealForm.seal_image = null
+  sealForm.is_default = !!seal.is_default
+  sealFileList.value = []
+  sealUploadRef.value?.clearFiles?.()
+  showUploadSeal.value = true
+}
+
+// 新增/修改印章
+const handleSealSubmit = async () => {
   if (!sealForm.name) {
     ElMessage.warning('请输入印章名称')
     return
   }
 
-  if (sealFileList.value.length === 0) {
+  if (!editingSealId.value && sealFileList.value.length === 0) {
     ElMessage.warning('请选择印章图片')
     return
   }
@@ -411,21 +348,25 @@ const handleSealUpload = async () => {
   try {
     const formData = new FormData()
     formData.append('name', sealForm.name)
-    formData.append('seal_image', sealFileList.value[0].raw)
     formData.append('is_default', sealForm.is_default ? '1' : '0')
 
-    const response = await uploadSeal(formData)
+    if (sealFileList.value.length > 0) {
+      formData.append('seal_image', sealFileList.value[0].raw)
+    }
+
+    const response = editingSealId.value
+      ? await updateSeal(editingSealId.value, formData)
+      : await uploadSeal(formData)
+
     if (response.success) {
-      ElMessage.success('印章添加成功')
+      ElMessage.success(editingSealId.value ? '印章修改成功' : '印章添加成功')
       showUploadSeal.value = false
-      sealFileList.value = []
-      sealForm.name = ''
-      sealForm.is_default = false
+      resetSealForm()
       await loadMySeals()
     }
   } catch (error) {
-    console.error('上传印章失败:', error)
-    ElMessage.error(error.response?.data?.message || '上传失败')
+    console.error('提交印章失败:', error)
+    ElMessage.error(error.response?.data?.message || '提交失败')
   } finally {
     uploading.value = false
   }
@@ -467,71 +408,128 @@ const handleDeleteSeal = async (seal) => {
   }
 }
 
-// ==================== 银行付讫章相关 ====================
+const currentTypedStampConfig = computed(() => {
+  const config = fixedStampTypes.find(item => item.type === currentTypedStampType.value)
+  return {
+    ...config,
+    stamp: typedStamps[currentTypedStampType.value] || null
+  }
+})
 
-// 加载我的银行付讫章
-const loadBankStamp = async () => {
+const resetTypedStampUploadForm = () => {
+  typedStampForm.name = ''
+  typedStampForm.company = ''
+  typedStampFileList.value = []
+  typedStampUploadRef.value?.clearFiles?.()
+}
+
+const fillTypedStampPositionForm = (stamp) => {
+  typedStampPositionForm.position_x = stamp?.position_x ?? 70
+  typedStampPositionForm.position_y = stamp?.position_y ?? 80
+  typedStampPositionForm.width = stamp?.width ?? 100
+  typedStampPositionForm.height = stamp?.height ?? 50
+}
+
+const loadTypedStamp = async (type) => {
   try {
-    const response = await getMyBankStamp()
+    const response = await getMyBankStamp(type)
     if (response.success) {
-      bankStamp.value = response.data
-      if (bankStamp.value) {
-        positionForm.position_x = bankStamp.value.position_x
-        positionForm.position_y = bankStamp.value.position_y
-        positionForm.width = bankStamp.value.width
-        positionForm.height = bankStamp.value.height
-      }
+      typedStamps[type] = response.data || null
     }
   } catch (error) {
-    console.error('加载银行付讫章失败:', error)
+    console.error(`加载${type}印章失败:`, error)
   }
 }
 
-// 银行付讫章文件选择
-const handleBankStampFileChange = (file, fileList) => {
-  bankStampFileList.value = fileList
+const loadAllTypedStamps = async () => {
+  for (const item of fixedStampTypes) {
+    await loadTypedStamp(item.type)
+  }
 }
 
-const handleBankStampExceed = () => {
-  ElMessage.warning('只能上传一个银行付讫章图片')
+const openTypedStampUpload = (type) => {
+  currentTypedStampType.value = type
+  resetTypedStampUploadForm()
+  const stamp = typedStamps[type]
+  typedStampForm.name = stamp?.name || getTypedStampDefaultName(type)
+  typedStampForm.company = stamp?.company || ''
+  showTypedStampUpload.value = true
 }
 
-// 上传银行付讫章
-const handleBankStampUpload = async () => {
-  if (bankStampFileList.value.length === 0) {
-    ElMessage.warning('请选择银行付讫章图片')
+const handleTypedStampUploadClose = () => {
+  showTypedStampUpload.value = false
+  resetTypedStampUploadForm()
+}
+
+const openTypedStampPosition = (type) => {
+  currentTypedStampType.value = type
+  fillTypedStampPositionForm(typedStamps[type])
+  showTypedStampPosition.value = true
+}
+
+const handleTypedStampFileChange = (file, fileList) => {
+  typedStampFileList.value = fileList
+}
+
+const handleTypedStampExceed = () => {
+  ElMessage.warning('只能上传一个印章图片')
+}
+
+const getTypedStampDefaultName = (type) => {
+  const typeMap = {
+    bank: '银行付讫',
+    cash: '现金付讫',
+    official: '公章',
+    finance: '财务章',
+    contract: '合同章',
+    legal_person: '法人章'
+  }
+  return typeMap[type] || '印章'
+}
+
+const getTypedStampTitle = (type) => {
+  return fixedStampTypes.find(item => item.type === type)?.title || '印章'
+}
+
+const handleTypedStampUpload = async () => {
+  if (typedStampFileList.value.length === 0) {
+    ElMessage.warning(`请选择${getTypedStampTitle(currentTypedStampType.value)}图片`)
     return
   }
 
   uploading.value = true
   try {
     const formData = new FormData()
-    formData.append('bank_stamp_image', bankStampFileList.value[0].raw)
+    formData.append('bank_stamp_image', typedStampFileList.value[0].raw)
+    formData.append('name', typedStampForm.name || getTypedStampDefaultName(currentTypedStampType.value))
+    formData.append('company', typedStampForm.company || '')
 
-    const response = await uploadBankStamp(formData)
+    const response = await uploadTypedStamp(formData, currentTypedStampType.value)
     if (response.success) {
-      ElMessage.success('银行付讫章上传成功')
-      showUploadBankStamp.value = false
-      bankStampFileList.value = []
-      await loadBankStamp()
+      ElMessage.success(`${getTypedStampTitle(currentTypedStampType.value)}上传成功`)
+      showTypedStampUpload.value = false
+      resetTypedStampUploadForm()
+      await loadTypedStamp(currentTypedStampType.value)
     }
   } catch (error) {
-    console.error('上传银行付讫章失败:', error)
+    console.error('上传固定类型印章失败:', error)
     ElMessage.error(error.response?.data?.message || '上传失败')
   } finally {
     uploading.value = false
   }
 }
 
-// 更新银行付讫章位置
-const handleUpdatePosition = async () => {
+const handleUpdateTypedStampPosition = async () => {
   uploading.value = true
   try {
-    const response = await updateBankStampPosition(positionForm)
+    const response = await updateBankStampPosition({
+      ...typedStampPositionForm,
+      type: currentTypedStampType.value
+    })
     if (response.success) {
       ElMessage.success('位置设置已保存')
-      showPositionSetting.value = false
-      await loadBankStamp()
+      showTypedStampPosition.value = false
+      await loadTypedStamp(currentTypedStampType.value)
     }
   } catch (error) {
     console.error('更新位置失败:', error)
@@ -541,119 +539,22 @@ const handleUpdatePosition = async () => {
   }
 }
 
-// 删除银行付讫章
-const handleDeleteBankStamp = async () => {
+const handleDeleteTypedStamp = async (type) => {
   try {
-    await ElMessageBox.confirm('确定要删除银行付讫章吗？', '提示', {
+    await ElMessageBox.confirm(`确定要删除${getTypedStampTitle(type)}吗？`, '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
 
-    const response = await deleteBankStamp()
+    const response = await deleteTypedStamp(type)
     if (response.success) {
-      ElMessage.success('银行付讫章删除成功')
-      bankStamp.value = null
+      ElMessage.success(`${getTypedStampTitle(type)}删除成功`)
+      typedStamps[type] = null
     }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('删除银行付讫章失败:', error)
-      ElMessage.error(error.response?.data?.message || '删除失败')
-    }
-  }
-}
-
-// ==================== 现金付讫章相关 ====================
-
-// 加载我的现金付讫章
-const loadCashStamp = async () => {
-  try {
-    const response = await getMyBankStamp('cash')
-    if (response.success) {
-      cashStamp.value = response.data
-      if (cashStamp.value) {
-        cashPositionForm.position_x = cashStamp.value.position_x
-        cashPositionForm.position_y = cashStamp.value.position_y
-        cashPositionForm.width = cashStamp.value.width
-        cashPositionForm.height = cashStamp.value.height
-      }
-    }
-  } catch (error) {
-    console.error('加载现金付讫章失败:', error)
-  }
-}
-
-// 现金付讫章文件选择
-const handleCashStampFileChange = (file, fileList) => {
-  cashStampFileList.value = fileList
-}
-
-const handleCashStampExceed = () => {
-  ElMessage.warning('只能上传一个现金付讫章图片')
-}
-
-// 上传现金付讫章
-const handleCashStampUpload = async () => {
-  if (cashStampFileList.value.length === 0) {
-    ElMessage.warning('请选择现金付讫章图片')
-    return
-  }
-
-  uploading.value = true
-  try {
-    const formData = new FormData()
-    formData.append('bank_stamp_image', cashStampFileList.value[0].raw)
-
-    const response = await uploadBankStamp(formData, 'cash')
-    if (response.success) {
-      ElMessage.success('现金付讫章上传成功')
-      showUploadCashStamp.value = false
-      cashStampFileList.value = []
-      await loadCashStamp()
-    }
-  } catch (error) {
-    console.error('上传现金付讫章失败:', error)
-    ElMessage.error(error.response?.data?.message || '上传失败')
-  } finally {
-    uploading.value = false
-  }
-}
-
-// 更新现金付讫章位置
-const handleUpdateCashPosition = async () => {
-  uploading.value = true
-  try {
-    const response = await updateBankStampPosition({ ...cashPositionForm, type: 'cash' })
-    if (response.success) {
-      ElMessage.success('位置设置已保存')
-      showCashPositionSetting.value = false
-      await loadCashStamp()
-    }
-  } catch (error) {
-    console.error('更新位置失败:', error)
-    ElMessage.error(error.response?.data?.message || '更新失败')
-  } finally {
-    uploading.value = false
-  }
-}
-
-// 删除现金付讫章
-const handleDeleteCashStamp = async () => {
-  try {
-    await ElMessageBox.confirm('确定要删除现金付讫章吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    const response = await deleteBankStamp('cash')
-    if (response.success) {
-      ElMessage.success('现金付讫章删除成功')
-      cashStamp.value = null
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('删除现金付讫章失败:', error)
+      console.error('删除固定类型印章失败:', error)
       ElMessage.error(error.response?.data?.message || '删除失败')
     }
   }
@@ -668,8 +569,7 @@ const formatDateTime = (dateTimeStr) => {
 
 onMounted(() => {
   loadMySeals()
-  loadBankStamp()
-  loadCashStamp()
+  loadAllTypedStamps()
 })
 </script>
 

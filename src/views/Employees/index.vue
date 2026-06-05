@@ -4886,6 +4886,7 @@ const buildEmployeeSubmitPayload = (source) => {
   const payload = {
     ...source,
     basic_salary: normalizeNullableNumber(source.basic_salary),
+    skip_form_filling: !!source.skip_form_filling,
     social_security_region_id: normalizeInsuranceRegionIdForSubmit(source.social_security_region_id),
     medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(source.medical_insurance_region_id),
     housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(source.housing_fund_region_id),

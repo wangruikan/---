@@ -451,7 +451,7 @@ class EmployeeController extends ApiController
         $employeeData['contract_status'] = 'unsigned';
         
         // 为布尔字段设置默认值（防止NOT NULL约束错误）
-        $booleanFields = ['is_disabled', 'is_martyr_family', 'is_elderly_alone', 'deduct_expense'];
+        $booleanFields = ['is_disabled', 'is_martyr_family', 'is_elderly_alone', 'skip_form_filling', 'deduct_expense'];
         foreach ($booleanFields as $field) {
             if (!isset($employeeData[$field]) || $employeeData[$field] === null || $employeeData[$field] === '') {
                 $employeeData[$field] = false;

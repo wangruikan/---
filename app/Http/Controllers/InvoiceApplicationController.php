@@ -9,6 +9,7 @@ use App\Models\PendingTask;
 use App\Models\ProcessApproval;
 use App\Models\ApprovalNode;
 use App\Services\PendingTaskService;
+use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -880,88 +881,16 @@ class InvoiceApplicationController extends Controller
 
         DB::beginTransaction();
         try {
-            // 获取审批人配置（跳过经办，从第二个审批节点开始）
-            $approvers = DB::table('account_set_users')
-                ->where('account_set_id', $accountSetId)
-                ->where('approval_level', '>', 1) // 跳过经办（级别1）
-                ->orderBy('approval_level')
-                ->get();
-
-            if ($approvers->isEmpty()) {
-                throw new \Exception('未找到审批人员配置');
-            }
-
-            // 使用现有的审批系统创建审批实例
-            $instance = \App\Models\ApprovalInstance::create([
-                'account_set_id' => $accountSetId,
-                'business_type' => '发票申请',
-                'business_id' => $application->id,
-                'current_step' => 2, // 从第二个审批节点开始
-                'total_steps' => $approvers->count() + 1, // 包括经办
-                'status' => 'pending',
-                'created_by' => $user->id,
-                'stamp_method' => $stampMethod, // 保存盖章方式
-            ]);
-
-            // 添加发票附件到审批实例
-            if ($application->attachments) {
-                $attachments = is_array($application->attachments) ? $application->attachments : json_decode($application->attachments, true);
-                if (is_array($attachments)) {
-                    foreach ($attachments as $attachment) {
-                        \App\Models\ApprovalAttachment::create([
-                            'instance_id' => $instance->id,
-                            'file_path' => $attachment['path'] ?? '',
-                            'file_name' => $attachment['filename'] ?? '发票附件',
-                            'file_size' => $attachment['size'] ?? 0,
-                            'file_type' => pathinfo($attachment['filename'] ?? '', PATHINFO_EXTENSION),
-                        ]);
-                    }
-                }
-            }
-
-            // 创建经办节点记录（自动通过）
-            \App\Models\ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => 1,
-                'step_name' => '经办',
-                'approver_id' => $user->id,
-                'approver_name' => $user->name,
-                'status' => 'approved',
-                'comment' => '经办提交，自动通过',
-                'approved_at' => now(),
-            ]);
-
-            // 为第一个审批人创建待办记录
-            $firstApprover = $approvers->first();
-            $approverUser = \App\Models\User::find($firstApprover->user_id);
-            
-            \App\Models\ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => 2,
-                'step_name' => $firstApprover->approval_level_name,
-                'approver_id' => $firstApprover->user_id,
-                'approver_name' => $approverUser->name,
-                'status' => 'pending',
-                'comment' => null,
-                'approved_at' => null,
-            ]);
-
-            // 如果有更多审批级别，继续创建记录
-            $stepOrder = 3;
-            foreach ($approvers->skip(1) as $approver) {
-                $approverUser = \App\Models\User::find($approver->user_id);
-                \App\Models\ApprovalRecord::create([
-                    'instance_id' => $instance->id,
-                    'step_order' => $stepOrder,
-                    'step_name' => $approver->approval_level_name,
-                    'approver_id' => $approver->user_id,
-                    'approver_name' => $approverUser->name,
-                    'status' => 'waiting',
-                    'comment' => null,
-                    'approved_at' => null,
-                ]);
-                $stepOrder++;
-            }
+            $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
+                $accountSetId,
+                '发票申请',
+                $application->id,
+                $user->id,
+                $user->name,
+                $this->buildApprovalAttachments($application),
+                $stampMethod,
+                '经办提交，自动通过'
+            );
 
             // 更新审批状态为审批中，业务状态保持不变
             $application->update([
@@ -1024,89 +953,19 @@ class InvoiceApplicationController extends Controller
 
         DB::beginTransaction();
         try {
-            // 获取审批人配置（跳过经办，从第二个审批节点开始）
             $user = Auth::user();
             $accountSetId = $application->account_set_id;
-            $approvers = DB::table('account_set_users')
-                ->where('account_set_id', $accountSetId)
-                ->where('approval_level', '>', 1) // 跳过经办（级别1）
-                ->orderBy('approval_level')
-                ->get();
 
-            if ($approvers->isEmpty()) {
-                throw new \Exception('未找到审批人员配置');
-            }
-
-            // 创建新的审批实例
-            $instance = \App\Models\ApprovalInstance::create([
-                'account_set_id' => $accountSetId,
-                'business_type' => '发票申请（重新提交）',
-                'business_id' => $application->id,
-                'current_step' => 2,
-                'total_steps' => $approvers->count() + 1,
-                'status' => 'pending',
-                'created_by' => $user->id,
-            ]);
-
-            // 添加附件
-            if ($application->attachments) {
-                $attachments = is_array($application->attachments) ? $application->attachments : json_decode($application->attachments, true);
-                if (is_array($attachments)) {
-                    foreach ($attachments as $attachment) {
-                        \App\Models\ApprovalAttachment::create([
-                            'instance_id' => $instance->id,
-                            'file_path' => $attachment['path'] ?? '',
-                            'file_name' => $attachment['filename'] ?? '发票附件',
-                            'file_size' => $attachment['size'] ?? 0,
-                            'file_type' => pathinfo($attachment['filename'] ?? '', PATHINFO_EXTENSION),
-                        ]);
-                    }
-                }
-            }
-
-            // 创建经办节点记录（自动通过）
-            \App\Models\ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => 1,
-                'step_name' => '经办',
-                'approver_id' => $user->id,
-                'approver_name' => $user->name,
-                'status' => 'approved',
-                'comment' => '经办重新提交，自动通过',
-                'approved_at' => now(),
-            ]);
-
-            // 为第一个审批人创建待办记录
-            $firstApprover = $approvers->first();
-            $approverUser = \App\Models\User::find($firstApprover->user_id);
-            
-            \App\Models\ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => 2,
-                'step_name' => $firstApprover->approval_level_name,
-                'approver_id' => $firstApprover->user_id,
-                'approver_name' => $approverUser->name,
-                'status' => 'pending',
-                'comment' => null,
-                'approved_at' => null,
-            ]);
-
-            // 如果有更多审批级别，继续创建记录
-            $stepOrder = 3;
-            foreach ($approvers->skip(1) as $approver) {
-                $approverUser = \App\Models\User::find($approver->user_id);
-                \App\Models\ApprovalRecord::create([
-                    'instance_id' => $instance->id,
-                    'step_order' => $stepOrder,
-                    'step_name' => $approver->approval_level_name,
-                    'approver_id' => $approver->user_id,
-                    'approver_name' => $approverUser->name,
-                    'status' => 'waiting',
-                    'comment' => null,
-                    'approved_at' => null,
-                ]);
-                $stepOrder++;
-            }
+            $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
+                $accountSetId,
+                '发票申请（重新提交）',
+                $application->id,
+                $user->id,
+                $user->name,
+                $this->buildApprovalAttachments($application),
+                null,
+                '经办重新提交，自动通过'
+            );
 
             // 更新原申请：审批状态改为审批中，关联新审批实例
             // 业务状态保持红冲不变
@@ -1548,6 +1407,32 @@ class InvoiceApplicationController extends Controller
             'invoice_number' => $application->invoice_number,
             'remarks' => $application->invoice_remark ?? '',
         ]);
+    }
+
+    private function buildApprovalAttachments(InvoiceApplication $application): array
+    {
+        if (!$application->attachments) {
+            return [];
+        }
+
+        $attachments = is_array($application->attachments)
+            ? $application->attachments
+            : json_decode($application->attachments, true);
+
+        if (!is_array($attachments)) {
+            return [];
+        }
+
+        return array_map(function ($attachment) {
+            $filename = $attachment['filename'] ?? '发票附件';
+
+            return [
+                'path' => $attachment['path'] ?? '',
+                'name' => $filename,
+                'size' => $attachment['size'] ?? 0,
+                'type' => pathinfo($filename, PATHINFO_EXTENSION),
+            ];
+        }, $attachments);
     }
 
     private function canFillApprovedInvoice(InvoiceApplication $application, $user)

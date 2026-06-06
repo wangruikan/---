@@ -4,12 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Employee;
 use App\Models\ApprovalInstance;
-use App\Models\ApprovalRecord;
-use App\Models\User;
+use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
 /**
@@ -65,72 +63,16 @@ class OfflineOnboardingController extends Controller
             // 线下入职不需要在提交时更新日期字段
             // 这些字段会在审批通过后由 ApprovalService 自动设置
 
-            // 获取审批人配置（跳过经办，从第二个审批节点开始）
-            $approvers = DB::table('account_set_users')
-                ->where('account_set_id', $accountSetId)
-                ->where('approval_level', '>', 1) // 跳过经办（级别1）
-                ->orderBy('approval_level')
-                ->get();
-
-            if ($approvers->isEmpty()) {
-                throw new \Exception('未找到审批人员配置');
-            }
-
-            // 创建审批实例
-            $instance = ApprovalInstance::create([
-                'account_set_id' => $accountSetId,
-                'business_type' => 'offline_onboarding',
-                'business_id' => $employee->id,
-                'current_step' => 2, // 从第二个审批节点开始
-                'total_steps' => $approvers->count() + 1, // 包括经办
-                'status' => 'pending',
-                'created_by' => $user->id,
-                'stamp_method' => 'offline', // 默认线下盖章
-            ]);
-
-            // 创建经办节点记录（自动通过）
-            ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => 1,
-                'step_name' => '经办',
-                'approver_id' => $user->id,
-                'approver_name' => $user->name,
-                'status' => 'approved',
-                'comment' => '线下入职申请，经办自动通过',
-                'approved_at' => now(),
-            ]);
-
-            // 为第一个审批人创建待办记录
-            $firstApprover = $approvers->first();
-            $approverUser = User::find($firstApprover->user_id);
-            
-            ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => 2,
-                'step_name' => $firstApprover->approval_level_name,
-                'approver_id' => $firstApprover->user_id,
-                'approver_name' => $approverUser->name,
-                'status' => 'pending',
-                'comment' => null,
-                'approved_at' => null,
-            ]);
-
-            // 如果有更多审批级别，继续创建记录
-            $stepOrder = 3;
-            foreach ($approvers->skip(1) as $approver) {
-                $approverUser = User::find($approver->user_id);
-                ApprovalRecord::create([
-                    'instance_id' => $instance->id,
-                    'step_order' => $stepOrder,
-                    'step_name' => $approver->approval_level_name,
-                    'approver_id' => $approver->user_id,
-                    'approver_name' => $approverUser->name,
-                    'status' => 'waiting',
-                    'comment' => null,
-                    'approved_at' => null,
-                ]);
-                $stepOrder++;
-            }
+            $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
+                $accountSetId,
+                'offline_onboarding',
+                $employee->id,
+                $user->id,
+                $user->name,
+                [],
+                'offline',
+                '线下入职申请，经办自动通过'
+            );
 
             DB::commit();
 

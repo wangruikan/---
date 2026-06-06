@@ -22,15 +22,20 @@ class ApprovalService
      * @param array $attachments 附件数组 [['path' => '', 'name' => '', 'size' => 0, 'type' => '']]
      * @param bool $skipInitiator 是否跳过发起人审批
      * @param string|null $stampMethod 盖章方式 (online/offline)
+     * @param array $options 扩展选项
      * @return ApprovalInstance
      */
-    public function createApprovalInstance($accountSetId, $businessType, $businessId, $createdBy, $attachments = [], $skipInitiator = false, $stampMethod = null)
+    public function createApprovalInstance($accountSetId, $businessType, $businessId, $createdBy, $attachments = [], $skipInitiator = false, $stampMethod = null, $options = [])
     {
         DB::beginTransaction();
         
         try {
+            $options = is_array($options) ? $options : [];
+            $autoApproveInitiator = (bool)($options['auto_approve_initiator'] ?? false);
+            $startApprovalLevel = $autoApproveInitiator ? (int)($options['start_approval_level'] ?? 2) : null;
+
             // 1. 获取该账套配置的审批人
-            $approvers = $this->getAccountSetApprovers($accountSetId);
+            $approvers = $this->getAccountSetApprovers($accountSetId, $startApprovalLevel);
             
             if (empty($approvers)) {
                 throw new \Exception('该账套未配置审批人，请先在账套管理中设置审批级别');
@@ -41,8 +46,8 @@ class ApprovalService
                 'account_set_id' => $accountSetId,
                 'business_type' => $businessType,
                 'business_id' => $businessId,
-                'current_step' => 1,
-                'total_steps' => count($approvers), // 记录实际配置的审批人数量
+                'current_step' => $autoApproveInitiator ? 2 : 1,
+                'total_steps' => count($approvers) + ($autoApproveInitiator ? 1 : 0), // 记录实际配置的审批节点数量
                 'status' => 'pending',
                 'created_by' => $createdBy,
             ];
@@ -77,9 +82,22 @@ class ApprovalService
             }
             
             // 3. 创建审批记录（为每个审批人创建一条记录）
+            if ($autoApproveInitiator) {
+                ApprovalRecord::create([
+                    'instance_id' => $instance->id,
+                    'step_order' => 1,
+                    'step_name' => $options['initiator_step_name'] ?? '经办',
+                    'approver_id' => $createdBy,
+                    'approver_name' => $options['initiator_name'] ?? (DB::table('users')->where('id', $createdBy)->value('name') ?? ''),
+                    'status' => 'approved',
+                    'approved_at' => now(),
+                    'comment' => $options['initiator_comment'] ?? '经办提交，自动通过',
+                ]);
+            }
+
             // 自动检测：如果第一个审批人就是发起人，自动跳过
             $autoSkipFirstStep = false;
-            if (!empty($approvers) && $approvers[0]->user_id == $createdBy) {
+            if (!$autoApproveInitiator && !empty($approvers) && $approvers[0]->user_id == $createdBy) {
                 $autoSkipFirstStep = true;
                 Log::info('检测到第一个审批人是发起人，将自动跳过第一步', [
                     'instance_id' => $instance->id,
@@ -89,10 +107,12 @@ class ApprovalService
             }
             
             foreach ($approvers as $index => $approver) {
-                $stepOrder = $index + 1;
+                $stepOrder = $index + 1 + ($autoApproveInitiator ? 1 : 0);
                 
                 // 如果是第一步且需要自动跳过，设置为approved；否则第一步为pending，其他为waiting
-                if ($stepOrder === 1 && $autoSkipFirstStep) {
+                if ($autoApproveInitiator) {
+                    $status = $stepOrder === 2 ? 'pending' : 'waiting';
+                } elseif ($stepOrder === 1 && $autoSkipFirstStep) {
                     $status = 'approved';
                 } elseif ($stepOrder === 1) {
                     $status = 'pending';
@@ -112,8 +132,8 @@ class ApprovalService
                 ]);
             }
             
-    // 如果跳过发起人，自动推进到下一步
-            if ($skipInitiator || $autoSkipFirstStep) {
+            // 如果跳过发起人，自动推进到下一步
+            if (!$autoApproveInitiator && ($skipInitiator || $autoSkipFirstStep)) {
                 // 确保审批记录已经保存到数据库
                 DB::commit();
                 DB::beginTransaction();
@@ -137,16 +157,53 @@ class ApprovalService
             throw $e;
         }
     }
+
+    /**
+     * 创建审批流程实例，并将发起人作为经办节点自动通过。
+     */
+    public function createApprovalInstanceWithApprovedInitiator(
+        $accountSetId,
+        $businessType,
+        $businessId,
+        $createdBy,
+        $createdByName,
+        $attachments = [],
+        $stampMethod = null,
+        $initiatorComment = '经办提交，自动通过'
+    ) {
+        return $this->createApprovalInstance(
+            $accountSetId,
+            $businessType,
+            $businessId,
+            $createdBy,
+            $attachments,
+            false,
+            $stampMethod,
+            [
+                'auto_approve_initiator' => true,
+                'start_approval_level' => 2,
+                'initiator_step_name' => '经办',
+                'initiator_name' => $createdByName,
+                'initiator_comment' => $initiatorComment,
+            ]
+        );
+    }
     
     /**
      * 获取账套的审批人配置（按级别排序）
      */
-    private function getAccountSetApprovers($accountSetId)
+    private function getAccountSetApprovers($accountSetId, $minApprovalLevel = null)
     {
-        return DB::table('account_set_users')
+        $query = DB::table('account_set_users')
             ->join('users', 'account_set_users.user_id', '=', 'users.id')
             ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
+            ->whereNotNull('account_set_users.approval_level');
+
+        if ($minApprovalLevel !== null) {
+            $query->where('account_set_users.approval_level', '>=', $minApprovalLevel);
+        }
+
+        return $query
             ->orderBy('account_set_users.approval_level')
             ->select(
                 'users.id as user_id',

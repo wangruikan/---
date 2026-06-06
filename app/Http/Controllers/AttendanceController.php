@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use App\Services\ApprovalService;
 use App\Traits\ChecksPermission;
 
 class AttendanceController extends Controller
@@ -839,107 +840,40 @@ class AttendanceController extends Controller
      */
     private function initiateApprovalProcess($sheet, $user, $accountSetId, $stampMethod = 'online')
     {
-        // 调试日志
         Log::info('考勤审批流程 - 创建审批实例', [
             'sheet_id' => $sheet->id,
             'stamp_method' => $stampMethod
         ]);
-        
-        // 获取审批人员配置（跳过经办，从第二个审批节点开始）
-        $approvers = DB::table('account_set_users')
-            ->where('account_set_id', $accountSetId)
-            ->where('approval_level', '>', 1) // 跳过经办（级别1）
-            ->orderBy('approval_level')
-            ->get();
 
-        if ($approvers->isEmpty()) {
-            throw new \Exception('未找到审批人员配置');
-        }
-
-        // 使用现有的审批系统创建审批实例
-        $instance = \App\Models\ApprovalInstance::create([
-            'account_set_id' => $accountSetId,
-            'business_type' => '考勤申请',
-            'business_id' => $sheet->id,
-            'current_step' => 2, // 从第二个审批节点开始
-            'total_steps' => $approvers->count() + 1, // 包括经办
-            'status' => 'pending',
-            'created_by' => $user->id,
-            'stamp_method' => $stampMethod,  // 保存盖章方式
-        ]);
-        
-        // 调试日志 - 确认保存结果
-        Log::info('考勤审批流程 - 审批实例已创建', [
-            'instance_id' => $instance->id,
-            'saved_stamp_method' => $instance->stamp_method
-        ]);
-
-        // 添加考勤表附件到审批实例
+        $attachments = [];
         if ($sheet->attachments) {
-            $attachments = is_string($sheet->attachments) ? json_decode($sheet->attachments, true) : $sheet->attachments;
-            if (is_array($attachments)) {
-                foreach ($attachments as $attachment) {
-                    \App\Models\ApprovalAttachment::create([
-                        'instance_id' => $instance->id,
-                        'file_path' => $attachment['file_path'] ?? '',
-                        'file_name' => $attachment['original_name'] ?? '考勤附件',
-                        'file_size' => $attachment['file_size'] ?? 0,
-                        'file_type' => $attachment['file_type'] ?? '',
-                    ]);
-                }
+            $rawAttachments = is_string($sheet->attachments) ? json_decode($sheet->attachments, true) : $sheet->attachments;
+            if (is_array($rawAttachments)) {
+                $attachments = array_map(function ($attachment) {
+                    return [
+                        'path' => $attachment['file_path'] ?? '',
+                        'name' => $attachment['original_name'] ?? '考勤附件',
+                        'size' => $attachment['file_size'] ?? 0,
+                        'type' => $attachment['file_type'] ?? '',
+                    ];
+                }, $rawAttachments);
             }
         }
 
-        // 创建审批记录（经办自动通过）
-        \App\Models\ApprovalRecord::create([
-            'instance_id' => $instance->id,
-            'step_order' => 1,
-            'step_name' => '经办',
-            'approver_id' => $user->id,
-            'approver_name' => $user->name,
-            'status' => 'approved',
-            'comment' => '经办提交，自动通过',
-            'approved_at' => now(),
-        ]);
-
-        // 为第一个审批人创建待办记录
-        $firstApprover = $approvers->first();
-        $approverUser = \App\Models\User::find($firstApprover->user_id);
-        
-        \App\Models\ApprovalRecord::create([
-            'instance_id' => $instance->id,
-            'step_order' => 2,
-            'step_name' => $firstApprover->approval_level_name,
-            'approver_id' => $firstApprover->user_id,
-            'approver_name' => $approverUser->name,
-            'status' => 'pending',
-            'comment' => null,
-            'approved_at' => null,
-        ]);
-
-        // 如果有更多审批级别，继续创建记录
-        $stepOrder = 3;
-        foreach ($approvers->skip(1) as $approver) {
-            $approverUser = \App\Models\User::find($approver->user_id);
-            
-            \App\Models\ApprovalRecord::create([
-                'instance_id' => $instance->id,
-                'step_order' => $stepOrder,
-                'step_name' => $approver->approval_level_name,
-                'approver_id' => $approver->user_id,
-                'approver_name' => $approverUser->name,
-                'status' => 'waiting',
-                'comment' => null,
-                'approved_at' => null,
-            ]);
-            $stepOrder++;
-        }
+        $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
+            $accountSetId,
+            '考勤申请',
+            $sheet->id,
+            $user->id,
+            $user->name,
+            $attachments,
+            $stampMethod,
+            '经办提交，自动通过'
+        );
 
         Log::info("考勤表审批流程已发起", [
             'attendance_sheet_id' => $sheet->id,
-            'instance_id' => $instance->id,
-            'current_approver' => $firstApprover->user_id,
-            'approval_level' => $firstApprover->approval_level
+            'instance_id' => $instance->id
         ]);
     }
 

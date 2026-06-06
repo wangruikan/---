@@ -124,3 +124,15 @@
 {"level":"info","message":"Resources registered","timestamp":"2026-06-05 23:56:22","types":["design-table"]}
 {"byStatus":{},"byType":{},"level":"info","message":"State store loaded","timestamp":"2026-06-05 23:56:22","totalResources":0}
 {"features":{"macroRecording":true,"pdmIntegration":false,"sqlIntegration":false},"level":"info","message":"SolidWorks MCP Server started","timestamp":"2026-06-05 23:56:22","version":"3.1.3"}
+{"level":"info","message":"Resources registered","timestamp":"2026-06-06 00:24:20","types":["design-table"]}
+{"byStatus":{},"byType":{},"level":"info","message":"State store loaded","timestamp":"2026-06-06 00:24:20","totalResources":0}
+{"features":{"macroRecording":true,"pdmIntegration":false,"sqlIntegration":false},"level":"info","message":"SolidWorks MCP Server started","timestamp":"2026-06-06 00:24:20","version":"3.1.3"}
+{"level":"info","message":"Resources registered","timestamp":"2026-06-06 19:32:41","types":["design-table"]}
+{"level":"info","message":"Resources registered","timestamp":"2026-06-06 19:32:41","types":["design-table"]}
+{"byStatus":{},"byType":{},"level":"info","message":"State store loaded","timestamp":"2026-06-06 19:32:41","totalResources":0}
+{"features":{"macroRecording":true,"pdmIntegration":false,"sqlIntegration":false},"level":"info","message":"SolidWorks MCP Server started","timestamp":"2026-06-06 19:32:41","version":"3.1.3"}
+{"byStatus":{},"byType":{},"level":"info","message":"State store loaded","timestamp":"2026-06-06 19:32:41","totalResources":0}
+{"features":{"macroRecording":true,"pdmIntegration":false,"sqlIntegration":false},"level":"info","message":"SolidWorks MCP Server started","timestamp":"2026-06-06 19:32:41","version":"3.1.3"}
+{"level":"info","message":"Resources registered","timestamp":"2026-06-06 19:53:31","types":["design-table"]}
+{"byStatus":{},"byType":{},"level":"info","message":"State store loaded","timestamp":"2026-06-06 19:53:31","totalResources":0}
+{"features":{"macroRecording":true,"pdmIntegration":false,"sqlIntegration":false},"level":"info","message":"SolidWorks MCP Server started","timestamp":"2026-06-06 19:53:31","version":"3.1.3"}

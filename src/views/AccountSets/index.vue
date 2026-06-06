@@ -230,6 +230,35 @@
           </el-table>
         </div>
 
+        <!-- 添加人员 -->
+        <div class="add-users">
+          <h3>添加人员</h3>
+          <el-form inline>
+            <el-form-item label="选择用户">
+              <el-select
+                v-model="selectedUserIds"
+                multiple
+                placeholder="请选择用户"
+                style="width: 400px"
+                filterable
+              >
+                <el-option
+                  v-for="user in availableUsers"
+                  :key="user.id"
+                  :label="`${user.nickname || user.name} (${user.name})`"
+                  :value="user.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button
+                type="primary"
+                @click="handleAssignUsers"
+                :disabled="selectedUserIds.length === 0"
+              >添加</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
       </div>
     </el-dialog>
 
@@ -351,11 +380,13 @@ import {
   setDefaultAccountSet,
   archiveAccountSet,
   getAccountSetStatistics,
+  assignUsers,
   getAccountSetUsers,
   removeAccountSetUser
 } from '@/api/accountSets'
 import { useUserStore } from '@/stores/user'
 import { useRouter, useRoute } from 'vue-router'
+import request from '@/api/request'
 
 const router = useRouter()
 const route = useRoute()
@@ -387,6 +418,8 @@ const formRef = ref()
 
 const accountSets = ref([])
 const currentUsers = ref([])
+const availableUsers = ref([])
+const selectedUserIds = ref([])
 const currentAccountSetId = ref(null)
 
 const statistics = ref({
@@ -725,6 +758,7 @@ const handleManageUsers = async (row) => {
   showUsersDialog.value = true
 
   await loadAccountSetUsers(row.id)
+  await loadAvailableUsers()
 }
 
 const loadAccountSetUsers = async (accountSetId) => {
@@ -736,6 +770,55 @@ const loadAccountSetUsers = async (accountSetId) => {
   } catch (error) {
     console.error('Load users error:', error)
     ElMessage.error('加载人员列表失败')
+  }
+}
+
+const loadAvailableUsers = async () => {
+  try {
+    const response = await request({
+      url: '/users',
+      method: 'get',
+      params: {
+        all: 'true',
+        is_active: 1
+      }
+    })
+
+    if (response.success && response.data) {
+      const currentUserIds = currentUsers.value.map(u => u.id)
+      availableUsers.value = response.data.filter(user => {
+        return user.role !== 'admin' && !currentUserIds.includes(user.id)
+      })
+    } else {
+      ElMessage.warning('加载用户列表失败')
+      availableUsers.value = []
+    }
+  } catch (error) {
+    console.error('Load available users error:', error)
+    ElMessage.error('加载用户列表失败')
+    availableUsers.value = []
+  }
+}
+
+const handleAssignUsers = async () => {
+  if (selectedUserIds.value.length === 0) {
+    ElMessage.warning('请选择要添加的用户')
+    return
+  }
+
+  try {
+    await assignUsers(currentAccountSetId.value, {
+      user_ids: selectedUserIds.value,
+      role: 'admin'
+    })
+
+    ElMessage.success('人员分配成功')
+    selectedUserIds.value = []
+    await loadAccountSetUsers(currentAccountSetId.value)
+    await loadAvailableUsers()
+  } catch (error) {
+    console.error('Assign users error:', error)
+    ElMessage.error(error.response?.data?.message || '分配失败')
   }
 }
 
@@ -755,6 +838,7 @@ const handleRemoveUser = async (userId) => {
     ElMessage.success('人员已移除')
 
     await loadAccountSetUsers(currentAccountSetId.value)
+    await loadAvailableUsers()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Remove user error:', error)

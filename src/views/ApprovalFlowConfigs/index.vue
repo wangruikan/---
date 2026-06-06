@@ -30,7 +30,11 @@
 
         <el-table :data="configs" v-loading="loading" border stripe>
           <el-table-column prop="business_label" label="审批业务" min-width="180" fixed="left" />
-          <el-table-column prop="business_type" label="业务标识" min-width="180" />
+          <el-table-column label="业务标识" min-width="180">
+            <template #default="{ row }">
+              {{ getBusinessTypeDisplay(row) }}
+            </template>
+          </el-table-column>
 
           <el-table-column
             v-for="level in approvalLevels"
@@ -132,6 +136,10 @@ const loadConfigs = async () => {
 const getApproverNames = (level) => {
   const names = level.approver_names || []
   return names.length ? names.join('、') : '未设置人员'
+}
+
+const getBusinessTypeDisplay = (row) => {
+  return row.business_label || row.business_type || '-'
 }
 
 const getEnabledLevels = (row) => {

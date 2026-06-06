@@ -22,16 +22,17 @@ class AuthController extends Controller
             'password' => 'required|string',
         ]);
 
-        // 尝试通过邮箱或用户名查找用户
+        // 尝试通过用户名、手机号或邮箱查找用户
         $user = User::where('email', $request->username)
             ->orWhere('name', $request->username)
+            ->orWhere('phone', $request->username)
             ->first();
 
         // 验证用户是否存在及密码是否正确
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => '用户名或密码错误'
+                'message' => '账号或密码错误'
             ], 401);
         }
 

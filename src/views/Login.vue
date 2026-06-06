@@ -16,7 +16,7 @@
         <el-form-item prop="username">
           <el-autocomplete
             v-model="loginForm.username"
-            placeholder="请输入用户名"
+            placeholder="请输入用户名/手机号"
             size="large"
             :fetch-suggestions="querySavedAccounts"
             @select="handleAccountSelect"
@@ -93,8 +93,8 @@ const loginForm = reactive({
 
 const loginRules = {
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 2, message: '用户名长度不能少于2位', trigger: 'blur' }
+    { required: true, message: '请输入用户名/手机号', trigger: 'blur' },
+    { min: 2, message: '用户名/手机号长度不能少于2位', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ApprovalInstance;
 use App\Models\ApprovalRecord;
 use App\Models\ApprovalCCUser;
+use App\Models\ApprovalFlowConfig;
 use App\Models\EmployeeContract;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -35,10 +36,10 @@ class ApprovalService
             $startApprovalLevel = $autoApproveInitiator ? (int)($options['start_approval_level'] ?? 2) : null;
 
             // 1. 获取该账套配置的审批人
-            $approvers = $this->getAccountSetApprovers($accountSetId, $startApprovalLevel);
+            $approvers = $this->getAccountSetApprovers($accountSetId, $startApprovalLevel, $businessType);
             
             if (empty($approvers)) {
-                throw new \Exception('该账套未配置审批人，请先在账套管理中设置审批级别');
+                throw new \Exception('该账套当前业务未配置可用审批人，请检查账套审批级别和审批流程配置');
             }
             
             // 2. 创建审批实例
@@ -192,7 +193,7 @@ class ApprovalService
     /**
      * 获取账套的审批人配置（按级别排序）
      */
-    private function getAccountSetApprovers($accountSetId, $minApprovalLevel = null)
+    private function getAccountSetApprovers($accountSetId, $minApprovalLevel = null, $businessType = null)
     {
         $query = DB::table('account_set_users')
             ->join('users', 'account_set_users.user_id', '=', 'users.id')
@@ -201,6 +202,13 @@ class ApprovalService
 
         if ($minApprovalLevel !== null) {
             $query->where('account_set_users.approval_level', '>=', $minApprovalLevel);
+        }
+
+        if ($businessType) {
+            $enabledLevels = ApprovalFlowConfig::getEnabledLevels((int) $accountSetId, (string) $businessType);
+            if (is_array($enabledLevels)) {
+                $query->whereIn('account_set_users.approval_level', $enabledLevels);
+            }
         }
 
         return $query

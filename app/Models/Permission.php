@@ -97,6 +97,7 @@ class Permission extends Model
             'material_assets' => '资料管理',
             'material_requests' => '资料申请',
             'process_approval' => '流程审批',
+            'approval_flow_configs' => '审批流程配置',
         ];
         
         return $names[$module] ?? $module;

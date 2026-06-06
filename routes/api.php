@@ -10,6 +10,7 @@ use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\InsuranceController;
 use App\Http\Controllers\ApprovalController;
+use App\Http\Controllers\ApprovalFlowConfigController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\RecruitmentController;
@@ -690,6 +691,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{instanceId}/upload-attachment', [\App\Http\Controllers\ApprovalFlowController::class, 'uploadAttachment']); // 新：上传附件
         Route::get('/{instanceId}/attachments/{attachmentId}/download', [\App\Http\Controllers\ApprovalFlowController::class, 'downloadAttachment']); // 新：下载附件
         Route::delete('/{instanceId}/attachments/{attachmentId}', [\App\Http\Controllers\ApprovalFlowController::class, 'deleteAttachment']); // 新：删除附件
+    });
+
+    // 审批流程配置
+    Route::prefix('approval-flow-configs')->group(function () {
+        Route::get('/', [ApprovalFlowConfigController::class, 'index']);
+        Route::post('/', [ApprovalFlowConfigController::class, 'store']);
     });
 
     // 付款管理

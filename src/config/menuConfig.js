@@ -64,6 +64,7 @@ export const menuConfig = [
     requireBusiness: true,
     children: [
       { title: '审批管理', path: '/approvals', icon: 'Checked', skipPermissionCheck: true },
+      { title: '审批流程配置', path: '/approval-flow-configs', icon: 'Setting', permission: 'approval_flow_configs.view' },
       { title: '待办任务', path: '/pending-tasks', icon: 'List', skipPermissionCheck: true },
       { title: '资料交付', path: '/document-deliveries', icon: 'DocumentCopy', skipPermissionCheck: true },
       { title: '资料申请', path: '/material-requests', icon: 'Document', skipPermissionCheck: true },

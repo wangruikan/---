@@ -246,6 +246,12 @@ const routes = [
         meta: { title: '审批管理' }
       },
       {
+        path: '/approval-flow-configs',
+        name: 'ApprovalFlowConfigs',
+        component: () => import('@/views/ApprovalFlowConfigs/index.vue'),
+        meta: { title: '审批流程配置' }
+      },
+      {
         path: '/pending-tasks',
         name: 'PendingTasks',
         component: () => import('@/views/PendingTasks/index.vue'),

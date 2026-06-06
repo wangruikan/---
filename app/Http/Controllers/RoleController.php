@@ -329,6 +329,7 @@ class RoleController extends Controller
             'material_assets' => '资料管理',
             'material_requests' => '资料申请',
             'process_approval' => '流程审批',
+            'approval_flow_configs' => '审批流程配置',
             'region_portals' => '地区网页入口',
             'assessment' => '考核管理',
             'signatures' => '签名管理',

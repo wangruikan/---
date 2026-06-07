@@ -88,7 +88,7 @@
           </div>
           
           <!-- 审批印章 -->
-          <div class="tool-section">
+          <div v-if="showSealSection" class="tool-section">
             <h4>审批印章</h4>
             <div v-if="mySeals.length > 0" class="seals-grid">
               <div 
@@ -173,6 +173,10 @@ const props = defineProps({
   allowedSeal: {
     type: Object,
     default: null
+  },
+  showSealSection: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -597,7 +601,9 @@ const loadSignatureAndSeals = async () => {
       mySignature.value = sigResponse.data
     }
     
-    if (props.allowedSeal) {
+    if (!props.showSealSection) {
+      mySeals.value = []
+    } else if (props.allowedSeal) {
       mySeals.value = [normalizeSeal(props.allowedSeal)].filter(Boolean)
       console.log('审批指定印章:', mySeals.value[0])
     } else {

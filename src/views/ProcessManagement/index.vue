@@ -186,8 +186,6 @@
           <el-upload
             action="#"
             :http-request="handleUploadRequest"
-            :on-success="handleUploadSuccess"
-            :on-error="handleUploadError"
             :before-upload="beforeUpload"
             :file-list="fileList"
             :disabled="!currentProcessId"
@@ -290,8 +288,6 @@
           <el-upload
             action="#"
             :http-request="handleUploadRequest"
-            :on-success="handleUploadSuccess"
-            :on-error="handleUploadError"
             :show-file-list="false"
             :before-upload="beforeUpload"
             style="display: inline-block; margin-right: 10px;"
@@ -617,13 +613,30 @@ const handleUploadRequest = async (options) => {
 
   if (!processId) {
     ElMessage.error('请先保存流程后再上传附件')
-    return Promise.reject(new Error('请先保存流程后再上传附件'))
+    options.onError?.(new Error('请先保存流程后再上传附件'))
+    return
   }
 
   const formData = new FormData()
   formData.append('file', options.file)
 
-  return uploadAttachment(processId, formData)
+  try {
+    const response = await uploadAttachment(processId, formData)
+    const result = response?.data || response
+
+    if (result && result.success !== false) {
+      ElMessage.success('附件上传成功')
+      await loadProcessList()
+      options.onSuccess?.(result, options.file)
+      return
+    }
+
+    const error = new Error(result?.message || '上传失败')
+    ElMessage.error(error.message)
+    options.onError?.(error)
+  } catch (error) {
+    options.onError?.(error)
+  }
 }
 
 // 删除详情弹窗中的附件
@@ -836,22 +849,6 @@ const beforeUpload = (file) => {
     return false
   }
   return true
-}
-
-// 上传成功
-const handleUploadSuccess = (response) => {
-  const result = response?.data || response
-  if (result && result.success) {
-    ElMessage.success('附件上传成功')
-    loadProcessList()
-  } else {
-    ElMessage.error(result?.message || '上传失败')
-  }
-}
-
-// 上传失败
-const handleUploadError = (error) => {
-  ElMessage.error('附件上传失败')
 }
 
 // 删除附件

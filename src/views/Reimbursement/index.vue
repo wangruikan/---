@@ -326,7 +326,7 @@
       <el-dialog
         v-model="reimbursementStampDialogVisible"
         title="选择盖章方式"
-        width="400px"
+        width="700px"
         :close-on-click-modal="false"
       >
         <el-form :model="reimbursementStampForm" label-width="100px">
@@ -336,6 +336,10 @@
               <el-radio value="offline">线下盖章</el-radio>
             </el-radio-group>
           </el-form-item>
+          <ApprovalStampSelector
+            ref="reimbursementStampSelectorRef"
+            v-model="reimbursementStampForm.stamp_selection"
+          />
         </el-form>
         <template #footer>
           <el-button @click="reimbursementStampDialogVisible = false">取消</el-button>
@@ -349,7 +353,7 @@
       <el-dialog
         v-model="paymentStampDialogVisible"
         title="选择盖章方式"
-        width="400px"
+        width="700px"
         :close-on-click-modal="false"
         @close="handleCancelPaymentStampSelection"
       >
@@ -360,6 +364,10 @@
               <el-radio value="offline">线下盖章</el-radio>
             </el-radio-group>
           </el-form-item>
+          <ApprovalStampSelector
+            ref="paymentStampSelectorRef"
+            v-model="paymentStampForm.stamp_selection"
+          />
         </el-form>
         <template #footer>
           <el-button @click="handleCancelPaymentStampSelection">取消</el-button>
@@ -383,6 +391,7 @@ import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import ReimbursementForm from '@/components/ReimbursementForm.vue'
 import SelectableReimbursementForms from '@/components/SelectableReimbursementForms.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getReimbursements,
   createReimbursement,
@@ -441,8 +450,16 @@ const submitting = ref(false)
 
 // 盖章方式选择（报销申请）
 const reimbursementStampDialogVisible = ref(false)
+const reimbursementStampSelectorRef = ref(null)
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 const reimbursementStampForm = reactive({
-  stamp_method: 'online'
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
 })
 const pendingReimbursementData = ref(null)
 
@@ -489,8 +506,10 @@ const originalAttachments = ref([]) // 原报销申请的附件（自动带入�
 
 // 付款申请盖章方式选择
 const paymentStampDialogVisible = ref(false)
+const paymentStampSelectorRef = ref(null)
 const paymentStampForm = reactive({
-  stamp_method: 'online'
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
 })
 const pendingPaymentSubmissionData = ref(null)
 
@@ -695,6 +714,7 @@ const handleConfirmCreate = async () => {
     // 保存数据，打开盖章方式选择对话框
     pendingReimbursementData.value = submitData
     reimbursementStampForm.stamp_method = 'online'
+    reimbursementStampForm.stamp_selection = getDefaultStampSelection()
     reimbursementStampDialogVisible.value = true
   } catch (error) {
     if (error !== false) {
@@ -706,12 +726,19 @@ const handleConfirmCreate = async () => {
 // 确认盖章方式并创建报销申请
 const confirmReimbursementStampAndSubmit = async () => {
   try {
+    const stampResult = reimbursementStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     submitting.value = true
     
     // 添加盖章方式到提交数据
     const submitData = {
       ...pendingReimbursementData.value,
-      stamp_method: reimbursementStampForm.stamp_method
+      stamp_method: reimbursementStampForm.stamp_method,
+      ...(stampResult?.value || reimbursementStampForm.stamp_selection)
     }
 
     console.log('提交报销数据:', submitData)
@@ -757,6 +784,7 @@ const confirmReimbursementStampAndSubmit = async () => {
       createForm.summary = ''
       attachmentFileList.value = []
       pendingReimbursementData.value = null
+      reimbursementStampForm.stamp_selection = getDefaultStampSelection()
       reimbursementInlineFormsRef.value?.reset?.()
       
       // 刷新列表
@@ -943,6 +971,7 @@ const confirmCreatePayment = async () => {
     }
 
     paymentStampForm.stamp_method = 'online'
+    paymentStampForm.stamp_selection = getDefaultStampSelection()
     paymentStampDialogVisible.value = true
   } catch (error) {
     console.error('Prepare payment submission error:', error)
@@ -955,6 +984,7 @@ const confirmCreatePayment = async () => {
 const handleCancelPaymentStampSelection = () => {
   paymentStampDialogVisible.value = false
   pendingPaymentSubmissionData.value = null
+  paymentStampForm.stamp_selection = getDefaultStampSelection()
 }
 
 const confirmPaymentStampAndSubmit = async () => {
@@ -964,6 +994,12 @@ const confirmPaymentStampAndSubmit = async () => {
   }
 
   try {
+    const stampResult = paymentStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     creatingPayment.value = true
 
     const response = await submitReimbursementPaymentRequest({
@@ -995,7 +1031,8 @@ const confirmPaymentStampAndSubmit = async () => {
 
     const completeResponse = await completeReimbursementPaymentSubmission({
       payment_request_id: paymentRequestId,
-      stamp_method: paymentStampForm.stamp_method
+      stamp_method: paymentStampForm.stamp_method,
+      ...(stampResult?.value || paymentStampForm.stamp_selection)
     })
 
     if (completeResponse.success) {
@@ -1007,6 +1044,7 @@ const confirmPaymentStampAndSubmit = async () => {
     paymentStampDialogVisible.value = false
     paymentDialogVisible.value = false
     pendingPaymentSubmissionData.value = null
+    paymentStampForm.stamp_selection = getDefaultStampSelection()
     handleSearch()
   } catch (error) {
     console.error('Complete payment submission error:', error)

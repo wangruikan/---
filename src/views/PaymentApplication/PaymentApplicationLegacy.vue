@@ -640,7 +640,7 @@
     <el-dialog
       v-model="submitStampDialogVisible"
       title="提交审批"
-      width="500px"
+      width="700px"
       :close-on-click-modal="false"
     >
       <el-form :model="submitStampForm" label-width="100px">
@@ -660,6 +660,10 @@
             <el-radio value="wire">电汇</el-radio>
           </el-radio-group>
         </el-form-item>
+        <ApprovalStampSelector
+          ref="submitStampSelectorRef"
+          v-model="submitStampForm.stamp_selection"
+        />
       </el-form>
       <template #footer>
         <el-button @click="submitStampDialogVisible = false">取消</el-button>
@@ -788,6 +792,7 @@ import { useAccountSetStore } from '@/stores/accountSet'
 import { useUserStore } from '@/stores/user'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getPaymentApplications, getPaymentApplicationDetail, uploadAttachment,
   deleteAttachment, submitPaymentApplication, resubmitPaymentApplication, supplementAttachment,
@@ -828,10 +833,18 @@ const detailData = ref({})
 
 // 盖章方式选择对话框
 const submitStampDialogVisible = ref(false)
+const submitStampSelectorRef = ref(null)
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 const submitStampForm = reactive({
   applicationId: null,
   stamp_method: 'online', // 默认线上盖章
-  payment_method: 'transfer' // 默认转账
+  payment_method: 'transfer', // 默认转账
+  stamp_selection: getDefaultStampSelection()
 })
 const showFormToWordDialog = ref(false)
 
@@ -994,6 +1007,9 @@ const openSubmitStampDialog = async (row) => {
     
     // 打开盖章方式选择对话框
     submitStampForm.applicationId = row.id
+    submitStampForm.stamp_method = 'online'
+    submitStampForm.payment_method = 'transfer'
+    submitStampForm.stamp_selection = getDefaultStampSelection()
     submitStampDialogVisible.value = true
   } catch (error) {
     ElMessage.error(error.response?.data?.message || '获取详情失败')
@@ -1003,10 +1019,17 @@ const openSubmitStampDialog = async (row) => {
 // 提交审批
 const handleSubmit = async () => {
   try {
+    const stampResult = submitStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     const res = await submitPaymentApplication(submitStampForm.applicationId, {
       current_account_set_id: accountSetStore.currentAccountSetId,
       stamp_method: submitStampForm.stamp_method,
-      payment_method: submitStampForm.payment_method
+      payment_method: submitStampForm.payment_method,
+      ...(stampResult?.value || submitStampForm.stamp_selection)
     })
     
     if (res.success) {
@@ -1016,6 +1039,7 @@ const handleSubmit = async () => {
       // 重置默认值
       submitStampForm.stamp_method = 'online'
       submitStampForm.payment_method = 'transfer'
+      submitStampForm.stamp_selection = getDefaultStampSelection()
       loadApplicationList()
     } else {
       ElMessage.error(res.message || '提交失败')
@@ -1051,6 +1075,9 @@ const handleResubmitConfirm = async () => {
     
     // 打开盖章方式选择对话框
     submitStampForm.applicationId = detailData.value.id
+    submitStampForm.stamp_method = 'online'
+    submitStampForm.payment_method = detailData.value.payment_method || 'transfer'
+    submitStampForm.stamp_selection = getDefaultStampSelection()
     submitStampDialogVisible.value = true
   } catch (error) {
     ElMessage.error(error.response?.data?.message || '操作失败')
@@ -1060,6 +1087,12 @@ const handleResubmitConfirm = async () => {
 // 确认重新提交(带盖章方式)
 const confirmResubmit = async () => {
   try {
+    const stampResult = submitStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     const submitData = {
       current_account_set_id: accountSetStore.currentAccountSetId,
       title: detailData.value.title,
@@ -1067,7 +1100,8 @@ const confirmResubmit = async () => {
       project_ids: detailData.value.project_ids,
       description: detailData.value.description,
       stamp_method: submitStampForm.stamp_method,
-      payment_method: submitStampForm.payment_method
+      payment_method: submitStampForm.payment_method,
+      ...(stampResult?.value || submitStampForm.stamp_selection)
     }
 
     // 如果有报销表单数据，也一起提交
@@ -1083,6 +1117,7 @@ const confirmResubmit = async () => {
       dialogVisible.value = false
       submitStampForm.stamp_method = 'online'
       submitStampForm.payment_method = 'transfer'
+      submitStampForm.stamp_selection = getDefaultStampSelection()
       loadApplicationList()
     } else {
       ElMessage.error(res.message || '重新申请失败')

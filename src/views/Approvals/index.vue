@@ -512,6 +512,7 @@
         v-if="showPDFEditor && currentPDFUrl"
         :pdf-url="currentPDFUrl"
         :allowed-seal="selectedApprovalStamp"
+        :show-seal-section="!!selectedApprovalStamp"
         @confirm="handlePDFEditorConfirm"
         @cancel="showPDFEditor = false"
       />

@@ -672,6 +672,15 @@ class PaymentApplicationController extends Controller
             return $response;
         }
 
+        $validated = $request->validate([
+            'stamp_method' => 'nullable|in:online,offline',
+            'payment_method' => 'nullable|in:cash,transfer,wire',
+            'stamp_selection_mode' => 'nullable|in:stamp,none',
+            'stamp_company' => 'nullable|string|max:100',
+            'stamp_type' => 'nullable|in:bank,cash,official,finance,contract,legal_person,business,hr',
+            'stamp_id' => 'nullable|integer',
+        ]);
+
         try {
             $user = $request->user();
             $accountSetId = (int)($request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id'));
@@ -722,7 +731,29 @@ class PaymentApplicationController extends Controller
 
             DB::beginTransaction();
 
-            $stampMethod = $request->input('stamp_method', 'online');
+            $stampMethod = $validated['stamp_method'] ?? 'online';
+            $stampOptions = [
+                'stamp_selection_mode' => $validated['stamp_selection_mode'] ?? 'none',
+                'stamp_company' => $validated['stamp_company'] ?? null,
+                'stamp_type' => $validated['stamp_type'] ?? null,
+                'stamp_id' => $validated['stamp_id'] ?? null,
+            ];
+            if ($stampOptions['stamp_selection_mode'] === 'stamp') {
+                $stamp = \App\Models\UserBankStamp::where('id', $stampOptions['stamp_id'])
+                    ->where('account_set_id', $accountSetId)
+                    ->where('company', $stampOptions['stamp_company'])
+                    ->where('type', $stampOptions['stamp_type'])
+                    ->first();
+
+                if (!$stamp) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => '所选公司印章不存在，请重新选择'
+                    ], 422);
+                }
+            }
+
             $businessType = $this->resolveBusinessType($application);
 
             $approvalInstance = $this->approvalService->createApprovalInstance(
@@ -732,7 +763,8 @@ class PaymentApplicationController extends Controller
                 $application->submitted_by ?: $user->id,
                 $attachments,
                 true,
-                $stampMethod
+                $stampMethod,
+                $stampOptions
             );
 
             if (!$approvalInstance) {
@@ -744,7 +776,7 @@ class PaymentApplicationController extends Controller
                 'status' => 'pending',
                 'submitted_by' => $application->submitted_by ?: $user->id,
                 'submitted_at' => now(),
-                'payment_method' => $request->input('payment_method', 'transfer'),
+                'payment_method' => $validated['payment_method'] ?? 'transfer',
             ]);
 
             DB::commit();
@@ -805,6 +837,10 @@ class PaymentApplicationController extends Controller
                 'description' => 'nullable|string',
                 'stamp_method' => 'required|in:online,offline',
                 'payment_method' => 'nullable|in:cash,transfer,wire',
+                'stamp_selection_mode' => 'nullable|in:stamp,none',
+                'stamp_company' => 'nullable|string|max:100',
+                'stamp_type' => 'nullable|in:bank,cash,official,finance,contract,legal_person,business,hr',
+                'stamp_id' => 'nullable|integer',
                 'reimbursement_form' => 'nullable|array',
             ]);
 
@@ -869,6 +905,28 @@ class PaymentApplicationController extends Controller
             }
 
             $businessType = $this->resolveBusinessType($application);
+            $stampOptions = [
+                'stamp_selection_mode' => $validated['stamp_selection_mode'] ?? 'none',
+                'stamp_company' => $validated['stamp_company'] ?? null,
+                'stamp_type' => $validated['stamp_type'] ?? null,
+                'stamp_id' => $validated['stamp_id'] ?? null,
+            ];
+            if ($stampOptions['stamp_selection_mode'] === 'stamp') {
+                $stamp = \App\Models\UserBankStamp::where('id', $stampOptions['stamp_id'])
+                    ->where('account_set_id', $accountSetId)
+                    ->where('company', $stampOptions['stamp_company'])
+                    ->where('type', $stampOptions['stamp_type'])
+                    ->first();
+
+                if (!$stamp) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => '所选公司印章不存在，请重新选择'
+                    ], 422);
+                }
+            }
+
             $approvalInstance = $this->approvalService->createApprovalInstance(
                 $accountSetId,
                 $businessType,
@@ -876,7 +934,8 @@ class PaymentApplicationController extends Controller
                 $application->submitted_by ?: $user->id,
                 $attachments,
                 true,
-                $validated['stamp_method']
+                $validated['stamp_method'],
+                $stampOptions
             );
 
             if (!$approvalInstance) {

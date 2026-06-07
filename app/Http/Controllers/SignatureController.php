@@ -25,9 +25,11 @@ class SignatureController extends Controller
         return match ($type) {
             'cash' => '现金付讫章',
             'official' => '公章',
-            'finance' => '财务章',
-            'contract' => '合同章',
+            'finance' => '财务专用章',
+            'contract' => '合同专用章',
             'legal_person' => '法人章',
+            'business' => '业务专用章',
+            'hr' => '人事部专用章',
             default => '银行付讫章',
         };
     }
@@ -37,11 +39,25 @@ class SignatureController extends Controller
         return match ($type) {
             'cash' => '现金付讫',
             'official' => '公章',
-            'finance' => '财务章',
-            'contract' => '合同章',
+            'finance' => '财务专用章',
+            'contract' => '合同专用章',
             'legal_person' => '法人章',
+            'business' => '业务专用章',
+            'hr' => '人事部专用章',
             default => '银行付讫',
         };
+    }
+
+    private function stampTypeRule(): string
+    {
+        return 'nullable|in:bank,cash,official,finance,contract,legal_person,business,hr';
+    }
+
+    private function applyStampAccessScope($query, ?int $accountSetId, int $userId)
+    {
+        return $accountSetId
+            ? $query->where('account_set_id', $accountSetId)
+            : $query->where('user_id', $userId);
     }
 
     /**
@@ -486,11 +502,34 @@ class SignatureController extends Controller
             ], 401);
         }
 
-        $type = $request->type ?? 'bank';
-        $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
-        $bankStamp = $accountSetId
-            ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
-            : UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
+        $accountSetId = $this->resolveAccountSetId($request);
+        $query = $this->applyStampAccessScope(UserBankStamp::query(), $accountSetId, $user->id);
+
+        if (!$request->filled('type')) {
+            $stamps = $query
+                ->orderBy('company')
+                ->orderBy('type')
+                ->orderByDesc('updated_at')
+                ->get();
+
+            foreach ($stamps as $stamp) {
+                $stamp->image_url = asset('storage/' . $stamp->image_path);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $stamps
+            ]);
+        }
+
+        $type = $request->type;
+        $bankStamp = $query->where('type', $type);
+
+        if ($request->filled('company')) {
+            $bankStamp->where('company', $request->company);
+        }
+
+        $bankStamp = $bankStamp->first();
 
         if ($bankStamp) {
             $bankStamp->image_url = asset('storage/' . $bankStamp->image_path);
@@ -508,10 +547,11 @@ class SignatureController extends Controller
     public function uploadBankStamp(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            'id' => 'nullable|integer',
             'bank_stamp_image' => 'required|file|mimes:png,jpg,jpeg|max:2048',
-            'type' => 'nullable|in:bank,cash,official,finance,contract,legal_person',
+            'type' => $this->stampTypeRule(),
             'name' => 'nullable|string|max:100',
-            'company' => 'nullable|string|max:100',
+            'company' => 'required|string|max:100',
             'position_x' => 'nullable|integer|min:0|max:100',
             'position_y' => 'nullable|integer|min:0|max:100',
             'width' => 'nullable|integer|min:20|max:300',
@@ -520,6 +560,7 @@ class SignatureController extends Controller
             'bank_stamp_image.required' => '请上传银行付讫章图片',
             'bank_stamp_image.mimes' => '只支持PNG、JPG格式',
             'bank_stamp_image.max' => '文件大小不能超过2MB',
+            'company.required' => '请输入公司名称',
         ]);
 
         if ($validator->fails()) {
@@ -547,27 +588,65 @@ class SignatureController extends Controller
 
             $type = $request->type ?? 'bank';
             $defaultName = $this->getDefaultStampName($type);
-            $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
+            $accountSetId = $this->resolveAccountSetId($request);
+            $company = trim((string) $request->company);
 
-            // 查找或创建付讫章记录（按账套共享）
+            if ($company === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请输入公司名称'
+                ], 422);
+            }
+
+            // 同一账套下按公司和类型各保存一枚章。
+            $stampData = [
+                'user_id' => $user->id,
+                'type' => $type,
+                'name' => $request->name ?? $defaultName,
+                'company' => $company,
+                'image_path' => $path,
+                'original_filename' => $originalFilename,
+                'position_x' => $request->position_x ?? 70,
+                'position_y' => $request->position_y ?? 80,
+                'width' => $request->width ?? 100,
+                'height' => $request->height ?? 50,
+            ];
+
+            if ($request->filled('id')) {
+                $query = $this->applyStampAccessScope(UserBankStamp::query(), $accountSetId, $user->id);
+                $bankStamp = $query->where('id', $request->id)->first();
+
+                if (!$bankStamp) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => '印章不存在'
+                    ], 404);
+                }
+
+                $oldPath = $bankStamp->image_path;
+                $bankStamp->update($stampData);
+
+                if ($oldPath && $oldPath !== $bankStamp->image_path && Storage::disk('public')->exists($oldPath)) {
+                    Storage::disk('public')->delete($oldPath);
+                }
+
+                $bankStamp->image_url = asset('storage/' . $bankStamp->image_path);
+                $typeLabel = $this->getStampTypeLabel($bankStamp->type);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => "{$typeLabel}上传成功",
+                    'data' => $bankStamp
+                ]);
+            }
+
             $uniqueKey = $accountSetId
-                ? ['account_set_id' => $accountSetId, 'type' => $type]
-                : ['user_id' => $user->id, 'type' => $type];
+                ? ['account_set_id' => $accountSetId, 'company' => $company, 'type' => $type]
+                : ['user_id' => $user->id, 'company' => $company, 'type' => $type];
 
             $bankStamp = UserBankStamp::updateOrCreate(
                 $uniqueKey,
-                [
-                    'user_id' => $user->id,
-                    'type' => $type,
-                    'name' => $request->name ?? $defaultName,
-                    'company' => $request->company,
-                    'image_path' => $path,
-                    'original_filename' => $originalFilename,
-                    'position_x' => $request->position_x ?? 70,
-                    'position_y' => $request->position_y ?? 80,
-                    'width' => $request->width ?? 100,
-                    'height' => $request->height ?? 50,
-                ]
+                $stampData
             );
 
             // 如果是更新，删除旧文件
@@ -602,7 +681,9 @@ class SignatureController extends Controller
     public function updateBankStampPosition(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'type' => 'nullable|in:bank,cash,official,finance,contract,legal_person',
+            'id' => 'nullable|integer',
+            'type' => $this->stampTypeRule(),
+            'company' => 'nullable|string|max:100',
             'position_x' => 'required|integer|min:0|max:100',
             'position_y' => 'required|integer|min:0|max:100',
             'width' => 'nullable|integer|min:20|max:300',
@@ -627,10 +708,18 @@ class SignatureController extends Controller
 
         $type = $request->type ?? 'bank';
         $typeLabel = $this->getStampTypeLabel($type);
-        $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
-        $bankStamp = $accountSetId
-            ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
-            : UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
+        $accountSetId = $this->resolveAccountSetId($request);
+        $query = $this->applyStampAccessScope(UserBankStamp::query(), $accountSetId, $user->id);
+
+        if ($request->filled('id')) {
+            $bankStamp = $query->where('id', $request->id)->first();
+        } else {
+            $bankStamp = $query->where('type', $type);
+            if ($request->filled('company')) {
+                $bankStamp->where('company', $request->company);
+            }
+            $bankStamp = $bankStamp->first();
+        }
 
         if (!$bankStamp) {
             return response()->json([
@@ -670,10 +759,19 @@ class SignatureController extends Controller
 
         $type = $request->type ?? 'bank';
         $typeLabel = $this->getStampTypeLabel($type);
-        $accountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
-        $bankStamp = $accountSetId
-            ? UserBankStamp::where('account_set_id', $accountSetId)->where('type', $type)->first()
-            : UserBankStamp::where('user_id', $user->id)->where('type', $type)->first();
+        $accountSetId = $this->resolveAccountSetId($request);
+        $query = $this->applyStampAccessScope(UserBankStamp::query(), $accountSetId, $user->id);
+
+        if ($request->filled('id')) {
+            $bankStamp = $query->where('id', $request->id)->first();
+            $typeLabel = $bankStamp ? $this->getStampTypeLabel($bankStamp->type) : $typeLabel;
+        } else {
+            $bankStamp = $query->where('type', $type);
+            if ($request->filled('company')) {
+                $bankStamp->where('company', $request->company);
+            }
+            $bankStamp = $bankStamp->first();
+        }
 
         if (!$bankStamp) {
             return response()->json([

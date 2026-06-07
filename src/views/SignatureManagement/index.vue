@@ -65,48 +65,102 @@
       </el-card>
     </div>
     
-    <div
-      v-for="stampType in fixedStampTypes"
-      :key="stampType.type"
-      class="section"
-    >
+    <div class="section">
       <el-card>
         <template #header>
           <div class="section-header">
-            <span class="section-title">{{ stampType.icon }} {{ stampType.title }}</span>
-            <span class="section-desc">{{ stampType.desc }}</span>
+            <div>
+              <span class="section-title">公司印章</span>
+              <span class="section-desc">按公司和固定类型管理审批用章</span>
+            </div>
+            <el-button type="primary" size="small" @click="openTypedStampUpload()">
+              <el-icon><Plus /></el-icon>
+              上传公司印章
+            </el-button>
           </div>
         </template>
 
-        <div class="bank-stamp-content">
-          <div v-if="typedStamps[stampType.type]" class="bank-stamp-display">
-            <img :src="typedStamps[stampType.type].image_url" :alt="stampType.title" class="bank-stamp-image" />
-            <div class="bank-stamp-info">
-              <p>名称：{{ typedStamps[stampType.type].name }}</p>
-              <p>公司：{{ typedStamps[stampType.type].company || '-' }}</p>
-              <p>默认位置：X {{ typedStamps[stampType.type].position_x }}%, Y {{ typedStamps[stampType.type].position_y }}%</p>
-              <p>尺寸：{{ typedStamps[stampType.type].width }} x {{ typedStamps[stampType.type].height }}</p>
-              <p>上传时间：{{ formatDateTime(typedStamps[stampType.type].created_at) }}</p>
-            </div>
-            <div class="bank-stamp-actions">
-              <el-button type="primary" @click="openTypedStampUpload(stampType.type)">
-                更换
-              </el-button>
-              <el-button type="warning" @click="openTypedStampPosition(stampType.type)">
-                设置位置
-              </el-button>
-              <el-button type="danger" @click="handleDeleteTypedStamp(stampType.type)">
-                删除
-              </el-button>
-            </div>
-          </div>
-          <div v-else class="bank-stamp-empty">
-            <el-empty :description="`还未上传${stampType.title}`">
-              <el-button type="primary" @click="openTypedStampUpload(stampType.type)">
-                {{ `上传${stampType.title}` }}
-              </el-button>
-            </el-empty>
-          </div>
+        <div class="company-stamp-content">
+          <el-collapse v-if="companyStampGroups.length > 0" class="company-stamp-collapse">
+            <el-collapse-item
+              v-for="group in companyStampGroups"
+              :key="group.company"
+              :name="group.company"
+            >
+              <template #title>
+                <div class="company-collapse-title">
+                  <span>{{ group.company }}</span>
+                  <el-tag size="small" type="info">{{ group.uploadedCount }}/{{ fixedStampTypes.length }}</el-tag>
+                </div>
+              </template>
+
+              <el-table :data="group.rows" border size="small" class="company-stamp-table">
+                <el-table-column prop="title" label="印章类型" min-width="150" />
+                <el-table-column label="印章名称" min-width="160">
+                  <template #default="{ row }">
+                    <span>{{ row.stamp?.name || '-' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="100" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.stamp" type="success" size="small">已上传</el-tag>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="默认位置" min-width="160">
+                  <template #default="{ row }">
+                    <span v-if="row.stamp">X {{ row.stamp.position_x }}%, Y {{ row.stamp.position_y }}%</span>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="上传时间" min-width="170">
+                  <template #default="{ row }">
+                    <span>{{ row.stamp ? formatDateTime(row.stamp.created_at) : '-' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="260" fixed="right">
+                  <template #default="{ row }">
+                    <el-button
+                      v-if="row.stamp"
+                      type="primary"
+                      size="small"
+                      @click="openTypedStampPreview(row.stamp)"
+                    >
+                      查看
+                    </el-button>
+                    <el-button
+                      size="small"
+                      @click="openTypedStampUpload(row.type, group.company, row.stamp)"
+                    >
+                      {{ row.stamp ? '更换' : '上传' }}
+                    </el-button>
+                    <el-button
+                      v-if="row.stamp"
+                      type="warning"
+                      size="small"
+                      @click="openTypedStampPosition(row.stamp)"
+                    >
+                      设置位置
+                    </el-button>
+                    <el-button
+                      v-if="row.stamp"
+                      type="danger"
+                      size="small"
+                      @click="handleDeleteTypedStamp(row.stamp)"
+                    >
+                      删除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
+
+          <el-empty v-else description="还未上传公司印章">
+            <el-button type="primary" @click="openTypedStampUpload()">
+              上传公司印章
+            </el-button>
+          </el-empty>
         </div>
       </el-card>
     </div>
@@ -160,15 +214,34 @@
     
     <el-dialog
       v-model="showTypedStampUpload"
-      :title="`${currentTypedStampConfig?.stamp ? '更换' : '上传'}${currentTypedStampConfig?.title || '印章'}`"
+      :title="`${editingTypedStampId ? '更换' : '上传'}公司印章`"
       width="500px"
     >
       <el-form :model="typedStampForm" label-width="100px">
+        <el-form-item label="公司" required>
+          <el-input
+            v-model.trim="typedStampForm.company"
+            placeholder="请输入公司名称"
+            :disabled="!!editingTypedStampId"
+          />
+        </el-form-item>
+        <el-form-item label="印章类型" required>
+          <el-select
+            v-model="typedStampForm.type"
+            placeholder="请选择印章类型"
+            :disabled="!!editingTypedStampId"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="stampType in fixedStampTypes"
+              :key="stampType.type"
+              :label="stampType.title"
+              :value="stampType.type"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="typedStampForm.name" placeholder="请输入印章名称" />
-        </el-form-item>
-        <el-form-item label="公司">
-          <el-input v-model="typedStampForm.company" placeholder="请输入公司名称" />
         </el-form-item>
       </el-form>
       <el-upload
@@ -187,7 +260,7 @@
         </div>
         <template #tip>
           <div class="el-upload__tip">
-            建议使用PNG透明背景图片，文件大小不超过2MB
+            更换印章需要重新上传图片，建议使用PNG透明背景图片，文件大小不超过2MB
           </div>
         </template>
       </el-upload>
@@ -227,6 +300,23 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="showTypedStampPreview"
+      :title="`${previewTypedStamp?.company || ''} - ${getTypedStampTitle(previewTypedStamp?.type)}`"
+      width="420px"
+    >
+      <div v-if="previewTypedStamp" class="stamp-preview">
+        <img :src="previewTypedStamp.image_url" :alt="previewTypedStamp.name" class="stamp-preview-image" />
+        <div class="stamp-preview-info">
+          <p>名称：{{ previewTypedStamp.name }}</p>
+          <p>公司：{{ previewTypedStamp.company || '-' }}</p>
+          <p>类型：{{ getTypedStampTitle(previewTypedStamp.type) }}</p>
+          <p>默认位置：X {{ previewTypedStamp.position_x }}%, Y {{ previewTypedStamp.position_y }}%</p>
+          <p>尺寸：{{ previewTypedStamp.width }} x {{ previewTypedStamp.height }}</p>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -240,23 +330,25 @@ import {
   updateSeal,
   setDefaultSeal,
   deleteSeal,
-  getMyBankStamp,
+  getBankStamps,
   uploadTypedStamp,
   updateBankStampPosition,
   deleteTypedStamp
 } from '@/api/signatures'
 
 const mySeals = ref([])
-const typedStamps = reactive({})
+const typedStamps = ref([])
 const uploading = ref(false)
 
 const fixedStampTypes = [
-  { type: 'bank', title: '银行付讫章', icon: '🏦', desc: '（审批最后节点通过时自动盖章到付款申请单）' },
-  { type: 'cash', title: '现金付讫章', icon: '💵', desc: '（付款方式为现金时自动盖章到付款申请单）' },
-  { type: 'official', title: '公章', icon: '🔴', desc: '（固定类型印章）' },
-  { type: 'finance', title: '财务章', icon: '🧾', desc: '（固定类型印章）' },
-  { type: 'contract', title: '合同章', icon: '📄', desc: '（固定类型印章）' },
-  { type: 'legal_person', title: '法人章', icon: '👤', desc: '（固定类型印章）' }
+  { type: 'bank', title: '银行付讫章' },
+  { type: 'cash', title: '现金付讫章' },
+  { type: 'official', title: '公章' },
+  { type: 'finance', title: '财务专用章' },
+  { type: 'contract', title: '合同专用章' },
+  { type: 'legal_person', title: '法人章' },
+  { type: 'business', title: '业务专用章' },
+  { type: 'hr', title: '人事部专用章' }
 ]
 
 // 印章上传
@@ -274,10 +366,15 @@ const showTypedStampUpload = ref(false)
 const typedStampUploadRef = ref()
 const typedStampFileList = ref([])
 const currentTypedStampType = ref('bank')
+const currentTypedStampId = ref(null)
+const editingTypedStampId = ref(null)
 const showTypedStampPosition = ref(false)
+const showTypedStampPreview = ref(false)
+const previewTypedStamp = ref(null)
 const typedStampForm = reactive({
   name: '',
-  company: ''
+  company: '',
+  type: 'bank'
 })
 const typedStampPositionForm = reactive({
   position_x: 70,
@@ -409,16 +506,41 @@ const handleDeleteSeal = async (seal) => {
 }
 
 const currentTypedStampConfig = computed(() => {
-  const config = fixedStampTypes.find(item => item.type === currentTypedStampType.value)
-  return {
-    ...config,
-    stamp: typedStamps[currentTypedStampType.value] || null
-  }
+  return fixedStampTypes.find(item => item.type === currentTypedStampType.value) || null
+})
+
+const normalizeCompanyName = (company) => {
+  return (company || '').trim() || '未填写公司'
+}
+
+const companyStampGroups = computed(() => {
+  const companyNames = Array.from(new Set(
+    typedStamps.value
+      .map(stamp => normalizeCompanyName(stamp.company))
+  )).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+
+  return companyNames.map(company => {
+    const rows = fixedStampTypes.map(typeConfig => {
+      const stamp = typedStamps.value.find(item => normalizeCompanyName(item.company) === company && item.type === typeConfig.type) || null
+      return {
+        ...typeConfig,
+        stamp
+      }
+    })
+
+    return {
+      company,
+      rows,
+      uploadedCount: rows.filter(row => row.stamp).length
+    }
+  })
 })
 
 const resetTypedStampUploadForm = () => {
+  editingTypedStampId.value = null
   typedStampForm.name = ''
   typedStampForm.company = ''
+  typedStampForm.type = 'bank'
   typedStampFileList.value = []
   typedStampUploadRef.value?.clearFiles?.()
 }
@@ -430,29 +552,24 @@ const fillTypedStampPositionForm = (stamp) => {
   typedStampPositionForm.height = stamp?.height ?? 50
 }
 
-const loadTypedStamp = async (type) => {
+const loadAllTypedStamps = async () => {
   try {
-    const response = await getMyBankStamp(type)
+    const response = await getBankStamps()
     if (response.success) {
-      typedStamps[type] = response.data || null
+      typedStamps.value = Array.isArray(response.data) ? response.data : []
     }
   } catch (error) {
-    console.error(`加载${type}印章失败:`, error)
+    console.error('加载公司印章失败:', error)
   }
 }
 
-const loadAllTypedStamps = async () => {
-  for (const item of fixedStampTypes) {
-    await loadTypedStamp(item.type)
-  }
-}
-
-const openTypedStampUpload = (type) => {
-  currentTypedStampType.value = type
+const openTypedStampUpload = (type = 'bank', company = '', stamp = null) => {
   resetTypedStampUploadForm()
-  const stamp = typedStamps[type]
+  currentTypedStampType.value = type
+  editingTypedStampId.value = stamp?.id || null
+  typedStampForm.type = type
+  typedStampForm.company = company || stamp?.company || ''
   typedStampForm.name = stamp?.name || getTypedStampDefaultName(type)
-  typedStampForm.company = stamp?.company || ''
   showTypedStampUpload.value = true
 }
 
@@ -461,10 +578,16 @@ const handleTypedStampUploadClose = () => {
   resetTypedStampUploadForm()
 }
 
-const openTypedStampPosition = (type) => {
-  currentTypedStampType.value = type
-  fillTypedStampPositionForm(typedStamps[type])
+const openTypedStampPosition = (stamp) => {
+  currentTypedStampId.value = stamp.id
+  currentTypedStampType.value = stamp.type
+  fillTypedStampPositionForm(stamp)
   showTypedStampPosition.value = true
+}
+
+const openTypedStampPreview = (stamp) => {
+  previewTypedStamp.value = stamp
+  showTypedStampPreview.value = true
 }
 
 const handleTypedStampFileChange = (file, fileList) => {
@@ -476,15 +599,7 @@ const handleTypedStampExceed = () => {
 }
 
 const getTypedStampDefaultName = (type) => {
-  const typeMap = {
-    bank: '银行付讫',
-    cash: '现金付讫',
-    official: '公章',
-    finance: '财务章',
-    contract: '合同章',
-    legal_person: '法人章'
-  }
-  return typeMap[type] || '印章'
+  return getTypedStampTitle(type)
 }
 
 const getTypedStampTitle = (type) => {
@@ -492,8 +607,18 @@ const getTypedStampTitle = (type) => {
 }
 
 const handleTypedStampUpload = async () => {
+  if (!typedStampForm.company) {
+    ElMessage.warning('请输入公司名称')
+    return
+  }
+
+  if (!typedStampForm.type) {
+    ElMessage.warning('请选择印章类型')
+    return
+  }
+
   if (typedStampFileList.value.length === 0) {
-    ElMessage.warning(`请选择${getTypedStampTitle(currentTypedStampType.value)}图片`)
+    ElMessage.warning(`请选择${getTypedStampTitle(typedStampForm.type)}图片`)
     return
   }
 
@@ -501,15 +626,19 @@ const handleTypedStampUpload = async () => {
   try {
     const formData = new FormData()
     formData.append('bank_stamp_image', typedStampFileList.value[0].raw)
-    formData.append('name', typedStampForm.name || getTypedStampDefaultName(currentTypedStampType.value))
-    formData.append('company', typedStampForm.company || '')
+    formData.append('type', typedStampForm.type)
+    formData.append('name', typedStampForm.name || getTypedStampDefaultName(typedStampForm.type))
+    formData.append('company', typedStampForm.company)
+    if (editingTypedStampId.value) {
+      formData.append('id', editingTypedStampId.value)
+    }
 
-    const response = await uploadTypedStamp(formData, currentTypedStampType.value)
+    const response = await uploadTypedStamp(formData)
     if (response.success) {
-      ElMessage.success(`${getTypedStampTitle(currentTypedStampType.value)}上传成功`)
+      ElMessage.success(`${getTypedStampTitle(typedStampForm.type)}上传成功`)
       showTypedStampUpload.value = false
       resetTypedStampUploadForm()
-      await loadTypedStamp(currentTypedStampType.value)
+      await loadAllTypedStamps()
     }
   } catch (error) {
     console.error('上传固定类型印章失败:', error)
@@ -524,12 +653,12 @@ const handleUpdateTypedStampPosition = async () => {
   try {
     const response = await updateBankStampPosition({
       ...typedStampPositionForm,
-      type: currentTypedStampType.value
+      id: currentTypedStampId.value
     })
     if (response.success) {
       ElMessage.success('位置设置已保存')
       showTypedStampPosition.value = false
-      await loadTypedStamp(currentTypedStampType.value)
+      await loadAllTypedStamps()
     }
   } catch (error) {
     console.error('更新位置失败:', error)
@@ -539,18 +668,18 @@ const handleUpdateTypedStampPosition = async () => {
   }
 }
 
-const handleDeleteTypedStamp = async (type) => {
+const handleDeleteTypedStamp = async (stamp) => {
   try {
-    await ElMessageBox.confirm(`确定要删除${getTypedStampTitle(type)}吗？`, '提示', {
+    await ElMessageBox.confirm(`确定要删除"${stamp.company}"的${getTypedStampTitle(stamp.type)}吗？`, '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
 
-    const response = await deleteTypedStamp(type)
+    const response = await deleteTypedStamp({ id: stamp.id })
     if (response.success) {
-      ElMessage.success(`${getTypedStampTitle(type)}删除成功`)
-      typedStamps[type] = null
+      ElMessage.success(`${getTypedStampTitle(stamp.type)}删除成功`)
+      await loadAllTypedStamps()
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -703,6 +832,52 @@ onMounted(() => {
 
 .bank-stamp-empty {
   padding: 40px 0;
+}
+
+.company-stamp-content {
+  min-height: 180px;
+}
+
+.company-stamp-collapse {
+  border-top: none;
+}
+
+.company-collapse-title {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 16px;
+  font-weight: 600;
+}
+
+.company-stamp-table {
+  margin-bottom: 12px;
+}
+
+.stamp-preview {
+  text-align: center;
+}
+
+.stamp-preview-image {
+  max-width: 260px;
+  max-height: 160px;
+  object-fit: contain;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.stamp-preview-info {
+  margin-top: 16px;
+  text-align: left;
+  color: #606266;
+  font-size: 14px;
+}
+
+.stamp-preview-info p {
+  margin: 6px 0;
 }
 
 :deep(.el-upload-dragger) {

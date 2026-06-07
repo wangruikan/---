@@ -106,10 +106,23 @@ export function getMyBankStamp(type = 'bank') {
 }
 
 /**
+ * 获取公司固定章列表
+ */
+export function getBankStamps(params = {}) {
+  return request({
+    url: '/bank-stamps/my',
+    method: 'get',
+    params
+  })
+}
+
+/**
  * 上传付讫章
  */
 export function uploadBankStamp(data, type = 'bank') {
-  data.append('type', type)
+  if (type && typeof data.has === 'function' && !data.has('type')) {
+    data.append('type', type)
+  }
   return request({
     url: '/bank-stamps/upload',
     method: 'post',
@@ -120,7 +133,7 @@ export function uploadBankStamp(data, type = 'bank') {
   })
 }
 
-export function uploadTypedStamp(data, type = 'bank') {
+export function uploadTypedStamp(data, type = null) {
   return uploadBankStamp(data, type)
 }
 
@@ -139,10 +152,11 @@ export function updateBankStampPosition(data) {
  * 删除付讫章
  */
 export function deleteBankStamp(type = 'bank') {
+  const params = typeof type === 'object' ? type : { type }
   return request({
     url: '/bank-stamps',
     method: 'delete',
-    params: { type }
+    params
   })
 }
 

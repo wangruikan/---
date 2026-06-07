@@ -429,7 +429,7 @@
       <template #footer>
         <el-button @click="showActionDialog = false">取消</el-button>
         <el-button 
-          v-if="hasContractAttachment && canUseSelectedStamp"
+          v-if="hasContractAttachment"
           type="warning" 
           @click="openPDFEditor"
         >
@@ -486,9 +486,6 @@
             <div style="flex: 1;">
               <div style="word-break: break-all;">
                 {{ index + 1 }}. {{ file.file_name || file.original_name }}
-              </div>
-              <div v-if="!(file.file_name || file.original_name || '').toLowerCase().endsWith('.pdf')" style="font-size: 12px; color: #E6A23C; margin-top: 4px;">
-                ⚠️ 非PDF文件，可能无法正常处理
               </div>
             </div>
           </div>
@@ -742,14 +739,6 @@ const mySeals = ref([])
 
 const selectedApprovalStamp = computed(() => {
   return currentApproval.value?.instance?.selected_stamp || null
-})
-
-const currentApprovalStampMode = computed(() => {
-  return currentApproval.value?.instance?.stamp_selection_mode || 'none'
-})
-
-const canUseSelectedStamp = computed(() => {
-  return currentApprovalStampMode.value === 'stamp' && !!selectedApprovalStamp.value
 })
 
 const pagination = reactive({
@@ -1209,46 +1198,38 @@ const openPDFEditor = async () => {
   }
   
   const instance = currentApproval.value.instance
-  if (currentApprovalStampMode.value !== 'stamp') {
-    ElMessage.warning('该审批发起时选择了无，无需盖章')
-    return
-  }
-  if (!selectedApprovalStamp.value) {
-    ElMessage.warning('未找到发起审批时选择的公司印章')
-    return
-  }
   if (!instance.attachments || instance.attachments.length === 0) {
     ElMessage.error('未找到附件')
     return
   }
   
-  // 获取所有附件（不再过滤，让用户自由选择）
-  const allAttachments = instance.attachments
-  
-  // 如果只有一个附件，直接打开
-  if (allAttachments.length === 1) {
-    const attachment = allAttachments[0]
+  const pdfAttachments = instance.attachments.filter(attachment => {
     const fileName = attachment.file_name || attachment.original_name || ''
+    return fileName.toLowerCase().endsWith('.pdf')
+  })
+
+  if (pdfAttachments.length === 0) {
+    ElMessage.warning('未找到可签名盖章的PDF文件')
+    return
+  }
+  
+  // 如果只有一个PDF附件，直接打开
+  if (pdfAttachments.length === 1) {
+    const attachment = pdfAttachments[0]
     const instanceId = resolveAttachmentInstanceId(attachment)
 
     if (!instanceId) {
       ElMessage.error('审批实例ID缺失，无法打开附件')
       return
     }
-    
-    // 检查是否为PDF
-    if (!fileName.toLowerCase().endsWith('.pdf')) {
-      ElMessage.warning('该文件不是PDF格式，可能无法正常签名盖章')
-    }
-
     currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
     selectedAttachmentId.value = attachment.id // 记录选择的附件ID
     showPDFEditor.value = true
     return
   }
   
-  // 如果有多个附件，显示选择对话框
-  pdfList.value = allAttachments
+  // 如果有多个PDF附件，显示选择对话框
+  pdfList.value = pdfAttachments
   selectedPDFIndex.value = 0
   showPDFSelector.value = true
 }
@@ -1303,34 +1284,10 @@ const confirmPDFSelection = () => {
     ElMessage.error('审批实例ID缺失，无法预览附件')
     return
   }
-  const fileName = attachment.file_name || attachment.original_name || ''
-  
-  // 检查是否为PDF
-  if (!fileName.toLowerCase().endsWith('.pdf')) {
-    ElMessageBox.confirm(
-      '您选择的文件不是PDF格式，可能无法正常签名盖章。是否继续？',
-      '提示',
-      {
-        confirmButtonText: '继续',
-        cancelButtonText: '重新选择',
-        type: 'warning'
-      }
-    ).then(() => {
-      // 用户确认继续
-    currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
-      selectedAttachmentId.value = attachment.id // 记录选择的附件ID
-      showPDFSelector.value = false
-    showPDFEditor.value = true
-    }).catch(() => {
-      // 用户选择重新选择，不关闭对话框
-    })
-  } else {
-    // 是PDF文件，直接打开
-    currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
-    selectedAttachmentId.value = attachment.id // 记录选择的附件ID
-    showPDFSelector.value = false
-    showPDFEditor.value = true
-  }
+  currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
+  selectedAttachmentId.value = attachment.id // 记录选择的附件ID
+  showPDFSelector.value = false
+  showPDFEditor.value = true
 }
 
 // PDF编辑器确认

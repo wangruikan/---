@@ -57,6 +57,7 @@ class OfflineOnboardingController extends Controller
 
         $user = Auth::user();
         $accountSetId = $employee->account_set_id;
+        $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
 
         DB::beginTransaction();
         try {
@@ -71,7 +72,8 @@ class OfflineOnboardingController extends Controller
                 $user->name,
                 [],
                 'offline',
-                '线下入职申请，经办自动通过'
+                '线下入职申请，经办自动通过',
+                $stampOptions
             );
 
             DB::commit();
@@ -85,6 +87,9 @@ class OfflineOnboardingController extends Controller
                 ]
             ]);
 
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             

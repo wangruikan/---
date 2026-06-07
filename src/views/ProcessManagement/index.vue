@@ -384,6 +384,10 @@
             线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
           </div>
         </el-form-item>
+        <ApprovalStampSelector
+          ref="paymentStampSelectorRef"
+          v-model="paymentRequestData.stamp_selection"
+        />
 
         <el-form-item label="备注">
           <el-input
@@ -500,6 +504,13 @@ const originalAttachments = ref([]) // 原保险汇总的附件（自动带入�
 const paymentFormFields = ref({}) // 付款表单字段组件数据
 const paymentFormFieldsRef = ref(null)
 const paymentSituationFormRef = ref(null)
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
+const paymentStampSelectorRef = ref(null)
 const paymentRequestData = reactive({
   processApprovalId: null,
   category: 'social_insurance',
@@ -508,7 +519,8 @@ const paymentRequestData = reactive({
   remarks: '',
   projectIds: [],
   projectName: '',
-  stamp_method: 'online' // 默认线上盖章
+  stamp_method: 'online', // 默认线上盖章
+  stamp_selection: getDefaultStampSelection()
 })
 
 const normalizeSituationDate = (value) => {
@@ -1096,6 +1108,8 @@ const openPaymentRequestDialog = async (processApprovalId) => {
     paymentRequestData.remarks = `${categoryName}汇总付款申请 - ${detail.title}`
     paymentRequestData.projectIds = projectIds
     paymentRequestData.projectName = resolvedProjectName
+    paymentRequestData.stamp_method = 'online'
+    paymentRequestData.stamp_selection = getDefaultStampSelection()
     
     // 重置付款表单字段组件
     paymentFormFields.value = {}
@@ -1120,6 +1134,13 @@ const openPaymentRequestDialog = async (processApprovalId) => {
 const confirmCreatePaymentRequest = async () => {
   try {
     creatingPayment.value = true
+
+    const stampResult = paymentStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      creatingPayment.value = false
+      return
+    }
 
     // 1. 先创建付款申请记录
     const { submitInsurancePaymentRequest } = await import('@/api/paymentApplication')
@@ -1230,7 +1251,8 @@ const confirmCreatePaymentRequest = async () => {
     const { completeInsurancePaymentSubmission } = await import('@/api/paymentApplication')
     const completeResponse = await completeInsurancePaymentSubmission({
       payment_request_id: paymentRequestId,
-      stamp_method: paymentRequestData.stamp_method // 传递盖章方式
+      stamp_method: paymentRequestData.stamp_method,
+      ...(stampResult?.value || paymentRequestData.stamp_selection)
     })
     
     if (completeResponse.success) {

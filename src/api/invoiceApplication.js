@@ -129,10 +129,11 @@ export function submitInvoiceApplication(applicationId, data = {}) {
 /**
  * 重新提交（驳回后）
  */
-export function resubmitInvoiceApplication(applicationId) {
+export function resubmitInvoiceApplication(applicationId, data = {}) {
   return request({
     url: `/invoice-applications/${applicationId}/resubmit`,
-    method: 'post'
+    method: 'post',
+    data
   })
 }
 

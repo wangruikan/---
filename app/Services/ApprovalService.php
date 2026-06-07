@@ -181,7 +181,8 @@ class ApprovalService
         $createdByName,
         $attachments = [],
         $stampMethod = null,
-        $initiatorComment = '经办提交，自动通过'
+        $initiatorComment = '经办提交，自动通过',
+        $options = []
     ) {
         return $this->createApprovalInstance(
             $accountSetId,
@@ -191,13 +192,13 @@ class ApprovalService
             $attachments,
             false,
             $stampMethod,
-            [
+            array_merge($options, [
                 'auto_approve_initiator' => true,
                 'start_approval_level' => 2,
                 'initiator_step_name' => '经办',
                 'initiator_name' => $createdByName,
                 'initiator_comment' => $initiatorComment,
-            ]
+            ])
         );
     }
     

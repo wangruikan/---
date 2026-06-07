@@ -285,6 +285,7 @@ class InsurancePaymentRequestController extends Controller
 
             // 获取盖章方式，默认线上
             $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $paymentRequest->account_set_id);
 
             // 创建审批流程实例
             $instance = $this->approvalService->createApprovalInstance(
@@ -294,7 +295,8 @@ class InsurancePaymentRequestController extends Controller
                 $paymentRequest->submitted_by,
                 $attachments,
                 true, // 跳过发起人
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             // 更新付款申请，关联审批实例
@@ -317,6 +319,9 @@ class InsurancePaymentRequestController extends Controller
                     'instance' => $instance
                 ]
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('创建保险付款审批流程失败', [
@@ -758,6 +763,10 @@ class InsurancePaymentRequestController extends Controller
             ], 422);
         }
 
+        // 获取盖章方式，默认线上
+        $stampMethod = $request->input('stamp_method', 'online');
+        $stampOptions = $this->resolveApprovalStampOptions($request, $paymentRequest->account_set_id);
+
         DB::beginTransaction();
         try {
             // 准备发票附件
@@ -774,9 +783,6 @@ class InsurancePaymentRequestController extends Controller
             $insuranceType = $paymentRequest->getInsuranceType();
             $typeName = $insuranceType === 'social_security' ? '社保' : '公积金';
 
-            // 获取盖章方式，默认线上
-            $stampMethod = $request->input('stamp_method', 'online');
-            
             // 创建发票审批流程（跳过第一个节点）
             $instance = $this->approvalService->createApprovalInstance(
                 $paymentRequest->account_set_id,
@@ -785,7 +791,8 @@ class InsurancePaymentRequestController extends Controller
                 $user->id,
                 $attachments,
                 true, // 跳过发起人（第一个节点）
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             // 更新付款申请
@@ -809,6 +816,9 @@ class InsurancePaymentRequestController extends Controller
                     'instance' => $instance
                 ]
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('创建发票审批流程失败', ['error' => $e->getMessage()]);

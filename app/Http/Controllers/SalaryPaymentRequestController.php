@@ -289,6 +289,7 @@ class SalaryPaymentRequestController extends Controller
 
             // 获取盖章方式，默认线上
             $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $paymentRequest->account_set_id);
             
             // 创建审批流程实例
             $instance = $this->approvalService->createApprovalInstance(
@@ -298,7 +299,8 @@ class SalaryPaymentRequestController extends Controller
                 $paymentRequest->submitted_by,
                 $attachments,
                 true, // 跳过发起人
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             // 更新付款申请，关联审批实例
@@ -321,6 +323,9 @@ class SalaryPaymentRequestController extends Controller
                     'instance' => $instance
                 ]
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('创建工资付款审批流程失败', [

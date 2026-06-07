@@ -3882,6 +3882,10 @@
             <el-radio value="offline">线下盖章</el-radio>
           </el-radio-group>
         </el-form-item>
+        <ApprovalStampSelector
+          ref="deleteApprovalStampSelectorRef"
+          v-model="deleteApprovalForm.stamp_selection"
+        />
       </el-form>
 
       <template #footer>
@@ -3945,6 +3949,10 @@
             <el-radio value="offline">线下盖章</el-radio>
           </el-radio-group>
         </el-form-item>
+        <ApprovalStampSelector
+          ref="salaryApprovalStampSelectorRef"
+          v-model="salaryApprovalForm.stamp_selection"
+        />
       </el-form>
 
       <template #footer>
@@ -4165,7 +4173,36 @@
         </el-table>
       </div>
     </el-dialog>
-    
+
+    <el-dialog
+      v-model="batchContractApprovalStampDialogVisible"
+      title="批量发起合同审批"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="batchContractApprovalStampForm" label-width="100px">
+        <el-form-item label="盖章方式" required>
+          <el-radio-group v-model="batchContractApprovalStampForm.stamp_method">
+            <el-radio value="online">线上盖章</el-radio>
+            <el-radio value="offline">线下盖章</el-radio>
+          </el-radio-group>
+          <div style="margin-top: 8px; color: #909399; font-size: 12px;">
+            本次批量发起的合同审批将统一使用此用章选择。
+          </div>
+        </el-form-item>
+        <ApprovalStampSelector
+          ref="batchContractApprovalStampSelectorRef"
+          v-model="batchContractApprovalStampForm.stamp_selection"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="batchContractApprovalStampDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="contractApprovalSubmitting" @click="confirmBatchSubmitApproval">
+          确认发起
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 创建合同对话框 -->
     <el-dialog
       v-model="showUploadDialog"
@@ -4355,6 +4392,10 @@
             </el-text>
           </div>
         </el-form-item>
+        <ApprovalStampSelector
+          ref="signatureStampSelectorRef"
+          v-model="signatureForm.stamp_selection"
+        />
       </el-form>
       
       <template #footer>
@@ -4456,6 +4497,10 @@
         <el-form-item label="员工姓名">
           <el-input :value="currentOfflineEmployee?.name" disabled />
         </el-form-item>
+        <ApprovalStampSelector
+          ref="offlineOnboardingStampSelectorRef"
+          v-model="offlineOnboardingForm.stamp_selection"
+        />
       </el-form>
       
       <template #footer>
@@ -4654,10 +4699,18 @@ import { useRouter } from 'vue-router'
 import { PDFDocument } from 'pdf-lib'
 import PDFSignatureEditor from '@/components/PDFSignatureEditor.vue'
 import EmployeeDocumentManager from '@/components/EmployeeDocumentManager.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 
 const userStore = useUserStore()
 const accountSetStore = useAccountSetStore()
 const router = useRouter()
+
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
@@ -4734,16 +4787,20 @@ const showDeleteApprovalDialog = ref(false)
 const employeeToDelete = ref(null)
 const deleteApprovalForm = reactive({
   reason: '',
-  stamp_method: 'online' // 盖章方式
+  stamp_method: 'online', // 盖章方式
+  stamp_selection: getDefaultStampSelection()
 })
+const deleteApprovalStampSelectorRef = ref(null)
 const submittingDeleteApproval = ref(false)
 
 // 工资调整审批相关
 const showSalaryApprovalDialog = ref(false)
 const salaryApprovalForm = reactive({
   reason: '',
-  stamp_method: 'online'
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
 })
+const salaryApprovalStampSelectorRef = ref(null)
 const submittingSalaryApproval = ref(false)
 const pendingSalaryAdjustment = ref(null)
 const currentSalarySnapshot = ref({
@@ -4957,10 +5014,12 @@ const offlineOnboardingForm = reactive({
   hire_date: '',
   contract_start_date: '',
   contract_end_date: '',
-  probation_end_date: ''
+  probation_end_date: '',
+  stamp_selection: getDefaultStampSelection()
 })
 const currentOfflineEmployee = ref(null) // 当前要线下入职的员工
 const submittingOfflineOnboarding = ref(false) // 提交线下入职中
+const offlineOnboardingStampSelectorRef = ref(null)
 const pendingContractUploadList = ref([]) // 待上传合同的员工列表
 const showPendingContractDialog = ref(false) // 显示待上传合同对话框
 const currentEditingEmployeeId = ref(null) // 当前编辑的员工ID
@@ -6654,19 +6713,27 @@ const handleOfflineOnboarding = (row) => {
   offlineOnboardingForm.contract_start_date = ''
   offlineOnboardingForm.contract_end_date = ''
   offlineOnboardingForm.probation_end_date = ''
+  offlineOnboardingForm.stamp_selection = getDefaultStampSelection()
   showOfflineOnboardingDialog.value = true
 }
 
 const submitOfflineOnboardingForm = async () => {
   // 不需要验证，直接提交
   try {
+    const stampResult = offlineOnboardingStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     submittingOfflineOnboarding.value = true
     
     await submitOfflineOnboarding(currentOfflineEmployee.value.id, {
       hire_date: offlineOnboardingForm.hire_date,
       contract_start_date: offlineOnboardingForm.contract_start_date,
       contract_end_date: offlineOnboardingForm.contract_end_date,
-      probation_end_date: offlineOnboardingForm.probation_end_date
+      probation_end_date: offlineOnboardingForm.probation_end_date,
+      ...(stampResult?.value || offlineOnboardingForm.stamp_selection)
     })
     
     ElMessage.success('线下入职审批已提交')
@@ -6730,6 +6797,7 @@ const handleSubmitSalaryApproval = () => {
 
   salaryApprovalForm.reason = ''
   salaryApprovalForm.stamp_method = 'online'
+  salaryApprovalForm.stamp_selection = getDefaultStampSelection()
   showSalaryApprovalDialog.value = true
 }
 
@@ -6749,12 +6817,19 @@ const confirmSubmitSalaryApproval = async () => {
     return
   }
 
+  const stampResult = salaryApprovalStampSelectorRef.value?.validate?.()
+  if (stampResult && !stampResult.valid) {
+    ElMessage.warning(stampResult.message)
+    return
+  }
+
   const payload = {
     employee_id: form.id,
     basic_salary: Number(normalizeNullableNumber(form.basic_salary) || 0),
     salary_items: buildMergedSalaryItems(form),
     reason: salaryApprovalForm.reason.trim(),
-    stamp_method: salaryApprovalForm.stamp_method
+    stamp_method: salaryApprovalForm.stamp_method,
+    ...(stampResult?.value || salaryApprovalForm.stamp_selection)
   }
 
   try {
@@ -6803,6 +6878,7 @@ const handleDelete = async (row) => {
       employeeToDelete.value = row
       deleteApprovalForm.reason = ''
       deleteApprovalForm.stamp_method = 'online' // 重置盖章方式
+      deleteApprovalForm.stamp_selection = getDefaultStampSelection()
       
     } else {
       // 非在职员工或管理员，可以直接删除
@@ -6852,6 +6928,12 @@ const handleSubmitDeleteApproval = async () => {
     ElMessage.warning('请填写删除原因')
     return
   }
+
+  const stampResult = deleteApprovalStampSelectorRef.value?.validate?.()
+  if (stampResult && !stampResult.valid) {
+    ElMessage.warning(stampResult.message)
+    return
+  }
   
   try {
     submittingDeleteApproval.value = true
@@ -6863,7 +6945,8 @@ const handleSubmitDeleteApproval = async () => {
       data: {
         employee_id: employeeToDelete.value.id,
         reason: deleteApprovalForm.reason,
-        stamp_method: deleteApprovalForm.stamp_method // 盖章方式
+        stamp_method: deleteApprovalForm.stamp_method, // 盖章方式
+        ...(stampResult?.value || deleteApprovalForm.stamp_selection)
       }
     })
     
@@ -6872,6 +6955,7 @@ const handleSubmitDeleteApproval = async () => {
     employeeToDelete.value = null
     deleteApprovalForm.reason = ''
     deleteApprovalForm.stamp_method = 'online' // 重置盖章方式
+    deleteApprovalForm.stamp_selection = getDefaultStampSelection()
     
   } catch (error) {
     console.error('Submit delete approval error:', error)
@@ -7502,6 +7586,12 @@ const contractTableRef = ref()
 const contractSelection = ref([])
 const contractsLoading = ref(false)
 const contractApprovalSubmitting = ref(false)
+const batchContractApprovalStampDialogVisible = ref(false)
+const batchContractApprovalStampSelectorRef = ref(null)
+const batchContractApprovalStampForm = reactive({
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
+})
 const transferLogs = ref([])
 const transferLogsLoading = ref(false)
 const uploading = ref(false)
@@ -7541,9 +7631,11 @@ const mySeals = ref([])
 const signatureForm = reactive({
   use_signature: false,
   selected_seal_id: null,
-  stamp_method: 'online'  // 默认选择线上盖章
+  stamp_method: 'online',  // 默认选择线上盖章
+  stamp_selection: getDefaultStampSelection()
 })
 const signatureFormRef = ref()
+const signatureStampSelectorRef = ref(null)
 const signatureRules = {}
 const uploadRef = ref()
 const fileList = ref([])
@@ -8101,6 +8193,7 @@ const handleSubmitApproval = async (contract) => {
 
     // 自动使用合同中存储的盖章方式
     signatureForm.stamp_method = contract.stamp_method || 'online'
+    signatureForm.stamp_selection = getDefaultStampSelection()
 
     await loadMySignatureAndSeals()
     currentContract.value = contract
@@ -8111,7 +8204,7 @@ const handleSubmitApproval = async (contract) => {
   }
 }
 
-const submitContractApproval = async (contract) => {
+const submitContractApproval = async (contract, stampData = null) => {
   const response = await request({
     url: '/approvals',
     method: 'post',
@@ -8120,7 +8213,8 @@ const submitContractApproval = async (contract) => {
       business_id: contract.id,
       employee_id: currentEmployee.value.id,
       skip_initiator: true,
-      stamp_method: contract.stamp_method || 'online'
+      stamp_method: stampData?.stamp_method || contract.stamp_method || 'online',
+      ...(stampData?.stamp_selection || {})
     }
   })
 
@@ -8134,6 +8228,23 @@ const submitContractApproval = async (contract) => {
 const handleBatchSubmitApproval = async () => {
   if (contractSelection.value.length === 0) {
     ElMessage.warning('请先勾选可发起审批的合同')
+    return
+  }
+
+  batchContractApprovalStampForm.stamp_method = 'online'
+  batchContractApprovalStampForm.stamp_selection = getDefaultStampSelection()
+  batchContractApprovalStampDialogVisible.value = true
+}
+
+const confirmBatchSubmitApproval = async () => {
+  if (contractSelection.value.length === 0) {
+    ElMessage.warning('请先勾选可发起审批的合同')
+    return
+  }
+
+  const stampResult = batchContractApprovalStampSelectorRef.value?.validate?.()
+  if (stampResult && !stampResult.valid) {
+    ElMessage.warning(stampResult.message)
     return
   }
 
@@ -8155,7 +8266,10 @@ const handleBatchSubmitApproval = async () => {
 
     for (const contract of contractSelection.value) {
       try {
-        await submitContractApproval(contract)
+        await submitContractApproval(contract, {
+          stamp_method: batchContractApprovalStampForm.stamp_method,
+          stamp_selection: stampResult?.value || batchContractApprovalStampForm.stamp_selection
+        })
         successCount++
       } catch (error) {
         failCount++
@@ -8164,6 +8278,7 @@ const handleBatchSubmitApproval = async () => {
     }
 
     await loadEmployeeContracts(currentEmployee.value.id)
+    batchContractApprovalStampDialogVisible.value = false
 
     if (failCount === 0) {
       ElMessage.success(`已成功发起 ${successCount} 份合同审批`)
@@ -8906,6 +9021,12 @@ const handleSignatureComplete = async (signatureData) => {
       }
     }
     
+    const stampResult = signatureStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     // 2. 创建审批流程（跳过发起人审批）
     const response = await request({
       url: '/approvals',
@@ -8915,7 +9036,8 @@ const handleSignatureComplete = async (signatureData) => {
         business_id: currentContract.value.id,  // 合同ID
         employee_id: currentEmployee.value.id,
         skip_initiator: true,  // 跳过发起人审批
-        stamp_method: signatureData.stamp_method || 'online'  // 盖章方式
+        stamp_method: signatureData.stamp_method || 'online',  // 盖章方式
+        ...(stampResult?.value || signatureData.stamp_selection)
       }
     })
     
@@ -8937,6 +9059,7 @@ const handleSignatureDialogClose = () => {
   signatureForm.use_signature = false
   signatureForm.selected_seal_id = null
   signatureForm.stamp_method = 'online'  // 重置为默认值
+  signatureForm.stamp_selection = getDefaultStampSelection()
   signatureFormRef.value?.resetFields()
   showSignatureDialog.value = false
   currentContract.value = null

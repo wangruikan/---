@@ -101,6 +101,10 @@
               <el-radio label="offline">线下</el-radio>
             </el-radio-group>
           </el-form-item>
+          <ApprovalStampSelector
+            ref="createStampSelectorRef"
+            v-model="createForm.stamp_selection"
+          />
           <el-form-item label="选择资料" prop="material_ids">
             <el-select
               v-model="createForm.material_ids"
@@ -212,6 +216,7 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { getMaterialAssets } from '@/api/materialAssets'
@@ -220,6 +225,13 @@ import request from '@/api/request'
 
 const userStore = useUserStore()
 const accountSetStore = useAccountSetStore()
+
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
@@ -238,6 +250,7 @@ const createForm = reactive({
   expected_return_date: '',
   reason: '',
   stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection(),
   material_ids: []
 })
 const createRules = {
@@ -252,6 +265,7 @@ const loadingMaterials = ref(false)
 
 const attachmentFileList = ref([])
 const attachmentUploaderRef = ref(null)
+const createStampSelectorRef = ref(null)
 
 const detailDialogVisible = ref(false)
 const currentRow = ref(null)
@@ -331,6 +345,7 @@ const openCreate = async () => {
   createForm.expected_return_date = new Date().toISOString().split('T')[0]
   createForm.reason = ''
   createForm.stamp_method = 'online'
+  createForm.stamp_selection = getDefaultStampSelection()
   createForm.material_ids = []
   attachmentFileList.value = []
   await loadAvailableMaterials()
@@ -358,13 +373,20 @@ const submitCreate = async () => {
   await createFormRef.value.validate(async (valid) => {
     if (!valid) return
 
+    const stampResult = createStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     submitting.value = true
     try {
       const res = await createMaterialRequest({
         expected_return_date: createForm.expected_return_date,
         reason: createForm.reason,
         stamp_method: createForm.stamp_method,
-        material_ids: createForm.material_ids
+        material_ids: createForm.material_ids,
+        ...(stampResult?.value || createForm.stamp_selection)
       })
 
       const instanceId = res.data?.approval_instance_id

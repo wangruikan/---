@@ -220,6 +220,7 @@ class TravelApplicationController extends Controller
             // 创建审批流程
             $approvalService = new ApprovalService();
             $stampMethod = $request->input('stamp_method'); // 盖章方式
+            $stampOptions = $this->resolveApprovalStampOptions($request, $request->current_account_set_id);
             $approvalInstance = $approvalService->createApprovalInstance(
                 $request->current_account_set_id,  // accountSetId
                 'travel_application',               // businessType
@@ -227,7 +228,8 @@ class TravelApplicationController extends Controller
                 $user->id,                         // createdBy
                 $attachments,                       // attachments
                 false,                             // skipInitiator
-                $stampMethod                       // stampMethod - 盖章方式
+                $stampMethod,                      // stampMethod - 盖章方式
+                $stampOptions
             );
 
             // 更新申请的审批流程ID
@@ -244,6 +246,8 @@ class TravelApplicationController extends Controller
                     'approval_instance' => $approvalInstance
                 ]
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

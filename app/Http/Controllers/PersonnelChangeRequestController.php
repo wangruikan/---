@@ -194,6 +194,7 @@ class PersonnelChangeRequestController extends Controller
 
             // 获取盖章方式，默认线上
             $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $request->current_account_set_id);
 
             // 创建审批流程 - 跳过第一节点（经办）
             $approvalService = new ApprovalService();
@@ -204,7 +205,8 @@ class PersonnelChangeRequestController extends Controller
                 $user->id,                         // createdBy
                 $attachments,                       // attachments
                 true,                              // skipInitiator - 跳过发起�?
-                $stampMethod                       // stampMethod - 盖章方式
+                $stampMethod,                      // stampMethod - 盖章方式
+                $stampOptions
             );
 
             // 更新申请的审批流程ID
@@ -221,6 +223,8 @@ class PersonnelChangeRequestController extends Controller
                     'approval_instance' => $approvalInstance
                 ]
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

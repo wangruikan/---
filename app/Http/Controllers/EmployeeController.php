@@ -1048,6 +1048,7 @@ class EmployeeController extends ApiController
             // 创建审批流程
             $approvalService = app(\App\Services\ApprovalService::class);
             $stampMethod = $request->input('stamp_method', 'online'); // 盖章方式
+            $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
             $instance = $approvalService->createApprovalInstance(
                 $accountSetId,
                 'employee_deletion', // 业务类型：员工删除
@@ -1055,7 +1056,8 @@ class EmployeeController extends ApiController
                 $request->user()->id,
                 [], // 无附件
                 false,
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             // 保存删除原因到审批实例的备注中
@@ -1067,6 +1069,8 @@ class EmployeeController extends ApiController
                 'data' => $instance
             ]);
 
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('提交删除员工审批失败', [
                 'error' => $e->getMessage(),
@@ -1134,6 +1138,7 @@ class EmployeeController extends ApiController
             // 先创建审批实例
             $approvalService = app(\App\Services\ApprovalService::class);
             $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
             $instance = $approvalService->createApprovalInstance(
                 $accountSetId,
                 'employee_salary_adjustment',
@@ -1141,7 +1146,8 @@ class EmployeeController extends ApiController
                 $request->user()->id,
                 [],
                 false,
-                $stampMethod
+                $stampMethod,
+                $stampOptions
             );
 
             // 将本次调薪内容写入审批实例扩展字段
@@ -1159,6 +1165,8 @@ class EmployeeController extends ApiController
                 'data' => $instance
             ]);
 
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('提交工资调整审批失败', [
                 'error' => $e->getMessage(),

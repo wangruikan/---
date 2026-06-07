@@ -186,11 +186,11 @@ export function downloadPaymentAttachment(attachmentId) {
 /**
  * 提交发票审批
  */
-export function submitInvoiceApproval(paymentRequestId) {
+export function submitInvoiceApproval(paymentRequestId, data = {}) {
   return request({
     url: '/insurance-payment-requests/submit-invoice-approval',
     method: 'post',
-    data: { payment_request_id: paymentRequestId }
+    data: { payment_request_id: paymentRequestId, ...data }
   })
 }
 

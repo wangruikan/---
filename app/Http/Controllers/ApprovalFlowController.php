@@ -65,6 +65,7 @@ class ApprovalFlowController extends Controller
             }
 
             $stampMethod = $request->input('stamp_method', 'online'); // 盖章方式
+            $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
             $instance = $this->approvalService->createApprovalInstance(
                 $accountSetId,
                 $request->business_type,
@@ -72,7 +73,8 @@ class ApprovalFlowController extends Controller
                 $request->user()->id,
                 $attachments,
                 $request->input('skip_initiator', false),
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             return response()->json([
@@ -81,6 +83,8 @@ class ApprovalFlowController extends Controller
                 'data' => $instance->load('records')
             ]);
 
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('创建审批流程失败', [
                 'error' => $e->getMessage(),
@@ -980,6 +984,9 @@ class ApprovalFlowController extends Controller
             if (!$accountSetId) {
                 throw new \Exception('无法获取账套ID');
             }
+
+            $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
             
             // 获取业务附件
             $attachments = $this->getBusinessAttachments($businessType, $businessModel);
@@ -990,7 +997,10 @@ class ApprovalFlowController extends Controller
                 $businessType,
                 $businessId,
                 $user->id,
-                $attachments
+                $attachments,
+                false,
+                $stampMethod,
+                $stampOptions
             );
             
             // 注意：createApprovalInstance 内部已经调用了 updateBusinessStatus
@@ -1014,6 +1024,9 @@ class ApprovalFlowController extends Controller
                 ]
             ]);
             
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             

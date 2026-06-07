@@ -636,6 +636,35 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="invoiceApprovalStampDialogVisible"
+      title="提交发票审批"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="invoiceApprovalStampForm" label-width="100px">
+        <el-form-item label="盖章方式" required>
+          <el-radio-group v-model="invoiceApprovalStampForm.stamp_method">
+            <el-radio value="online">线上盖章</el-radio>
+            <el-radio value="offline">线下盖章</el-radio>
+          </el-radio-group>
+          <div style="margin-top: 8px; color: #909399; font-size: 12px;">
+            线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
+          </div>
+        </el-form-item>
+        <ApprovalStampSelector
+          ref="invoiceApprovalStampSelectorRef"
+          v-model="invoiceApprovalStampForm.stamp_selection"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="invoiceApprovalStampDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitInvoiceLoading" @click="confirmSubmitInvoiceApproval">
+          确认提交
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 盖章方式选择对话框 -->
     <el-dialog
       v-model="submitStampDialogVisible"
@@ -797,7 +826,7 @@ import {
   getPaymentApplications, getPaymentApplicationDetail, uploadAttachment,
   deleteAttachment, submitPaymentApplication, resubmitPaymentApplication, supplementAttachment,
   getPaymentRequestAttachments, deletePaymentRequestAttachment, uploadInvoiceAttachment,
-  downloadPaymentAttachment
+  downloadPaymentAttachment, submitInvoiceApproval
 } from '@/api/paymentApplication'
 import { getProjects } from '@/api/projects'
 import { PDFDocument } from 'pdf-lib'
@@ -855,6 +884,12 @@ const invoiceAttachments = ref([])
 const invoiceLoading = ref(false)
 const submitInvoiceLoading = ref(false)
 const showPaymentFormDialog = ref(false)
+const invoiceApprovalStampDialogVisible = ref(false)
+const invoiceApprovalStampSelectorRef = ref(null)
+const invoiceApprovalStampForm = reactive({
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
+})
 
 // 附件补传相关
 const supplementDialogVisible = ref(false)
@@ -1328,6 +1363,23 @@ const handleSubmitInvoiceApproval = async () => {
     return
   }
 
+  invoiceApprovalStampForm.stamp_method = 'online'
+  invoiceApprovalStampForm.stamp_selection = getDefaultStampSelection()
+  invoiceApprovalStampDialogVisible.value = true
+}
+
+const confirmSubmitInvoiceApproval = async () => {
+  if (invoiceAttachments.value.length === 0) {
+    ElMessage.warning('请先上传发票附件')
+    return
+  }
+
+  const stampResult = invoiceApprovalStampSelectorRef.value?.validate?.()
+  if (stampResult && !stampResult.valid) {
+    ElMessage.warning(stampResult.message)
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
       '确认提交发票审批吗？提交后将进入审批流程。',
@@ -1346,14 +1398,14 @@ const handleSubmitInvoiceApproval = async () => {
     await mergePdfWithCounts()
     
     // 2. 提交发票审批
-    const res = await request({
-      url: '/insurance-payment-requests/submit-invoice-approval',
-      method: 'post',
-      data: { payment_request_id: currentInvoiceRequest.value.id }
+    const res = await submitInvoiceApproval(currentInvoiceRequest.value.id, {
+      stamp_method: invoiceApprovalStampForm.stamp_method,
+      ...(stampResult?.value || invoiceApprovalStampForm.stamp_selection)
     })
 
     if (res.success) {
       ElMessage.success('发票审批流程已创建')
+      invoiceApprovalStampDialogVisible.value = false
       invoiceDialogVisible.value = false
       loadApplicationList()
     } else {

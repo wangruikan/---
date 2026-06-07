@@ -537,7 +537,7 @@
     <el-dialog
       v-model="showSubmitDialog"
       title="提交考勤表"
-      width="600px"
+      width="700px"
       append-to-body
       @close="handleSubmitDialogClose"
     >
@@ -560,6 +560,11 @@
             线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
           </div>
         </el-form-item>
+
+        <ApprovalStampSelector
+          ref="submitStampSelectorRef"
+          v-model="submitForm.stamp_selection"
+        />
 
         <el-form-item label="上传附件" required>
           <div style="margin-bottom: 10px;">
@@ -734,6 +739,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getAttendanceSheets,
   getPendingAttendanceProjects,
@@ -776,6 +782,13 @@ const getCurrentMonth = () => {
   return `${year}-${month}`
 }
 
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
+
 const loading = ref(false)
 const sheetsLoading = ref(false)
 const attendanceLoading = ref(false)
@@ -798,6 +811,7 @@ const currentAttendanceBasis = ref(null)
 const apiBaseUrl = window.location.origin
 const sheetFormRef = ref()
 const uploadRef = ref()
+const submitStampSelectorRef = ref(null)
 
 const attendanceSheets = ref([])
 const pendingAttendanceProjects = ref([])
@@ -936,7 +950,8 @@ const batchEditForm = reactive({
 const submitForm = reactive({
   files: [],
   notes: '',
-  stamp_method: 'online'  // 默认线上盖章
+  stamp_method: 'online',  // 默认线上盖章
+  stamp_selection: getDefaultStampSelection()
 })
 
 const sheetFormRules = {
@@ -1306,6 +1321,12 @@ const handleSubmitWithFiles = async () => {
       return
     }
 
+    const stampResult = submitStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     submitting.value = true
 
     // 准备提交数据
@@ -1339,7 +1360,8 @@ const handleSubmitWithFiles = async () => {
     await submitAttendanceSheet(currentSheet.value.id, {
       ...submitData,
       attachments: uploadedFiles,
-      stamp_method: submitForm.stamp_method  // 传递盖章方式
+      stamp_method: submitForm.stamp_method,  // 传递盖章方式
+      ...(stampResult?.value || submitForm.stamp_selection)
     })
 
     ElMessage.success('提交成功')
@@ -1997,6 +2019,7 @@ const handleSubmitDialogClose = () => {
   submitForm.files = []
   submitForm.notes = ''
   submitForm.stamp_method = 'online'  // 重置为默认值
+  submitForm.stamp_selection = getDefaultStampSelection()
   uploadRef.value?.clearFiles()
 }
 

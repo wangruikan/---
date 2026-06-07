@@ -336,6 +336,11 @@
             </div>
           </el-form-item>
 
+          <ApprovalStampSelector
+            ref="submitStampSelectorRef"
+            v-model="submitForm.stamp_selection"
+          />
+
           <!-- 附件上传组件 -->
           <PaymentAttachmentUploader
             ref="attachmentUploaderRef"
@@ -371,6 +376,7 @@ import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getPersonnelChangeRequests,
   uploadPersonnelChangeAttachment,
@@ -386,6 +392,13 @@ const accountSetStore = useAccountSetStore()
 
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
+
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 
 // 搜索表单
 const searchForm = reactive({
@@ -416,9 +429,11 @@ const currentRow = ref(null)
 // 提交审批对话框
 const submitDialogVisible = ref(false)
 const submitForm = reactive({
-  stamp_method: 'online' // 默认线上盖章
+  stamp_method: 'online', // 默认线上盖章
+  stamp_selection: getDefaultStampSelection()
 })
 const attachmentUploaderRef = ref(null)
+const submitStampSelectorRef = ref(null)
 const attachmentFileList = ref([])
 const submitting = ref(false)
 
@@ -851,6 +866,12 @@ const handleConfirmSubmit = async () => {
     submitting.value = true
 
     const requestId = currentRow.value.id
+    const stampResult = submitStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      submitting.value = false
+      return
+    }
 
     // 上传附件（如果有）
     if (attachmentFileList.value.length > 0) {
@@ -873,7 +894,8 @@ const handleConfirmSubmit = async () => {
     const completeResponse = await completePersonnelChangeSubmission({
       personnel_change_request_id: requestId,
       current_account_set_id: accountSetStore.currentAccountSetId,
-      stamp_method: submitForm.stamp_method // 传递盖章方式
+      stamp_method: submitForm.stamp_method, // 传递盖章方式
+      ...(stampResult?.value || submitForm.stamp_selection)
     })
 
     if (completeResponse.success) {
@@ -886,6 +908,7 @@ const handleConfirmSubmit = async () => {
     detailDialogVisible.value = false
     // 重置盖章方式为默认值
     submitForm.stamp_method = 'online'
+    submitForm.stamp_selection = getDefaultStampSelection()
     handleSearch()
   } catch (error) {
     console.error('Submit error:', error)

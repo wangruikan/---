@@ -120,6 +120,7 @@ class MaterialRequestController extends ApiController
         }
 
         $materialIds = array_values(array_unique(array_map('intval', $request->input('material_ids', []))));
+        $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
 
         DB::beginTransaction();
         try {
@@ -167,7 +168,8 @@ class MaterialRequestController extends ApiController
                 $user->id,
                 [], // 附件由前端创建后通过 /approvals/{instanceId}/upload-attachment 上传
                 false,
-                $stampMethod
+                $stampMethod,
+                $stampOptions
             );
 
             // 兜底写入 approval_instance_id（updateBusinessStatus 中也会写）
@@ -181,6 +183,9 @@ class MaterialRequestController extends ApiController
             $materialRequest->load(['applicant:id,name', 'items.material', 'approvalInstance.attachments']);
 
             return $this->success($materialRequest, '申请已提交，审批流程已创建');
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             return $this->error($e->getMessage(), null, 400);

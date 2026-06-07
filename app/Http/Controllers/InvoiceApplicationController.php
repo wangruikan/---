@@ -878,6 +878,7 @@ class InvoiceApplicationController extends Controller
         
         // 获取盖章方式，默认线上
         $stampMethod = $request->input('stamp_method', 'online');
+        $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
 
         DB::beginTransaction();
         try {
@@ -889,7 +890,8 @@ class InvoiceApplicationController extends Controller
                 $user->name,
                 $this->buildApprovalAttachments($application),
                 $stampMethod,
-                '经办提交，自动通过'
+                '经办提交，自动通过',
+                $stampOptions
             );
 
             // 更新审批状态为审批中，业务状态保持不变
@@ -908,6 +910,9 @@ class InvoiceApplicationController extends Controller
                 'data' => $application->fresh(['approvalInstance'])
             ]);
 
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             
@@ -926,7 +931,7 @@ class InvoiceApplicationController extends Controller
     /**
      * 重新发起（红冲后）
      */
-    public function resubmit($id)
+    public function resubmit(Request $request, $id)
     {
         $application = InvoiceApplication::with('items')->find($id);
 
@@ -951,11 +956,13 @@ class InvoiceApplicationController extends Controller
             ], 400);
         }
 
+        $user = Auth::user();
+        $accountSetId = $application->account_set_id;
+        $stampMethod = $request->input('stamp_method', 'online');
+        $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
+
         DB::beginTransaction();
         try {
-            $user = Auth::user();
-            $accountSetId = $application->account_set_id;
-
             $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
                 $accountSetId,
                 '发票申请（重新提交）',
@@ -963,8 +970,9 @@ class InvoiceApplicationController extends Controller
                 $user->id,
                 $user->name,
                 $this->buildApprovalAttachments($application),
-                null,
-                '经办重新提交，自动通过'
+                $stampMethod,
+                '经办重新提交，自动通过',
+                $stampOptions
             );
 
             // 更新原申请：审批状态改为审批中，关联新审批实例
@@ -984,6 +992,9 @@ class InvoiceApplicationController extends Controller
                 'data' => $application->load(['items', 'approvalInstance'])
             ]);
 
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             

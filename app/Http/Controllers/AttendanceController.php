@@ -369,6 +369,7 @@ class AttendanceController extends Controller
             
             // 获取盖章方式，默认为线上
             $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
             
             // 调试日志
             Log::info('考勤提交 - 接收到的盖章方式', [
@@ -385,7 +386,7 @@ class AttendanceController extends Controller
             $sheet->submit($user->id, $submitData);
 
             // 发起审批流程（传递盖章方式）
-            $this->initiateApprovalProcess($sheet, $user, $accountSetId, $stampMethod);
+            $this->initiateApprovalProcess($sheet, $user, $accountSetId, $stampMethod, $stampOptions);
 
             DB::commit();
 
@@ -393,6 +394,9 @@ class AttendanceController extends Controller
                 'success' => true,
                 'message' => '提交成功，审批流程已发起'
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('提交考勤表失败', [
@@ -838,7 +842,7 @@ class AttendanceController extends Controller
     /**
      * 发起审批流程
      */
-    private function initiateApprovalProcess($sheet, $user, $accountSetId, $stampMethod = 'online')
+    private function initiateApprovalProcess($sheet, $user, $accountSetId, $stampMethod = 'online', array $stampOptions = [])
     {
         Log::info('考勤审批流程 - 创建审批实例', [
             'sheet_id' => $sheet->id,
@@ -868,7 +872,8 @@ class AttendanceController extends Controller
             $user->name,
             $attachments,
             $stampMethod,
-            '经办提交，自动通过'
+            '经办提交，自动通过',
+            $stampOptions
         );
 
         Log::info("考勤表审批流程已发起", [

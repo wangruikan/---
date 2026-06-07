@@ -389,7 +389,7 @@
       <el-dialog
         v-model="stampMethodDialogVisible"
         title="选择盖章方式"
-        width="400px"
+        width="700px"
         :close-on-click-modal="false"
       >
         <el-form :model="stampMethodForm" label-width="100px">
@@ -399,6 +399,11 @@
               <el-radio value="offline">线下盖章</el-radio>
             </el-radio-group>
           </el-form-item>
+
+          <ApprovalStampSelector
+            ref="stampSelectorRef"
+            v-model="stampMethodForm.stamp_selection"
+          />
         </el-form>
         <template #footer>
           <el-button @click="stampMethodDialogVisible = false">取消</el-button>
@@ -419,6 +424,7 @@ import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getTravelApplications,
   createTravelApplication,
@@ -436,6 +442,13 @@ const accountSetStore = useAccountSetStore()
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 const isApprover = computed(() => ['admin', 'approver'].includes(userStore.userInfo?.role))
+
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 
 // 搜索表单
 const searchForm = reactive({
@@ -478,8 +491,10 @@ const submitting = ref(false)
 
 // 盖章方式选择
 const stampMethodDialogVisible = ref(false)
+const stampSelectorRef = ref(null)
 const stampMethodForm = reactive({
-  stamp_method: 'online'
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
 })
 const pendingTravelApplicationId = ref(null)
 
@@ -732,6 +747,7 @@ const handleConfirmCreate = async () => {
     // 保存申请ID，打开盖章方式选择对话框
     pendingTravelApplicationId.value = travelApplicationId
     stampMethodForm.stamp_method = 'online'
+    stampMethodForm.stamp_selection = getDefaultStampSelection()
     stampMethodDialogVisible.value = true
     submitting.value = false
   } catch (error) {
@@ -747,10 +763,18 @@ const handleConfirmCreate = async () => {
 const confirmStampMethodAndSubmit = async () => {
   try {
     submitting.value = true
+    const stampResult = stampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      submitting.value = false
+      return
+    }
+
     const completeResponse = await completeTravelApplicationSubmission({
       travel_application_id: pendingTravelApplicationId.value,
       current_account_set_id: accountSetStore.currentAccountSetId,
-      stamp_method: stampMethodForm.stamp_method
+      stamp_method: stampMethodForm.stamp_method,
+      ...(stampResult?.value || stampMethodForm.stamp_selection)
     })
 
     if (completeResponse.success) {
@@ -760,6 +784,8 @@ const confirmStampMethodAndSubmit = async () => {
     }
 
     stampMethodDialogVisible.value = false
+    stampMethodForm.stamp_method = 'online'
+    stampMethodForm.stamp_selection = getDefaultStampSelection()
     createDialogVisible.value = false
     handleSearch()
   } catch (error) {

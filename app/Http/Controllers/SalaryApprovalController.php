@@ -455,6 +455,7 @@ class SalaryApprovalController extends Controller
 
             // 获取盖章方式（从工资表审批的approval_type字段获取）
             $stampMethod = $approval->approval_type ?? 'online';
+            $stampOptions = $this->resolveApprovalStampOptions($request, $approval->account_set_id);
 
             // 创建审批流程实例
             $instance = $this->approvalService->createApprovalInstance(
@@ -464,7 +465,8 @@ class SalaryApprovalController extends Controller
                 $approval->submitted_by,
                 $attachments,
                 true, // 跳过发起人，直接进入第二步审批
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             // 更新审批记录，关联审批实例
@@ -487,6 +489,9 @@ class SalaryApprovalController extends Controller
                     'instance' => $instance
                 ]
             ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('创建工资表审批流程失败', [

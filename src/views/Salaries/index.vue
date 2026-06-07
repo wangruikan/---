@@ -405,6 +405,10 @@
               线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
             </div>
           </el-form-item>
+          <ApprovalStampSelector
+            ref="submitApprovalStampSelectorRef"
+            v-model="submitApprovalForm.stamp_selection"
+          />
 
           <el-form-item label="备注">
             <el-input
@@ -462,6 +466,20 @@
               <template #append>元</template>
             </el-input>
           </el-form-item>
+
+          <el-form-item label="盖章方式" required>
+            <el-radio-group v-model="paymentForm.stamp_method">
+              <el-radio label="online">线上盖章</el-radio>
+              <el-radio label="offline">线下盖章</el-radio>
+            </el-radio-group>
+            <div style="color: #909399; font-size: 12px; margin-top: 5px;">
+              线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
+            </div>
+          </el-form-item>
+          <ApprovalStampSelector
+            ref="paymentStampSelectorRef"
+            v-model="paymentForm.stamp_selection"
+          />
 
           <!-- 付款表单字段组件 -->
           <PaymentFormFields ref="paymentFormFieldsRef" v-model="paymentFormFields" />
@@ -1242,6 +1260,7 @@ import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vu
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
 import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
 import ResubmitButton from '@/components/ResubmitButton.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getProjectsWithApprovalStatus,
   getPendingPayrollProjects,
@@ -1282,6 +1301,13 @@ const route = useRoute()
 const userStore = useUserStore()
 const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
+
+const getDefaultStampSelection = () => ({
+  stamp_selection_mode: 'none',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null
+})
 
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
@@ -2420,8 +2446,10 @@ const submitApprovalForm = reactive({
   draft_batch_id: null,
   approval_type: 'online',
   remarks: '',
+  stamp_selection: getDefaultStampSelection(),
   approval_id: null  // 审批ID，用于上传附件
 })
+const submitApprovalStampSelectorRef = ref(null)
 
 // 文件上传相关
 const uploadRef = ref(null)
@@ -2434,11 +2462,14 @@ const paymentForm = reactive({
   project_name: '',
   month: '',
   amount: '',
-  remarks: ''
+  remarks: '',
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection()
 })
 const paymentFormFields = ref({}) // 付款表单字段组件数据
 const paymentFormFieldsRef = ref(null)
 const paymentSituationFormRef = ref(null)
+const paymentStampSelectorRef = ref(null)
 
 // 付款文件上传相关
 const paymentAttachmentUploaderRef = ref(null)
@@ -2579,6 +2610,7 @@ const handleSubmit = async (row) => {
   submitApprovalForm.draft_batch_id = row.draft_batch_id || null
   submitApprovalForm.approval_type = 'online'
   submitApprovalForm.remarks = ''
+  submitApprovalForm.stamp_selection = getDefaultStampSelection()
   submitApprovalForm.approval_id = null
   fileList.value = []
   submitApprovalDialogVisible.value = true
@@ -2647,6 +2679,12 @@ const handleConfirmSubmitApproval = async () => {
   }
 
   try {
+    const stampResult = submitApprovalStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     // 1. 先创建审批记录
     const response = await submitSalaryApproval({
       project_id: submitApprovalForm.project_id,
@@ -2682,7 +2720,8 @@ const handleConfirmSubmitApproval = async () => {
     ElMessage.info('正在创建审批流程...')
     const completeResponse = await completeSalaryApprovalSubmission({
       salary_approval_id: approvalId,
-      current_account_set_id: accountSetStore.currentAccountSetId
+      current_account_set_id: accountSetStore.currentAccountSetId,
+      ...(stampResult?.value || submitApprovalForm.stamp_selection)
     })
 
     if (completeResponse.success) {
@@ -2790,6 +2829,8 @@ const handleCreatePayment = async (row) => {
   paymentForm.month = row.month
   paymentForm.amount = formatMoney(row.total_net_salary)
   paymentForm.remarks = `工资付款申请 - ${row.project_name} ${row.month}`
+  paymentForm.stamp_method = 'online'
+  paymentForm.stamp_selection = getDefaultStampSelection()
   // 重置付款表单字段组件
   paymentFormFields.value = {}
   if (paymentFormFieldsRef.value) {
@@ -2878,6 +2919,13 @@ const handleDownloadAttachment = async (att) => {
 const confirmCreatePayment = async () => {
   try {
     creatingPayment.value = true
+
+    const stampResult = paymentStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      creatingPayment.value = false
+      return
+    }
 
     // 0. 校验表单字段必填
     if (paymentFormFieldsRef.value) {
@@ -2978,7 +3026,9 @@ const confirmCreatePayment = async () => {
 
     // 5. 完成提交，创建审批流程（无附件时系统将自动生成占位附件）
     const completeResponse = await completeSalaryPaymentSubmission({
-      payment_request_id: paymentRequestId
+      payment_request_id: paymentRequestId,
+      stamp_method: paymentForm.stamp_method,
+      ...(stampResult?.value || paymentForm.stamp_selection)
     })
 
     if (completeResponse.success) {

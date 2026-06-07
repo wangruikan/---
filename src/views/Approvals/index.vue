@@ -224,6 +224,12 @@
                 {{ getStampMethodText(currentDetail.instance?.stamp_method || currentDetail.stamp_method) }}
               </el-tag>
             </el-descriptions-item>
+            <el-descriptions-item label="审批用章" :span="2" v-if="currentDetail.stamp_selection_mode">
+              <span v-if="currentDetail.stamp_selection_mode === 'none'">无</span>
+              <span v-else>
+                {{ currentDetail.stamp_company || '-' }} / {{ getSelectedStampTypeText(currentDetail.stamp_type) }}
+              </span>
+            </el-descriptions-item>
             <el-descriptions-item label="附件" :span="2">
               <div class="attachments-section">
                 <!-- 附件列表 -->
@@ -423,7 +429,7 @@
       <template #footer>
         <el-button @click="showActionDialog = false">取消</el-button>
         <el-button 
-          v-if="hasContractAttachment"
+          v-if="hasContractAttachment && canUseSelectedStamp"
           type="warning" 
           @click="openPDFEditor"
         >
@@ -508,6 +514,7 @@
       <PDFSignatureEditor
         v-if="showPDFEditor && currentPDFUrl"
         :pdf-url="currentPDFUrl"
+        :allowed-seal="selectedApprovalStamp"
         @confirm="handlePDFEditorConfirm"
         @cancel="showPDFEditor = false"
       />
@@ -683,7 +690,7 @@ import {
   downloadApprovalAttachment,
   getApprovalAttachmentDownloadUrl
 } from '@/api/approvalFlow'
-import { getMySignature, getMySeals } from '@/api/signatures'
+import { getMySignature } from '@/api/signatures'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { useRouter } from 'vue-router'
 import request from '@/api/request'
@@ -733,6 +740,18 @@ const availableUsers = ref([])
 const mySignature = ref(null)
 const mySeals = ref([])
 
+const selectedApprovalStamp = computed(() => {
+  return currentApproval.value?.instance?.selected_stamp || null
+})
+
+const currentApprovalStampMode = computed(() => {
+  return currentApproval.value?.instance?.stamp_selection_mode || 'none'
+})
+
+const canUseSelectedStamp = computed(() => {
+  return currentApprovalStampMode.value === 'stamp' && !!selectedApprovalStamp.value
+})
+
 const pagination = reactive({
   currentPage: 1,
   pageSize: 20,
@@ -772,6 +791,21 @@ const actionFormRules = computed(() => {
   }
   return {}
 })
+
+const stampTypeTexts = {
+  bank: '银行付讫章',
+  cash: '现金付讫章',
+  official: '公章',
+  finance: '财务专用章',
+  contract: '合同专用章',
+  legal_person: '法人章',
+  business: '业务专用章',
+  hr: '人事部专用章'
+}
+
+const getSelectedStampTypeText = (type) => {
+  return stampTypeTexts[type] || type || '-'
+}
 
 // 监听账套切换，重新加载数据
 watch(() => accountSetStore.currentAccountSetId, () => {
@@ -902,7 +936,7 @@ const handleActionSubmit = async (type) => {
               currentApproval.value.id,
               instance.attachments[0],
               actionForm.use_signature ? mySignature.value : null,
-              actionForm.selected_seal_id ? mySeals.value.find(s => s.id === actionForm.selected_seal_id) : null,
+              actionForm.selected_seal_id ? selectedApprovalStamp.value : null,
               currentApproval.value.step_order
             )
             
@@ -1092,12 +1126,7 @@ const loadMySignatureAndSeals = async () => {
       console.log('签名已加载:', mySignature.value)
     }
     
-    const sealsResponse = await getMySeals()
-    console.log('印章响应:', sealsResponse)
-    if (sealsResponse.success) {
-      mySeals.value = sealsResponse.data
-      console.log('印章已加载:', mySeals.value)
-    }
+    mySeals.value = selectedApprovalStamp.value ? [selectedApprovalStamp.value] : []
   } catch (error) {
     console.error('加载签名印章失败:', error)
     ElMessage.warning('加载签名印章失败，请先前往"签名印章管理"上传')
@@ -1180,6 +1209,14 @@ const openPDFEditor = async () => {
   }
   
   const instance = currentApproval.value.instance
+  if (currentApprovalStampMode.value !== 'stamp') {
+    ElMessage.warning('该审批发起时选择了无，无需盖章')
+    return
+  }
+  if (!selectedApprovalStamp.value) {
+    ElMessage.warning('未找到发起审批时选择的公司印章')
+    return
+  }
   if (!instance.attachments || instance.attachments.length === 0) {
     ElMessage.error('未找到附件')
     return

@@ -16,6 +16,10 @@ class ApprovalInstance extends Model
         'created_by',
         'completed_at',
         'stamp_method',
+        'stamp_selection_mode',
+        'stamp_company',
+        'stamp_type',
+        'stamp_id',
         'old_basic_salary',
         'old_salary_items',
         'new_basic_salary',
@@ -69,6 +73,11 @@ class ApprovalInstance extends Model
     public function attachments()
     {
         return $this->hasMany(\App\Models\ApprovalAttachment::class, 'instance_id');
+    }
+
+    public function selectedStamp()
+    {
+        return $this->belongsTo(\App\Models\UserBankStamp::class, 'stamp_id');
     }
 
     /**

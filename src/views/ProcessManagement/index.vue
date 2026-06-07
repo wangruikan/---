@@ -446,6 +446,10 @@
             线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
           </div>
         </el-form-item>
+        <ApprovalStampSelector
+          ref="submitStampSelectorRef"
+          v-model="submitStampForm.stamp_selection"
+        />
       </el-form>
       <template #footer>
         <el-button @click="submitStampDialogVisible = false">取消</el-button>
@@ -470,6 +474,7 @@ import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vu
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
 import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
+import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getProcessList, getProcessDetail, createProcess, uploadAttachment,
   deleteAttachment as deleteProcessAttachment,
@@ -537,9 +542,16 @@ const paymentSituationBaseInfo = computed(() => {
 
 // 盖章方式选择对话框
 const submitStampDialogVisible = ref(false)
+const submitStampSelectorRef = ref(null)
 const submitStampForm = reactive({
   processId: null,
-  stamp_method: 'online' // 默认线上盖章
+  stamp_method: 'online', // 默认线上盖章
+  stamp_selection: {
+    stamp_selection_mode: 'none',
+    stamp_company: '',
+    stamp_type: '',
+    stamp_id: null
+  }
 })
 
 // 筛选表单
@@ -605,22 +617,13 @@ const handleUploadRequest = async (options) => {
 
   if (!processId) {
     ElMessage.error('请先保存流程后再上传附件')
-    throw new Error('请先保存流程后再上传附件')
+    return Promise.reject(new Error('请先保存流程后再上传附件'))
   }
 
   const formData = new FormData()
   formData.append('file', options.file)
 
-  try {
-    const result = await uploadAttachment(processId, formData)
-    if (result.success) {
-      options.onSuccess(result)
-    } else {
-      options.onError(new Error(result.message || '上传失败'))
-    }
-  } catch (error) {
-    options.onError(error)
-  }
+  return uploadAttachment(processId, formData)
 }
 
 // 删除详情弹窗中的附件
@@ -837,11 +840,12 @@ const beforeUpload = (file) => {
 
 // 上传成功
 const handleUploadSuccess = (response) => {
-  if (response && response.success) {
+  const result = response?.data || response
+  if (result && result.success) {
     ElMessage.success('附件上传成功')
     loadProcessList()
   } else {
-    ElMessage.error(response?.message || '上传失败')
+    ElMessage.error(result?.message || '上传失败')
   }
 }
 
@@ -957,6 +961,13 @@ const handleSubmit = async (row) => {
     // 显示盖章方式选择对话框
     submitStampDialogVisible.value = true
     submitStampForm.processId = row.id
+    submitStampForm.stamp_method = 'online'
+    submitStampForm.stamp_selection = {
+      stamp_selection_mode: 'none',
+      stamp_company: '',
+      stamp_type: '',
+      stamp_id: null
+    }
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(error.response?.data?.message || '提交失败')
@@ -967,8 +978,15 @@ const handleSubmit = async (row) => {
 // 确认提交（带盖章方式）
 const handleConfirmSubmitWithStamp = async () => {
   try {
+    const stampResult = submitStampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
+
     await submitProcessApi(submitStampForm.processId, {
-      stamp_method: submitStampForm.stamp_method
+      stamp_method: submitStampForm.stamp_method,
+      ...(stampResult?.value || submitStampForm.stamp_selection)
     })
     ElMessage.success('流程提交成功')
     submitStampDialogVisible.value = false

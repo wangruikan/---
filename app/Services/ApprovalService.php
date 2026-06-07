@@ -57,6 +57,17 @@ class ApprovalService
             if ($stampMethod) {
                 $instanceData['stamp_method'] = $stampMethod;
             }
+
+            $stampSelectionMode = $options['stamp_selection_mode'] ?? null;
+            $hasStampSelectionColumns = Schema::hasColumn('approval_instances', 'stamp_selection_mode');
+            if ($hasStampSelectionColumns && in_array($stampSelectionMode, ['stamp', 'none'], true)) {
+                $instanceData['stamp_selection_mode'] = $stampSelectionMode;
+            }
+            if ($hasStampSelectionColumns && $stampSelectionMode === 'stamp') {
+                $instanceData['stamp_company'] = $options['stamp_company'] ?? null;
+                $instanceData['stamp_type'] = $options['stamp_type'] ?? null;
+                $instanceData['stamp_id'] = $options['stamp_id'] ?? null;
+            }
             
             $instance = ApprovalInstance::create($instanceData);
             
@@ -255,7 +266,12 @@ class ApprovalService
             }
             
             if ($sealId) {
-                $seal = \App\Models\UserSeal::find($sealId);
+                $seal = \App\Models\UserBankStamp::where('id', $sealId)
+                    ->where('account_set_id', $instance->account_set_id)
+                    ->first();
+                if (!$seal) {
+                    $seal = \App\Models\UserSeal::find($sealId);
+                }
                 if ($seal) {
                     $sealImagePath = $seal->image_path;
                 }
@@ -2783,10 +2799,14 @@ class ApprovalService
                 $stampType = ($payment && $payment->payment_method === 'cash') ? 'cash' : 'bank';
             }
 
-            // 获取当前账套的付讫章（按账套共享）
-            $bankStamp = \App\Models\UserBankStamp::where('account_set_id', $instance->account_set_id)
-                ->where('type', $stampType)
-                ->first();
+            $bankStampQuery = \App\Models\UserBankStamp::where('account_set_id', $instance->account_set_id)
+                ->where('type', $stampType);
+
+            if (!empty($instance->stamp_company)) {
+                $bankStampQuery->where('company', $instance->stamp_company);
+            }
+
+            $bankStamp = $bankStampQuery->first();
 
             $typeLabel = $stampType === 'cash' ? '现金付讫章' : '银行付讫章';
             

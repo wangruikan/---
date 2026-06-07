@@ -87,9 +87,9 @@
             </el-empty>
           </div>
           
-          <!-- 我的印章 -->
+          <!-- 审批印章 -->
           <div class="tool-section">
-            <h4>🔴 我的印章</h4>
+            <h4>审批印章</h4>
             <div v-if="mySeals.length > 0" class="seals-grid">
               <div 
                 v-for="seal in mySeals" 
@@ -100,14 +100,9 @@
               >
                 <img :src="seal.image_url" :alt="seal.name" />
                 <div class="card-label">{{ seal.name }}</div>
-                <el-tag v-if="seal.is_default" type="success" size="small" class="default-tag">默认</el-tag>
               </div>
             </div>
-            <el-empty v-else description="未添加印章" :image-size="60">
-              <el-button type="primary" size="small" @click="goToSignatureManagement">
-                去添加
-              </el-button>
-            </el-empty>
+            <el-empty v-else description="本次审批未选择印章" :image-size="60" />
           </div>
           
           <!-- 操作提示 -->
@@ -174,6 +169,10 @@ const props = defineProps({
   initialPosition: {
     type: Object,
     default: () => ({ x: 80, y: 85 })
+  },
+  allowedSeal: {
+    type: Object,
+    default: null
   }
 })
 
@@ -567,9 +566,13 @@ const loadSignatureAndSeals = async () => {
       mySignature.value = sigResponse.data
     }
     
-    const sealsResponse = await getMySeals()
-    if (sealsResponse.success) {
-      mySeals.value = sealsResponse.data
+    if (props.allowedSeal) {
+      mySeals.value = [props.allowedSeal]
+    } else {
+      const sealsResponse = await getMySeals()
+      if (sealsResponse.success) {
+        mySeals.value = sealsResponse.data
+      }
     }
     
     console.log('✅ 签名印章加载完成:', {

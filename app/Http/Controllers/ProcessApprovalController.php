@@ -339,6 +339,14 @@ class ProcessApprovalController extends Controller
         if ($response = $this->checkPermission('process_approval.submit')) {
             return $response;
         }
+        $request->validate([
+            'stamp_method' => 'nullable|in:online,offline',
+            'stamp_selection_mode' => 'nullable|in:stamp,none',
+            'stamp_company' => 'nullable|string|max:100',
+            'stamp_type' => 'nullable|in:bank,cash,official,finance,contract,legal_person,business,hr',
+            'stamp_id' => 'nullable|integer',
+        ]);
+
         $process = ProcessApproval::with('attachments')->findOrFail($id);
 
         if ($process->status !== 'draft') {
@@ -369,6 +377,26 @@ class ProcessApprovalController extends Controller
 
             // 获取盖章方式，默认线上
             $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = [
+                'stamp_selection_mode' => $request->input('stamp_selection_mode', 'none'),
+                'stamp_company' => $request->input('stamp_company'),
+                'stamp_type' => $request->input('stamp_type'),
+                'stamp_id' => $request->input('stamp_id'),
+            ];
+            if ($stampOptions['stamp_selection_mode'] === 'stamp') {
+                $stamp = \App\Models\UserBankStamp::where('id', $stampOptions['stamp_id'])
+                    ->where('account_set_id', $process->account_set_id)
+                    ->where('company', $stampOptions['stamp_company'])
+                    ->where('type', $stampOptions['stamp_type'])
+                    ->first();
+
+                if (!$stamp) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => '所选公司印章不存在，请重新选择'
+                    ], 422);
+                }
+            }
 
             // 使用审批服务创建审批实例（跳过发起人审批）
             $instance = $this->approvalService->createApprovalInstance(
@@ -378,7 +406,8 @@ class ProcessApprovalController extends Controller
                 $request->user()->id,
                 $attachments,
                 true, // 跳过发起人审批
-                $stampMethod // 盖章方式
+                $stampMethod, // 盖章方式
+                $stampOptions
             );
 
             // 更新流程状态

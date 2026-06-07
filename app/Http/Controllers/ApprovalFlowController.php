@@ -8,6 +8,7 @@ use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 class ApprovalFlowController extends Controller
@@ -247,6 +248,15 @@ class ApprovalFlowController extends Controller
     {
         $instance = ApprovalInstance::with(['records', 'creator', 'ccUsers', 'attachments'])->findOrFail($id);
         $instance->business_data = $instance->getBusinessData();
+        if (Schema::hasColumn('approval_instances', 'stamp_id') && $instance->stamp_id) {
+            $stamp = \App\Models\UserBankStamp::where('id', $instance->stamp_id)
+                ->where('account_set_id', $instance->account_set_id)
+                ->first();
+            if ($stamp) {
+                $stamp->image_url = asset('storage/' . $stamp->image_path);
+            }
+            $instance->selected_stamp = $stamp;
+        }
 
         return response()->json([
             'success' => true,

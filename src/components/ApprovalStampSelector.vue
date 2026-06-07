@@ -1,11 +1,22 @@
 <template>
   <div class="approval-stamp-selector">
+    <el-form-item v-if="allowNone" :label="modeLabel" :required="required">
+      <el-radio-group
+        v-model="localMode"
+        :disabled="disabled"
+        @change="handleModeChange"
+      >
+        <el-radio value="stamp">选择公司印章</el-radio>
+        <el-radio value="none">无</el-radio>
+      </el-radio-group>
+    </el-form-item>
+
     <el-row :gutter="12">
       <el-col :span="12">
         <el-form-item :label="companyLabel" :required="required">
           <el-select
             v-model="localCompany"
-            :disabled="disabled || loading"
+            :disabled="disabled || loading || localMode !== 'stamp'"
             :loading="loading"
             filterable
             clearable
@@ -28,7 +39,7 @@
         <el-form-item :label="typeLabel" :required="required">
           <el-select
             v-model="localType"
-            :disabled="disabled || loading || !localCompany"
+            :disabled="disabled || loading || localMode !== 'stamp' || !localCompany"
             filterable
             clearable
             placeholder="请选择印章类型"
@@ -50,7 +61,15 @@
       </el-col>
     </el-row>
 
-    <div v-if="showSummary && selectedStamp" class="stamp-summary">
+    <el-alert
+      v-if="localMode === 'none'"
+      type="info"
+      :closable="false"
+      title="当前选择：无"
+      show-icon
+    />
+
+    <div v-else-if="showSummary && selectedStamp" class="stamp-summary">
       <img
         v-if="selectedStamp.image_url"
         :src="selectedStamp.image_url"
@@ -114,9 +133,17 @@ const props = defineProps({
     type: String,
     default: '印章类型'
   },
+  modeLabel: {
+    type: String,
+    default: '是否选择印章'
+  },
   allowedTypes: {
     type: Array,
     default: () => []
+  },
+  allowNone: {
+    type: Boolean,
+    default: true
   },
   autoSelectFirstCompany: {
     type: Boolean,
@@ -141,6 +168,7 @@ const fixedStampTypes = [
   { type: 'hr', title: '人事部专用章' }
 ]
 
+const localMode = ref('stamp')
 const localCompany = ref('')
 const localType = ref('')
 const stamps = ref([])
@@ -205,10 +233,22 @@ const getStampTypeTitle = (type) => {
 }
 
 const buildValue = () => {
+  if (localMode.value === 'none') {
+    return {
+      ...props.modelValue,
+      stamp_selection_mode: 'none',
+      stamp_company: '',
+      stamp_type: '',
+      stamp_id: null,
+      stamp_name: ''
+    }
+  }
+
   const stamp = selectedStamp.value
 
   return {
     ...props.modelValue,
+    stamp_selection_mode: 'stamp',
     stamp_company: localCompany.value || '',
     stamp_type: localType.value || '',
     stamp_id: stamp?.id || null,
@@ -223,6 +263,13 @@ const emitValue = () => {
 }
 
 const ensureAvailableSelection = () => {
+  if (localMode.value !== 'stamp') {
+    localCompany.value = ''
+    localType.value = ''
+    emitValue()
+    return
+  }
+
   const companies = companyOptions.value.map(item => item.name)
 
   if (localCompany.value && !companies.includes(localCompany.value)) {
@@ -279,6 +326,21 @@ const handleCompanyChange = () => {
   emitValue()
 }
 
+const handleModeChange = () => {
+  if (!props.allowNone) {
+    localMode.value = 'stamp'
+  }
+
+  if (localMode.value !== 'stamp') {
+    localCompany.value = ''
+    localType.value = ''
+    emitValue()
+    return
+  }
+
+  ensureAvailableSelection()
+}
+
 const handleCompanyClear = () => {
   localCompany.value = ''
   localType.value = ''
@@ -295,7 +357,11 @@ const handleTypeClear = () => {
 }
 
 const validate = () => {
-  if (!props.required) {
+  if (localMode.value === 'none') {
+    return { valid: true, message: '', value: buildValue() }
+  }
+
+  if (!props.required && !localCompany.value && !localType.value) {
     return { valid: true, message: '', value: buildValue() }
   }
 
@@ -321,8 +387,12 @@ const reload = () => loadStamps()
 watch(
   () => props.modelValue,
   (value) => {
-    localCompany.value = value?.stamp_company || ''
-    localType.value = value?.stamp_type || ''
+    const nextMode = value?.stamp_selection_mode
+      || (value?.stamp_company || value?.stamp_type || value?.stamp_id ? 'stamp' : (props.allowNone ? 'none' : 'stamp'))
+
+    localMode.value = nextMode === 'none' && props.allowNone ? 'none' : 'stamp'
+    localCompany.value = localMode.value === 'stamp' ? (value?.stamp_company || '') : ''
+    localType.value = localMode.value === 'stamp' ? (value?.stamp_type || '') : ''
   },
   { immediate: true, deep: true }
 )

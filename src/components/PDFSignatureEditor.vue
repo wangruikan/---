@@ -214,6 +214,14 @@ const getAuthHeaders = () => {
   return headers
 }
 
+const normalizeSeal = (seal) => {
+  if (!seal) return null
+  return {
+    ...seal,
+    image_url: seal.image_url || (seal.image_path ? `/storage/${seal.image_path}` : '')
+  }
+}
+
 // 加载PDF
 const fetchPdfBytes = async () => {
   const response = await fetch(props.pdfUrl, {
@@ -234,7 +242,7 @@ const loadPDF = async () => {
     
     // 使用pdf.js加载（用于渲染显示）
     const pdfBytes = await fetchPdfBytes()
-    originalPdfBytes = pdfBytes
+    originalPdfBytes = pdfBytes.slice()
 
     const loadingTask = pdfjsLib.getDocument({
       data: pdfBytes
@@ -310,11 +318,17 @@ const nextPage = () => {
 
 // 选择工具
 const selectTool = (type, item) => {
+  const normalizedItem = normalizeSeal(item)
+  if (!normalizedItem?.image_url) {
+    ElMessage.warning(type === 'signature' ? '签名图片不存在' : '印章图片不存在')
+    return
+  }
+
   selectedTool.value = {
     type: type,
-    data: item,
-    id: item.id,
-    name: item.name || '签名'
+    data: normalizedItem,
+    id: normalizedItem.id,
+    name: normalizedItem.name || '签名'
   }
   selectedStamp.value = null
   console.log('🎯 已选择工具:', selectedTool.value.name)
@@ -460,15 +474,28 @@ const handleConfirm = async () => {
 
 // 合成PDF
 const mergePDFWithStamps = async () => {
-  // 重新下载PDF用于合成（避免ArrayBuffer detached问题）
-  console.log('📥 重新下载PDF用于合成...')
-  const response = await fetch(props.pdfUrl, {
-    headers: getAuthHeaders()
-  })
-  if (!response.ok) {
-    throw new Error(`下载PDF失败: HTTP ${response.status}`)
+  console.log('📥 准备PDF用于合成...')
+  let pdfBytes = originalPdfBytes && originalPdfBytes.length > 0 ? originalPdfBytes.slice() : null
+
+  if (!pdfBytes) {
+    const response = await fetch(props.pdfUrl, {
+      headers: getAuthHeaders(),
+      credentials: 'include'
+    })
+    if (!response.ok) {
+      throw new Error(`下载PDF失败: HTTP ${response.status}`)
+    }
+    pdfBytes = await response.arrayBuffer()
   }
-  const pdfBytes = originalPdfBytes || await response.arrayBuffer()
+
+  const headerBytes = pdfBytes instanceof Uint8Array
+    ? pdfBytes.slice(0, 8)
+    : new Uint8Array(pdfBytes).slice(0, 8)
+  const headerText = Array.from(headerBytes).map(byte => String.fromCharCode(byte)).join('')
+  console.log('📄 合成PDF字节检查:', {
+    length: pdfBytes.byteLength || pdfBytes.length,
+    header: headerText
+  })
   
   // 使用pdf-lib加载
   const newPdfDoc = await PDFDocument.load(pdfBytes)
@@ -491,6 +518,7 @@ const mergePDFWithStamps = async () => {
         
         console.log(`  📥 下载图片: ${imgUrl}`)
         const imgResponse = await fetch(imgUrl, {
+          headers: getAuthHeaders(),
           credentials: 'include',
           mode: 'cors'
         })
@@ -532,7 +560,10 @@ const mergePDFWithStamps = async () => {
         const x = (stamp.xPercent / 100) * pdfWidth
         const y = pdfHeight - ((stamp.yPercent / 100) * pdfHeight) - drawHeight
         
-        console.log(`  ➕ 添加 ${stamp.name} 到 (${x.toFixed(0)}, ${y.toFixed(0)})`)
+        console.log(`  ➕ 添加 ${stamp.name} 到 (${x.toFixed(0)}, ${y.toFixed(0)})`, {
+          image: stamp.image,
+          dataId: stamp.dataId
+        })
         
         page.drawImage(image, {
           x: x,
@@ -567,7 +598,8 @@ const loadSignatureAndSeals = async () => {
     }
     
     if (props.allowedSeal) {
-      mySeals.value = [props.allowedSeal]
+      mySeals.value = [normalizeSeal(props.allowedSeal)].filter(Boolean)
+      console.log('审批指定印章:', mySeals.value[0])
     } else {
       const sealsResponse = await getMySeals()
       if (sealsResponse.success) {

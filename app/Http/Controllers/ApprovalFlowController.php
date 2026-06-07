@@ -248,10 +248,16 @@ class ApprovalFlowController extends Controller
     {
         $instance = ApprovalInstance::with(['records', 'creator', 'ccUsers', 'attachments'])->findOrFail($id);
         $instance->business_data = $instance->getBusinessData();
-        if (Schema::hasColumn('approval_instances', 'stamp_id') && $instance->stamp_id) {
-            $stamp = \App\Models\UserBankStamp::where('id', $instance->stamp_id)
-                ->where('account_set_id', $instance->account_set_id)
-                ->first();
+        if (Schema::hasColumn('approval_instances', 'stamp_selection_mode') && $instance->stamp_selection_mode === 'stamp') {
+            $stampQuery = \App\Models\UserBankStamp::where('account_set_id', $instance->account_set_id);
+            if ($instance->stamp_id) {
+                $stampQuery->where('id', $instance->stamp_id);
+            } else {
+                $stampQuery
+                    ->where('company', $instance->stamp_company)
+                    ->where('type', $instance->stamp_type);
+            }
+            $stamp = $stampQuery->first();
             if ($stamp) {
                 $stamp->image_url = asset('storage/' . $stamp->image_path);
             }

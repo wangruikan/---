@@ -11,6 +11,7 @@ class UserSeal extends Model
 
     protected $fillable = [
         'user_id',
+        'account_set_id',
         'name',
         'image_path',
         'original_filename',
@@ -43,7 +44,9 @@ class UserSeal extends Model
     public function setAsDefault()
     {
         // 先取消该用户的所有默认印章
-        self::where('user_id', $this->user_id)->update(['is_default' => false]);
+        self::where('user_id', $this->user_id)
+            ->where('account_set_id', $this->account_set_id)
+            ->update(['is_default' => false]);
         
         // 设置当前印章为默认
         $this->update(['is_default' => true]);

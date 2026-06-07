@@ -11,6 +11,15 @@ use Illuminate\Support\Facades\Validator;
 
 class SignatureController extends Controller
 {
+    private function resolveAccountSetId(Request $request): ?int
+    {
+        $accountSetId = $request->input('current_account_set_id')
+            ?: $request->header('X-Account-Set-Id')
+            ?: optional($request->user())->current_account_set_id;
+
+        return $accountSetId ? (int) $accountSetId : null;
+    }
+
     private function getStampTypeLabel(string $type): string
     {
         return match ($type) {
@@ -177,7 +186,16 @@ class SignatureController extends Controller
             ], 401);
         }
 
+        $accountSetId = $this->resolveAccountSetId($request);
+        if (!$accountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套'
+            ], 400);
+        }
+
         $seals = UserSeal::where('user_id', $user->id)
+            ->where('account_set_id', $accountSetId)
             ->orderBy('is_default', 'desc')
             ->orderBy('created_at', 'desc')
             ->get();
@@ -224,6 +242,14 @@ class SignatureController extends Controller
                 ], 401);
             }
 
+            $accountSetId = $this->resolveAccountSetId($request);
+            if (!$accountSetId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请先选择账套'
+                ], 400);
+            }
+
             $file = $request->file('seal_image');
             $originalFilename = $file->getClientOriginalName();
             
@@ -232,6 +258,7 @@ class SignatureController extends Controller
 
             $seal = UserSeal::create([
                 'user_id' => $user->id,
+                'account_set_id' => $accountSetId,
                 'name' => $request->name,
                 'image_path' => $path,
                 'original_filename' => $originalFilename,
@@ -241,6 +268,7 @@ class SignatureController extends Controller
             // 如果设置为默认，取消其他印章的默认状态
             if ($seal->is_default) {
                 UserSeal::where('user_id', $user->id)
+                    ->where('account_set_id', $accountSetId)
                     ->where('id', '!=', $seal->id)
                     ->update(['is_default' => false]);
             }
@@ -293,8 +321,17 @@ class SignatureController extends Controller
                 ], 401);
             }
 
+            $accountSetId = $this->resolveAccountSetId($request);
+            if (!$accountSetId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请先选择账套'
+                ], 400);
+            }
+
             $seal = UserSeal::where('id', $id)
                 ->where('user_id', $user->id)
+                ->where('account_set_id', $accountSetId)
                 ->first();
 
             if (!$seal) {
@@ -324,6 +361,7 @@ class SignatureController extends Controller
 
             if (!empty($updateData['is_default'])) {
                 UserSeal::where('user_id', $user->id)
+                    ->where('account_set_id', $accountSetId)
                     ->where('id', '!=', $seal->id)
                     ->update(['is_default' => false]);
             }
@@ -361,8 +399,17 @@ class SignatureController extends Controller
             ], 401);
         }
 
+        $accountSetId = $this->resolveAccountSetId($request);
+        if (!$accountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套'
+            ], 400);
+        }
+
         $seal = UserSeal::where('id', $id)
             ->where('user_id', $user->id)
+            ->where('account_set_id', $accountSetId)
             ->first();
 
         if (!$seal) {
@@ -393,8 +440,17 @@ class SignatureController extends Controller
             ], 401);
         }
 
+        $accountSetId = $this->resolveAccountSetId($request);
+        if (!$accountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套'
+            ], 400);
+        }
+
         $seal = UserSeal::where('id', $id)
             ->where('user_id', $user->id)
+            ->where('account_set_id', $accountSetId)
             ->first();
 
         if (!$seal) {

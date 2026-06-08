@@ -269,8 +269,13 @@ class Employee extends Model
 
     public function projects()
     {
+        $pivotFields = ['start_date', 'end_date', 'status'];
+        if (Schema::hasColumn('employee_projects', 'employee_number')) {
+            $pivotFields[] = 'employee_number';
+        }
+
         return $this->belongsToMany(Project::class, 'employee_projects')
-                    ->withPivot(['start_date', 'end_date', 'status'])
+                    ->withPivot($pivotFields)
                     ->withTimestamps();
     }
 

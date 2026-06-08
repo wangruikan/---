@@ -41,35 +41,32 @@ class EmployeeController extends ApiController
                 if ($project && !empty($project->code)) {
                     $prefix = $project->code;
                     
-                    // 查找该项目下最大的员工编号（优化：使用数据库查询）
+                    // 查找该项目下最大的员工编号
                     $maxNumber = 0;
-                    $employees = \App\Models\Employee::where('employee_number', 'REGEXP', '^' . $prefix . '[0-9]{3}$')
+                    $employeeNumbers = \App\Models\Employee::where('employee_number', 'like', $prefix . '%')
                         ->where('account_set_id', $accountSetId)
                         ->pluck('employee_number');
+
+                    if ($this->hasProjectEmployeeNumberColumn()) {
+                        $projectNumbers = DB::table('employee_projects')
+                            ->join('employees', 'employees.id', '=', 'employee_projects.employee_id')
+                            ->where('employees.account_set_id', $accountSetId)
+                            ->where('employee_projects.project_id', $projectId)
+                            ->where('employee_projects.employee_number', 'like', $prefix . '%')
+                            ->pluck('employee_projects.employee_number');
+                        $employeeNumbers = $employeeNumbers->merge($projectNumbers)->unique()->values();
+                    }
                     
-                    foreach ($employees as $empNumber) {
-                        // 提取数字部分
-                        $number = (int)substr($empNumber, strlen($prefix));
-                        if ($number > $maxNumber) {
-                            $maxNumber = $number;
+                    foreach ($employeeNumbers as $empNumber) {
+                        if (preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', $empNumber, $matches)) {
+                            $number = (int)$matches[1];
+                            if ($number > $maxNumber) {
+                                $maxNumber = $number;
+                            }
                         }
                     }
                     
-                    // 生成新的序号（当前最大序号+1）
-                    $nextNumber = $maxNumber + 1;
-                    $employeeNumber = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
-                    
-                    // 检查是否已存在（防止并发冲突）
-                    $exists = \App\Models\Employee::where('employee_number', $employeeNumber)
-                        ->where('account_set_id', $accountSetId)
-                        ->exists();
-                    
-                    if ($exists) {
-                        // 如果存在，递归生成下一个
-                        return $this->generateEmployeeNumber($accountSetId, $projectId);
-                    }
-                    
-                    return $employeeNumber;
+                    return $prefix . str_pad($maxNumber + 1, 3, '0', STR_PAD_LEFT);
                 }
             }
             
@@ -101,6 +98,68 @@ class EmployeeController extends ApiController
             return "E{$accountSetId}-{$timestamp}";
         }
     }
+
+    protected function hasProjectEmployeeNumberColumn(): bool
+    {
+        return Schema::hasColumn('employee_projects', 'employee_number');
+    }
+
+    protected function withProjectEmployeeNumber(array $pivotData, ?string $employeeNumber): array
+    {
+        if ($this->hasProjectEmployeeNumberColumn()) {
+            $pivotData['employee_number'] = $employeeNumber;
+        }
+
+        return $pivotData;
+    }
+
+    protected function syncActiveProjectEmployeeNumber(Employee $employee): void
+    {
+        if (!$this->hasProjectEmployeeNumberColumn() || empty($employee->employee_number)) {
+            return;
+        }
+
+        DB::table('employee_projects')
+            ->where('employee_id', $employee->id)
+            ->where('status', 'active')
+            ->update([
+                'employee_number' => $employee->employee_number,
+                'updated_at' => now(),
+            ]);
+    }
+
+    protected function applyProjectDisplayFields(Employee $employee, $selectedProjectId = null): void
+    {
+        $employee->display_contract_status = $employee->contract_status;
+
+        if (!$selectedProjectId) {
+            $activeProject = $employee->projects->first(function ($project) {
+                return optional($project->pivot)->status === 'active';
+            });
+            if ($activeProject && $this->hasProjectEmployeeNumberColumn() && !empty($activeProject->pivot->employee_number)) {
+                $employee->employee_number = $activeProject->pivot->employee_number;
+            }
+            return;
+        }
+
+        $selectedProject = $employee->projects->first(function ($project) use ($selectedProjectId) {
+            return (int) $project->id === (int) $selectedProjectId;
+        });
+
+        if (!$selectedProject) {
+            return;
+        }
+
+        if ($this->hasProjectEmployeeNumberColumn() && !empty($selectedProject->pivot->employee_number)) {
+            $employee->employee_number = $selectedProject->pivot->employee_number;
+        }
+
+        $employee->display_contract_status = optional($selectedProject->pivot)->status === 'active'
+            ? $employee->contract_status
+            : 'transferred_out';
+        $employee->display_projects = [$selectedProject];
+    }
+
     /**
      * 检查参保日期是否早于项目开始时间
      */
@@ -190,9 +249,11 @@ class EmployeeController extends ApiController
                         $query->whereRaw('1 = 0'); // 返回空结果
                     }
                     
-                    // 按项目筛选
+                    $selectedProjectId = $request->input('project_id');
+
+                    // 按项目筛选：包含历史调出人员，展示时再根据 pivot 状态标记“调出”
                     if ($request->has('project_id') && $request->project_id) {
-                        $query->whereHas('activeProjects', function($q) use ($request) {
+                        $query->whereHas('projects', function($q) use ($request) {
                             $q->where('projects.id', $request->project_id);
                         });
                     }
@@ -217,8 +278,18 @@ class EmployeeController extends ApiController
                         });
                     }
                     
+                    if ($selectedProjectId && $this->hasProjectEmployeeNumberColumn()) {
+                        $query->leftJoin('employee_projects as selected_project_pivot', function($join) use ($selectedProjectId) {
+                            $join->on('employees.id', '=', 'selected_project_pivot.employee_id')
+                                 ->where('selected_project_pivot.project_id', '=', $selectedProjectId);
+                        })->select('employees.*')
+                          ->orderByRaw('COALESCE(selected_project_pivot.employee_number, employees.employee_number) DESC');
+                    } else {
+                        $query->orderBy('employees.employee_number', 'desc');
+                    }
+
                     $perPage = $request->input('per_page', 10);
-                    $result = $query->orderBy('created_at', 'desc')->paginate($perPage);
+                    $result = $query->paginate($perPage);
                     
                     \Log::info('员工查询结果', [
                         'total_count' => $result->total(),
@@ -263,6 +334,7 @@ class EmployeeController extends ApiController
                 $employee->pending_deletion_approval = in_array($employee->id, $pendingDeletionApprovals);
                 $employee->pending_offline_onboarding = in_array($employee->id, $pendingOfflineOnboardingApprovals);
                 $employee->pending_salary_adjustment_approval = in_array($employee->id, $pendingSalaryAdjustmentApprovals);
+                $this->applyProjectDisplayFields($employee, $request->input('project_id'));
             }
             
             // 计算人员统计数据
@@ -559,10 +631,10 @@ class EmployeeController extends ApiController
                 $startDate = date('Y-m-d', strtotime($startDate));
             }
             
-            $employee->projects()->attach($request->project_ids, [
+            $employee->projects()->attach($request->project_ids, $this->withProjectEmployeeNumber([
                 'start_date' => $startDate,
                 'status' => 'active'
-            ]);
+            ], $employee->employee_number));
         }
 
         return response()->json([
@@ -769,6 +841,7 @@ class EmployeeController extends ApiController
         if ($request->has('project_ids') && is_array($request->project_ids)) {
             $newProjectId = $request->project_ids[0] ?? null;
         }
+        $employeeNumberBeforeUpdate = $employee->employee_number;
 
         try {
             \Log::info('开始更新员工数据', [
@@ -783,15 +856,28 @@ class EmployeeController extends ApiController
                 $transferDate = $request->filled('transfer_date')
                     ? Carbon::parse($request->input('transfer_date'))->toDateString()
                     : date('Y-m-d');
+                $newEmployeeNumber = $this->generateEmployeeNumber($employee->account_set_id, $newProjectId);
                 DB::beginTransaction();
                 try {
                     // 结束当前所有 active 项目
                     $activeIds = $employee->projects()->wherePivot('status', 'active')->pluck('projects.id')->toArray();
                     foreach ($activeIds as $pid) {
-                        $employee->projects()->updateExistingPivot($pid, [
+                        $pivotData = [
                             'status' => 'inactive',
                             'end_date' => $transferDate,
-                        ]);
+                        ];
+
+                        if ($this->hasProjectEmployeeNumberColumn()) {
+                            $existingActivePivot = DB::table('employee_projects')
+                                ->where('employee_id', $employee->id)
+                                ->where('project_id', $pid)
+                                ->first();
+                            if ($existingActivePivot && empty($existingActivePivot->employee_number)) {
+                                $pivotData['employee_number'] = $employeeNumberBeforeUpdate;
+                            }
+                        }
+
+                        $employee->projects()->updateExistingPivot($pid, $pivotData);
                     }
 
                     // 激活/新增目标项目
@@ -801,20 +887,21 @@ class EmployeeController extends ApiController
                         ->first();
 
                     if ($existing) {
-                        $employee->projects()->updateExistingPivot($newProjectId, [
+                        $employee->projects()->updateExistingPivot($newProjectId, $this->withProjectEmployeeNumber([
                             'status' => 'active',
                             'end_date' => null,
                             'start_date' => $transferDate,
-                        ]);
+                        ], $newEmployeeNumber));
                     } else {
-                        $employee->projects()->attach($newProjectId, [
+                        $employee->projects()->attach($newProjectId, $this->withProjectEmployeeNumber([
                             'status' => 'active',
                             'start_date' => $transferDate,
-                        ]);
+                        ], $newEmployeeNumber));
                     }
 
                     // 同步 employees.project_ids 为单项目
                     $employee->project_ids = [$newProjectId];
+                    $employee->employee_number = $newEmployeeNumber;
                     $employee->save();
 
                     // 写入变更日志
@@ -838,6 +925,8 @@ class EmployeeController extends ApiController
                         'error' => $te->getMessage(),
                     ]);
                 }
+            } else {
+                $this->syncActiveProjectEmployeeNumber($employee);
             }
 
             $employee->refresh();
@@ -3994,10 +4083,10 @@ class EmployeeController extends ApiController
                     $employee = Employee::create($employeeData);
 
                     // 关联项目
-                    $employee->projects()->attach($project->id, [
+                    $employee->projects()->attach($project->id, $this->withProjectEmployeeNumber([
                         'start_date' => $hireDate,
                         'status' => 'active'
-                    ]);
+                    ], $employee->employee_number));
 
                     $successCount++;
                 }

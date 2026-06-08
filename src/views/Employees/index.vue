@@ -185,7 +185,7 @@
           <el-table-column prop="projects" label="所属项目" min-width="200">
             <template #default="{ row }">
               <el-tag
-                v-for="project in row.projects.filter(p => p.pivot?.status === 'active')"
+                v-for="project in getDisplayProjects(row)"
                 :key="project.id"
                 class="project-tag"
                 size="small"
@@ -196,8 +196,8 @@
           </el-table-column>
           <el-table-column prop="contract_status" label="合同状态" width="100">
             <template #default="{ row }">
-              <el-tag :type="getEmployeeContractStatusType(row.contract_status)">
-                {{ getEmployeeContractStatusText(row.contract_status) }}
+              <el-tag :type="getEmployeeContractStatusType(getDisplayContractStatus(row))">
+                {{ getEmployeeContractStatusText(getDisplayContractStatus(row)) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -7587,7 +7587,8 @@ const getEmployeeContractStatusType = (status) => {
     expired: 'warning',
     terminated: 'danger',
     retired: 'info',
-    unsigned: 'info'
+    unsigned: 'info',
+    transferred_out: 'warning'
   }
   return types[status] || 'info'
 }
@@ -7599,9 +7600,22 @@ const getEmployeeContractStatusText = (status) => {
     terminated: '已终止',
     retired: '退休',
     unsigned: '未签署',
+    transferred_out: '调出',
     null: '未签署'
   }
   return texts[status] || '未签署'
+}
+
+const getDisplayProjects = (row) => {
+  if (row.display_projects && row.display_projects.length) {
+    return row.display_projects
+  }
+
+  return (row.projects || []).filter(project => project.pivot?.status === 'active')
+}
+
+const getDisplayContractStatus = (row) => {
+  return row.display_contract_status || row.contract_status
 }
 
 // ========== 合同管理相关 ==========

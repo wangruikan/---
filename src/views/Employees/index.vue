@@ -495,7 +495,7 @@
               <el-input 
                 v-model="form.employee_number" 
                 placeholder="自动生成" 
-                readonly
+                :readonly="isViewMode"
               >
                 <template #prepend>
                   <el-icon><Postcard /></el-icon>

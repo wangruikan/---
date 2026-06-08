@@ -5,6 +5,7 @@
     
     <!-- 正常内容 -->
     <div v-else>
+    <div class="employee-sticky-panel">
     <div class="page-header">
       <h1>人员档案管理</h1>
       <div style="display: flex; gap: 10px;">
@@ -149,30 +150,31 @@
         </el-form>
       </el-card>
     </div>
+    <!-- 顶部模块选择器 -->
+    <div class="module-selector" style="margin-bottom: 16px; padding: 16px; background: #f5f7fa; border-radius: 4px;">
+      <div style="margin-bottom: 8px;">
+        <el-text type="primary" size="large" style="font-weight: bold;">选择显示模块：</el-text>
+      </div>
+      <el-checkbox-group v-model="selectedModules" @change="handleModuleChange">
+        <el-checkbox label="employee" border>员工信息</el-checkbox>
+        <el-checkbox label="insurance" border>保险信息</el-checkbox>
+        <el-checkbox label="documents" border>资料上传</el-checkbox>
+        <!-- <el-checkbox label="personal" border>个人信息</el-checkbox> -->
+        <el-checkbox label="salary-card" border>工资卡</el-checkbox>
+        <el-checkbox label="transfer-logs" border>调动记录</el-checkbox>
+      </el-checkbox-group>
+    </div>
+    </div>
     
     <!-- 员工列表 -->
     <div class="table-section">
       <el-card>
-        <!-- 顶部模块选择器 -->
-        <div class="module-selector" style="margin-bottom: 16px; padding: 16px; background: #f5f7fa; border-radius: 4px;">
-          <div style="margin-bottom: 8px;">
-            <el-text type="primary" size="large" style="font-weight: bold;">选择显示模块：</el-text>
-          </div>
-          <el-checkbox-group v-model="selectedModules" @change="handleModuleChange">
-            <el-checkbox label="employee" border>员工信息</el-checkbox>
-            <el-checkbox label="insurance" border>保险信息</el-checkbox>
-            <el-checkbox label="documents" border>资料上传</el-checkbox>
-            <!-- <el-checkbox label="personal" border>个人信息</el-checkbox> -->
-            <el-checkbox label="salary-card" border>工资卡</el-checkbox>
-            <el-checkbox label="transfer-logs" border>调动记录</el-checkbox>
-          </el-checkbox-group>
-        </div>
-        
         <el-table
           :data="employees"
           v-loading="loading"
           stripe
           border
+          height="max(280px, calc(100vh - 470px))"
           @selection-change="handleSelectionChange"
         >
           <el-table-column type="selection" width="55" fixed="left" />
@@ -4039,6 +4041,16 @@
             <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="调动日期" required>
+          <el-date-picker
+            v-model="transferForm.transfer_date"
+            type="date"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择调动日期"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="transferForm.reason" placeholder="可填写调动原因" clearable />
         </el-form-item>
@@ -7108,8 +7120,17 @@ const showTransferDialog = ref(false)
 const transferEmployee = ref(null)
 const transferForm = reactive({
   to_project_id: null,
+  transfer_date: '',
   reason: ''
 })
+
+const getTodayDateString = () => {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 const openTransferDialog = (row) => {
   transferEmployee.value = row
@@ -7118,6 +7139,7 @@ const openTransferDialog = (row) => {
     : (row.projects?.map(p => p.id) || [])
   const firstOther = projects.value.find(p => !currentIds.includes(p.id))
   transferForm.to_project_id = firstOther ? firstOther.id : (currentIds[0] || null)
+  transferForm.transfer_date = getTodayDateString()
   transferForm.reason = ''
   showTransferDialog.value = true
 }
@@ -7127,9 +7149,14 @@ const confirmTransfer = async () => {
     ElMessage.warning('请选择目标项目')
     return
   }
+  if (!transferForm.transfer_date) {
+    ElMessage.warning('请选择调动日期')
+    return
+  }
   try {
     await updateEmployee(transferEmployee.value.id, {
       project_ids: [transferForm.to_project_id],
+      transfer_date: transferForm.transfer_date,
       transfer_reason: transferForm.reason
     })
     ElMessage.success('调动成功')
@@ -9617,6 +9644,14 @@ const getChangeComparison = (detail) => {
 <style scoped>
 .employees-page {
   padding: 0;
+}
+
+.employee-sticky-panel {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding-bottom: 1px;
+  background: #f0f2f5;
 }
 
 .page-header {

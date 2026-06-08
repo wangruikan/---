@@ -5,6 +5,7 @@
     
     <!-- 正常内容 -->
     <div v-else>
+    <div class="project-sticky-panel">
     <div class="page-header">
       <h1>项目管理</h1>
       <el-button v-if="canCreateProject" type="primary" @click="handleCreate">
@@ -89,24 +90,25 @@
         </el-form>
       </el-card>
     </div>
-    
+    <div class="column-filter-bar">
+      <span class="column-filter-label">&#26174;&#31034;&#23383;&#27573;&#65306;</span>
+      <el-checkbox-group v-model="visibleColumnGroups">
+        <el-checkbox label="basic">&#22522;&#30784;&#37197;&#32622;</el-checkbox>
+        <el-checkbox label="invoice">&#24320;&#31080;&#20449;&#24687;</el-checkbox>
+        <el-checkbox label="insurance">&#20445;&#38505;&#35774;&#32622;</el-checkbox>
+      </el-checkbox-group>
+    </div>
+    </div>
+
     <!-- 项目列表 -->
     <div class="table-section">
       <el-card>
-        <div class="column-filter-bar">
-          <span class="column-filter-label">&#26174;&#31034;&#23383;&#27573;&#65306;</span>
-          <el-checkbox-group v-model="visibleColumnGroups">
-            <el-checkbox label="basic">&#22522;&#30784;&#37197;&#32622;</el-checkbox>
-            <el-checkbox label="invoice">&#24320;&#31080;&#20449;&#24687;</el-checkbox>
-            <el-checkbox label="insurance">&#20445;&#38505;&#35774;&#32622;</el-checkbox>
-          </el-checkbox-group>
-        </div>
-
         <el-table
           :data="projects"
           v-loading="loading"
           stripe
           border
+          height="max(280px, calc(100vh - 390px))"
         >
           <el-table-column prop="code" label="&#39033;&#30446;&#32534;&#21495;" width="100" fixed="left" />
           <el-table-column prop="name" label="&#39033;&#30446;&#21517;&#31216;" width="200" fixed="left" />
@@ -3361,6 +3363,14 @@ watch(otherInsuranceNoSelection, (newVal) => {
 <style scoped>
 .projects-page {
   padding: 0;
+}
+
+.project-sticky-panel {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding-bottom: 1px;
+  background: #f0f2f5;
 }
 
 .page-header {

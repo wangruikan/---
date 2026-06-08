@@ -612,6 +612,7 @@ class EmployeeController extends ApiController
             'hire_date' => 'sometimes|required|date',
             'contract_start_date' => 'sometimes|required|date',
             'contract_end_date' => 'nullable|date|after:contract_start_date',
+            'transfer_date' => 'nullable|date',
             'remittance_remark' => 'nullable|string|max:255',
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
@@ -779,7 +780,9 @@ class EmployeeController extends ApiController
 
             // 如果项目发生变化，则同步 employee_projects（单活跃），并记录变更日志
             if ($newProjectId && $newProjectId != $oldActiveProjectId) {
-                $today = date('Y-m-d');
+                $transferDate = $request->filled('transfer_date')
+                    ? Carbon::parse($request->input('transfer_date'))->toDateString()
+                    : date('Y-m-d');
                 DB::beginTransaction();
                 try {
                     // 结束当前所有 active 项目
@@ -787,7 +790,7 @@ class EmployeeController extends ApiController
                     foreach ($activeIds as $pid) {
                         $employee->projects()->updateExistingPivot($pid, [
                             'status' => 'inactive',
-                            'end_date' => $today,
+                            'end_date' => $transferDate,
                         ]);
                     }
 
@@ -801,16 +804,12 @@ class EmployeeController extends ApiController
                         $employee->projects()->updateExistingPivot($newProjectId, [
                             'status' => 'active',
                             'end_date' => null,
+                            'start_date' => $transferDate,
                         ]);
-                        if (!$existing->start_date) {
-                            $employee->projects()->updateExistingPivot($newProjectId, [
-                                'start_date' => $today,
-                            ]);
-                        }
                     } else {
                         $employee->projects()->attach($newProjectId, [
                             'status' => 'active',
-                            'start_date' => $today,
+                            'start_date' => $transferDate,
                         ]);
                     }
 
@@ -823,7 +822,7 @@ class EmployeeController extends ApiController
                         'employee_id' => $employee->id,
                         'from_project_id' => $oldActiveProjectId,
                         'to_project_id' => $newProjectId,
-                        'changed_at' => Carbon::now(),
+                        'changed_at' => Carbon::parse($transferDate)->startOfDay(),
                         'reason' => $request->input('transfer_reason'),
                         'operator_id' => optional($request->user())->id,
                         'account_set_id' => $employee->account_set_id,

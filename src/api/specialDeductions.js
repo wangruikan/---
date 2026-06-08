@@ -86,6 +86,15 @@ export function batchSetEmployeeDeduction(data) {
   })
 }
 
+// 导入员工专项扣除模板
+export function importEmployeeDeductions(data) {
+  return request({
+    url: '/special-deductions/employees/import',
+    method: 'post',
+    data
+  })
+}
+
 // 删除员工专项扣除
 export function deleteEmployeeDeduction(id) {
   return request({

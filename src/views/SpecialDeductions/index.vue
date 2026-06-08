@@ -32,6 +32,10 @@
                     <el-icon><Plus /></el-icon>
                     新增扣除项目
                   </el-button>
+                  <el-button type="success" @click="handleDownloadImportTemplate">
+                    <el-icon><Download /></el-icon>
+                    下载导入模板
+                  </el-button>
                 </el-form-item>
               </el-form>
             </div>
@@ -127,8 +131,19 @@
                     <el-icon><Setting /></el-icon>
                     批量设置
                   </el-button>
+                  <el-button type="success" :loading="importing" @click="triggerImportTemplate">
+                    <el-icon><Upload /></el-icon>
+                    导入模板
+                  </el-button>
                 </el-form-item>
               </el-form>
+              <input
+                ref="importFileInputRef"
+                class="hidden-file-input"
+                type="file"
+                accept=".xlsx,.xls"
+                @change="handleImportFileChange"
+              />
             </div>
 
             <!-- 员工列表 -->
@@ -459,7 +474,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Setting, Delete } from '@element-plus/icons-vue'
+import { Search, Plus, Setting, Delete, Download, Upload } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
 import { useAccountSetStore } from '@/stores/accountSet'
 import {
   getDeductionItems,
@@ -471,6 +487,7 @@ import {
   getEmployeeDeductionDetail,
   setEmployeeDeduction,
   batchSetEmployeeDeduction,
+  importEmployeeDeductions,
   deleteEmployeeDeduction
 } from '@/api/specialDeductions'
 import { getProjects } from '@/api/projects'
@@ -531,6 +548,8 @@ const employeePagination = reactive({
   pageSize: 20,
   total: 0
 })
+const importFileInputRef = ref(null)
+const importing = ref(false)
 
 // 设置员工专项扣除对话框
 const showSetEmployeeDialog = ref(false)
@@ -640,6 +659,186 @@ const loadAvailableDeductionItems = async (projectId) => {
   } catch (error) {
     console.error('加载可用扣除项目失败:', error)
     availableDeductionItems.value = []
+  }
+}
+
+const getActiveDeductionItems = async () => {
+  const res = await getDeductionItems({
+    is_active: 1,
+    per_page: 1000,
+    current_account_set_id: currentAccountSetId.value
+  })
+  return res.success ? (res.data || []).filter(item => item !== null) : []
+}
+
+const formatTemplateDate = () => {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}${month}${day}`
+}
+
+const handleDownloadImportTemplate = async () => {
+  try {
+    const items = await getActiveDeductionItems()
+    if (items.length === 0) {
+      ElMessage.warning('请先添加启用的扣除项目')
+      return
+    }
+
+    const headers = ['员工姓名', '身份证号', ...items.map(item => item.name)]
+    const exampleRow = [
+      '张三',
+      '110101199001010011',
+      ...items.map(() => '是')
+    ]
+    const sheet = XLSX.utils.aoa_to_sheet([headers, exampleRow])
+    sheet['!cols'] = headers.map((header, index) => ({
+      wch: index < 2 ? 18 : Math.max(String(header).length + 6, 14)
+    }))
+    if (sheet.B2) {
+      sheet.B2.t = 's'
+      sheet.B2.z = '@'
+    }
+    if (sheet['!cols'][1]) {
+      sheet['!cols'][1].z = '@'
+    }
+
+    const noteSheet = XLSX.utils.aoa_to_sheet([
+      ['填写说明'],
+      ['1. 身份证号必填，用于匹配员工。'],
+      ['2. 身份证号列请按文本填写，避免 Excel 自动转成科学计数法。'],
+      ['3. 后续专项扣除列填写“是”或“否”，“是”表示绑定该扣除项目，“否”或空白表示不绑定。'],
+      ['4. 扣除金额取“扣除项目设置”中的默认金额，模板中不需要填写金额。'],
+      ['5. 导入会按当前页面选择的项目，覆盖该员工在该项目下的专项扣除设置。'],
+      [],
+      ['当前启用扣除项目', '默认扣除金额'],
+      ...items.map(item => [item.name, item.amount || ''])
+    ])
+    noteSheet['!cols'] = [{ wch: 28 }, { wch: 16 }]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, sheet, '人员专项扣除导入')
+    XLSX.utils.book_append_sheet(workbook, noteSheet, '填写说明')
+    XLSX.writeFile(workbook, `人员专项扣除导入模板_${formatTemplateDate()}.xlsx`)
+  } catch (error) {
+    console.error('下载导入模板失败:', error)
+    ElMessage.error(error.message || '下载导入模板失败')
+  }
+}
+
+const triggerImportTemplate = () => {
+  if (!employeeSearchForm.project_id) {
+    ElMessage.warning('请先选择项目后再导入')
+    return
+  }
+  importFileInputRef.value?.click()
+}
+
+const normalizeImportCell = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value.toLocaleString('en-US', {
+      useGrouping: false,
+      maximumFractionDigits: 0
+    }).trim()
+  }
+
+  const text = String(value ?? '').trim()
+  if (/^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(text)) {
+    return expandScientificNotation(text)
+  }
+
+  return text
+}
+
+const expandScientificNotation = (value) => {
+  const match = String(value).trim().match(/^([+-]?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i)
+  if (!match) return String(value ?? '').trim()
+
+  const sign = match[1] === '-' ? '-' : ''
+  const integerPart = match[2]
+  const decimalPart = match[3] || ''
+  const exponent = Number(match[4])
+  const digits = `${integerPart}${decimalPart}`
+  const decimalIndex = integerPart.length + exponent
+
+  if (decimalIndex <= 0) {
+    return `${sign}0.${'0'.repeat(Math.abs(decimalIndex))}${digits}`.replace(/\.?0+$/, '')
+  }
+
+  if (decimalIndex >= digits.length) {
+    return `${sign}${digits}${'0'.repeat(decimalIndex - digits.length)}`
+  }
+
+  return `${sign}${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`.replace(/\.?0+$/, '')
+}
+
+const handleImportFileChange = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  if (!/\.(xlsx|xls)$/i.test(file.name)) {
+    ElMessage.warning('请选择 Excel 文件')
+    return
+  }
+
+  importing.value = true
+  try {
+    const buffer = await file.arrayBuffer()
+    const workbook = XLSX.read(buffer, { type: 'array' })
+    const sheetName = workbook.SheetNames[0]
+    if (!sheetName) {
+      ElMessage.warning('导入文件没有可读取的工作表')
+      return
+    }
+
+    const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true })
+    const headers = (rawRows[0] || []).map(value => normalizeImportCell(value))
+    const rows = rawRows.slice(1).map(row => {
+      const record = {}
+      headers.forEach((header, index) => {
+        if (header) {
+          record[header] = normalizeImportCell(row[index])
+        }
+      })
+      return record
+    })
+    const importRows = rows.filter(row => {
+      const idNumber = normalizeImportCell(row['身份证号'] || row['身份证号码'])
+      return idNumber && idNumber !== '110101199001010011'
+    })
+
+    if (importRows.length === 0) {
+      ElMessage.warning('没有可导入的数据，请填写模板后再导入')
+      return
+    }
+
+    const res = await importEmployeeDeductions({
+      rows: importRows,
+      project_id: employeeSearchForm.project_id,
+      current_account_set_id: currentAccountSetId.value
+    })
+
+    if (res.success) {
+      const result = res.data || {}
+      const message = res.message || `导入完成，成功 ${result.success_count || 0} 条，失败 ${result.error_count || 0} 条`
+      if (result.error_count > 0) {
+        const errors = (result.errors || []).slice(0, 30).join('\n')
+        await ElMessageBox.alert(errors || message, '导入结果', { type: result.success_count > 0 ? 'warning' : 'error' })
+      } else {
+        ElMessage.success(message)
+      }
+      loadEmployeeDeductions()
+    } else {
+      ElMessage.error(res.message || '导入失败')
+    }
+  } catch (error) {
+    console.error('导入专项扣除失败:', error)
+    ElMessage.error(error.message || '导入失败')
+  } finally {
+    importing.value = false
   }
 }
 
@@ -1104,6 +1303,10 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .pagination {

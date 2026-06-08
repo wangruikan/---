@@ -1040,6 +1040,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // 员工专项扣除管理
         Route::get('/employees', [SpecialDeductionController::class, 'getEmployeeDeductions']);
         Route::get('/employees/project', [SpecialDeductionController::class, 'getProjectEmployees']);
+        Route::post('/employees/import', [SpecialDeductionController::class, 'importEmployeeDeductions']);
         Route::get('/employees/{employeeId}/detail', [SpecialDeductionController::class, 'getEmployeeDeductionDetail']);
         Route::post('/employees/set', [SpecialDeductionController::class, 'setEmployeeDeduction']);
         Route::post('/employees/batch-set', [SpecialDeductionController::class, 'batchSetEmployeeDeduction']);

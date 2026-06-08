@@ -39,6 +39,124 @@ class SpecialDeductionController extends Controller
         
         return $currentAccountSetId;
     }
+
+    private function normalizeImportValue($value): string
+    {
+        return trim((string)($value ?? ''));
+    }
+
+    private function parseImportEnabled($value)
+    {
+        $raw = $this->normalizeImportValue($value);
+        if ($raw === '') {
+            return null;
+        }
+
+        $normalized = strtolower($raw);
+        if (in_array($normalized, ['是', 'yes', 'y', '1', 'true'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['否', 'no', 'n', '0', 'false'], true)) {
+            return false;
+        }
+
+        return 'invalid';
+    }
+
+    private function getImportCell(array $row, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row)) {
+                return $this->normalizeImportValue($row[$key]);
+            }
+        }
+
+        foreach ($row as $rowKey => $value) {
+            $normalizedKey = $this->normalizeImportValue($rowKey);
+            if (in_array($normalizedKey, $keys, true)) {
+                return $this->normalizeImportValue($value);
+            }
+        }
+
+        return '';
+    }
+
+    private function normalizeImportIdNumber($value): string
+    {
+        return strtoupper(str_replace(["'", ' ', "\t", "\r", "\n", '　'], '', $this->normalizeImportValue($value)));
+    }
+
+    private function getScientificIdPrefix(string $idNumber): ?string
+    {
+        if (!preg_match('/^([+-]?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/', $idNumber, $matches)) {
+            return null;
+        }
+
+        if (($matches[1] ?? '') === '-') {
+            return null;
+        }
+
+        $digits = ltrim(($matches[2] ?? '') . ($matches[3] ?? ''), '0');
+        return strlen($digits) >= 6 ? $digits : null;
+    }
+
+    private function getIdNumberFallbackPrefixes(string $idNumber): array
+    {
+        $prefixes = [];
+        $scientificPrefix = $this->getScientificIdPrefix($idNumber);
+        if ($scientificPrefix) {
+            $prefixes[] = $scientificPrefix;
+        }
+
+        if (preg_match('/^\d{18}$/', $idNumber)) {
+            $trimmed = rtrim($idNumber, '0');
+            if (strlen($trimmed) >= 6 && strlen($trimmed) < 18) {
+                $prefixes[] = $trimmed;
+            }
+
+            // 18位身份证被 Excel 当数字保存后会丢失尾部精度，例如
+            // 110101197608227871 可能变成 110101197608228000。
+            // 精确匹配失败时，用区县+出生年月日前缀兜底，再结合姓名限定。
+            $prefixes[] = substr($idNumber, 0, 14);
+            $prefixes[] = substr($idNumber, 0, 12);
+        }
+
+        return array_values(array_unique($prefixes));
+    }
+
+    private function findEmployeeByImportedIdNumber($accountSetId, string $idNumber, string $employeeName = '', ?string &$errorMessage = null): ?Employee
+    {
+        $employee = Employee::where('account_set_id', $accountSetId)
+            ->where('id_number', $idNumber)
+            ->first();
+
+        if ($employee) {
+            return $employee;
+        }
+
+        foreach ($this->getIdNumberFallbackPrefixes($idNumber) as $prefix) {
+            $query = Employee::where('account_set_id', $accountSetId)
+                ->where('id_number', 'like', $prefix . '%');
+
+            if ($employeeName !== '') {
+                $query->where('name', $employeeName);
+            }
+
+            $candidates = $query->limit(2)->get();
+            if ($candidates->count() === 1) {
+                return $candidates->first();
+            }
+
+            if ($candidates->count() > 1) {
+                $errorMessage = "身份证号 {$idNumber} 匹配到多名员工，请将身份证号列设置为文本后重新导入";
+                return null;
+            }
+        }
+
+        return null;
+    }
+
     // 获取专项扣除项目列表
     public function getDeductionItems(Request $request)
     {
@@ -596,6 +714,153 @@ class SpecialDeductionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '批量设置失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 导入员工专项扣除
+    public function importEmployeeDeductions(Request $request)
+    {
+        if ($response = $this->checkPermission('special_deductions.edit')) {
+            return $response;
+        }
+
+        try {
+            $accountSetId = $this->getAccountSetId($request);
+
+            $validated = $request->validate([
+                'rows' => 'required|array|min:1',
+                'rows.*' => 'array',
+                'project_id' => 'required|exists:projects,id',
+            ]);
+
+            $project = Project::where('account_set_id', $accountSetId)
+                ->find($validated['project_id']);
+
+            if (!$project) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '所选项目不存在或不属于当前账套'
+                ], 422);
+            }
+
+            $deductionItems = SpecialDeductionItem::where('account_set_id', $accountSetId)
+                ->where('is_active', true)
+                ->orderBy('sort_order', 'asc')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            if ($deductionItems->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请先添加启用的扣除项目'
+                ], 422);
+            }
+
+            $successCount = 0;
+            $errors = [];
+
+            foreach ($validated['rows'] as $index => $row) {
+                $rowNumber = $index + 2;
+
+                try {
+                    $idNumber = $this->normalizeImportIdNumber($this->getImportCell($row, ['身份证号', '身份证号码', '证件号码']));
+                    if ($idNumber === '') {
+                        $errors[] = "第 {$rowNumber} 行：身份证号不能为空";
+                        continue;
+                    }
+
+                    $employeeName = $this->getImportCell($row, ['员工姓名', '姓名']);
+                    $matchError = null;
+                    $employee = $this->findEmployeeByImportedIdNumber($accountSetId, $idNumber, $employeeName, $matchError);
+
+                    if (!$employee) {
+                        $errors[] = "第 {$rowNumber} 行：" . ($matchError ?: "未找到身份证号为 {$idNumber} 的员工");
+                        continue;
+                    }
+
+                    $hasProject = DB::table('employee_projects')
+                        ->where('employee_id', $employee->id)
+                        ->where('project_id', $project->id)
+                        ->exists();
+
+                    if (!$hasProject) {
+                        $errors[] = "第 {$rowNumber} 行：员工 {$employee->name} 不属于项目 {$project->name}";
+                        continue;
+                    }
+
+                    $importDeductionItems = [];
+                    foreach ($deductionItems as $deductionItem) {
+                        $enabled = $this->parseImportEnabled($this->getImportCell($row, [$deductionItem->name]));
+                        if ($enabled === null || $enabled === false) {
+                            continue;
+                        }
+
+                        if ($enabled === 'invalid') {
+                            $errors[] = "第 {$rowNumber} 行：{$deductionItem->name} 请填写是或否";
+                            continue 2;
+                        }
+
+                        $importDeductionItems[] = [
+                            'id' => $deductionItem->id,
+                            'amount' => $deductionItem->amount,
+                        ];
+                    }
+
+                    if (empty($importDeductionItems)) {
+                        EmployeeDeductionDetail::where('account_set_id', $accountSetId)
+                            ->where('employee_id', $employee->id)
+                            ->where('project_id', $project->id)
+                            ->delete();
+                        $successCount++;
+                        continue;
+                    }
+
+                    DB::transaction(function () use ($accountSetId, $employee, $project, $importDeductionItems, $request) {
+                        $detail = EmployeeDeductionDetail::updateOrCreate(
+                            [
+                                'account_set_id' => $accountSetId,
+                                'employee_id' => $employee->id,
+                                'project_id' => $project->id,
+                            ],
+                            [
+                                'deduction_items' => '',
+                                'total_amount' => 0,
+                                'is_active' => true,
+                                'updated_by' => $request->user() ? $request->user()->id : null,
+                            ]
+                        );
+
+                        $detail->setDeductionItemsFromArray($importDeductionItems);
+                        $detail->save();
+                    });
+
+                    $successCount++;
+                } catch (\Exception $e) {
+                    $errors[] = "第 {$rowNumber} 行：导入失败，{$e->getMessage()}";
+                    Log::error('导入员工专项扣除行失败', [
+                        'row_number' => $rowNumber,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            $errorCount = count($errors);
+
+            return response()->json([
+                'success' => true,
+                'message' => "导入完成，成功 {$successCount} 条" . ($errorCount > 0 ? "，失败 {$errorCount} 条" : ""),
+                'data' => [
+                    'success_count' => $successCount,
+                    'error_count' => $errorCount,
+                    'errors' => $errors,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('导入员工专项扣除失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '导入失败: ' . $e->getMessage()
             ], 500);
         }
     }

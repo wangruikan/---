@@ -2340,6 +2340,33 @@
                 <el-input :value="onboardingForm?.contact_address || '-'" placeholder="-" />
               </el-form-item>
 
+              <!-- 工资卡信息 -->
+              <el-divider content-position="left">工资卡信息</el-divider>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="银行账号">
+                    <el-input :value="onboardingForm?.bank_account || form.bank_account || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="户名">
+                    <el-input :value="onboardingForm?.bank_account_holder || form.bank_account_holder || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="开户行">
+                    <el-input :value="onboardingForm?.bank_name || form.bank_name || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="开户地/支行">
+                    <el-input :value="onboardingForm?.bank_branch || form.bank_branch || '-'" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
               <!-- 备注 -->
               <el-divider content-position="left">备注</el-divider>
               <el-form-item label="备注">
@@ -2956,18 +2983,6 @@
                   <el-input
                     v-model="form.bank_branch"
                     placeholder="请输入开户地/支行"
-                    clearable
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
-
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item label="汇款备注" prop="remittance_remark">
-                  <el-input
-                    v-model="form.remittance_remark"
-                    placeholder="请输入汇款备注"
                     clearable
                   />
                 </el-form-item>

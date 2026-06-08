@@ -1515,6 +1515,10 @@ class MiniController extends Controller
                 $formData['place_of_origin_city'] = $employee->household_city ?? ($formData['place_of_origin_city'] ?? '');
                 $formData['place_of_origin_district'] = $employee->household_district ?? ($formData['place_of_origin_district'] ?? '');
                 $formData['place_of_origin_detail'] = $employee->household_address ?: ($formData['place_of_origin_detail'] ?? '');
+                $formData['bank_account'] = $employee->bank_account ?? '';
+                $formData['bank_account_holder'] = $employee->bank_account_holder ?? '';
+                $formData['bank_name'] = $employee->bank_name ?? '';
+                $formData['bank_branch'] = $employee->bank_branch ?? '';
 
                 if (empty($formData['contact_address'])) {
                     $contactAddressParts = array_filter([
@@ -1546,7 +1550,12 @@ class MiniController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $form
+                'data' => [
+                    'bank_account' => $employee->bank_account ?? '',
+                    'bank_account_holder' => $employee->bank_account_holder ?? '',
+                    'bank_name' => $employee->bank_name ?? '',
+                    'bank_branch' => $employee->bank_branch ?? '',
+                ]
             ]);
         } catch (\Exception $e) {
             \Log::error('获取入职登记表失败: ' . $e->getMessage());
@@ -1609,6 +1618,10 @@ class MiniController extends Controller
             'contact_district' => 'nullable|string|max:50',
             'contact_address_detail' => 'nullable|string|max:200',
             'contact_phone' => 'nullable|string|max:20',
+            'bank_account' => 'nullable|string|max:50',
+            'bank_account_holder' => 'nullable|string|max:255',
+            'bank_name' => 'nullable|string|max:100',
+            'bank_branch' => 'nullable|string|max:200',
             'remarks' => 'nullable|string',
             'education_background' => 'nullable|array',
             'education_background.*.start_date' => 'nullable|string',
@@ -1814,6 +1827,12 @@ class MiniController extends Controller
                 'degree' => $request->degree,
                 'job_title' => $request->technical_title,
             ];
+
+            foreach (['bank_account', 'bank_account_holder', 'bank_name', 'bank_branch'] as $bankField) {
+                if ($request->has($bankField)) {
+                    $employeeUpdateData[$bankField] = $request->input($bankField);
+                }
+            }
 
             if ($hasRegionPayload) {
                 $employeeUpdateData = array_merge($employeeUpdateData, [

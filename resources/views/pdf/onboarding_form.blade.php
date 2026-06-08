@@ -254,6 +254,28 @@
             <td class="label-cell">联系电话</td>
             <td colspan="3">{{ $form->contact_phone ?? '-' }}</td>
         </tr>
+    </table>
+
+    <!-- 工资卡信息 -->
+    <table>
+        <tr>
+            <td class="section-title" colspan="4">工资卡信息</td>
+        </tr>
+        <tr>
+            <td class="label-cell" width="15%">银行账号</td>
+            <td width="35%">{{ isset($employee) ? ($employee->bank_account ?? '-') : ($form->bank_account ?? '-') }}</td>
+            <td class="label-cell" width="15%">户名</td>
+            <td width="35%">{{ isset($employee) ? ($employee->bank_account_holder ?? '-') : ($form->bank_account_holder ?? '-') }}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">开户行</td>
+            <td>{{ isset($employee) ? ($employee->bank_name ?? '-') : ($form->bank_name ?? '-') }}</td>
+            <td class="label-cell">开户地/支行</td>
+            <td>{{ isset($employee) ? ($employee->bank_branch ?? '-') : ($form->bank_branch ?? '-') }}</td>
+        </tr>
+    </table>
+
+    <table>
         <tr>
             <td class="label-cell">备注</td>
             <td colspan="3">{{ $form->remarks ?? '-' }}</td>

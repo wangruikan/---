@@ -1855,6 +1855,10 @@ class EmployeeController extends ApiController
                         $formData['photo'] = $host . '/storage/' . $formData['photo'];
                     }
                 }
+                $formData['bank_account'] = $employee->bank_account ?? '';
+                $formData['bank_account_holder'] = $employee->bank_account_holder ?? '';
+                $formData['bank_name'] = $employee->bank_name ?? '';
+                $formData['bank_branch'] = $employee->bank_branch ?? '';
                 
                 \Log::info('入职登记表数据: ' . json_encode($formData));
                 
@@ -2067,6 +2071,10 @@ class EmployeeController extends ApiController
                         $formData['photo'] = $host . '/storage/' . $formData['photo'];
                     }
                 }
+                $formData['bank_account'] = $employee->bank_account ?? '';
+                $formData['bank_account_holder'] = $employee->bank_account_holder ?? '';
+                $formData['bank_name'] = $employee->bank_name ?? '';
+                $formData['bank_branch'] = $employee->bank_branch ?? '';
                 $result['onboarding_form'] = $formData;
             }
 

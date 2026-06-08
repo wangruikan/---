@@ -315,6 +315,31 @@
 			</view>
 		</view>
 		
+		<!-- 工资卡信息 -->
+		<view class="form-section">
+			<view class="section-title">工资卡信息</view>
+			
+			<view class="form-item">
+				<text class="label">银行账号</text>
+				<input type="text" placeholder="请输入银行账号" v-model="formData.bank_account" />
+			</view>
+			
+			<view class="form-item">
+				<text class="label">户名</text>
+				<input type="text" placeholder="请输入户名" v-model="formData.bank_account_holder" />
+			</view>
+			
+			<view class="form-item">
+				<text class="label">开户行</text>
+				<input type="text" placeholder="请输入开户行" v-model="formData.bank_name" />
+			</view>
+			
+			<view class="form-item">
+				<text class="label">开户地/支行</text>
+				<input type="text" placeholder="请输入开户地/支行" v-model="formData.bank_branch" />
+			</view>
+		</view>
+		
 		<!-- 备注 -->
 		<view class="form-section">
 			<view class="section-title">备注</view>
@@ -401,6 +426,10 @@ export default {
 				contact_address_region: [],
 				contact_address_detail: '',
 				contact_phone: '',
+				bank_account: '',
+				bank_account_holder: '',
+				bank_name: '',
+				bank_branch: '',
 				remarks: '',
 				signature: '',
 				signaturePath: '',
@@ -1003,6 +1032,10 @@ export default {
 							contact_address_region: ['北京市', '北京市', '朝阳区'],
 							contact_address_detail: '某某街道某某号',
 							contact_phone: '13800138000',
+							bank_account: '6222021234567890123',
+							bank_account_holder: '张三',
+							bank_name: '中国工商银行',
+							bank_branch: '北京朝阳支行',
 							remarks: '本人具有良好的沟通能力和团队合作精神，熟悉Java、Python等编程语言。',
 							education_background: [
 								{

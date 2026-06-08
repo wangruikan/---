@@ -28,6 +28,7 @@ export const menuConfig = [
     children: [
       { title: '考勤管理', path: '/attendance', icon: 'Calendar' },
       { title: '工资管理', path: '/salaries', icon: 'Money' },
+      { title: '工资进度', path: '/salary-progress', icon: 'List' },
       { title: '工资汇总', path: '/salary-summaries', icon: 'Document' },
       { title: '发工资表', path: '/salary-payment-records', icon: 'Document' }
     ]

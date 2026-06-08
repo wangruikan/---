@@ -293,92 +293,6 @@
           </el-card>
         </el-tab-pane>
 
-        <el-tab-pane name="progress">
-          <template #label>
-            <span>工资进度</span>
-          </template>
-
-          <el-card shadow="never" style="margin-bottom: 20px;">
-            <el-form :inline="true" :model="progressSearchForm" class="search-form">
-              <el-form-item label="月份">
-                <el-date-picker
-                  v-model="progressSearchForm.month"
-                  type="month"
-                  placeholder="选择月份"
-                  format="YYYY-MM"
-                  value-format="YYYY-MM"
-                  style="width: 140px;"
-                />
-              </el-form-item>
-
-              <el-form-item label="进度状态">
-                <el-select v-model="progressSearchForm.progress_status" style="width: 140px;">
-                  <el-option label="全部" value="all" />
-                  <el-option label="未完成" value="pending" />
-                  <el-option label="已完成" value="completed" />
-                </el-select>
-              </el-form-item>
-
-              <el-form-item>
-                <el-button type="primary" @click="loadPayrollProgress">查询</el-button>
-                <el-button @click="handleResetProgress">重置</el-button>
-              </el-form-item>
-            </el-form>
-
-            <div class="progress-summary">
-              <el-tag type="info">项目总数 {{ payrollProgressSummary.total }}</el-tag>
-              <el-tag type="warning">未完成 {{ payrollProgressSummary.pending }}</el-tag>
-              <el-tag type="success">已完成 {{ payrollProgressSummary.completed }}</el-tag>
-            </div>
-          </el-card>
-
-          <el-card shadow="never" class="pending-card">
-            <template #header>
-              <div class="card-header">
-                <span class="title">工资流程进度</span>
-                <el-button type="text" @click="loadPayrollProgress">
-                  <el-icon><Refresh /></el-icon>
-                  刷新
-                </el-button>
-              </div>
-            </template>
-
-            <el-table
-              :data="payrollProgressRows"
-              border
-              stripe
-              v-loading="payrollProgressLoading"
-              style="width: 100%"
-            >
-              <el-table-column prop="project_name" label="项目名称" min-width="180" show-overflow-tooltip />
-              <el-table-column prop="project_code" label="项目编号" min-width="140" />
-              <el-table-column prop="month" label="工资期间" width="120" />
-              <el-table-column label="当前进度" min-width="180">
-                <template #default="{ row }">
-                  <el-tag :type="row.current_step?.is_completed ? 'success' : 'warning'">
-                    {{ row.current_step?.stage_label || '-' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="项目状态" width="100" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="row.project_status === 'active' ? 'success' : 'info'">
-                    {{ row.project_status === 'active' ? '进行中' : '已结束' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="start_date" label="开始日期" width="120" />
-              <el-table-column prop="end_date" label="结束日期" width="120" />
-              <el-table-column label="操作" width="120" fixed="right">
-                <template #default="{ row }">
-                  <el-button type="primary" link @click="handleGoProgress(row)">
-                    去处理
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-card>
-        </el-tab-pane>
       </el-tabs>
 
       <!-- 提交审批对话框 -->
@@ -1258,7 +1172,6 @@ import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getProjectsWithApprovalStatus,
   getPendingPayrollProjects,
-  getPayrollProgress,
   generateSalarySheet,
   getSalarySheets,
   getSalaryDetails,
@@ -1408,17 +1321,6 @@ const pendingPayrollMonth = ref(getCurrentMonth())
 const pendingPayrollProjects = ref([])
 const pendingPayrollLoading = ref(false)
 const createDialogLocked = ref(false)
-const payrollProgressLoading = ref(false)
-const payrollProgressRows = ref([])
-const payrollProgressSummary = reactive({
-  total: 0,
-  pending: 0,
-  completed: 0
-})
-const progressSearchForm = reactive({
-  month: getCurrentMonth(),
-  progress_status: 'all'
-})
 
 // 生成工资表对话框
 const createDialogVisible = ref(false)
@@ -1851,53 +1753,6 @@ const loadPendingPayrollProjects = async () => {
   }
 }
 
-const loadPayrollProgress = async () => {
-  if (!currentAccountSetId.value && !isAdmin.value) {
-    payrollProgressRows.value = []
-    payrollProgressSummary.total = 0
-    payrollProgressSummary.pending = 0
-    payrollProgressSummary.completed = 0
-    return
-  }
-
-  payrollProgressLoading.value = true
-  try {
-    const response = await getPayrollProgress({
-      month: progressSearchForm.month,
-      progress_status: progressSearchForm.progress_status,
-      current_account_set_id: currentAccountSetId.value
-    })
-
-    if (response && response.success) {
-      payrollProgressRows.value = response.data || []
-      payrollProgressSummary.total = response.summary?.total || 0
-      payrollProgressSummary.pending = response.summary?.pending || 0
-      payrollProgressSummary.completed = response.summary?.completed || 0
-    } else {
-      payrollProgressRows.value = []
-      payrollProgressSummary.total = 0
-      payrollProgressSummary.pending = 0
-      payrollProgressSummary.completed = 0
-      ElMessage.error(response?.message || '加载工资进度失败')
-    }
-  } catch (error) {
-    console.error('Load payroll progress error:', error)
-    payrollProgressRows.value = []
-    payrollProgressSummary.total = 0
-    payrollProgressSummary.pending = 0
-    payrollProgressSummary.completed = 0
-    ElMessage.error('加载工资进度失败')
-  } finally {
-    payrollProgressLoading.value = false
-  }
-}
-
-const handleResetProgress = () => {
-  progressSearchForm.month = getCurrentMonth()
-  progressSearchForm.progress_status = 'all'
-  loadPayrollProgress()
-}
-
 const setCreatePeriodRangeFromDays = (month = createForm.month) => {
   if (!month) {
     createForm.period_range = []
@@ -2140,55 +1995,6 @@ const handleCreatePendingPayroll = (row) => {
     has_salary_history: row.has_salary_history
   }]
   normalizeCreatePeriodRange()
-}
-
-const handleGoProgress = (row) => {
-  const stageKey = row.current_step?.stage_key
-  const query = {
-    project_id: row.project_id,
-    month: row.month
-  }
-
-  if (stageKey === 'attendance_basis_missing') {
-    router.push({
-      path: '/attendance-basis',
-      query: {
-        ...query,
-        action: 'create'
-      }
-    })
-    return
-  }
-
-  if (['attendance_pending_create', 'attendance_draft', 'attendance_submitted'].includes(stageKey)) {
-    router.push({
-      path: '/attendance',
-      query: {
-        ...query,
-        tab: stageKey === 'attendance_pending_create' ? 'pending' : 'list'
-      }
-    })
-    return
-  }
-
-  if (stageKey === 'salary_basis_missing') {
-    router.push({
-      path: '/salary-basis',
-      query: {
-        ...query,
-        action: 'create'
-      }
-    })
-    return
-  }
-
-  router.push({
-    path: '/salaries',
-    query: {
-      ...query,
-      tab: stageKey === 'salary_pending_create' ? 'pending' : 'list'
-    }
-  })
 }
 
 // 确认生成
@@ -3107,7 +2913,18 @@ const handleDelete = (row) => {
 
 const applyRouteQuery = () => {
   const { tab, project_id, month } = route.query
-  const nextTab = ['pending', 'progress'].includes(tab) ? tab : 'list'
+  if (tab === 'progress') {
+    router.replace({
+      path: '/salary-progress',
+      query: {
+        month: typeof month === 'string' ? month : undefined,
+        progress_status: typeof route.query.progress_status === 'string' ? route.query.progress_status : undefined
+      }
+    })
+    return
+  }
+
+  const nextTab = tab === 'pending' ? 'pending' : 'list'
   const nextProjectId = project_id ? Number(project_id) : null
   const nextMonth = typeof month === 'string' ? month : null
 
@@ -3119,16 +2936,6 @@ const applyRouteQuery = () => {
     pendingPayrollMonth.value = targetMonth
     if (shouldLoadImmediately) {
       loadPendingPayrollProjects()
-    }
-    return
-  }
-
-  if (nextTab === 'progress') {
-    const targetMonth = nextMonth || getCurrentMonth()
-    const shouldLoadImmediately = progressSearchForm.month === targetMonth
-    progressSearchForm.month = targetMonth
-    if (shouldLoadImmediately) {
-      loadPayrollProgress()
     }
     return
   }
@@ -3155,23 +2962,9 @@ watch(pendingPayrollMonth, () => {
   }
 })
 
-watch(() => progressSearchForm.month, () => {
-  if (activeSalaryTab.value === 'progress') {
-    loadPayrollProgress()
-  }
-})
-
-watch(() => progressSearchForm.progress_status, () => {
-  if (activeSalaryTab.value === 'progress') {
-    loadPayrollProgress()
-  }
-})
-
 watch(activeSalaryTab, (tab) => {
   if (tab === 'pending') {
     loadPendingPayrollProjects()
-  } else if (tab === 'progress') {
-    loadPayrollProgress()
   } else {
     handleSearch()
   }
@@ -3231,14 +3024,6 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.progress-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 4px;
-  flex-wrap: wrap;
 }
 
 .card-header {

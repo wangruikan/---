@@ -69,6 +69,12 @@ const routes = [
         meta: { title: '工资管理' }
       },
       {
+        path: '/salary-progress',
+        name: 'SalaryProgress',
+        component: () => import('@/views/SalaryProgress/index.vue'),
+        meta: { title: '工资进度' }
+      },
+      {
         path: '/salary-summaries',
         name: 'SalarySummaries',
         component: () => import('@/views/SalarySummaries/index.vue'),

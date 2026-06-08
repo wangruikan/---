@@ -633,8 +633,8 @@
       <!-- 工资明细对话框 -->
     <el-dialog
         v-model="detailDialogVisible"
-        width="95%"
-        top="5vh"
+        width="88%"
+        top="9vh"
       >
         <template #header>
           <div class="dialog-header-title">
@@ -3257,7 +3257,7 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
 }
 
 .detail-content {
-  max-height: 70vh;
+  max-height: 64vh;
   overflow-y: auto;
 }
 

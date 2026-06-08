@@ -192,8 +192,8 @@ class EmployeeController extends ApiController
                     
                     // 按项目筛选
                     if ($request->has('project_id') && $request->project_id) {
-                        $query->whereHas('projects', function($q) use ($request) {
-                            $q->where('project_id', $request->project_id);
+                        $query->whereHas('activeProjects', function($q) use ($request) {
+                            $q->where('projects.id', $request->project_id);
                         });
                     }
                     
@@ -267,7 +267,7 @@ class EmployeeController extends ApiController
             
             // 计算人员统计数据
             $currentAccountSetId = $request->input('current_account_set_id');
-            $stats = $this->getEmployeeStats($currentAccountSetId);
+            $stats = $this->getEmployeeStats($currentAccountSetId, $request);
             
             return response()->json([
                 'success' => true,
@@ -3238,12 +3238,29 @@ class EmployeeController extends ApiController
     /**
      * 获取员工统计数据
      */
-    protected function getEmployeeStats($accountSetId = null)
+    protected function getEmployeeStats($accountSetId = null, Request $request = null)
     {
         $query = Employee::query();
         
         if ($accountSetId) {
             $query->where('account_set_id', $accountSetId);
+        } elseif ($request && optional($request->user())->role !== 'admin') {
+            $query->whereRaw('1 = 0');
+        }
+
+        if ($request && $request->filled('project_id')) {
+            $query->whereHas('activeProjects', function($q) use ($request) {
+                $q->where('projects.id', $request->input('project_id'));
+            });
+        }
+
+        if ($request && $request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('id_number', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%");
+            });
         }
         
         $today = Carbon::today();

@@ -97,6 +97,7 @@
               placeholder="请选择项目"
               clearable
               style="width: 200px"
+              @change="handleSearch"
             >
               <el-option
                 v-for="project in projects"

@@ -102,3 +102,21 @@ export const submitSalaryAdjustmentApproval = (data) => {
     data
   })
 }
+
+// 获取登记表修改审批状态
+export const getRegistrationFormUpdateStatus = (id, params = {}) => {
+  return request({
+    url: `/employees/${id}/registration-form-update-status`,
+    method: 'get',
+    params
+  })
+}
+
+// 提交登记表修改审批
+export const submitRegistrationFormUpdateApproval = (id, data) => {
+  return request({
+    url: `/employees/${id}/registration-form-update-approval`,
+    method: 'post',
+    data
+  })
+}

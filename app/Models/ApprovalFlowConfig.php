@@ -24,6 +24,7 @@ class ApprovalFlowConfig extends Model
             'offline_onboarding' => '线下入职审批',
             'employee_deletion' => '员工删除审批',
             'employee_salary_adjustment' => '员工调薪审批',
+            'employee_registration_form_update' => '登记表修改审批',
             '工资表审批' => '工资表审批',
             '考勤申请' => '考勤申请',
             '发票申请' => '发票申请',

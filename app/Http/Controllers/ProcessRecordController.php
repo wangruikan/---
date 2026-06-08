@@ -233,6 +233,8 @@ class ProcessRecordController extends Controller
                 return '保险汇总';
             case 'attendance_sheet':
                 return '考勤申请';
+            case 'employee_registration_form_update':
+                return '登记表修改审批';
             default:
                 return $businessType ?: '未知业务';
         }

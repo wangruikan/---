@@ -1242,6 +1242,43 @@ class ApprovalService
                 }
                 break;
 
+            case 'employee_registration_form_update':
+                $formUpdateRequest = \App\Models\EmployeeFormUpdateRequest::find($businessId);
+                if ($formUpdateRequest) {
+                    $updateData = [];
+                    if ($instanceId) {
+                        $updateData['approval_instance_id'] = $instanceId;
+                    }
+
+                    if ($status === 'in_approval') {
+                        $updateData['status'] = 'pending';
+                        $formUpdateRequest->update($updateData);
+                    } elseif ($status === 'completed') {
+                        $this->applyEmployeeFormUpdateRequest($formUpdateRequest);
+                        $updateData['status'] = 'approved';
+                        $updateData['approved_at'] = now();
+                        $formUpdateRequest->update($updateData);
+                        Log::info('登记表修改审批通过，已写回原表', [
+                            'request_id' => $formUpdateRequest->id,
+                            'employee_id' => $formUpdateRequest->employee_id,
+                            'form_type' => $formUpdateRequest->form_type,
+                            'instance_id' => $instanceId,
+                        ]);
+                    } elseif (in_array($status, ['rejected', 'withdrawn'], true)) {
+                        $updateData['status'] = 'rejected';
+                        $updateData['rejected_at'] = now();
+                        $formUpdateRequest->update($updateData);
+                        Log::info('登记表修改审批未通过，原表保持不变', [
+                            'request_id' => $formUpdateRequest->id,
+                            'employee_id' => $formUpdateRequest->employee_id,
+                            'form_type' => $formUpdateRequest->form_type,
+                            'status' => $status,
+                            'instance_id' => $instanceId,
+                        ]);
+                    }
+                }
+                break;
+
             case 'offline_onboarding':
                 Log::info('进入 offline_onboarding case', [
                     'businessId' => $businessId,
@@ -2488,11 +2525,68 @@ class ApprovalService
             '报销申请' => '报销申请',
             'reimbursement' => '报销申请',  // 兼容英文类型
             'employee_salary_adjustment' => '员工工资调整审批',
+            'employee_registration_form_update' => '登记表修改审批',
         ];
         
         $typeName = $businessTypeMap[$instance->business_type] ?? $instance->business_type;
         
         return sprintf('%s（ID:%d）被驳回', $typeName, $instance->business_id);
+    }
+
+    private function applyEmployeeFormUpdateRequest(\App\Models\EmployeeFormUpdateRequest $formUpdateRequest): void
+    {
+        $newData = is_array($formUpdateRequest->new_data) ? $formUpdateRequest->new_data : [];
+        $protectedFields = [
+            'id',
+            'employee_id',
+            'account_set_id',
+            'signature',
+            'photo',
+            'created_at',
+            'updated_at',
+        ];
+
+        if ($formUpdateRequest->form_type === 'registration') {
+            $form = \App\Models\EmployeeRegistrationForm::where('employee_id', $formUpdateRequest->employee_id)->first();
+            if (!$form) {
+                throw new \Exception('未找到从业人员登记表，无法写回修改内容');
+            }
+
+            $columns = Schema::hasTable($form->getTable()) ? Schema::getColumnListing($form->getTable()) : [];
+            $allowedFields = array_values(array_diff(array_intersect($form->getFillable(), $columns), $protectedFields));
+            $formData = array_intersect_key($newData, array_flip($allowedFields));
+
+            if (!empty($formData)) {
+                $form->update($formData);
+            }
+
+            return;
+        }
+
+        $form = \App\Models\OnboardingForm::where('employee_id', $formUpdateRequest->employee_id)->first();
+        if (!$form) {
+            throw new \Exception('未找到员工入职登记表，无法写回修改内容');
+        }
+
+        $columns = Schema::hasTable($form->getTable()) ? Schema::getColumnListing($form->getTable()) : [];
+        $allowedFields = array_values(array_diff(array_intersect($form->getFillable(), $columns), $protectedFields));
+        $formData = array_intersect_key($newData, array_flip($allowedFields));
+
+        if (!empty($formData)) {
+            $form->update($formData);
+        }
+
+        $employeeBankFields = ['bank_account', 'bank_account_holder', 'bank_name', 'bank_branch'];
+        $employeeData = [];
+        foreach ($employeeBankFields as $field) {
+            if (array_key_exists($field, $newData) && Schema::hasColumn('employees', $field)) {
+                $employeeData[$field] = $newData[$field];
+            }
+        }
+
+        if (!empty($employeeData)) {
+            \App\Models\Employee::where('id', $formUpdateRequest->employee_id)->update($employeeData);
+        }
     }
     
     /**

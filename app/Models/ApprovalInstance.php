@@ -130,6 +130,9 @@ class ApprovalInstance extends Model
                     ->find($this->business_id);
             case 'employee_deletion':
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
+            case 'employee_registration_form_update':
+                return \App\Models\EmployeeFormUpdateRequest::with(['employee.projects', 'creator'])
+                    ->find($this->business_id);
             case 'employee_salary_adjustment':
                 $employee = \App\Models\Employee::with(['projects'])->find($this->business_id);
                 if (!$employee) {

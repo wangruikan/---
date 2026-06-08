@@ -327,6 +327,10 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // 线下入职相关（必须在 /{id} 之前）
         Route::get('/pending-contract-upload', [App\Http\Controllers\OfflineOnboardingController::class, 'getPendingContractUpload']);
+
+        // 登记表修改审批（必须在 /{id} 之前）
+        Route::get('/{id}/registration-form-update-status', [EmployeeController::class, 'getRegistrationFormUpdateStatus']);
+        Route::post('/{id}/registration-form-update-approval', [EmployeeController::class, 'submitRegistrationFormUpdateApproval']);
         
         Route::get('/{id}', [EmployeeController::class, 'show']);
         Route::put('/{id}', [EmployeeController::class, 'update']);

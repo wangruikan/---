@@ -408,7 +408,7 @@
             </el-table-column>
           </template>
           
-          <el-table-column label="操作" width="680" fixed="right">
+          <el-table-column label="操作" width="760" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
@@ -424,6 +424,14 @@
               </el-button>
               <el-button size="small" @click="handleViewChangeHistory(row)">
                 变更历史
+              </el-button>
+              <el-button
+                size="small"
+                :type="row.pending_registration_form_update_approval ? 'info' : 'warning'"
+                :disabled="row.pending_registration_form_update_approval"
+                @click="handleEditRegistrationForm(row)"
+              >
+                {{ row.pending_registration_form_update_approval ? '登记表审批中' : '修改登记表' }}
               </el-button>
               <!-- 线下入职按钮（仅未入职状态显示） -->
               <el-button 
@@ -3985,6 +3993,163 @@
       </template>
     </el-dialog>
 
+    <!-- 登记表修改审批对话框 -->
+    <el-dialog
+      v-model="showRegistrationFormUpdateDialog"
+      :title="`修改${registrationFormUpdateForm.form_type_text}`"
+      width="1100px"
+      top="5vh"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        title="登记表修改需审批后生效"
+        type="warning"
+        :closable="false"
+        style="margin-bottom: 16px;"
+      >
+        <template #default>
+          <p>当前修改只会提交审批，审批通过后才会写回原登记表。</p>
+          <p>审批中不能重复发起；如果审批驳回，原登记表不会改变。</p>
+        </template>
+      </el-alert>
+
+      <div v-loading="registrationFormUpdateLoading" style="max-height: 66vh; overflow-y: auto; padding-right: 8px;">
+        <el-form label-width="140px">
+          <el-descriptions :column="2" border style="margin-bottom: 16px;">
+            <el-descriptions-item label="员工姓名">{{ registrationFormUpdateEmployee?.name || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="登记表类型">{{ registrationFormUpdateForm.form_type_text }}</el-descriptions-item>
+          </el-descriptions>
+
+          <template v-for="section in currentRegistrationFormUpdateSections" :key="section.title">
+            <el-divider content-position="left">{{ section.title }}</el-divider>
+            <el-row :gutter="16">
+              <el-col
+                v-for="field in section.fields"
+                :key="field.prop"
+                :span="field.span || 12"
+              >
+                <el-form-item :label="field.label">
+                  <el-date-picker
+                    v-if="field.type === 'date'"
+                    v-model="registrationFormUpdateForm.data[field.prop]"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="请选择日期"
+                    style="width: 100%;"
+                    clearable
+                  />
+                  <el-select
+                    v-else-if="field.type === 'select'"
+                    v-model="registrationFormUpdateForm.data[field.prop]"
+                    placeholder="请选择"
+                    style="width: 100%;"
+                    clearable
+                  >
+                    <el-option
+                      v-for="option in field.options"
+                      :key="String(option.value)"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
+                  <el-select
+                    v-else-if="field.type === 'tags'"
+                    v-model="registrationFormUpdateForm.data[field.prop]"
+                    multiple
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="请输入后回车添加"
+                    style="width: 100%;"
+                  />
+                  <el-input
+                    v-else
+                    v-model="registrationFormUpdateForm.data[field.prop]"
+                    :type="field.type === 'textarea' ? 'textarea' : 'text'"
+                    :rows="field.rows || 2"
+                    :placeholder="`请输入${field.label}`"
+                    clearable
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </template>
+
+          <template v-for="section in currentRegistrationFormUpdateArraySections" :key="section.prop">
+            <el-divider content-position="left">{{ section.title }}</el-divider>
+            <div style="margin-bottom: 10px; text-align: right;">
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(section)">
+                新增一行
+              </el-button>
+            </div>
+            <el-table
+              :data="registrationFormUpdateForm.data[section.prop]"
+              border
+              size="small"
+              style="width: 100%; margin-bottom: 16px;"
+              empty-text="暂无数据"
+            >
+              <el-table-column
+                v-for="column in section.columns"
+                :key="column.prop"
+                :label="column.label"
+                :min-width="column.width || 140"
+              >
+                <template #default="{ row }">
+                  <el-input
+                    v-model="row[column.prop]"
+                    :type="column.type === 'textarea' ? 'textarea' : 'text'"
+                    :rows="column.rows || 2"
+                    clearable
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80" fixed="right">
+                <template #default="{ $index }">
+                  <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(section, $index)">
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+
+          <el-divider content-position="left">审批信息</el-divider>
+          <el-form-item label="修改说明">
+            <el-input
+              v-model="registrationFormUpdateForm.reason"
+              type="textarea"
+              :rows="3"
+              placeholder="请填写本次修改说明"
+              maxlength="500"
+              show-word-limit
+            />
+          </el-form-item>
+          <el-form-item label="盖章方式" required>
+            <el-radio-group v-model="registrationFormUpdateForm.stamp_method">
+              <el-radio value="online">线上盖章</el-radio>
+              <el-radio value="offline">线下盖章</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <ApprovalStampSelector
+            ref="registrationFormUpdateStampSelectorRef"
+            v-model="registrationFormUpdateForm.stamp_selection"
+          />
+        </el-form>
+      </div>
+
+      <template #footer>
+        <el-button @click="showRegistrationFormUpdateDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="submittingRegistrationFormUpdate"
+          @click="confirmSubmitRegistrationFormUpdate"
+        >
+          提交审批
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量创建员工列表对话框 -->
     <el-dialog
       v-model="showBatchList"
@@ -4711,7 +4876,7 @@
 import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { UploadFilled, Download, Search, Refresh, Document, Plus, Edit, Star, Postcard, FolderOpened, Calendar, User, Check, Upload, Delete, View, Warning } from '@element-plus/icons-vue'
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, getPendingContractUpload, markContractUploaded, submitSalaryAdjustmentApproval } from '@/api/employees'
+import { getEmployees, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, getPendingContractUpload, markContractUploaded, submitSalaryAdjustmentApproval, getRegistrationFormUpdateStatus, submitRegistrationFormUpdateApproval } from '@/api/employees'
 import { getProjects } from '@/api/projects'
 import { getEmployeeContracts, uploadContract, submitContract, completeContract, deleteContract, downloadContract, uploadSignedContract } from '@/api/employeeContracts'
 import { getDefaultTemplates, getContractTemplates } from '@/api/contractTemplates'
@@ -4838,6 +5003,265 @@ const currentSalarySnapshot = ref({
   performance_salary: null,
   salary_items: []
 })
+
+// 登记表修改审批相关
+const showRegistrationFormUpdateDialog = ref(false)
+const registrationFormUpdateLoading = ref(false)
+const submittingRegistrationFormUpdate = ref(false)
+const registrationFormUpdateEmployee = ref(null)
+const registrationFormUpdateStampSelectorRef = ref(null)
+const registrationFormUpdateForm = reactive({
+  form_type: 'onboarding',
+  form_type_text: '员工入职登记表',
+  reason: '',
+  stamp_method: 'online',
+  stamp_selection: getDefaultStampSelection(),
+  data: {}
+})
+
+const genderOptions = [
+  { label: '男', value: 'male' },
+  { label: '女', value: 'female' }
+]
+const maritalStatusOptions = [
+  { label: '未婚', value: 'single' },
+  { label: '已婚', value: 'married' },
+  { label: '离异', value: 'divorced' },
+  { label: '丧偶', value: 'widowed' }
+]
+const yesNoTextOptions = [
+  { label: '是', value: '是' },
+  { label: '否', value: '否' }
+]
+const acceptAssignmentOptions = [
+  { label: '是', value: true },
+  { label: '否', value: false }
+]
+const householdTypeOptions = [
+  { label: '城镇', value: 'urban' },
+  { label: '非城镇', value: 'rural' }
+]
+
+const onboardingFormUpdateSections = [
+  {
+    title: '基本信息',
+    fields: [
+      { prop: 'registration_date', label: '登记日期', type: 'date' },
+      { prop: 'name', label: '姓名' },
+      { prop: 'gender', label: '性别', type: 'select', options: genderOptions },
+      { prop: 'ethnicity', label: '民族' },
+      { prop: 'political_status', label: '政治面貌' },
+      { prop: 'place_of_origin', label: '籍贯' },
+      { prop: 'birth_date', label: '出生日期', type: 'date' },
+      { prop: 'id_number', label: '身份证号' },
+      { prop: 'current_residence', label: '现居住地', span: 24 },
+      { prop: 'household_registration', label: '户口所在地', span: 24 },
+      { prop: 'marital_status', label: '婚姻状况', type: 'select', options: maritalStatusOptions },
+      { prop: 'health_status', label: '健康状况' },
+      { prop: 'height', label: '身高(cm)' },
+      { prop: 'weight', label: '体重(kg)' }
+    ]
+  },
+  {
+    title: '学历信息',
+    fields: [
+      { prop: 'graduated_school', label: '毕业学校' },
+      { prop: 'graduation_date', label: '毕业时间', type: 'date' },
+      { prop: 'education_level', label: '文化程度' },
+      { prop: 'education_type', label: '学历性质' },
+      { prop: 'major', label: '所学专业' },
+      { prop: 'degree', label: '学位' },
+      { prop: 'technical_title', label: '技术职称' }
+    ]
+  },
+  {
+    title: '工资卡信息',
+    fields: [
+      { prop: 'bank_account', label: '银行账号' },
+      { prop: 'bank_account_holder', label: '户名' },
+      { prop: 'bank_name', label: '开户行' },
+      { prop: 'bank_branch', label: '开户地/支行' }
+    ]
+  },
+  {
+    title: '就业信息',
+    fields: [
+      { prop: 'position', label: '岗位' },
+      { prop: 'desired_location', label: '求职地区' },
+      { prop: 'accept_assignment', label: '是否服从调配', type: 'select', options: acceptAssignmentOptions },
+      { prop: 'contact_phone', label: '联系电话' },
+      { prop: 'contact_address', label: '联系地址', type: 'textarea', span: 24 },
+      { prop: 'remarks', label: '备注', type: 'textarea', span: 24 }
+    ]
+  }
+]
+
+const onboardingFormUpdateArraySections = [
+  {
+    prop: 'education_background',
+    title: '学习简历',
+    columns: [
+      { prop: 'start_date', label: '开始时间' },
+      { prop: 'end_date', label: '结束时间' },
+      { prop: 'school', label: '学校' },
+      { prop: 'level', label: '学习层次' },
+      { prop: 'certifier', label: '证明人' }
+    ]
+  },
+  {
+    prop: 'work_experience',
+    title: '工作经历',
+    columns: [
+      { prop: 'start_date', label: '开始时间' },
+      { prop: 'end_date', label: '结束时间' },
+      { prop: 'employer', label: '工作单位' },
+      { prop: 'job_content', label: '主要工作内容', type: 'textarea', width: 220 },
+      { prop: 'certifier', label: '证明人' }
+    ]
+  },
+  {
+    prop: 'family_info',
+    title: '家庭情况',
+    columns: [
+      { prop: 'name', label: '姓名' },
+      { prop: 'relationship', label: '关系' },
+      { prop: 'employer', label: '所在单位' },
+      { prop: 'phone', label: '联系电话' }
+    ]
+  }
+]
+
+const employeeRegistrationFormUpdateSections = [
+  {
+    title: '基本信息',
+    fields: [
+      { prop: 'fill_date', label: '填表日期', type: 'date' },
+      { prop: 'entry_position', label: '入职职位' },
+      { prop: 'entry_date', label: '入职日期', type: 'date' },
+      { prop: 'department', label: '部门' },
+      { prop: 'job_title', label: '职务' },
+      { prop: 'housing_fund_account', label: '公积金账户' },
+      { prop: 'bank_account', label: '银行账号' },
+      { prop: 'bank_name', label: '开户支行' }
+    ]
+  },
+  {
+    title: '个人资料',
+    fields: [
+      { prop: 'name', label: '姓名' },
+      { prop: 'english_name', label: '英文名' },
+      { prop: 'gender', label: '性别', type: 'select', options: genderOptions },
+      { prop: 'height', label: '身高' },
+      { prop: 'birth_date', label: '出生日期', type: 'date' },
+      { prop: 'political_status', label: '政治面貌' },
+      { prop: 'education_level', label: '文化程度' },
+      { prop: 'education_type', label: '学历性质' },
+      { prop: 'native_place', label: '籍贯' },
+      { prop: 'marital_status', label: '婚姻状况', type: 'select', options: maritalStatusOptions },
+      { prop: 'has_children', label: '是否有子女', type: 'select', options: yesNoTextOptions },
+      { prop: 'id_number', label: '身份证/护照' },
+      { prop: 'household_type', label: '户口状态', type: 'select', options: householdTypeOptions },
+      { prop: 'current_address', label: '现居住地址', span: 24 },
+      { prop: 'postal_code', label: '邮编' },
+      { prop: 'household_address', label: '户口地址', span: 24 },
+      { prop: 'contact_phone', label: '联系电话' },
+      { prop: 'document_address', label: '文书送达地址', span: 24 },
+      { prop: 'disability_level', label: '残疾证等级' }
+    ]
+  },
+  {
+    title: '个人技能',
+    fields: [
+      { prop: 'language_skills', label: '语言技能', type: 'tags', span: 24 },
+      { prop: 'engineering_skills', label: '工程技能', type: 'tags', span: 24 },
+      { prop: 'professional_title', label: '职称' },
+      { prop: 'hobbies', label: '兴趣爱好', type: 'tags', span: 24 },
+      { prop: 'other_skills', label: '其他技能', type: 'textarea', span: 24 }
+    ]
+  },
+  {
+    title: '紧急联系方式',
+    fields: [
+      { prop: 'emergency_contact1_name', label: '紧急联系人1姓名' },
+      { prop: 'emergency_contact1_relation', label: '紧急联系人1关系' },
+      { prop: 'emergency_contact1_phone', label: '紧急联系人1电话' },
+      { prop: 'emergency_contact2_name', label: '紧急联系人2姓名' },
+      { prop: 'emergency_contact2_relation', label: '紧急联系人2关系' },
+      { prop: 'emergency_contact2_phone', label: '紧急联系人2电话' }
+    ]
+  },
+  {
+    title: '其他情况',
+    fields: [
+      { prop: 'reference_company', label: '前单位名称' },
+      { prop: 'reference_contact', label: '背调联系人/电话' },
+      { prop: 'rewards_punishments', label: '奖罚情况', type: 'textarea', span: 24 },
+      { prop: 'mental_illness', label: '精神病史', type: 'select', options: yesNoTextOptions },
+      { prop: 'mental_illness_detail', label: '精神病详情', type: 'textarea', span: 24 },
+      { prop: 'other_illness', label: '其他疾病', type: 'select', options: yesNoTextOptions },
+      { prop: 'other_illness_detail', label: '其他疾病详情', type: 'textarea', span: 24 },
+      { prop: 'hospitalized_recently', label: '近6月住院记录', type: 'select', options: yesNoTextOptions },
+      { prop: 'hospitalized_reason', label: '住院病因', type: 'textarea', span: 24 },
+      { prop: 'criminal_record', label: '违法犯罪记录', type: 'select', options: yesNoTextOptions },
+      { prop: 'criminal_record_time', label: '违法犯罪时间' },
+      { prop: 'employment_documents', label: '就业证件', type: 'tags', span: 24 },
+      { prop: 'remarks', label: '备注说明', type: 'textarea', span: 24 },
+      { prop: 'is_pregnant', label: '是否怀孕', type: 'select', options: yesNoTextOptions },
+      { prop: 'pregnant_detail', label: '怀孕详情', type: 'textarea', span: 24 },
+      { prop: 'accept_overtime', label: '接受加班出差', type: 'select', options: yesNoTextOptions },
+      { prop: 'need_accommodation', label: '是否需要住宿', type: 'select', options: yesNoTextOptions },
+      { prop: 'accommodation_detail', label: '住宿详情', type: 'textarea', span: 24 },
+      { prop: 'has_driving_license', label: '是否有驾照', type: 'select', options: yesNoTextOptions },
+      { prop: 'driving_license_detail', label: '驾照详情', type: 'textarea', span: 24 },
+      { prop: 'signature_date', label: '签名日期', type: 'date' }
+    ]
+  }
+]
+
+const employeeRegistrationFormUpdateArraySections = [
+  {
+    prop: 'education_history',
+    title: '教育情况',
+    columns: [
+      { prop: 'date_range', label: '起止时间' },
+      { prop: 'school_major', label: '学校及专业', width: 220 },
+      { prop: 'certificate', label: '所获证书' }
+    ]
+  },
+  {
+    prop: 'work_history',
+    title: '工作履历',
+    columns: [
+      { prop: 'date_range', label: '起止时间' },
+      { prop: 'company', label: '公司' },
+      { prop: 'position', label: '职位' },
+      { prop: 'salary', label: '薪酬' },
+      { prop: 'leave_reason', label: '离职原因', width: 180 }
+    ]
+  },
+  {
+    prop: 'family_members',
+    title: '家庭情况',
+    columns: [
+      { prop: 'name', label: '姓名' },
+      { prop: 'relation', label: '关系' },
+      { prop: 'age', label: '年龄' },
+      { prop: 'employer', label: '工作单位' },
+      { prop: 'phone', label: '电话' }
+    ]
+  }
+]
+
+const currentRegistrationFormUpdateSections = computed(() =>
+  registrationFormUpdateForm.form_type === 'registration'
+    ? employeeRegistrationFormUpdateSections
+    : onboardingFormUpdateSections
+)
+const currentRegistrationFormUpdateArraySections = computed(() =>
+  registrationFormUpdateForm.form_type === 'registration'
+    ? employeeRegistrationFormUpdateArraySections
+    : onboardingFormUpdateArraySections
+)
 
 const FIXED_SALARY_ITEM_CONFIGS = [
   {
@@ -6876,6 +7300,229 @@ const confirmSubmitSalaryApproval = async () => {
     ElMessage.error(error.response?.data?.message || '提交失败')
   } finally {
     submittingSalaryApproval.value = false
+  }
+}
+
+const parseRegistrationFormArrayValue = (value) => {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (error) {
+      return value.split(/[，,]/).map(item => item.trim()).filter(Boolean)
+    }
+  }
+  return []
+}
+
+const formatRegistrationFormDateInput = (value) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 10)
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return formatDateForDisplay(date)
+}
+
+const normalizeRegistrationFormUpdateArrayRows = (formType, prop, value) => {
+  const rows = parseRegistrationFormArrayValue(value)
+  return rows.map((item = {}) => {
+    if (formType === 'registration') {
+      if (prop === 'education_history') {
+        return {
+          date_range: item.date_range || item.period || '',
+          school_major: item.school_major || item.school || '',
+          certificate: item.certificate || ''
+        }
+      }
+      if (prop === 'work_history') {
+        return {
+          date_range: item.date_range || item.period || '',
+          company: item.company || '',
+          position: item.position || '',
+          salary: item.salary || '',
+          leave_reason: item.leave_reason || ''
+        }
+      }
+      if (prop === 'family_members') {
+        return {
+          name: item.name || '',
+          relation: item.relation || item.relationship || '',
+          age: item.age || '',
+          employer: item.employer || item.workplace || '',
+          phone: item.phone || ''
+        }
+      }
+    }
+
+    if (prop === 'family_info') {
+      return {
+        name: item.name || '',
+        relationship: item.relationship || item.relation || '',
+        employer: item.employer || item.workplace || '',
+        phone: item.phone || ''
+      }
+    }
+
+    return { ...item }
+  })
+}
+
+const normalizeRegistrationFormUpdateData = (formType, source = {}) => {
+  const data = { ...source }
+  const sections = formType === 'registration'
+    ? employeeRegistrationFormUpdateSections
+    : onboardingFormUpdateSections
+  const arraySections = formType === 'registration'
+    ? employeeRegistrationFormUpdateArraySections
+    : onboardingFormUpdateArraySections
+
+  sections.flatMap(section => section.fields).forEach((field) => {
+    const value = data[field.prop]
+    if (field.type === 'date') {
+      data[field.prop] = formatRegistrationFormDateInput(value)
+    } else if (field.type === 'tags') {
+      data[field.prop] = parseRegistrationFormArrayValue(value)
+    } else if (value === undefined || value === null) {
+      data[field.prop] = ''
+    }
+  })
+
+  arraySections.forEach((section) => {
+    data[section.prop] = normalizeRegistrationFormUpdateArrayRows(formType, section.prop, data[section.prop])
+  })
+
+  return data
+}
+
+const createEmptyRegistrationFormUpdateArrayRow = (section) => {
+  return section.columns.reduce((row, column) => {
+    row[column.prop] = ''
+    return row
+  }, {})
+}
+
+const addRegistrationFormUpdateArrayRow = (section) => {
+  if (!Array.isArray(registrationFormUpdateForm.data[section.prop])) {
+    registrationFormUpdateForm.data[section.prop] = []
+  }
+  registrationFormUpdateForm.data[section.prop].push(createEmptyRegistrationFormUpdateArrayRow(section))
+}
+
+const removeRegistrationFormUpdateArrayRow = (section, index) => {
+  if (!Array.isArray(registrationFormUpdateForm.data[section.prop])) return
+  registrationFormUpdateForm.data[section.prop].splice(index, 1)
+}
+
+const buildRegistrationFormUpdateSubmitData = () => {
+  const data = { ...registrationFormUpdateForm.data }
+  currentRegistrationFormUpdateArraySections.value.forEach((section) => {
+    const rows = Array.isArray(data[section.prop]) ? data[section.prop] : []
+    data[section.prop] = rows.filter((row) =>
+      section.columns.some((column) => {
+        const value = row[column.prop]
+        return value !== null && value !== undefined && String(value).trim() !== ''
+      })
+    )
+  })
+  return data
+}
+
+const handleEditRegistrationForm = async (row) => {
+  if (row.pending_registration_form_update_approval) {
+    ElMessage.warning('该员工的登记表修改正在审批中，请审批结束后再发起')
+    return
+  }
+
+  registrationFormUpdateEmployee.value = row
+  registrationFormUpdateForm.reason = ''
+  registrationFormUpdateForm.stamp_method = 'online'
+  registrationFormUpdateForm.stamp_selection = getDefaultStampSelection()
+  registrationFormUpdateForm.data = {}
+  showRegistrationFormUpdateDialog.value = true
+  registrationFormUpdateLoading.value = true
+
+  try {
+    const projectId = searchForm.project_id || ''
+    const statusResponse = await getRegistrationFormUpdateStatus(row.id, {
+      project_id: projectId
+    })
+    const statusData = statusResponse.data || {}
+
+    if (statusData.has_table === false) {
+      ElMessage.error(statusData.message || '请先执行登记表修改审批的数据表 SQL')
+      showRegistrationFormUpdateDialog.value = false
+      return
+    }
+
+    if (statusData.has_pending) {
+      ElMessage.warning('该员工的登记表修改正在审批中，请审批结束后再发起')
+      showRegistrationFormUpdateDialog.value = false
+      await loadEmployees()
+      return
+    }
+
+    const formType = statusData.form_type || 'onboarding'
+    registrationFormUpdateForm.form_type = formType
+    registrationFormUpdateForm.form_type_text = statusData.form_type_text || (formType === 'registration' ? '从业人员登记表' : '员工入职登记表')
+
+    const formResponse = await request({
+      url: `/employees/${row.id}/${formType === 'registration' ? 'registration-form' : 'onboarding-form'}`,
+      method: 'get',
+      params: {
+        project_id: projectId
+      }
+    })
+
+    if (!formResponse.success || !formResponse.data) {
+      ElMessage.warning(`该员工尚未填写${registrationFormUpdateForm.form_type_text}，不能发起修改审批`)
+      showRegistrationFormUpdateDialog.value = false
+      return
+    }
+
+    registrationFormUpdateForm.data = normalizeRegistrationFormUpdateData(formType, formResponse.data)
+  } catch (error) {
+    console.error('Open registration form update error:', error)
+    ElMessage.error(error.response?.data?.message || '加载登记表失败')
+    showRegistrationFormUpdateDialog.value = false
+  } finally {
+    registrationFormUpdateLoading.value = false
+  }
+}
+
+const confirmSubmitRegistrationFormUpdate = async () => {
+  if (!registrationFormUpdateEmployee.value?.id) {
+    ElMessage.warning('缺少员工信息，无法提交审批')
+    return
+  }
+
+  const stampResult = registrationFormUpdateStampSelectorRef.value?.validate?.()
+  if (stampResult && !stampResult.valid) {
+    ElMessage.warning(stampResult.message)
+    return
+  }
+
+  const payload = {
+    form_type: registrationFormUpdateForm.form_type,
+    form_data: buildRegistrationFormUpdateSubmitData(),
+    reason: registrationFormUpdateForm.reason?.trim() || '',
+    stamp_method: registrationFormUpdateForm.stamp_method,
+    project_id: searchForm.project_id || null,
+    ...(stampResult?.value || registrationFormUpdateForm.stamp_selection)
+  }
+
+  try {
+    submittingRegistrationFormUpdate.value = true
+    await submitRegistrationFormUpdateApproval(registrationFormUpdateEmployee.value.id, payload)
+    ElMessage.success('登记表修改审批已提交，请等待审批')
+    showRegistrationFormUpdateDialog.value = false
+    registrationFormUpdateEmployee.value.pending_registration_form_update_approval = true
+    await loadEmployees()
+  } catch (error) {
+    console.error('Submit registration form update approval error:', error)
+    ElMessage.error(error.response?.data?.message || '提交失败')
+  } finally {
+    submittingRegistrationFormUpdate.value = false
   }
 }
 

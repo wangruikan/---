@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Employee;
 use App\Models\Project;
 use App\Models\OnboardingForm;
+use App\Models\EmployeeRegistrationForm;
+use App\Models\EmployeeFormUpdateRequest;
 use App\Models\OperationLog;
 use App\Models\ApprovalInstance;
 use Illuminate\Http\Request;
@@ -330,10 +332,19 @@ class EmployeeController extends ApiController
                 ->pluck('business_id')
                 ->toArray();
 
+            $pendingFormUpdateEmployeeIds = [];
+            if (Schema::hasTable('employee_form_update_requests')) {
+                $pendingFormUpdateEmployeeIds = EmployeeFormUpdateRequest::whereIn('employee_id', $employeeIds)
+                    ->where('status', 'pending')
+                    ->pluck('employee_id')
+                    ->toArray();
+            }
+
             foreach ($employees as $employee) {
                 $employee->pending_deletion_approval = in_array($employee->id, $pendingDeletionApprovals);
                 $employee->pending_offline_onboarding = in_array($employee->id, $pendingOfflineOnboardingApprovals);
                 $employee->pending_salary_adjustment_approval = in_array($employee->id, $pendingSalaryAdjustmentApprovals);
+                $employee->pending_registration_form_update_approval = in_array($employee->id, $pendingFormUpdateEmployeeIds);
                 $this->applyProjectDisplayFields($employee, $request->input('project_id'));
             }
             
@@ -1266,6 +1277,393 @@ class EmployeeController extends ApiController
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * 获取员工登记表修改审批状态
+     */
+    public function getRegistrationFormUpdateStatus(Request $request, $id)
+    {
+        try {
+            $employee = Employee::with(['projects'])->findOrFail($id);
+            $formType = $this->resolveEmployeeRegistrationFormType($employee, $request->input('project_id'));
+
+            if (!Schema::hasTable('employee_form_update_requests')) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'form_type' => $formType,
+                        'form_type_text' => $this->getRegistrationFormTypeText($formType),
+                        'has_pending' => false,
+                        'has_table' => false,
+                        'message' => '请先执行 database/sql/2026_06_08_create_employee_form_update_requests.sql',
+                    ],
+                ]);
+            }
+
+            $pendingRequest = EmployeeFormUpdateRequest::with(['approvalInstance', 'creator'])
+                ->where('employee_id', $employee->id)
+                ->where('status', 'pending')
+                ->latest('id')
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'form_type' => $formType,
+                    'form_type_text' => $this->getRegistrationFormTypeText($formType),
+                    'has_pending' => (bool) $pendingRequest,
+                    'has_table' => true,
+                    'pending_request' => $pendingRequest ? [
+                        'id' => $pendingRequest->id,
+                        'reason' => $pendingRequest->reason,
+                        'approval_instance_id' => $pendingRequest->approval_instance_id,
+                        'form_type' => $pendingRequest->form_type,
+                        'form_type_text' => $this->getRegistrationFormTypeText($pendingRequest->form_type),
+                        'created_at' => optional($pendingRequest->created_at)->format('Y-m-d H:i:s'),
+                        'creator_name' => optional($pendingRequest->creator)->name,
+                    ] : null,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('获取登记表修改审批状态失败', [
+                'employee_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '获取失败: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * 提交员工登记表修改审批
+     */
+    public function submitRegistrationFormUpdateApproval(Request $request, $id)
+    {
+        $validator = \Validator::make($request->all(), [
+            'form_type' => 'required|in:onboarding,registration',
+            'form_data' => 'required|array',
+            'reason' => 'nullable|string|max:500',
+            'stamp_method' => 'nullable|in:online,offline',
+            'project_id' => 'nullable|integer|exists:projects,id',
+        ], [
+            'form_type.required' => '登记表类型不能为空',
+            'form_type.in' => '登记表类型不正确',
+            'form_data.required' => '登记表修改内容不能为空',
+            'form_data.array' => '登记表修改内容格式不正确',
+            'reason.max' => '修改说明不能超过500个字符',
+            'stamp_method.in' => '盖章方式不正确',
+            'project_id.integer' => '项目ID格式不正确',
+            'project_id.exists' => '项目不存在',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        if (!Schema::hasTable('employee_form_update_requests')) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先执行 database/sql/2026_06_08_create_employee_form_update_requests.sql 后再发起登记表修改审批',
+            ], 400);
+        }
+
+        $requestRecord = null;
+
+        try {
+            $employee = Employee::with(['projects'])->findOrFail($id);
+            $actualFormType = $this->resolveEmployeeRegistrationFormType($employee, $request->input('project_id'));
+            $formType = $request->input('form_type');
+
+            if ($formType !== $actualFormType) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前项目设置的登记表类型是' . $this->getRegistrationFormTypeText($actualFormType) . '，请重新打开后再提交',
+                ], 400);
+            }
+
+            $form = $this->getEmployeeRegistrationFormModel($employee->id, $formType);
+            if (!$form) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该员工尚未填写' . $this->getRegistrationFormTypeText($formType) . '，不能发起修改审批',
+                ], 400);
+            }
+
+            $existingPending = EmployeeFormUpdateRequest::where('employee_id', $employee->id)
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($existingPending) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该员工的登记表修改正在审批中，请审批结束后再发起',
+                ], 400);
+            }
+
+            $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id') ?: $employee->account_set_id;
+            if (!$accountSetId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择账套',
+                ], 400);
+            }
+
+            if ((int) $employee->account_set_id !== (int) $accountSetId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该员工不属于当前账套',
+                ], 400);
+            }
+
+            $newData = $this->filterEmployeeFormUpdateData($formType, $request->input('form_data', []));
+            if (empty($newData)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '没有可提交的登记表修改内容',
+                ], 400);
+            }
+
+            $requestRecord = EmployeeFormUpdateRequest::create([
+                'account_set_id' => $accountSetId,
+                'employee_id' => $employee->id,
+                'form_type' => $formType,
+                'original_data' => $this->buildEmployeeFormOriginalData($employee, $formType, $form),
+                'new_data' => $newData,
+                'reason' => $request->input('reason'),
+                'status' => 'pending',
+                'created_by' => optional($request->user())->id,
+            ]);
+
+            $approvalService = app(\App\Services\ApprovalService::class);
+            $stampMethod = $request->input('stamp_method', 'online');
+            $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
+            $instance = $approvalService->createApprovalInstance(
+                $accountSetId,
+                'employee_registration_form_update',
+                $requestRecord->id,
+                optional($request->user())->id,
+                [],
+                false,
+                $stampMethod,
+                $stampOptions
+            );
+
+            $requestRecord->update([
+                'approval_instance_id' => $instance->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => '登记表修改审批已提交，请等待审批',
+                'data' => [
+                    'request_id' => $requestRecord->id,
+                    'approval_instance_id' => $instance->id,
+                ],
+            ]);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            if ($requestRecord && !$requestRecord->approval_instance_id) {
+                $requestRecord->delete();
+            }
+            throw $e;
+        } catch (\Exception $e) {
+            if ($requestRecord && !$requestRecord->approval_instance_id) {
+                $requestRecord->delete();
+            }
+
+            \Log::error('提交登记表修改审批失败', [
+                'employee_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function resolveEmployeeRegistrationFormType(Employee $employee, $selectedProjectId = null): string
+    {
+        if ($selectedProjectId) {
+            $project = null;
+
+            if ($employee->relationLoaded('projects')) {
+                $project = $employee->projects->first(function ($item) use ($selectedProjectId) {
+                    return (int) $item->id === (int) $selectedProjectId;
+                });
+            }
+
+            if (!$project) {
+                $project = $employee->projects()
+                    ->where('projects.id', $selectedProjectId)
+                    ->first();
+            }
+
+            if ($project) {
+                return $project->registration_form_type === 'registration'
+                    ? 'registration'
+                    : 'onboarding';
+            }
+        }
+
+        $project = $employee->projects()
+            ->wherePivot('status', 'active')
+            ->first();
+
+        if (!$project && !empty($employee->project_ids)) {
+            $projectId = is_array($employee->project_ids)
+                ? ($employee->project_ids[0] ?? null)
+                : $employee->project_ids;
+            $project = $projectId ? Project::find($projectId) : null;
+        }
+
+        if (!$project && $employee->relationLoaded('projects')) {
+            $project = $employee->projects->first();
+        }
+
+        return ($project && $project->registration_form_type === 'registration')
+            ? 'registration'
+            : 'onboarding';
+    }
+
+    private function getRegistrationFormTypeText(string $formType): string
+    {
+        return $formType === 'registration' ? '从业人员登记表' : '员工入职登记表';
+    }
+
+    private function getEmployeeRegistrationFormModel(int $employeeId, string $formType)
+    {
+        return $formType === 'registration'
+            ? EmployeeRegistrationForm::where('employee_id', $employeeId)->first()
+            : OnboardingForm::where('employee_id', $employeeId)->first();
+    }
+
+    private function buildEmployeeFormOriginalData(Employee $employee, string $formType, $form): array
+    {
+        $data = $form ? $form->toArray() : [];
+
+        if ($formType === 'onboarding') {
+            $data['bank_account'] = $employee->bank_account ?? '';
+            $data['bank_account_holder'] = $employee->bank_account_holder ?? '';
+            $data['bank_name'] = $employee->bank_name ?? '';
+            $data['bank_branch'] = $employee->bank_branch ?? '';
+        }
+
+        return $data;
+    }
+
+    private function filterEmployeeFormUpdateData(string $formType, array $input): array
+    {
+        $input = $this->normalizeEmployeeFormUpdateAliases($formType, $input);
+        $model = $formType === 'registration'
+            ? new EmployeeRegistrationForm()
+            : new OnboardingForm();
+
+        $table = $model->getTable();
+        $columns = Schema::hasTable($table) ? Schema::getColumnListing($table) : [];
+        $allowedFields = array_values(array_intersect($model->getFillable(), $columns));
+
+        if ($formType === 'onboarding') {
+            $allowedFields = array_merge($allowedFields, [
+                'bank_account',
+                'bank_account_holder',
+                'bank_name',
+                'bank_branch',
+            ]);
+        }
+
+        $blockedFields = [
+            'id',
+            'employee_id',
+            'account_set_id',
+            'signature',
+            'photo',
+            'created_at',
+            'updated_at',
+            'gender_text',
+            'marital_status_text',
+            'household_type_text',
+        ];
+
+        $allowedFields = array_values(array_diff(array_unique($allowedFields), $blockedFields));
+        $arrayFields = [
+            'education_background',
+            'work_experience',
+            'family_info',
+            'language_skills',
+            'engineering_skills',
+            'hobbies',
+            'education_history',
+            'work_history',
+            'family_members',
+            'employment_documents',
+        ];
+        $dateFields = [
+            'registration_date',
+            'birth_date',
+            'graduation_date',
+            'fill_date',
+            'entry_date',
+            'signature_date',
+        ];
+
+        $filtered = [];
+        foreach ($allowedFields as $field) {
+            if (!array_key_exists($field, $input)) {
+                continue;
+            }
+
+            $value = $input[$field];
+            if (in_array($field, $arrayFields, true) && is_string($value)) {
+                $decoded = json_decode($value, true);
+                $value = json_last_error() === JSON_ERROR_NONE ? $decoded : [];
+            }
+
+            if (in_array($field, $dateFields, true) && $value === '') {
+                $value = null;
+            }
+
+            $filtered[$field] = $value;
+        }
+
+        return $filtered;
+    }
+
+    private function normalizeEmployeeFormUpdateAliases(string $formType, array $input): array
+    {
+        if ($formType !== 'registration') {
+            return $input;
+        }
+
+        $aliases = [
+            'position' => 'job_title',
+            'bank_branch' => 'bank_name',
+            'document_delivery_address' => 'document_address',
+            'disability_certificate' => 'disability_level',
+            'engineering_certificates' => 'engineering_skills',
+            'previous_company' => 'reference_company',
+            'other_diseases' => 'other_illness',
+            'hospitalization_record' => 'hospitalized_recently',
+            'additional_notes' => 'remarks',
+            'pregnancy_status' => 'is_pregnant',
+        ];
+
+        foreach ($aliases as $alias => $target) {
+            if (array_key_exists($alias, $input) && !array_key_exists($target, $input)) {
+                $input[$target] = $input[$alias];
+            }
+        }
+
+        return $input;
     }
 
     public function getReminders()

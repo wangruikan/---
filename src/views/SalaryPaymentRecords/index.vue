@@ -87,7 +87,20 @@
         </el-table-column>
         <el-table-column prop="bank_name" label="开户行" min-width="150" />
         <el-table-column prop="bank_province" label="开户地" width="120" />
-        <el-table-column prop="remittance_remark" label="汇款备注" min-width="150" />
+        <el-table-column prop="remittance_remark" label="汇款备注" min-width="150">
+          <template #default="{ row }">
+            <el-input
+              v-model="row.remittance_remark"
+              size="small"
+              clearable
+              class="editable-cell"
+              :disabled="row._savingField === 'remittance_remark'"
+              @focus="handleCellFocus(row, 'remittance_remark')"
+              @blur="handleInlineSave(row, 'remittance_remark')"
+              @keyup.enter="handleInlineSave(row, 'remittance_remark')"
+            />
+          </template>
+        </el-table-column>
       </el-table>
 
       <!-- 分页 -->
@@ -112,7 +125,8 @@ import { useAccountSetStore } from '@/stores/accountSet'
 import { getProjects } from '@/api/projects'
 import {
   getSalaryPaymentRecords,
-  exportSalaryPaymentRecords
+  exportSalaryPaymentRecords,
+  updateSalaryPaymentRecord
 } from '@/api/salaryPaymentRecords'
 
 const accountSetStore = useAccountSetStore()
@@ -166,7 +180,11 @@ const loadSalaryPaymentRecords = async () => {
     })
 
     if (res.success) {
-      tableData.value = res.data.data || []
+      tableData.value = (res.data.data || []).map(item => ({
+        ...item,
+        _originalValues: {},
+        _savingField: ''
+      }))
       total.value = res.data.total || 0
     }
   } catch (error) {
@@ -194,6 +212,49 @@ const handleReset = () => {
 // 分页变化
 const handlePageChange = () => {
   loadSalaryPaymentRecords()
+}
+
+const normalizeEditableValue = (value) => {
+  return value === null || value === undefined ? '' : String(value)
+}
+
+const handleCellFocus = (row, field) => {
+  if (!row._originalValues) {
+    row._originalValues = {}
+  }
+  row._originalValues[field] = normalizeEditableValue(row[field])
+}
+
+const handleInlineSave = async (row, field) => {
+  if (row._savingField === field) {
+    return
+  }
+
+  const originalValue = row._originalValues?.[field]
+  const currentValue = normalizeEditableValue(row[field])
+  const normalizedOriginal = normalizeEditableValue(originalValue)
+
+  if (currentValue === normalizedOriginal) {
+    return
+  }
+
+  row._savingField = field
+  try {
+    const res = await updateSalaryPaymentRecord(row.id, {
+      [field]: currentValue
+    })
+
+    if (res.success) {
+      row[field] = res.data[field] ?? currentValue
+      row._originalValues[field] = normalizeEditableValue(row[field])
+      ElMessage.success('保存成功')
+    }
+  } catch (error) {
+    row[field] = normalizedOriginal
+    console.error('保存发工资记录失败:', error)
+  } finally {
+    row._savingField = ''
+  }
 }
 
 // 导出 Excel
@@ -291,5 +352,19 @@ onMounted(() => {
 
 :deep(.el-table) {
   font-size: 12px;
+}
+
+.editable-cell {
+  width: 100%;
+}
+
+:deep(.editable-cell .el-input__wrapper) {
+  box-shadow: none;
+  padding: 0 6px;
+}
+
+:deep(.editable-cell .el-input__wrapper:hover),
+:deep(.editable-cell .el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
 }
 </style>

@@ -1231,6 +1231,7 @@ Route::post('/{id}/fill-invoice-number', [InvoiceApplicationController::class, '
         Route::get('/', [SalaryPaymentRecordController::class, 'index']);                         // 获取列表
         Route::post('/generate', [SalaryPaymentRecordController::class, 'generate']);             // 生成发工资表
         Route::post('/export', [SalaryPaymentRecordController::class, 'export']);                 // 导出 Excel
+        Route::put('/{id}', [SalaryPaymentRecordController::class, 'update']);                    // 更新记录
         Route::delete('/{id}', [SalaryPaymentRecordController::class, 'destroy']);                // 删除记录
     });
 

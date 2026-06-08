@@ -211,6 +211,58 @@ class SalaryPaymentRecordController extends Controller
     }
 
     /**
+     * 更新发工资记录
+     */
+    public function update(Request $request, $id)
+    {
+        if ($response = $this->checkPermission('salary_payment.create')) {
+            return $response;
+        }
+
+        $validated = $request->validate([
+            'remittance_remark' => 'sometimes|nullable|string|max:255',
+        ]);
+
+        if (empty($validated)) {
+            return response()->json([
+                'success' => false,
+                'message' => '没有需要更新的数据',
+            ], 422);
+        }
+
+        try {
+            $query = SalaryPaymentRecord::query();
+
+            $currentAccountSetId = $request->input('current_account_set_id') ?: $request->header('X-Account-Set-Id');
+            if ($currentAccountSetId) {
+                $query->where('account_set_id', $currentAccountSetId);
+            } elseif ($request->user()->role !== 'admin') {
+                $query->whereRaw('1 = 0');
+            }
+
+            $record = $query->findOrFail($id);
+            $record->fill($validated);
+            $record->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => '保存成功',
+                'data' => $record,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('更新发工资记录失败', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '保存失败: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * 删除发工资记录
      */
     public function destroy($id)

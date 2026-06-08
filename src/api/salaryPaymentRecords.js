@@ -24,6 +24,13 @@ export const exportSalaryPaymentRecords = (params) => {
 }
 
 /**
+ * 更新发工资记录
+ */
+export const updateSalaryPaymentRecord = (id, data) => {
+  return request.put(`/salary-payment-records/${id}`, data)
+}
+
+/**
  * 删除发工资记录
  */
 export const deleteSalaryPaymentRecord = (id) => {

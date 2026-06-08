@@ -2586,7 +2586,14 @@ class ApprovalService
             $form->update($formData);
         }
 
-        $employeeBankFields = ['bank_account', 'bank_account_holder', 'bank_name', 'bank_branch'];
+        $employeeBankFields = [
+            'bank_account',
+            'bank_account_holder',
+            'bank_name',
+            'bank_branch',
+            'emergency_contact',
+            'emergency_phone',
+        ];
         $employeeData = [];
         foreach ($employeeBankFields as $field) {
             if (array_key_exists($field, $newData) && Schema::hasColumn('employees', $field)) {

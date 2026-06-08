@@ -4020,98 +4020,803 @@
             <el-descriptions-item label="登记表类型">{{ registrationFormUpdateForm.form_type_text }}</el-descriptions-item>
           </el-descriptions>
 
-          <template v-for="section in currentRegistrationFormUpdateSections" :key="section.title">
-            <el-divider content-position="left">{{ section.title }}</el-divider>
-            <el-row :gutter="16">
-              <el-col
-                v-for="field in section.fields"
-                :key="field.prop"
-                :span="field.span || 12"
-              >
-                <el-form-item :label="field.label">
-                  <el-date-picker
-                    v-if="field.type === 'date'"
-                    v-model="registrationFormUpdateForm.data[field.prop]"
-                    type="date"
-                    value-format="YYYY-MM-DD"
-                    placeholder="请选择日期"
-                    style="width: 100%;"
-                    clearable
-                  />
-                  <el-select
-                    v-else-if="field.type === 'select'"
-                    v-model="registrationFormUpdateForm.data[field.prop]"
-                    placeholder="请选择"
-                    style="width: 100%;"
-                    clearable
-                  >
-                    <el-option
-                      v-for="option in field.options"
-                      :key="String(option.value)"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-select>
-                  <el-select
-                    v-else-if="field.type === 'tags'"
-                    v-model="registrationFormUpdateForm.data[field.prop]"
-                    multiple
-                    filterable
-                    allow-create
-                    default-first-option
-                    placeholder="请输入后回车添加"
-                    style="width: 100%;"
-                  />
-                  <el-input
-                    v-else
-                    v-model="registrationFormUpdateForm.data[field.prop]"
-                    :type="field.type === 'textarea' ? 'textarea' : 'text'"
-                    :rows="field.rows || 2"
-                    :placeholder="`请输入${field.label}`"
-                    clearable
-                  />
+          <template v-if="registrationFormUpdateForm.form_type === 'onboarding'">
+            <el-divider content-position="left">基本信息</el-divider>
+
+            <el-row :gutter="20" style="margin-bottom: 20px;">
+              <el-col :span="24">
+                <el-form-item label="一寸照片">
+                  <div v-if="registrationFormUpdateForm.data.photo" class="photo-display">
+                    <img :src="registrationFormUpdateForm.data.photo" alt="员工寸照" style="width: 100px; height: 130px; object-fit: cover; border: 1px solid #dcdfe6; border-radius: 4px;" />
+                  </div>
+                  <el-text v-else type="info">该员工尚未上传寸照</el-text>
                 </el-form-item>
               </el-col>
             </el-row>
-          </template>
 
-          <template v-for="section in currentRegistrationFormUpdateArraySections" :key="section.prop">
-            <el-divider content-position="left">{{ section.title }}</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="24">
+                <el-form-item label="登记日期">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.registration_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择登记日期" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="性别">
+                  <el-select v-model="registrationFormUpdateForm.data.gender" placeholder="请选择性别" style="width: 100%;" clearable>
+                    <el-option v-for="option in genderOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="民族">
+                  <el-input v-model="registrationFormUpdateForm.data.ethnicity" placeholder="请输入民族" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="政治面貌">
+                  <el-input v-model="registrationFormUpdateForm.data.political_status" placeholder="请输入政治面貌" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="籍贯">
+                  <el-input v-model="registrationFormUpdateForm.data.place_of_origin" placeholder="请输入籍贯" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="出生年月">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.birth_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择出生年月" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="身份证号码">
+                  <el-input v-model="registrationFormUpdateForm.data.id_number" placeholder="请输入身份证号码" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="现居住地">
+                  <el-input v-model="registrationFormUpdateForm.data.current_residence" placeholder="请输入现居住地" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="户口所在地">
+                  <el-input v-model="registrationFormUpdateForm.data.household_registration" placeholder="请输入户口所在地" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="婚姻状况">
+                  <el-select v-model="registrationFormUpdateForm.data.marital_status" placeholder="请选择婚姻状况" style="width: 100%;" clearable>
+                    <el-option v-for="option in maritalStatusOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="健康状况">
+                  <el-input v-model="registrationFormUpdateForm.data.health_status" placeholder="请输入健康状况" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="身高(cm)">
+                  <el-input v-model="registrationFormUpdateForm.data.height" placeholder="请输入身高" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="体重(kg)">
+                  <el-input v-model="registrationFormUpdateForm.data.weight" placeholder="请输入体重" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="紧急联系人">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact" placeholder="请输入紧急联系人" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="紧急联系电话">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_phone" placeholder="请输入紧急联系电话" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">教育信息</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="毕业学校">
+                  <el-input v-model="registrationFormUpdateForm.data.graduated_school" placeholder="请输入毕业学校" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="毕业时间">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.graduation_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择毕业时间" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="文化程度">
+                  <el-input v-model="registrationFormUpdateForm.data.education_level" placeholder="请输入文化程度" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="学历性质">
+                  <el-input v-model="registrationFormUpdateForm.data.education_type" placeholder="请输入学历性质" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="所学专业">
+                  <el-input v-model="registrationFormUpdateForm.data.major" placeholder="请输入所学专业" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="学位">
+                  <el-input v-model="registrationFormUpdateForm.data.degree" placeholder="请输入学位" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="技术职称">
+                  <el-input v-model="registrationFormUpdateForm.data.technical_title" placeholder="请输入技术职称" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">学习简历</el-divider>
             <div style="margin-bottom: 10px; text-align: right;">
-              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(section)">
-                新增一行
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(onboardingFormUpdateArraySections[0])">
+                新增学习经历
               </el-button>
             </div>
-            <el-table
-              :data="registrationFormUpdateForm.data[section.prop]"
-              border
-              size="small"
-              style="width: 100%; margin-bottom: 16px;"
-              empty-text="暂无数据"
-            >
-              <el-table-column
-                v-for="column in section.columns"
-                :key="column.prop"
-                :label="column.label"
-                :min-width="column.width || 140"
-              >
+            <template v-if="registrationFormUpdateForm.data.education_background && registrationFormUpdateForm.data.education_background.length > 0">
+              <div v-for="(item, index) in registrationFormUpdateForm.data.education_background" :key="index" class="experience-card">
+                <el-card shadow="hover" :body-style="{ padding: '20px' }">
+                  <template #header>
+                    <div class="card-header">
+                      <el-tag type="info" size="small" effect="plain">学习经历 {{ index + 1 }}</el-tag>
+                      <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(onboardingFormUpdateArraySections[0], index)">删除</el-button>
+                    </div>
+                  </template>
+                  <el-row :gutter="20">
+                    <el-col :span="12">
+                      <el-form-item label="开始时间">
+                        <el-input v-model="item.start_date" placeholder="请输入开始时间" clearable />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="结束时间">
+                        <el-input v-model="item.end_date" placeholder="请输入结束时间" clearable />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                    <el-col :span="12">
+                      <el-form-item label="学校">
+                        <el-input v-model="item.school" placeholder="请输入学校" clearable />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="学习层次">
+                        <el-input v-model="item.level" placeholder="请输入学习层次" clearable />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-form-item label="证明人">
+                    <el-input v-model="item.certifier" placeholder="请输入证明人" clearable />
+                  </el-form-item>
+                </el-card>
+              </div>
+            </template>
+            <el-empty v-else description="暂无学习简历" :image-size="80" />
+
+            <el-divider content-position="left">工作经历</el-divider>
+            <div style="margin-bottom: 10px; text-align: right;">
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(onboardingFormUpdateArraySections[1])">
+                新增工作经历
+              </el-button>
+            </div>
+            <template v-if="registrationFormUpdateForm.data.work_experience && registrationFormUpdateForm.data.work_experience.length > 0">
+              <div v-for="(item, index) in registrationFormUpdateForm.data.work_experience" :key="index" class="experience-card">
+                <el-card shadow="hover" :body-style="{ padding: '20px' }">
+                  <template #header>
+                    <div class="card-header">
+                      <el-tag type="primary" size="small" effect="plain">工作经历 {{ index + 1 }}</el-tag>
+                      <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(onboardingFormUpdateArraySections[1], index)">删除</el-button>
+                    </div>
+                  </template>
+                  <el-row :gutter="20">
+                    <el-col :span="12">
+                      <el-form-item label="开始时间">
+                        <el-input v-model="item.start_date" placeholder="请输入开始时间" clearable />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="结束时间">
+                        <el-input v-model="item.end_date" placeholder="请输入结束时间" clearable />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                    <el-col :span="12">
+                      <el-form-item label="工作单位">
+                        <el-input v-model="item.employer" placeholder="请输入工作单位" clearable />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="证明人">
+                        <el-input v-model="item.certifier" placeholder="请输入证明人" clearable />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-form-item label="主要工作内容">
+                    <el-input v-model="item.job_content" type="textarea" :rows="2" placeholder="请输入主要工作内容" clearable />
+                  </el-form-item>
+                </el-card>
+              </div>
+            </template>
+            <el-empty v-else description="暂无工作经历" :image-size="80" />
+
+            <el-divider content-position="left">家庭情况</el-divider>
+            <div style="margin-bottom: 10px; text-align: right;">
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(onboardingFormUpdateArraySections[2])">
+                新增家庭成员
+              </el-button>
+            </div>
+            <template v-if="registrationFormUpdateForm.data.family_info && registrationFormUpdateForm.data.family_info.length > 0">
+              <el-row :gutter="20">
+                <el-col :span="12" v-for="(item, index) in registrationFormUpdateForm.data.family_info" :key="index" style="margin-bottom: 20px;">
+                  <el-card shadow="hover" :body-style="{ padding: '20px' }" class="family-card">
+                    <template #header>
+                      <div class="card-header">
+                        <el-tag type="success" size="small" effect="plain">家庭成员 {{ index + 1 }}</el-tag>
+                        <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(onboardingFormUpdateArraySections[2], index)">删除</el-button>
+                      </div>
+                    </template>
+                    <el-form-item label="姓名">
+                      <el-input v-model="item.name" placeholder="请输入姓名" clearable />
+                    </el-form-item>
+                    <el-form-item label="关系">
+                      <el-input v-model="item.relationship" placeholder="请输入关系" clearable />
+                    </el-form-item>
+                    <el-form-item label="所在单位">
+                      <el-input v-model="item.employer" placeholder="请输入所在单位" clearable />
+                    </el-form-item>
+                    <el-form-item label="联系电话">
+                      <el-input v-model="item.phone" placeholder="请输入联系电话" clearable />
+                    </el-form-item>
+                  </el-card>
+                </el-col>
+              </el-row>
+            </template>
+            <el-empty v-else description="暂无家庭情况" :image-size="80" />
+
+            <el-divider content-position="left">就业信息</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="岗位">
+                  <el-input v-model="registrationFormUpdateForm.data.position" placeholder="请输入岗位" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="求职地区">
+                  <el-input v-model="registrationFormUpdateForm.data.desired_location" placeholder="请输入求职地区" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="是否服从调配">
+                  <el-select v-model="registrationFormUpdateForm.data.accept_assignment" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in acceptAssignmentOptions" :key="String(option.value)" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="联系电话">
+                  <el-input v-model="registrationFormUpdateForm.data.contact_phone" placeholder="请输入联系电话" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="联系地址">
+              <el-input v-model="registrationFormUpdateForm.data.contact_address" placeholder="请输入联系地址" clearable />
+            </el-form-item>
+
+            <el-divider content-position="left">工资卡信息</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="银行账号">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_account" placeholder="请输入银行账号" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="户名">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_account_holder" placeholder="请输入户名" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="开户行">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_name" placeholder="请输入开户行" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="开户地/支行">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_branch" placeholder="请输入开户地/支行" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">备注</el-divider>
+            <el-form-item label="备注">
+              <el-input v-model="registrationFormUpdateForm.data.remarks" type="textarea" :rows="4" placeholder="请输入备注" />
+            </el-form-item>
+
+            <el-divider content-position="left">本人签名</el-divider>
+            <el-form-item label="签名">
+              <div v-if="registrationFormUpdateForm.data.signature" class="signature-display">
+                <img :src="registrationFormUpdateForm.data.signature" alt="员工签名" style="max-width: 400px; max-height: 200px; border: 1px solid #dcdfe6; padding: 10px; border-radius: 4px; background: #fff;" />
+              </div>
+              <el-text v-else type="info">该员工尚未签名</el-text>
+            </el-form-item>
+          </template>
+
+          <template v-else>
+            <el-divider content-position="left">基本信息</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="填表日期">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.fill_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择填表日期" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="部门">
+                  <el-input v-model="registrationFormUpdateForm.data.department" placeholder="请输入部门" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="职务">
+                  <el-input v-model="registrationFormUpdateForm.data.job_title" placeholder="请输入职务" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="入职职位">
+                  <el-input v-model="registrationFormUpdateForm.data.entry_position" placeholder="请输入入职职位" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="入职日期">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.entry_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择入职日期" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="公积金账户">
+                  <el-input v-model="registrationFormUpdateForm.data.housing_fund_account" placeholder="请输入公积金账户" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="银行账号">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_account" placeholder="请输入银行账号" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="开户支行">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_name" placeholder="请输入开户支行" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">一、个人资料</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="姓名">
+                  <el-input v-model="registrationFormUpdateForm.data.name" placeholder="请输入姓名" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="英文名">
+                  <el-input v-model="registrationFormUpdateForm.data.english_name" placeholder="请输入英文名" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="性别">
+                  <el-select v-model="registrationFormUpdateForm.data.gender" placeholder="请选择性别" style="width: 100%;" clearable>
+                    <el-option v-for="option in genderOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="身高(cm)">
+                  <el-input v-model="registrationFormUpdateForm.data.height" placeholder="请输入身高" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="出生日期">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.birth_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择出生日期" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="政治面貌">
+                  <el-input v-model="registrationFormUpdateForm.data.political_status" placeholder="请输入政治面貌" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="文化程度">
+                  <el-input v-model="registrationFormUpdateForm.data.education_level" placeholder="请输入文化程度" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="学历性质">
+                  <el-input v-model="registrationFormUpdateForm.data.education_type" placeholder="请输入学历性质" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="籍贯">
+                  <el-input v-model="registrationFormUpdateForm.data.native_place" placeholder="请输入籍贯" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="婚姻状况">
+                  <el-select v-model="registrationFormUpdateForm.data.marital_status" placeholder="请选择婚姻状况" style="width: 100%;" clearable>
+                    <el-option v-for="option in maritalStatusOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="是否有子女">
+                  <el-select v-model="registrationFormUpdateForm.data.has_children" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="身份证号">
+                  <el-input v-model="registrationFormUpdateForm.data.id_number" placeholder="请输入身份证号" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="户口状态">
+                  <el-select v-model="registrationFormUpdateForm.data.household_type" placeholder="请选择户口状态" style="width: 100%;" clearable>
+                    <el-option v-for="option in householdTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="现居住地址">
+                  <el-input v-model="registrationFormUpdateForm.data.current_address" placeholder="请输入现居住地址" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="邮编">
+                  <el-input v-model="registrationFormUpdateForm.data.postal_code" placeholder="请输入邮编" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="户口地址">
+                  <el-input v-model="registrationFormUpdateForm.data.household_address" placeholder="请输入户口地址" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="联系电话">
+                  <el-input v-model="registrationFormUpdateForm.data.contact_phone" placeholder="请输入联系电话" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="文书送达地址">
+                  <el-input v-model="registrationFormUpdateForm.data.document_address" placeholder="请输入文书送达地址" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="残疾证">
+                  <el-input v-model="registrationFormUpdateForm.data.disability_level" placeholder="请输入残疾证" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">二、个人技能</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="语言能力">
+                  <el-select v-model="registrationFormUpdateForm.data.language_skills" multiple filterable allow-create default-first-option placeholder="请输入后回车添加" style="width: 100%;" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="工程证书">
+                  <el-select v-model="registrationFormUpdateForm.data.engineering_skills" multiple filterable allow-create default-first-option placeholder="请输入后回车添加" style="width: 100%;" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="职称">
+                  <el-input v-model="registrationFormUpdateForm.data.professional_title" placeholder="请输入职称" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="兴趣爱好">
+                  <el-select v-model="registrationFormUpdateForm.data.hobbies" multiple filterable allow-create default-first-option placeholder="请输入后回车添加" style="width: 100%;" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="其他技能">
+              <el-input v-model="registrationFormUpdateForm.data.other_skills" type="textarea" :rows="2" placeholder="请输入其他技能" />
+            </el-form-item>
+
+            <el-divider content-position="left">三、教育情况</el-divider>
+            <div style="margin-bottom: 10px; text-align: right;">
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(employeeRegistrationFormUpdateArraySections[0])">
+                新增教育情况
+              </el-button>
+            </div>
+            <el-table :data="registrationFormUpdateForm.data.education_history" border style="width: 100%; margin-bottom: 20px;" empty-text="暂无教育经历">
+              <el-table-column label="起止时间" width="200">
                 <template #default="{ row }">
-                  <el-input
-                    v-model="row[column.prop]"
-                    :type="column.type === 'textarea' ? 'textarea' : 'text'"
-                    :rows="column.rows || 2"
-                    clearable
-                  />
+                  <el-input v-model="row.date_range" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="学校及专业">
+                <template #default="{ row }">
+                  <el-input v-model="row.school_major" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="所获证书" width="200">
+                <template #default="{ row }">
+                  <el-input v-model="row.certificate" clearable />
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="80" fixed="right">
                 <template #default="{ $index }">
-                  <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(section, $index)">
-                    删除
-                  </el-button>
+                  <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(employeeRegistrationFormUpdateArraySections[0], $index)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
+
+            <el-divider content-position="left">四、工作履历</el-divider>
+            <div style="margin-bottom: 10px; text-align: right;">
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(employeeRegistrationFormUpdateArraySections[1])">
+                新增工作履历
+              </el-button>
+            </div>
+            <el-table :data="registrationFormUpdateForm.data.work_history" border style="width: 100%; margin-bottom: 20px;" empty-text="暂无工作经历">
+              <el-table-column label="起止时间" width="150">
+                <template #default="{ row }">
+                  <el-input v-model="row.date_range" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="公司">
+                <template #default="{ row }">
+                  <el-input v-model="row.company" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="职位" width="120">
+                <template #default="{ row }">
+                  <el-input v-model="row.position" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="薪酬" width="100">
+                <template #default="{ row }">
+                  <el-input v-model="row.salary" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="离职原因" width="150">
+                <template #default="{ row }">
+                  <el-input v-model="row.leave_reason" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80" fixed="right">
+                <template #default="{ $index }">
+                  <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(employeeRegistrationFormUpdateArraySections[1], $index)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="前单位名称">
+                  <el-input v-model="registrationFormUpdateForm.data.reference_company" placeholder="请输入前单位名称" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="背调联系人/电话">
+                  <el-input v-model="registrationFormUpdateForm.data.reference_contact" placeholder="请输入背调联系人/电话" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">五、奖罚情况</el-divider>
+            <el-form-item label="奖罚描述">
+              <el-input v-model="registrationFormUpdateForm.data.rewards_punishments" type="textarea" :rows="3" placeholder="请输入奖罚描述" />
+            </el-form-item>
+
+            <el-divider content-position="left">六、家庭情况</el-divider>
+            <div style="margin-bottom: 10px; text-align: right;">
+              <el-button size="small" type="primary" @click="addRegistrationFormUpdateArrayRow(employeeRegistrationFormUpdateArraySections[2])">
+                新增家庭成员
+              </el-button>
+            </div>
+            <el-table :data="registrationFormUpdateForm.data.family_members" border style="width: 100%; margin-bottom: 20px;" empty-text="暂无家庭成员信息">
+              <el-table-column label="姓名" width="120">
+                <template #default="{ row }">
+                  <el-input v-model="row.name" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="关系" width="100">
+                <template #default="{ row }">
+                  <el-input v-model="row.relation" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="年龄" width="80">
+                <template #default="{ row }">
+                  <el-input v-model="row.age" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="工作单位">
+                <template #default="{ row }">
+                  <el-input v-model="row.employer" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="电话" width="150">
+                <template #default="{ row }">
+                  <el-input v-model="row.phone" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80" fixed="right">
+                <template #default="{ $index }">
+                  <el-button type="danger" link @click="removeRegistrationFormUpdateArrayRow(employeeRegistrationFormUpdateArraySections[2], $index)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <el-divider content-position="left">七、紧急联系方式</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="第一联系人">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact1_name" placeholder="请输入第一联系人" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="与己关系">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact1_relation" placeholder="请输入与己关系" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="联系电话">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact1_phone" placeholder="请输入联系电话" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="第二联系人">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact2_name" placeholder="请输入第二联系人" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="与己关系">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact2_relation" placeholder="请输入与己关系" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="联系电话">
+                  <el-input v-model="registrationFormUpdateForm.data.emergency_contact2_phone" placeholder="请输入联系电话" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">八、其他情况</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="精神病史">
+                  <el-select v-model="registrationFormUpdateForm.data.mental_illness" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="其他疾病">
+                  <el-select v-model="registrationFormUpdateForm.data.other_illness" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="近6月住院记录">
+                  <el-select v-model="registrationFormUpdateForm.data.hospitalized_recently" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="违法犯罪记录">
+                  <el-select v-model="registrationFormUpdateForm.data.criminal_record" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="就业证件">
+              <el-select v-model="registrationFormUpdateForm.data.employment_documents" multiple filterable allow-create default-first-option placeholder="请输入后回车添加" style="width: 100%;" />
+            </el-form-item>
+
+            <el-divider content-position="left">九、其他需要说明的情况</el-divider>
+            <el-form-item label="备注说明">
+              <el-input v-model="registrationFormUpdateForm.data.remarks" type="textarea" :rows="3" placeholder="请输入备注说明" />
+            </el-form-item>
+
+            <el-divider content-position="left">十、其他需要核实的情况</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="是否怀孕">
+                  <el-select v-model="registrationFormUpdateForm.data.is_pregnant" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="接受加班出差">
+                  <el-select v-model="registrationFormUpdateForm.data.accept_overtime" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="需要住宿">
+                  <el-select v-model="registrationFormUpdateForm.data.need_accommodation" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="是否有驾照">
+                  <el-select v-model="registrationFormUpdateForm.data.has_driving_license" placeholder="请选择" style="width: 100%;" clearable>
+                    <el-option v-for="option in yesNoTextOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider content-position="left">申请人签名</el-divider>
+            <el-form-item label="签名">
+              <div v-if="registrationFormUpdateForm.data.signature" class="signature-display">
+                <img :src="registrationFormUpdateForm.data.signature" alt="申请人签名" style="max-width: 400px; max-height: 200px; border: 1px solid #dcdfe6; padding: 10px; border-radius: 4px; background: #fff;" />
+              </div>
+              <el-text v-else type="info">该员工尚未签名</el-text>
+            </el-form-item>
+            <el-form-item label="签名日期">
+              <el-date-picker v-model="registrationFormUpdateForm.data.signature_date" type="date" value-format="YYYY-MM-DD" placeholder="请选择签名日期" style="width: 100%;" clearable />
+            </el-form-item>
           </template>
 
           <el-divider content-position="left">审批信息</el-divider>

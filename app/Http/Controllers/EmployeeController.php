@@ -1556,6 +1556,8 @@ class EmployeeController extends ApiController
             $data['bank_account_holder'] = $employee->bank_account_holder ?? '';
             $data['bank_name'] = $employee->bank_name ?? '';
             $data['bank_branch'] = $employee->bank_branch ?? '';
+            $data['emergency_contact'] = $employee->emergency_contact ?? '';
+            $data['emergency_phone'] = $employee->emergency_phone ?? '';
         }
 
         return $data;
@@ -1578,6 +1580,8 @@ class EmployeeController extends ApiController
                 'bank_account_holder',
                 'bank_name',
                 'bank_branch',
+                'emergency_contact',
+                'emergency_phone',
             ]);
         }
 
@@ -2257,6 +2261,8 @@ class EmployeeController extends ApiController
                 $formData['bank_account_holder'] = $employee->bank_account_holder ?? '';
                 $formData['bank_name'] = $employee->bank_name ?? '';
                 $formData['bank_branch'] = $employee->bank_branch ?? '';
+                $formData['emergency_contact'] = $employee->emergency_contact ?? '';
+                $formData['emergency_phone'] = $employee->emergency_phone ?? '';
                 
                 \Log::info('入职登记表数据: ' . json_encode($formData));
                 

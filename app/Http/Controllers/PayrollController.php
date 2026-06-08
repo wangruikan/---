@@ -653,7 +653,8 @@ class PayrollController extends Controller
                     'disabled' => !$canCreate,                   // 是否禁用（前端使用）
                     'label' => $label                            // 带提示的标签
                 ];
-                });
+                })
+                ->values();
             
             // 统计可创建工资表的项目数量
             $canCreateCount = $projects->filter(function ($project) {

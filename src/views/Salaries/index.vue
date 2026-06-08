@@ -396,14 +396,8 @@
             <el-input v-model="submitApprovalForm.month" disabled />
           </el-form-item>
 
-          <el-form-item label="盖章方式" required>
-            <el-radio-group v-model="submitApprovalForm.approval_type">
-              <el-radio label="online">线上盖章</el-radio>
-              <el-radio label="offline">线下盖章</el-radio>
-            </el-radio-group>
-            <div style="color: #909399; font-size: 12px; margin-top: 5px;">
-              线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
-            </div>
+          <el-form-item label="盖章方式">
+            <el-input model-value="线上盖章" disabled />
           </el-form-item>
           <ApprovalStampSelector
             ref="submitApprovalStampSelectorRef"
@@ -568,7 +562,7 @@
           <el-form-item label="项目" required>
           <el-select
               v-model="createForm.project_id"
-              placeholder="请先选择工资期间"
+              :placeholder="createForm.month ? '请选择项目' : '请先选择工资期间'"
             style="width: 100%"
               :loading="loadingProjects"
               :disabled="createDialogLocked || !createForm.month"
@@ -583,7 +577,7 @@
                 <span>{{ project.label }}</span>
               </el-option>
           </el-select>
-            <div v-if="createForm.month && availableProjects.length === 0" style="color: #999; font-size: 12px; margin-top: 5px;">
+            <div v-if="createForm.month && !loadingProjects && availableProjects.length === 0" style="color: #999; font-size: 12px; margin-top: 5px;">
               该期间暂无可生成工资表的项目
           </div>
         </el-form-item>
@@ -597,7 +591,7 @@
           />
 
           <el-alert
-            v-else-if="availableProjects.length === 0"
+            v-else-if="!loadingProjects && availableProjects.length === 0"
             title="该期间暂无可生成工资表的项目"
             type="warning"
             :closable="false"
@@ -2028,7 +2022,9 @@ const loadAvailableProjects = async () => {
   try {
     const response = await getProjectsWithApprovalStatus(createForm.month)
     if (response.success) {
-      availableProjects.value = response.data || []
+      availableProjects.value = Array.isArray(response.data)
+        ? response.data
+        : Object.values(response.data || {})
 
       // 提示用户
       const canCreateCount = response.can_create_count || 0
@@ -2107,7 +2103,9 @@ const handleReset = () => {
 const handleCreate = () => {
   createDialogLocked.value = false
   createDialogVisible.value = true
-  createForm.month = activeSalaryTab.value === 'pending' ? pendingPayrollMonth.value : null
+  const nextMonth = activeSalaryTab.value === 'pending' ? pendingPayrollMonth.value : null
+  const shouldReloadProjects = nextMonth && createForm.month === nextMonth
+  createForm.month = nextMonth
   createForm.period_start = 19
   createForm.period_end = 30
   createForm.project_id = null
@@ -2115,6 +2113,9 @@ const handleCreate = () => {
 
   if (createForm.month) {
     setCreatePeriodRangeFromDays(createForm.month)
+    if (shouldReloadProjects) {
+      loadAvailableProjects()
+    }
   } else {
     createForm.period_range = []
   }
@@ -2690,7 +2691,7 @@ const handleConfirmSubmitApproval = async () => {
       project_id: submitApprovalForm.project_id,
       month: submitApprovalForm.month,
       draft_batch_id: submitApprovalForm.draft_batch_id,
-      approval_type: submitApprovalForm.approval_type,
+      approval_type: 'online',
       remarks: submitApprovalForm.remarks
     })
 

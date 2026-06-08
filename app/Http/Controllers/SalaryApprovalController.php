@@ -184,7 +184,7 @@ class SalaryApprovalController extends Controller
                 'account_set_id' => $currentAccountSetId,
                 'project_id' => $request->project_id,
                 'month' => $request->month,
-                'approval_type' => $request->approval_type,
+                'approval_type' => 'online',
                 'status' => 'pending',
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
@@ -453,8 +453,8 @@ class SalaryApprovalController extends Controller
                 ];
             })->toArray();
 
-            // 获取盖章方式（从工资表审批的approval_type字段获取）
-            $stampMethod = $approval->approval_type ?? 'online';
+            // 工资表审批固定线上盖章，不允许按请求或历史值切成线下。
+            $stampMethod = 'online';
             $stampOptions = $this->resolveApprovalStampOptions($request, $approval->account_set_id);
 
             // 创建审批流程实例

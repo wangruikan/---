@@ -66,7 +66,19 @@ class AssessmentRecord extends Model
             'reimbursement_request' => '报销申请',
             'travel_request' => '差旅申请',
             'invoice_request' => '发票申请',
-            'payment_application' => '付款申请'
+            'payment_application' => '付款申请',
+            'employee_contract' => '员工合同审批',
+            'offline_onboarding' => '线下入职审批',
+            'employee_deletion' => '员工删除审批',
+            'employee_salary_adjustment' => '员工工资调整审批',
+            'employee_registration_form_update' => '登记表修改审批',
+            'personnel_change' => '人员汇总申请',
+            'salary_approval' => '工资表审批',
+            'insurance_summary' => '保险汇总审批',
+            'attendance_sheet' => '考勤申请',
+            'invoice_application' => '发票申请',
+            'travel_application' => '差旅申请',
+            'reimbursement' => '报销申请'
         ];
         return $typeMap[$this->business_type] ?? $this->business_type;
     }

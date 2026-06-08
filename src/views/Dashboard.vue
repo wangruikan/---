@@ -483,15 +483,21 @@ const formatTime = (time) => {
 const getTodoBusinessTypeText = (row) => {
   const type = row?.instance?.business_type || row?.business_type || ''
   const textMap = {
-    employee_contract: '员工合同',
-    offline_onboarding: '线下入职',
-    employee_deletion: '员工删除',
-    employee_salary_adjustment: '员工工资调整',
+    employee_contract: '员工合同审批',
+    offline_onboarding: '线下入职审批',
+    employee_deletion: '员工删除审批',
+    employee_salary_adjustment: '员工工资调整审批',
+    employee_registration_form_update: '登记表修改审批',
+    personnel_change: '人员汇总申请',
     salary: '工资审核',
+    salary_approval: '工资表审批',
     insurance: '社保审核',
+    insurance_summary: '保险汇总审批',
+    attendance_sheet: '考勤申请',
+    payment_application: '付款申请',
     reimbursement: '报销申请',
     travel_application: '差旅申请',
-    invoice_application: '开票申请',
+    invoice_application: '发票申请',
     material_request: '资料申请'
   }
   return textMap[type] || type || '-'

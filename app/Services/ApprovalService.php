@@ -2514,6 +2514,18 @@ class ApprovalService
     {
         $businessTypeMap = [
             'employee_contract' => '员工合同审批',
+            'offline_onboarding' => '线下入职审批',
+            'employee_deletion' => '员工删除审批',
+            'employee_salary_adjustment' => '员工工资调整审批',
+            'employee_registration_form_update' => '登记表修改审批',
+            'personnel_change' => '人员汇总申请',
+            'material_request' => '资料申请',
+            'travel_application' => '差旅申请',
+            'invoice_application' => '发票申请',
+            'salary_approval' => '工资表审批',
+            'payment_application' => '付款申请',
+            'insurance_summary' => '保险汇总审批',
+            'attendance_sheet' => '考勤申请',
             '工资表审批' => '工资表审批',
             '工资付款申请' => '工资付款申请',
             '报销付款申请' => '报销付款申请',
@@ -2524,8 +2536,6 @@ class ApprovalService
             '考勤申请' => '考勤申请',
             '报销申请' => '报销申请',
             'reimbursement' => '报销申请',  // 兼容英文类型
-            'employee_salary_adjustment' => '员工工资调整审批',
-            'employee_registration_form_update' => '登记表修改审批',
         ];
         
         $typeName = $businessTypeMap[$instance->business_type] ?? $instance->business_type;

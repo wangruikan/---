@@ -1343,12 +1343,18 @@ const getBusinessTypeText = (row) => {
   const instance = row.instance || row
   const type = instance.business_type
   const texts = {
-    'employee_contract': '员工合同',
-    'offline_onboarding': '线下入职',
-    'employee_deletion': '员工删除',
-    'employee_salary_adjustment': '员工工资调整',
+    'employee_contract': '员工合同审批',
+    'offline_onboarding': '线下入职审批',
+    'employee_deletion': '员工删除审批',
+    'employee_salary_adjustment': '员工工资调整审批',
+    'employee_registration_form_update': '登记表修改审批',
+    'personnel_change': '人员汇总申请',
     'salary': '工资审核',
+    'salary_approval': '工资表审批',
     'insurance': '社保审核',
+    'insurance_summary': '保险汇总审批',
+    'attendance_sheet': '考勤申请',
+    'payment_application': '付款申请',
     '工资表审批': '工资表审批',
     '保险汇总': '保险汇总',
     '付款申请': '付款申请',

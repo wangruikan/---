@@ -98,7 +98,29 @@ class ProjectController extends Controller
             ")
             ->first();
 
-        $projects = $query->orderBy('created_at', 'desc')->paginate(10);
+        $query->orderBy('created_at', 'desc');
+        if ($request->boolean('all') || (!$request->has('page') && !$request->has('per_page'))) {
+            $allProjects = $query->get();
+            $projects = [
+                'current_page' => 1,
+                'data' => $allProjects,
+                'first_page_url' => null,
+                'from' => $allProjects->isEmpty() ? null : 1,
+                'last_page' => 1,
+                'last_page_url' => null,
+                'links' => [],
+                'next_page_url' => null,
+                'path' => $request->url(),
+                'per_page' => $allProjects->count(),
+                'prev_page_url' => null,
+                'to' => $allProjects->count(),
+                'total' => $allProjects->count(),
+            ];
+        } else {
+            $perPage = (int) $request->input('per_page', 10);
+            $perPage = max(1, min($perPage, 1000));
+            $projects = $query->paginate($perPage);
+        }
         
         return response()->json([
             'success' => true,

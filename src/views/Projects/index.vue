@@ -216,19 +216,6 @@
             </template>
           </el-table-column>
         </el-table>
-        
-        <!-- 分页 -->
-        <div class="pagination">
-          <el-pagination
-            v-model:current-page="pagination.currentPage"
-            v-model:page-size="pagination.pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="pagination.total"
-            layout="total, sizes, prev, pager, next, jumper"
-            @size-change="handleSizeChange"
-            @current-change="handleCurrentChange"
-          />
-        </div>
       </el-card>
     </div>
     
@@ -1838,12 +1825,6 @@ const searchForm = reactive({
   status: ''
 })
 
-const pagination = reactive({
-  currentPage: 1,
-  pageSize: 20,
-  total: 0
-})
-
 const visibleColumnGroups = ref(['basic'])
 const isColumnGroupVisible = (group) => visibleColumnGroups.value.includes(group)
 const projectFormActiveTab = ref('basic')
@@ -2090,8 +2071,7 @@ const loadProjects = async () => {
   loading.value = true
   try {
     const params = {
-      page: pagination.currentPage,
-      per_page: pagination.pageSize,
+      all: true,
       current_account_set_id: currentAccountSetId.value,
       ...searchForm
     }
@@ -2107,8 +2087,8 @@ const loadProjects = async () => {
     console.log('Response keys:', Object.keys(response))
     
     if (response && response.success) {
-      projects.value = response.data.data || []
-      pagination.total = response.data.total || 0
+      const projectList = Array.isArray(response.data) ? response.data : (response.data?.data || [])
+      projects.value = projectList
       projectStats.value = {
         total: response.stats?.total || 0,
         active: response.stats?.active || 0,
@@ -2121,7 +2101,6 @@ const loadProjects = async () => {
       console.error('API returned success: false or no response')
       console.error('Response:', response)
       projects.value = []
-      pagination.total = 0
       projectStats.value = {
         total: 0,
         active: 0,
@@ -2138,7 +2117,6 @@ const loadProjects = async () => {
       request: error.request
     })
     projects.value = []
-    pagination.total = 0
     projectStats.value = {
       total: 0,
       active: 0,
@@ -2531,7 +2509,6 @@ const handleCreate = async () => {
 }
 
 const handleSearch = () => {
-  pagination.currentPage = 1
   loadProjects()
 }
 
@@ -2541,16 +2518,6 @@ const handleReset = () => {
     status: ''
   })
   handleSearch()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  loadProjects()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.currentPage = page
-  loadProjects()
 }
 
 const handleView = async (row) => {
@@ -3437,11 +3404,6 @@ watch(otherInsuranceNoSelection, (newVal) => {
   color: #606266;
   font-size: 14px;
   white-space: nowrap;
-}
-
-.pagination {
-  margin-top: 20px;
-  text-align: right;
 }
 
 :deep(.el-table) {

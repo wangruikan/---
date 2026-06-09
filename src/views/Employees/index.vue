@@ -6359,10 +6359,32 @@ const form = reactive({
 })
 
 // 新增员工表单草稿暂存（仅新建模式生效，编辑/查看不污染）
+const isEmployeeCreateDraftEmpty = (draft) => {
+  const ignoredDefaultValues = {
+    gender: 'male',
+    retirement_category: 'worker',
+    deduct_expense: true,
+    skip_form_filling: false
+  }
+
+  return Object.entries(draft).every(([key, value]) => {
+    if (Object.prototype.hasOwnProperty.call(ignoredDefaultValues, key)) {
+      return value === ignoredDefaultValues[key] || value === '' || value === null || value === undefined
+    }
+    if (Array.isArray(value)) {
+      return value.length === 0
+    }
+    if (typeof value === 'boolean') {
+      return value === false
+    }
+    return value === '' || value === null || value === undefined
+  })
+}
+
 const employeeDraft = useFormDraft(
   () => `employee-create-v1:${currentAccountSetId.value || 'no-account-set'}`,
   form,
-  (f) => !f.name
+  isEmployeeCreateDraftEmpty
 )
 
 const isInsuranceFieldsLocked = computed(() => {
@@ -8772,7 +8794,7 @@ const fillSampleData = () => {
 const handleDialogClose = () => {
   if (skipDraftSaveOnClose.value) {
     skipDraftSaveOnClose.value = false
-    resetDialogState()
+    resetDialogState({ closeDialog: false })
     return
   }
 
@@ -8785,32 +8807,31 @@ const handleDialogClose = () => {
         type: 'warning',
         confirmButtonText: '确定关闭',
         cancelButtonText: '取消'
-      }
-    ).then(() => {
+    }
+  ).then(() => {
       // 用户确认关闭
-      if (!isEdit.value) employeeDraft.save()
+      if (!isEdit.value && !isViewMode.value) employeeDraft.save()
       resetDialogState()
     }).catch(() => {
       // 用户取消，不关闭对话框
     })
   } else {
-    if (!isEdit.value) employeeDraft.save()
+    if (!isEdit.value && !isViewMode.value) employeeDraft.save()
     resetDialogState()
   }
 }
 
 const handleResetCreateForm = () => {
-  skipDraftSaveOnClose.value = true
   employeeDraft.clear()
-  resetDialogState()
-  showCreateDialog.value = true
+  resetDialogState({ closeDialog: false })
+  employeeDraft.clear()
+  ElMessage.success('已重置并清空缓存')
 }
 
 // 重置对话框状态
-const resetDialogState = () => {
+const resetDialogState = ({ closeDialog = true } = {}) => {
   isEdit.value = false
   isViewMode.value = false // 重置查看模式
-  skipDraftSaveOnClose.value = false
   activeTab.value = 'employee' // 重置tab
   onboardingForm.value = null // 清空入职登记表数据
   registrationForm.value = null
@@ -8945,7 +8966,9 @@ const resetDialogState = () => {
     skip_form_filling: false
   })
   formRef.value?.clearValidate()
-  showCreateDialog.value = false // 关闭对话框
+  if (closeDialog) {
+    showCreateDialog.value = false // 关闭对话框
+  }
 }
 
 const getEmployeeContractStatusType = (status) => {

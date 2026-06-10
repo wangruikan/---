@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ApprovalFlowConfig;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -109,7 +110,10 @@ class AuthController extends Controller
             
             if ($accountSetUser) {
                 $approvalLevel = $accountSetUser->approval_level;
-                $approvalLevelName = $accountSetUser->approval_level_name;
+                $approvalLevelName = ApprovalFlowConfig::formatLevelName(
+                    $approvalLevel !== null ? (int) $approvalLevel : null,
+                    $accountSetUser->approval_level_name
+                );
                 // 检查是否为经办人员（approval_level = 1）
                 $isHandler = ($approvalLevel == 1);
             }

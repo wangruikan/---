@@ -98,7 +98,7 @@ class ApprovalService
                 ApprovalRecord::create([
                     'instance_id' => $instance->id,
                     'step_order' => 1,
-                    'step_name' => $options['initiator_step_name'] ?? '经办',
+                    'step_name' => $options['initiator_step_name'] ?? ApprovalFlowConfig::formatLevelName(1),
                     'approver_id' => $createdBy,
                     'approver_name' => $options['initiator_name'] ?? (DB::table('users')->where('id', $createdBy)->value('name') ?? ''),
                     'status' => 'approved',
@@ -198,7 +198,7 @@ class ApprovalService
             array_merge($options, [
                 'auto_approve_initiator' => true,
                 'start_approval_level' => 2,
-                'initiator_step_name' => '经办',
+                'initiator_step_name' => ApprovalFlowConfig::formatLevelName(1),
                 'initiator_name' => $createdByName,
                 'initiator_comment' => $initiatorComment,
             ])

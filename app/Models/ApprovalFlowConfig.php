@@ -75,6 +75,19 @@ class ApprovalFlowConfig extends Model
             ->all();
     }
 
+    public static function formatLevelName(?int $level, ?string $levelName = null): ?string
+    {
+        if ($level === null) {
+            return $levelName;
+        }
+
+        if ($level < self::MIN_APPROVAL_LEVEL || $level > self::MAX_APPROVAL_LEVEL) {
+            return $levelName;
+        }
+
+        return '第' . $level . '级审批';
+    }
+
     public static function getEnabledLevels(int $accountSetId, string $businessType): ?array
     {
         if (!Schema::hasTable('approval_flow_configs')) {
@@ -162,7 +175,15 @@ class ApprovalFlowConfig extends Model
                 'account_set_users.approval_level',
                 'account_set_users.approval_level_name as level_name'
             )
-            ->get();
+            ->get()
+            ->map(function ($approver) {
+                $approver->level_name = self::formatLevelName(
+                    isset($approver->approval_level) ? (int) $approver->approval_level : null,
+                    $approver->level_name ?? null
+                );
+
+                return $approver;
+            });
     }
 
     public static function getFirstEffectiveLevel(

@@ -198,7 +198,12 @@ class ProcessRecordController extends Controller
             'success' => true,
             'has_access' => $approver !== null,
             'approval_level' => $approver ? $approver->approval_level : null,
-            'approval_level_name' => $approver ? $approver->approval_level_name : null
+            'approval_level_name' => $approver
+                ? ApprovalFlowConfig::formatLevelName(
+                    $approver->approval_level !== null ? (int) $approver->approval_level : null,
+                    $approver->approval_level_name
+                )
+                : null
         ]);
     }
 

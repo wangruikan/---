@@ -538,6 +538,15 @@ class AccountSetController extends Controller
             ->orderBy('account_set_users.approval_level')
             ->get();
 
+        $users->transform(function ($accountSetUser) {
+            $accountSetUser->approval_level_name = ApprovalFlowConfig::formatLevelName(
+                $accountSetUser->approval_level !== null ? (int) $accountSetUser->approval_level : null,
+                $accountSetUser->approval_level_name
+            );
+
+            return $accountSetUser;
+        });
+
         return response()->json([
             'success' => true,
             'data' => $users

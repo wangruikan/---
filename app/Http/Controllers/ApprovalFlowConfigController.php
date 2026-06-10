@@ -193,7 +193,7 @@ class ApprovalFlowConfigController extends Controller
                 $first = $items->first();
                 return [
                     'level' => (int) $level,
-                    'level_name' => $first->approval_level_name ?: '第' . (int) $level . '级审批',
+                    'level_name' => ApprovalFlowConfig::formatLevelName((int) $level, $first->approval_level_name),
                     'approver_names' => $items->pluck('user_name')->filter()->values()->all(),
                 ];
             })

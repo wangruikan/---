@@ -5,7 +5,7 @@
     
     <!-- 正常内容 -->
     <div v-else>
-    <div class="employee-sticky-panel">
+    <div ref="employeeStickyPanelRef" class="employee-sticky-panel">
     <div class="page-header">
       <h1>人员档案管理</h1>
       <div style="display: flex; gap: 10px;">
@@ -168,7 +168,7 @@
     </div>
     
     <!-- 员工列表 -->
-    <div class="table-section">
+    <div class="table-section" :style="{ '--employee-table-sticky-top': `${employeeTableStickyTop}px` }">
       <el-card>
         <el-table
           :data="employees"
@@ -5578,7 +5578,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { UploadFilled, Download, Search, Refresh, Document, Plus, Edit, Star, Postcard, FolderOpened, Calendar, User, Check, Upload, Delete, View, Warning } from '@element-plus/icons-vue'
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, getPendingContractUpload, markContractUploaded, submitSalaryAdjustmentApproval, getRegistrationFormUpdateStatus, submitRegistrationFormUpdateApproval } from '@/api/employees'
@@ -5679,6 +5679,27 @@ const submitting = ref(false)
 const showCreateDialog = ref(false)
 const isEdit = ref(false)
 const skipDraftSaveOnClose = ref(false)
+const employeeStickyPanelRef = ref(null)
+const employeeTableStickyTop = ref(0)
+let employeeStickyPanelResizeObserver = null
+
+const updateEmployeeTableStickyTop = () => {
+  employeeTableStickyTop.value = employeeStickyPanelRef.value?.offsetHeight || 0
+}
+
+const initEmployeeTableStickyTop = () => {
+  updateEmployeeTableStickyTop()
+
+  if (typeof ResizeObserver === 'undefined' || !employeeStickyPanelRef.value) {
+    return
+  }
+
+  employeeStickyPanelResizeObserver?.disconnect()
+  employeeStickyPanelResizeObserver = new ResizeObserver(() => {
+    updateEmployeeTableStickyTop()
+  })
+  employeeStickyPanelResizeObserver.observe(employeeStickyPanelRef.value)
+}
 
 // 删除审批相关
 const showDeleteApprovalDialog = ref(false)
@@ -10635,15 +10656,26 @@ const formatCoverageContent = (coverage) => {
   return String(coverage)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await nextTick()
+  initEmployeeTableStickyTop()
+  window.addEventListener('resize', updateEmployeeTableStickyTop)
   loadEmployees()
   loadProjects()
   checkExpiredIdCards()
   loadPendingContractUpload() // 加载待上传合同列表
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateEmployeeTableStickyTop)
+  employeeStickyPanelResizeObserver?.disconnect()
+})
+
 // 监听账套切换，自动刷新数据
 watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSetId) => {
+  nextTick(() => {
+    initEmployeeTableStickyTop()
+  })
   console.log('账套变化检测:', { 
     new: newAccountSetId, 
     old: oldAccountSetId,
@@ -11104,6 +11136,31 @@ const getChangeComparison = (detail) => {
 
 .table-section {
   margin-bottom: 20px;
+  --employee-table-sticky-top: 0px;
+}
+
+.table-section :deep(.el-card),
+.table-section :deep(.el-card__body),
+.table-section :deep(.el-table),
+.table-section :deep(.el-table__inner-wrapper) {
+  overflow: visible;
+}
+
+.table-section :deep(.el-table__header-wrapper),
+.table-section :deep(.el-table__fixed-header-wrapper) {
+  position: sticky;
+  top: var(--employee-table-sticky-top);
+  z-index: 12;
+  background: #fff;
+}
+
+.table-section :deep(.el-table__fixed-header-wrapper) {
+  z-index: 13;
+}
+
+.table-section :deep(.el-table__header-wrapper th),
+.table-section :deep(.el-table__fixed-header-wrapper th) {
+  background: #fff;
 }
 
 .pagination {

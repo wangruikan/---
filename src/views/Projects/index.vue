@@ -5,7 +5,7 @@
     
     <!-- 正常内容 -->
     <div v-else>
-    <div class="project-sticky-panel">
+    <div ref="projectStickyPanelRef" class="project-sticky-panel">
     <div class="page-header">
       <h1>项目管理</h1>
       <el-button v-if="canCreateProject" type="primary" @click="handleCreate">
@@ -101,7 +101,7 @@
     </div>
 
     <!-- 项目列表 -->
-    <div class="table-section">
+    <div class="table-section" :style="{ '--project-table-sticky-top': `${projectTableStickyTop}px` }">
       <el-card>
         <el-table
           :data="projects"
@@ -1332,7 +1332,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
@@ -1429,10 +1429,31 @@ const submitting = ref(false)
 const showCreateDialog = ref(false)
 const isEdit = ref(false)
 const formRef = ref()
+const projectStickyPanelRef = ref(null)
+const projectTableStickyTop = ref(0)
 const socialSecurityRegionsSelectRef = ref()
 const housingFundRegionsSelectRef = ref()
 const medicalInsuranceRegionsSelectRef = ref()
 const largeMedicalInsuranceConfigsSelectRef = ref()
+let projectStickyPanelResizeObserver = null
+
+const updateProjectTableStickyTop = () => {
+  projectTableStickyTop.value = projectStickyPanelRef.value?.offsetHeight || 0
+}
+
+const initProjectTableStickyTop = () => {
+  updateProjectTableStickyTop()
+
+  if (typeof ResizeObserver === 'undefined' || !projectStickyPanelRef.value) {
+    return
+  }
+
+  projectStickyPanelResizeObserver?.disconnect()
+  projectStickyPanelResizeObserver = new ResizeObserver(() => {
+    updateProjectTableStickyTop()
+  })
+  projectStickyPanelResizeObserver.observe(projectStickyPanelRef.value)
+}
 
 // 须知文件设置相关
 const showNoticeDialog = ref(false)
@@ -3299,12 +3320,23 @@ const loadAvailableRegions = async () => {
 onMounted(async () => {
   // 先初始化账套信息
   await accountSetStore.loadMyAccountSets()
+  await nextTick()
+  initProjectTableStickyTop()
+  window.addEventListener('resize', updateProjectTableStickyTop)
   // 然后加载项目
   loadProjects()
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateProjectTableStickyTop)
+  projectStickyPanelResizeObserver?.disconnect()
+})
+
 // 监听账套切换，自动刷新数据
 watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSetId) => {
+  nextTick(() => {
+    initProjectTableStickyTop()
+  })
   console.log('项目页-账套变化检测:', { new: newAccountSetId, old: oldAccountSetId })
   if (newAccountSetId && oldAccountSetId && newAccountSetId !== oldAccountSetId) {
     console.log('✅ 项目页-账套切换，重新加载数据:', newAccountSetId)
@@ -3383,6 +3415,31 @@ watch(otherInsuranceNoSelection, (newVal) => {
 
 .table-section {
   margin-bottom: 20px;
+  --project-table-sticky-top: 0px;
+}
+
+.table-section :deep(.el-card),
+.table-section :deep(.el-card__body),
+.table-section :deep(.el-table),
+.table-section :deep(.el-table__inner-wrapper) {
+  overflow: visible;
+}
+
+.table-section :deep(.el-table__header-wrapper),
+.table-section :deep(.el-table__fixed-header-wrapper) {
+  position: sticky;
+  top: var(--project-table-sticky-top);
+  z-index: 12;
+  background: #fff;
+}
+
+.table-section :deep(.el-table__fixed-header-wrapper) {
+  z-index: 13;
+}
+
+.table-section :deep(.el-table__header-wrapper th),
+.table-section :deep(.el-table__fixed-header-wrapper th) {
+  background: #fff;
 }
 
 .project-form-tabs {

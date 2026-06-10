@@ -194,6 +194,23 @@
               />
             </el-form-item>
           </el-col>
+          <el-col :span="24" v-if="createProjectInvoiceInfoOptions.length > 0">
+            <el-form-item label="开票信息备注" prop="remark">
+              <el-select
+                v-model="createForm.remark"
+                placeholder="请选择开票信息备注"
+                style="width: 100%"
+                @change="handleCreateInvoiceInfoRemarkChange"
+              >
+                <el-option
+                  v-for="option in createProjectInvoiceInfoOptions"
+                  :key="`project-invoice-remark-${option.value}`"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
         </el-row>
 
         <el-divider content-position="left">开票详情</el-divider>
@@ -1435,6 +1452,76 @@ const validProjects = computed(() => {
   return projects.value.filter(p => p && p.id)
 })
 
+const normalizeProjectInvoiceInfos = (project) => {
+  if (!project || typeof project !== 'object') {
+    return []
+  }
+
+  const normalized = Array.isArray(project.invoice_infos)
+    ? project.invoice_infos.map(item => ({
+      remark: String(item?.remark || '').trim(),
+      company_name: String(item?.company_name || item?.invoice_company_name || '').trim(),
+      tax_number: String(item?.tax_number || item?.invoice_tax_number || '').trim(),
+      company_address: String(item?.company_address || item?.invoice_company_address || '').trim(),
+      company_phone: String(item?.company_phone || item?.invoice_company_phone || '').trim(),
+      bank_name: String(item?.bank_name || item?.invoice_bank_name || '').trim(),
+      bank_account: String(item?.bank_account || item?.invoice_bank_account || '').trim(),
+      bank_code: String(item?.bank_code || item?.invoice_bank_code || '').trim()
+    })).filter(item => {
+      return item.remark ||
+        item.company_name ||
+        item.tax_number ||
+        item.company_address ||
+        item.company_phone ||
+        item.bank_name ||
+        item.bank_account ||
+        item.bank_code
+    })
+    : []
+
+  if (normalized.length > 0) {
+    return normalized
+  }
+
+  const legacyInvoiceInfo = {
+    remark: '默认开票信息',
+    company_name: String(project.invoice_company_name || project.invoice_company || project.company_name || '').trim(),
+    tax_number: String(project.invoice_tax_number || '').trim(),
+    company_address: String(project.invoice_company_address || '').trim(),
+    company_phone: String(project.invoice_company_phone || '').trim(),
+    bank_name: String(project.invoice_bank_name || '').trim(),
+    bank_account: String(project.invoice_bank_account || '').trim(),
+    bank_code: String(project.invoice_bank_code || '').trim()
+  }
+
+  const hasLegacyValue = [
+    legacyInvoiceInfo.company_name,
+    legacyInvoiceInfo.tax_number,
+    legacyInvoiceInfo.company_address,
+    legacyInvoiceInfo.company_phone,
+    legacyInvoiceInfo.bank_name,
+    legacyInvoiceInfo.bank_account,
+    legacyInvoiceInfo.bank_code
+  ].some(Boolean)
+
+  return hasLegacyValue ? [legacyInvoiceInfo] : []
+}
+
+const currentCreateProject = computed(() => {
+  return findProjectById(createForm.project_id) || findProjectByName(createForm.project_name)
+})
+
+const createProjectInvoiceInfos = computed(() => {
+  return normalizeProjectInvoiceInfos(currentCreateProject.value)
+})
+
+const createProjectInvoiceInfoOptions = computed(() => {
+  return createProjectInvoiceInfos.value.map((item, index) => ({
+    label: item.remark || `开票信息${index + 1}`,
+    value: item.remark || `开票信息${index + 1}`
+  }))
+})
+
 const findProjectById = (projectId) => {
   if (projectId === null || projectId === undefined || projectId === '') return null
   const targetId = String(projectId)
@@ -1445,6 +1532,37 @@ const findProjectByName = (projectName) => {
   const targetName = String(projectName || '').trim()
   if (!targetName) return null
   return validProjects.value.find(project => String(project.name || '').trim() === targetName) || null
+}
+
+const applyCreateProjectInvoiceInfoByRemark = (project, remark) => {
+  const selectedProject = typeof project === 'object' && project !== null
+    ? project
+    : findProjectById(project)
+
+  if (!selectedProject) {
+    if (!createForm.project_name?.trim()) {
+      createForm.company_name = ''
+      createForm.remark = ''
+    }
+    return
+  }
+
+  const invoiceInfos = normalizeProjectInvoiceInfos(selectedProject)
+  if (!invoiceInfos.length) {
+    createForm.company_name =
+      selectedProject.invoice_company_name ||
+      selectedProject.invoice_company ||
+      selectedProject.company_name ||
+      ''
+    createForm.remark = ''
+    return
+  }
+
+  const selectedRemark = String(remark || '').trim()
+  const matchedInvoiceInfo = invoiceInfos.find(item => item.remark === selectedRemark) || invoiceInfos[0]
+
+  createForm.remark = matchedInvoiceInfo.remark || selectedRemark
+  createForm.company_name = matchedInvoiceInfo.company_name || ''
 }
 
 const fillCreateInvoiceInfoByProject = (project) => {
@@ -1461,11 +1579,7 @@ const fillCreateInvoiceInfoByProject = (project) => {
 
   createForm.project_id = selectedProject.id
   createForm.project_name = selectedProject.name || ''
-  createForm.company_name =
-    selectedProject.invoice_company_name ||
-    selectedProject.invoice_company ||
-    selectedProject.company_name ||
-    ''
+  applyCreateProjectInvoiceInfoByRemark(selectedProject, createForm.remark)
 }
 
 const querySearchCreateProjects = (queryString, cb) => {
@@ -1489,6 +1603,9 @@ const handleCreateProjectInput = (value) => {
 
   if (matchedProject) {
     fillCreateInvoiceInfoByProject(matchedProject)
+  } else {
+    createForm.remark = ''
+    createForm.company_name = ''
   }
 }
 
@@ -1497,10 +1614,16 @@ const handleCreateProjectSelect = (selected) => {
   if (!selectedProject) {
     createForm.project_name = selected?.value || ''
     createForm.project_id = null
+    createForm.remark = ''
+    createForm.company_name = ''
     return
   }
 
   fillCreateInvoiceInfoByProject(selectedProject)
+}
+
+const handleCreateInvoiceInfoRemarkChange = (value) => {
+  applyCreateProjectInvoiceInfoByRemark(currentCreateProject.value, value)
 }
 
 const resetCreateItems = () => {
@@ -1800,7 +1923,8 @@ const loadProjects = async () => {
       url: '/projects',
       method: 'get',
       params: {
-        account_set_id: accountSetStore.currentAccountSet.id
+        current_account_set_id: accountSetStore.currentAccountSet.id,
+        all: true
       }
     })
     

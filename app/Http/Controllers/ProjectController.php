@@ -68,6 +68,116 @@ class ProjectController extends Controller
         }
     }
 
+    private function buildProjectPayload(array $requestData, ?Project $project = null): array
+    {
+        if (array_key_exists('code', $requestData) && is_string($requestData['code'])) {
+            $requestData['code'] = trim($requestData['code']);
+        }
+
+        $hasInvoiceInfos = array_key_exists('invoice_infos', $requestData);
+        $legacyInvoiceFields = [
+            'invoice_company_name',
+            'invoice_tax_number',
+            'invoice_company_address',
+            'invoice_company_phone',
+            'invoice_bank_name',
+            'invoice_bank_account',
+            'invoice_bank_code',
+        ];
+        $hasLegacyInvoiceFields = false;
+
+        foreach ($legacyInvoiceFields as $field) {
+            if (array_key_exists($field, $requestData)) {
+                $hasLegacyInvoiceFields = true;
+                break;
+            }
+        }
+
+        $invoiceInfos = Project::resolveInvoiceInfos(
+            $hasInvoiceInfos ? ($requestData['invoice_infos'] ?? null) : null,
+            ($hasInvoiceInfos || $hasLegacyInvoiceFields || !$project)
+                ? $requestData
+                : $project->getAttributes()
+        );
+
+        $requestData['invoice_infos'] = $invoiceInfos;
+        Project::syncLegacyInvoiceFields($requestData, $invoiceInfos);
+
+        return $requestData;
+    }
+
+    private function projectValidationRules(): array
+    {
+        return [
+            'name' => 'required|string|max:255',
+            'code' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'status' => 'nullable|in:active,completed,inactive',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'social_security_location' => 'nullable|string',
+            'insurance_types' => 'nullable|array',
+            'salary_payment_date' => 'required|integer|min:1|max:31',
+            'salary_payment_month' => 'required|in:current,next',
+            'insurance_import_month' => 'required|in:current,next,none',
+            'requires_attendance' => 'boolean',
+            'require_attendance' => 'boolean',
+            'delivery_frequency' => 'required|in:monthly,quarterly',
+            'delivery_method' => 'required|in:express,electronic',
+            'registration_form_type' => 'required|in:onboarding,registration',
+            'invoice_infos' => 'required|array|min:1',
+            'invoice_infos.*.remark' => 'required|string|max:255',
+            'invoice_infos.*.company_name' => 'required|string|max:255',
+            'invoice_infos.*.tax_number' => 'required|string|max:100',
+            'invoice_infos.*.company_address' => 'required|string|max:255',
+            'invoice_infos.*.company_phone' => 'required|string|max:50',
+            'invoice_infos.*.bank_name' => 'required|string|max:255',
+            'invoice_infos.*.bank_account' => 'required|string|max:100',
+            'invoice_infos.*.bank_code' => 'required|string|max:100',
+            'invoice_company_name' => 'nullable|string|max:255',
+            'invoice_tax_number' => 'nullable|string|max:100',
+            'invoice_company_address' => 'nullable|string|max:255',
+            'invoice_company_phone' => 'nullable|string|max:50',
+            'invoice_bank_name' => 'nullable|string|max:255',
+            'invoice_bank_account' => 'nullable|string|max:100',
+            'invoice_bank_code' => 'nullable|string|max:100',
+            'social_security_regions' => 'nullable|array',
+            'social_security_regions.*' => 'exists:social_security_regions,id',
+            'medical_insurance_regions' => 'nullable|array',
+            'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
+            'housing_fund_regions' => 'nullable|array',
+            'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
+            'other_insurance_policies' => 'nullable|array',
+            'other_insurance_policies.*' => 'exists:other_insurance_policies,id',
+            'large_medical_insurance_configs' => 'nullable|array',
+            'large_medical_insurance_configs.*' => 'exists:large_medical_insurance_configs,id',
+        ];
+    }
+
+    private function attachProjectInvoiceInfoValidation($validator, array $invoiceInfos): void
+    {
+        $validator->after(function ($validator) use ($invoiceInfos) {
+            $remarks = [];
+
+            foreach ($invoiceInfos as $index => $invoiceInfo) {
+                $remark = trim((string) ($invoiceInfo['remark'] ?? ''));
+                if ($remark === '') {
+                    continue;
+                }
+
+                if (in_array($remark, $remarks, true)) {
+                    $validator->errors()->add(
+                        "invoice_infos.{$index}.remark",
+                        '同一个项目中的开票信息备注不能重复'
+                    );
+                    continue;
+                }
+
+                $remarks[] = $remark;
+            }
+        });
+    }
+
     public function index(Request $request)
     {
         if ($response = $this->checkPermission('projects.view')) {
@@ -140,45 +250,10 @@ class ProjectController extends Controller
             return $response;
         }
 
-        $requestData = $request->all();
-        if (array_key_exists('code', $requestData) && is_string($requestData['code'])) {
-            $requestData['code'] = trim($requestData['code']);
-        }
+        $requestData = $this->buildProjectPayload($request->all());
 
-        $validator = Validator::make($requestData, [
-            'name' => 'required|string|max:255',
-            'code' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'status' => 'nullable|in:active,completed,inactive',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'social_security_location' => 'nullable|string',
-            'insurance_types' => 'nullable|array',
-            'salary_payment_date' => 'required|integer|min:1|max:31',
-            'salary_payment_month' => 'required|in:current,next',
-            'insurance_import_month' => 'required|in:current,next,none',
-            'requires_attendance' => 'boolean',
-            'delivery_frequency' => 'required|in:monthly,quarterly',
-            'delivery_method' => 'required|in:express,electronic',
-            'registration_form_type' => 'required|in:onboarding,registration',
-            'invoice_company_name' => 'required|string|max:255',
-            'invoice_tax_number' => 'required|string|max:100',
-            'invoice_company_address' => 'required|string|max:255',
-            'invoice_company_phone' => 'required|string|max:50',
-            'invoice_bank_name' => 'required|string|max:255',
-            'invoice_bank_account' => 'required|string|max:100',
-            'invoice_bank_code' => 'required|string|max:100',
-            'social_security_regions' => 'nullable|array',
-            'social_security_regions.*' => 'exists:social_security_regions,id',
-            'medical_insurance_regions' => 'nullable|array',
-            'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
-            'housing_fund_regions' => 'nullable|array',
-            'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
-            'other_insurance_policies' => 'nullable|array',
-            'other_insurance_policies.*' => 'exists:other_insurance_policies,id',
-            'large_medical_insurance_configs' => 'nullable|array',
-            'large_medical_insurance_configs.*' => 'exists:large_medical_insurance_configs,id',
-        ]);
+        $validator = Validator::make($requestData, $this->projectValidationRules());
+        $this->attachProjectInvoiceInfoValidation($validator, $requestData['invoice_infos'] ?? []);
 
         if ($validator->fails()) {
             return response()->json([
@@ -313,48 +388,10 @@ class ProjectController extends Controller
         
         $project = Project::findOrFail($id);
         
-        $requestData = $request->all();
-        if (array_key_exists('code', $requestData) && is_string($requestData['code'])) {
-            $requestData['code'] = trim($requestData['code']);
-        }
+        $requestData = $this->buildProjectPayload($request->all(), $project);
 
-        $rules = [
-            'name' => 'required|string|max:255',
-            'code' => ['nullable', 'string', 'max:255'],
-            'description' => 'nullable|string',
-            'status' => 'nullable|in:active,completed,inactive',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'social_security_location' => 'nullable|string',
-            'insurance_types' => 'nullable|array',
-            'salary_payment_date' => 'required|integer|min:1|max:31',
-            'salary_payment_month' => 'required|in:current,next',
-            'insurance_import_month' => 'required|in:current,next,none',
-            'requires_attendance' => 'boolean',
-            'require_attendance' => 'boolean',
-            'delivery_frequency' => 'required|in:monthly,quarterly',
-            'delivery_method' => 'required|in:express,electronic',
-            'registration_form_type' => 'required|in:onboarding,registration',
-            'invoice_company_name' => 'required|string|max:255',
-            'invoice_tax_number' => 'required|string|max:100',
-            'invoice_company_address' => 'required|string|max:255',
-            'invoice_company_phone' => 'required|string|max:50',
-            'invoice_bank_name' => 'required|string|max:255',
-            'invoice_bank_account' => 'required|string|max:100',
-            'invoice_bank_code' => 'required|string|max:100',
-            'social_security_regions' => 'nullable|array',
-            'social_security_regions.*' => 'exists:social_security_regions,id',
-            'medical_insurance_regions' => 'nullable|array',
-            'medical_insurance_regions.*' => 'exists:medical_insurance_regions,id',
-            'housing_fund_regions' => 'nullable|array',
-            'housing_fund_regions.*' => 'exists:housing_fund_regions,id',
-            'other_insurance_policies' => 'nullable|array',
-            'other_insurance_policies.*' => 'exists:other_insurance_policies,id',
-            'large_medical_insurance_configs' => 'nullable|array',
-            'large_medical_insurance_configs.*' => 'exists:large_medical_insurance_configs,id',
-        ];
-
-        $validator = Validator::make($requestData, $rules);
+        $validator = Validator::make($requestData, $this->projectValidationRules());
+        $this->attachProjectInvoiceInfoValidation($validator, $requestData['invoice_infos'] ?? []);
 
         if ($validator->fails()) {
             return response()->json([

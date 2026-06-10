@@ -35,6 +35,7 @@ class Project extends Model
         'delivery_frequency' => '交付频率',
         'delivery_method' => '交付方式',
         'registration_form_type' => '登记表类型',
+        'invoice_infos' => '开票信息',
         'invoice_company_name' => '开票企业名称',
         'invoice_tax_number' => '开票企业税号',
         'invoice_company_address' => '开票企业地址',
@@ -82,6 +83,7 @@ class Project extends Model
         'housing_fund_regions',  // 【公积金地区ID列表】
         'placeholder_fields',  // 【占位符可用字段配置】
         'registration_form_type',  // 【登记表类型】onboarding-入职登记表，registration-从业人员登记表
+        'invoice_infos',
         'invoice_company_name',
         'invoice_tax_number',
         'invoice_company_address',
@@ -109,6 +111,108 @@ class Project extends Model
         'created_at' => 'datetime:Y-m-d H:i:s',
         'updated_at' => 'datetime:Y-m-d H:i:s',
     ];
+
+    public static function normalizeInvoiceInfos($invoiceInfos): array
+    {
+        if (is_string($invoiceInfos)) {
+            $decoded = json_decode($invoiceInfos, true);
+            $invoiceInfos = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($invoiceInfos)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($invoiceInfos as $invoiceInfo) {
+            if (!is_array($invoiceInfo)) {
+                continue;
+            }
+
+            $normalizedItem = [
+                'remark' => trim((string) ($invoiceInfo['remark'] ?? '')),
+                'company_name' => trim((string) ($invoiceInfo['company_name'] ?? $invoiceInfo['invoice_company_name'] ?? '')),
+                'tax_number' => trim((string) ($invoiceInfo['tax_number'] ?? $invoiceInfo['invoice_tax_number'] ?? '')),
+                'company_address' => trim((string) ($invoiceInfo['company_address'] ?? $invoiceInfo['invoice_company_address'] ?? '')),
+                'company_phone' => trim((string) ($invoiceInfo['company_phone'] ?? $invoiceInfo['invoice_company_phone'] ?? '')),
+                'bank_name' => trim((string) ($invoiceInfo['bank_name'] ?? $invoiceInfo['invoice_bank_name'] ?? '')),
+                'bank_account' => trim((string) ($invoiceInfo['bank_account'] ?? $invoiceInfo['invoice_bank_account'] ?? '')),
+                'bank_code' => trim((string) ($invoiceInfo['bank_code'] ?? $invoiceInfo['invoice_bank_code'] ?? '')),
+            ];
+
+            $hasValue = collect($normalizedItem)
+                ->except('remark')
+                ->contains(fn ($value) => $value !== '');
+
+            if (!$hasValue && $normalizedItem['remark'] === '') {
+                continue;
+            }
+
+            $normalized[] = $normalizedItem;
+        }
+
+        return array_values($normalized);
+    }
+
+    public static function buildLegacyInvoiceInfoFromAttributes(array $attributes): ?array
+    {
+        $legacyInfo = [
+            'remark' => '默认开票信息',
+            'company_name' => trim((string) ($attributes['invoice_company_name'] ?? '')),
+            'tax_number' => trim((string) ($attributes['invoice_tax_number'] ?? '')),
+            'company_address' => trim((string) ($attributes['invoice_company_address'] ?? '')),
+            'company_phone' => trim((string) ($attributes['invoice_company_phone'] ?? '')),
+            'bank_name' => trim((string) ($attributes['invoice_bank_name'] ?? '')),
+            'bank_account' => trim((string) ($attributes['invoice_bank_account'] ?? '')),
+            'bank_code' => trim((string) ($attributes['invoice_bank_code'] ?? '')),
+        ];
+
+        $hasLegacyValue = collect($legacyInfo)
+            ->except('remark')
+            ->contains(fn ($value) => $value !== '');
+
+        return $hasLegacyValue ? $legacyInfo : null;
+    }
+
+    public static function resolveInvoiceInfos($invoiceInfos, array $fallbackAttributes = []): array
+    {
+        $normalized = static::normalizeInvoiceInfos($invoiceInfos);
+        if (!empty($normalized)) {
+            return $normalized;
+        }
+
+        $legacyInfo = static::buildLegacyInvoiceInfoFromAttributes($fallbackAttributes);
+
+        return $legacyInfo ? [$legacyInfo] : [];
+    }
+
+    public static function syncLegacyInvoiceFields(array &$data, array $invoiceInfos): void
+    {
+        $primaryInvoiceInfo = $invoiceInfos[0] ?? [];
+
+        $data['invoice_company_name'] = $primaryInvoiceInfo['company_name'] ?? '';
+        $data['invoice_tax_number'] = $primaryInvoiceInfo['tax_number'] ?? '';
+        $data['invoice_company_address'] = $primaryInvoiceInfo['company_address'] ?? '';
+        $data['invoice_company_phone'] = $primaryInvoiceInfo['company_phone'] ?? '';
+        $data['invoice_bank_name'] = $primaryInvoiceInfo['bank_name'] ?? '';
+        $data['invoice_bank_account'] = $primaryInvoiceInfo['bank_account'] ?? '';
+        $data['invoice_bank_code'] = $primaryInvoiceInfo['bank_code'] ?? '';
+    }
+
+    public function getInvoiceInfosAttribute($value): array
+    {
+        return static::resolveInvoiceInfos($value, $this->attributes);
+    }
+
+    public function setInvoiceInfosAttribute($value): void
+    {
+        $normalized = static::normalizeInvoiceInfos($value);
+
+        $this->attributes['invoice_infos'] = empty($normalized)
+            ? null
+            : json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
 
     /**
      * 获取可用的占位符字段列表（带标签）

@@ -131,7 +131,9 @@
           </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('basic')" label="剩余天数" width="110" align="center">
             <template #default="{ row }">
-              <span class="remaining-days-text">{{ getRemainingDaysText(row.end_date) }}</span>
+              <span :class="{ 'remaining-days-text': isRemainingDaysWarning(row.end_date) }">
+                {{ getRemainingDaysText(row.end_date) }}
+              </span>
             </template>
           </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('basic')" prop="salary_payment_date" label="&#24037;&#36164;&#21457;&#25918;&#26085;&#26399;" width="120">
@@ -301,48 +303,114 @@
         </div>
 
         <div v-show="projectFormActiveTab === 'invoice'">
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="&#20225;&#19994;&#21517;&#31216;" prop="invoice_company_name">
-                <el-input v-model="form.invoice_company_name" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#21517;&#31216;" :readonly="form.id && !isEdit" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="&#20225;&#19994;&#31246;&#21495;" prop="invoice_tax_number">
-                <el-input v-model="form.invoice_tax_number" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#31246;&#21495;" :readonly="form.id && !isEdit" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+          <div class="invoice-infos-header">
+            <span class="invoice-infos-title">开票信息</span>
+            <el-button
+              v-if="!form.id || isEdit"
+              type="primary"
+              link
+              @click="addProjectInvoiceInfo"
+            >
+              新增一组
+            </el-button>
+          </div>
 
-          <el-form-item label="&#20225;&#19994;&#22320;&#22336;" prop="invoice_company_address">
-            <el-input v-model="form.invoice_company_address" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#22320;&#22336;" :readonly="form.id && !isEdit" />
-          </el-form-item>
+          <div
+            v-for="(invoiceInfo, index) in form.invoice_infos"
+            :key="`invoice-info-${index}`"
+            class="invoice-info-card"
+          >
+            <div class="invoice-info-card-header">
+              <span>第{{ index + 1 }}组</span>
+              <el-button
+                v-if="(!form.id || isEdit) && form.invoice_infos.length > 1"
+                type="danger"
+                link
+                @click="removeProjectInvoiceInfo(index)"
+              >
+                删除
+              </el-button>
+            </div>
 
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="&#20225;&#19994;&#30005;&#35805;" prop="invoice_company_phone">
-                <el-input v-model="form.invoice_company_phone" placeholder="&#35831;&#36755;&#20837;&#20225;&#19994;&#30005;&#35805;" :readonly="form.id && !isEdit" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="&#24320;&#25143;&#38134;&#34892;" prop="invoice_bank_name">
-                <el-input v-model="form.invoice_bank_name" placeholder="&#35831;&#36755;&#20837;&#24320;&#25143;&#38134;&#34892;" :readonly="form.id && !isEdit" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+            <el-form-item :label="`备注`" :prop="`invoice_infos.${index}.remark`">
+              <el-input
+                v-model="invoiceInfo.remark"
+                placeholder="请输入备注，开票申请时按备注选择"
+                :readonly="form.id && !isEdit"
+              />
+            </el-form-item>
 
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="&#38134;&#34892;&#36134;&#25143;" prop="invoice_bank_account">
-                <el-input v-model="form.invoice_bank_account" placeholder="&#35831;&#36755;&#20837;&#38134;&#34892;&#36134;&#25143;" :readonly="form.id && !isEdit" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="&#34892;&#21495;" prop="invoice_bank_code">
-                <el-input v-model="form.invoice_bank_code" placeholder="&#35831;&#36755;&#20837;&#34892;&#21495;" :readonly="form.id && !isEdit" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item :label="`企业名称`" :prop="`invoice_infos.${index}.company_name`">
+                  <el-input
+                    v-model="invoiceInfo.company_name"
+                    placeholder="请输入企业名称"
+                    :readonly="form.id && !isEdit"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item :label="`企业税号`" :prop="`invoice_infos.${index}.tax_number`">
+                  <el-input
+                    v-model="invoiceInfo.tax_number"
+                    placeholder="请输入企业税号"
+                    :readonly="form.id && !isEdit"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-form-item :label="`企业地址`" :prop="`invoice_infos.${index}.company_address`">
+              <el-input
+                v-model="invoiceInfo.company_address"
+                placeholder="请输入企业地址"
+                :readonly="form.id && !isEdit"
+              />
+            </el-form-item>
+
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item :label="`企业电话`" :prop="`invoice_infos.${index}.company_phone`">
+                  <el-input
+                    v-model="invoiceInfo.company_phone"
+                    placeholder="请输入企业电话"
+                    :readonly="form.id && !isEdit"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item :label="`开户银行`" :prop="`invoice_infos.${index}.bank_name`">
+                  <el-input
+                    v-model="invoiceInfo.bank_name"
+                    placeholder="请输入开户银行"
+                    :readonly="form.id && !isEdit"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item :label="`银行账户`" :prop="`invoice_infos.${index}.bank_account`">
+                  <el-input
+                    v-model="invoiceInfo.bank_account"
+                    placeholder="请输入银行账户"
+                    :readonly="form.id && !isEdit"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item :label="`行号`" :prop="`invoice_infos.${index}.bank_code`">
+                  <el-input
+                    v-model="invoiceInfo.bank_code"
+                    placeholder="请输入行号"
+                    :readonly="form.id && !isEdit"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </div>
         </div>
 
         <div v-show="projectFormActiveTab === 'insurance'">
@@ -1850,6 +1918,157 @@ const visibleColumnGroups = ref(['basic'])
 const isColumnGroupVisible = (group) => visibleColumnGroups.value.includes(group)
 const projectFormActiveTab = ref('basic')
 
+const createEmptyProjectInvoiceInfo = () => ({
+  remark: '',
+  company_name: '',
+  tax_number: '',
+  company_address: '',
+  company_phone: '',
+  bank_name: '',
+  bank_account: '',
+  bank_code: ''
+})
+
+const normalizeProjectInvoiceInfos = (invoiceInfos, fallbackProject = null) => {
+  const normalized = Array.isArray(invoiceInfos)
+    ? invoiceInfos.map(item => ({
+      remark: String(item?.remark || '').trim(),
+      company_name: String(item?.company_name || item?.invoice_company_name || '').trim(),
+      tax_number: String(item?.tax_number || item?.invoice_tax_number || '').trim(),
+      company_address: String(item?.company_address || item?.invoice_company_address || '').trim(),
+      company_phone: String(item?.company_phone || item?.invoice_company_phone || '').trim(),
+      bank_name: String(item?.bank_name || item?.invoice_bank_name || '').trim(),
+      bank_account: String(item?.bank_account || item?.invoice_bank_account || '').trim(),
+      bank_code: String(item?.bank_code || item?.invoice_bank_code || '').trim()
+    })).filter(item => {
+      return item.remark ||
+        item.company_name ||
+        item.tax_number ||
+        item.company_address ||
+        item.company_phone ||
+        item.bank_name ||
+        item.bank_account ||
+        item.bank_code
+    })
+    : []
+
+  if (normalized.length > 0) {
+    return normalized
+  }
+
+  const legacySource = fallbackProject || {}
+  const legacyInvoiceInfo = {
+    remark: String(legacySource.remark || '').trim() || '默认开票信息',
+    company_name: String(legacySource.invoice_company_name || '').trim(),
+    tax_number: String(legacySource.invoice_tax_number || '').trim(),
+    company_address: String(legacySource.invoice_company_address || '').trim(),
+    company_phone: String(legacySource.invoice_company_phone || '').trim(),
+    bank_name: String(legacySource.invoice_bank_name || '').trim(),
+    bank_account: String(legacySource.invoice_bank_account || '').trim(),
+    bank_code: String(legacySource.invoice_bank_code || '').trim()
+  }
+
+  const hasLegacyValue = [
+    legacyInvoiceInfo.company_name,
+    legacyInvoiceInfo.tax_number,
+    legacyInvoiceInfo.company_address,
+    legacyInvoiceInfo.company_phone,
+    legacyInvoiceInfo.bank_name,
+    legacyInvoiceInfo.bank_account,
+    legacyInvoiceInfo.bank_code
+  ].some(Boolean)
+
+  return hasLegacyValue ? [legacyInvoiceInfo] : [createEmptyProjectInvoiceInfo()]
+}
+
+const syncLegacyInvoiceFieldsFromInvoiceInfos = (invoiceInfos = form.invoice_infos) => {
+  const primaryInvoiceInfo = normalizeProjectInvoiceInfos(invoiceInfos)[0] || createEmptyProjectInvoiceInfo()
+  form.invoice_company_name = primaryInvoiceInfo.company_name || ''
+  form.invoice_tax_number = primaryInvoiceInfo.tax_number || ''
+  form.invoice_company_address = primaryInvoiceInfo.company_address || ''
+  form.invoice_company_phone = primaryInvoiceInfo.company_phone || ''
+  form.invoice_bank_name = primaryInvoiceInfo.bank_name || ''
+  form.invoice_bank_account = primaryInvoiceInfo.bank_account || ''
+  form.invoice_bank_code = primaryInvoiceInfo.bank_code || ''
+}
+
+const validateProjectInvoiceInfos = (_rule, value, callback) => {
+  const invoiceInfos = normalizeProjectInvoiceInfos(value)
+
+  if (!invoiceInfos.length) {
+    callback(new Error('请至少填写一组开票信息'))
+    return
+  }
+
+  const remarks = new Set()
+
+  for (let index = 0; index < invoiceInfos.length; index += 1) {
+    const invoiceInfo = invoiceInfos[index]
+    const lineNumber = index + 1
+
+    if (!invoiceInfo.remark) {
+      callback(new Error(`第${lineNumber}组开票信息的备注不能为空`))
+      return
+    }
+
+    if (remarks.has(invoiceInfo.remark)) {
+      callback(new Error(`第${lineNumber}组开票信息的备注重复了`))
+      return
+    }
+    remarks.add(invoiceInfo.remark)
+
+    if (!invoiceInfo.company_name) {
+      callback(new Error(`第${lineNumber}组开票信息的企业名称不能为空`))
+      return
+    }
+
+    if (!invoiceInfo.tax_number) {
+      callback(new Error(`第${lineNumber}组开票信息的企业税号不能为空`))
+      return
+    }
+
+    if (!invoiceInfo.company_address) {
+      callback(new Error(`第${lineNumber}组开票信息的企业地址不能为空`))
+      return
+    }
+
+    if (!invoiceInfo.company_phone) {
+      callback(new Error(`第${lineNumber}组开票信息的企业电话不能为空`))
+      return
+    }
+
+    if (!invoiceInfo.bank_name) {
+      callback(new Error(`第${lineNumber}组开票信息的开户银行不能为空`))
+      return
+    }
+
+    if (!invoiceInfo.bank_account) {
+      callback(new Error(`第${lineNumber}组开票信息的银行账户不能为空`))
+      return
+    }
+
+    if (!invoiceInfo.bank_code) {
+      callback(new Error(`第${lineNumber}组开票信息的行号不能为空`))
+      return
+    }
+  }
+
+  callback()
+}
+
+const addProjectInvoiceInfo = () => {
+  form.invoice_infos.push(createEmptyProjectInvoiceInfo())
+}
+
+const removeProjectInvoiceInfo = (index) => {
+  if ((form.invoice_infos || []).length <= 1) {
+    return
+  }
+
+  form.invoice_infos.splice(index, 1)
+  syncLegacyInvoiceFieldsFromInvoiceInfos()
+}
+
 const form = reactive({
   name: '',
   code: '',
@@ -1857,6 +2076,7 @@ const form = reactive({
   status: 'active',
   start_date: '',
   end_date: '',
+  invoice_infos: [createEmptyProjectInvoiceInfo()],
   invoice_company_name: '',
   invoice_tax_number: '',
   invoice_company_address: '',
@@ -1911,26 +2131,8 @@ const formRules = {
   end_date: [
     { required: true, message: '请选择结束时间', trigger: 'change' }
   ],
-  invoice_company_name: [
-    { required: true, message: '请输入企业名称', trigger: 'blur' }
-  ],
-  invoice_tax_number: [
-    { required: true, message: '请输入企业税号', trigger: 'blur' }
-  ],
-  invoice_company_address: [
-    { required: true, message: '请输入企业地址', trigger: 'blur' }
-  ],
-  invoice_company_phone: [
-    { required: true, message: '请输入企业电话', trigger: 'blur' }
-  ],
-  invoice_bank_name: [
-    { required: true, message: '请输入开户银行', trigger: 'blur' }
-  ],
-  invoice_bank_account: [
-    { required: true, message: '请输入银行账户', trigger: 'blur' }
-  ],
-  invoice_bank_code: [
-    { required: true, message: '请输入行号', trigger: 'blur' }
+  invoice_infos: [
+    { required: true, validator: validateProjectInvoiceInfos, trigger: 'change' }
   ],
   social_security_regions: [
     { type: 'array', required: true, min: 1, message: '请至少选择一个社保地区', trigger: 'change' }
@@ -1985,6 +2187,7 @@ const projectFormFieldTabMap = {
   requires_salary_basis: 'basic',
   requires_attendance_basis: 'basic',
   registration_form_type: 'basic',
+  invoice_infos: 'invoice',
   invoice_company_name: 'invoice',
   invoice_tax_number: 'invoice',
   invoice_company_address: 'invoice',
@@ -2014,6 +2217,7 @@ const projectFormFieldLabelMap = {
   requires_salary_basis: '是否需要上传工资依据',
   requires_attendance_basis: '是否需要上传考勤依据',
   registration_form_type: '员工登记表类型',
+  invoice_infos: '开票信息',
   invoice_company_name: '企业名称',
   invoice_tax_number: '企业税号',
   invoice_company_address: '企业地址',
@@ -2387,6 +2591,7 @@ const resetForm = () => {
     status: 'active',
     start_date: '',
     end_date: '',
+    invoice_infos: [createEmptyProjectInvoiceInfo()],
     invoice_company_name: '',
     invoice_tax_number: '',
     invoice_company_address: '',
@@ -2412,6 +2617,7 @@ const resetForm = () => {
     other_insurance_policies: [],
     large_medical_insurance_configs: []
   })
+  syncLegacyInvoiceFieldsFromInvoiceInfos(form.invoice_infos)
 }
 
 // 占位符设置相关方法
@@ -2510,6 +2716,8 @@ const handleCreate = async () => {
       resetForm()
     }
   }
+  form.invoice_infos = normalizeProjectInvoiceInfos(form.invoice_infos, form)
+  syncLegacyInvoiceFieldsFromInvoiceInfos(form.invoice_infos)
   form.id = undefined
   isProjectCodeManuallyEdited.value = false
   
@@ -2553,6 +2761,7 @@ const handleView = async (row) => {
   
   Object.assign(form, {
     ...row,
+    invoice_infos: normalizeProjectInvoiceInfos(row.invoice_infos, row),
     insurance_types: row.insurance_types || [],
     delivery_requirements: row.delivery_requirements || [],
     social_security_regions: row.social_security_regions && row.social_security_regions.length > 0
@@ -2569,6 +2778,7 @@ const handleView = async (row) => {
       ? row.large_medical_insurance_configs.map(c => c.id)
       : [NO_LARGE_MEDICAL_INSURANCE_OPTION]
   })
+  syncLegacyInvoiceFieldsFromInvoiceInfos(form.invoice_infos)
 
   // 设置其他保险"无"选择模式
   otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
@@ -2601,6 +2811,7 @@ const handleEdit = async (row) => {
   
   Object.assign(form, {
     ...row,
+    invoice_infos: normalizeProjectInvoiceInfos(row.invoice_infos, row),
     insurance_types: row.insurance_types || [],
     delivery_requirements: row.delivery_requirements || [],
     // 注意：从数据库返回的是数组ID，但显示时需要从_data中获取详细信息
@@ -2619,6 +2830,7 @@ const handleEdit = async (row) => {
       ? row.large_medical_insurance_configs.map(c => c.id)
       : [NO_LARGE_MEDICAL_INSURANCE_OPTION]
   })
+  syncLegacyInvoiceFieldsFromInvoiceInfos(form.invoice_infos)
 
   // 设置其他保险"无"选择模式
   otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
@@ -3004,8 +3216,12 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     let projectId
+    const normalizedInvoiceInfos = normalizeProjectInvoiceInfos(form.invoice_infos, form)
+    form.invoice_infos = normalizedInvoiceInfos
+    syncLegacyInvoiceFieldsFromInvoiceInfos(normalizedInvoiceInfos)
     const projectPayload = {
       ...form,
+      invoice_infos: normalizedInvoiceInfos,
       social_security_regions: (form.social_security_regions || []).filter(id => id !== NO_SOCIAL_SECURITY_OPTION),
       housing_fund_regions: (form.housing_fund_regions || []).filter(id => id !== NO_HOUSING_FUND_OPTION),
       medical_insurance_regions: (form.medical_insurance_regions || []).filter(id => id !== NO_MEDICAL_INSURANCE_OPTION),
@@ -3125,7 +3341,7 @@ const handleDialogClose = () => {
   currentProject.value = null
   isEdit.value = false
   resetForm()
-  formRef.value?.resetFields()
+  formRef.value?.clearValidate?.()
 }
 
 const getStatusType = (status) => {
@@ -3247,7 +3463,7 @@ const formatDate = (dateValue) => {
   return String(dateValue).slice(0, 10)
 }
 
-const getRemainingDaysText = (endDate) => {
+const getRemainingDays = (endDate) => {
   if (!endDate) return '-'
 
   const today = new Date()
@@ -3259,7 +3475,20 @@ const getRemainingDaysText = (endDate) => {
   }
 
   targetDate.setHours(0, 0, 0, 0)
-  const diffDays = Math.ceil((targetDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+  return Math.ceil((targetDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+}
+
+const isRemainingDaysWarning = (endDate) => {
+  const diffDays = getRemainingDays(endDate)
+  return typeof diffDays === 'number' && diffDays >= 0 && diffDays < 30
+}
+
+const getRemainingDaysText = (endDate) => {
+  const diffDays = getRemainingDays(endDate)
+
+  if (diffDays === '-') {
+    return '-'
+  }
 
   if (diffDays < 0) {
     return '已结束'
@@ -3461,6 +3690,40 @@ watch(otherInsuranceNoSelection, (newVal) => {
   color: #606266;
   font-size: 14px;
   white-space: nowrap;
+}
+
+.invoice-infos-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.invoice-infos-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.invoice-info-card {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.invoice-info-card:last-child {
+  margin-bottom: 0;
+}
+
+.invoice-info-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: #303133;
 }
 
 :deep(.el-table) {

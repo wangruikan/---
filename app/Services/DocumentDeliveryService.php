@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ApprovalFlowConfig;
 use App\Models\ProjectDeliveryConfig;
 use App\Models\DocumentDelivery;
 use App\Models\DocumentDeliveryReminder;
@@ -200,14 +201,10 @@ class DocumentDeliveryService
             return null;
         }
 
-        // 从项目所属账套中获取第一个审批人（approval_level 最小的）
-        $firstApprover = \DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $project->account_set_id)
-            ->whereNotNull('account_set_users.approval_level')
-            ->orderBy('account_set_users.approval_level')
-            ->select('users.id as user_id')
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $project->account_set_id,
+            'document_delivery'
+        );
 
         return $firstApprover ? $firstApprover->user_id : null;
     }
@@ -379,4 +376,3 @@ class DocumentDeliveryService
         Log::info('季度未交付检查完成', ['count' => $pendingDeliveries->count()]);
     }
 }
-

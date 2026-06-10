@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\EmployeeContract;
 use App\Models\ContractReminder;
@@ -320,13 +321,10 @@ class CheckMonthlyContracts extends Command
      */
     private function getBusinessHandler($employee)
     {
-        $firstApprover = \DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $employee->account_set_id)
-            ->whereNotNull('account_set_users.approval_level')
-            ->orderBy('account_set_users.approval_level')
-            ->select('users.id as user_id', 'users.name as user_name')
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $employee->account_set_id,
+            'employee_contract'
+        );
 
         if (!$firstApprover) {
             // 如果找不到审批人，返回默认值

@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\InsuranceChange;
 use App\Models\AssessmentRecord;
-use App\Models\SystemSetting;
 use Carbon\Carbon;
 
 class CronController extends Controller
@@ -34,17 +34,19 @@ class CronController extends Controller
 
         try {
             $today = Carbon::today();
+            $latestHireDate = $today->copy()->subDays(30)->toDateString();
             $checkCount = 0;
             $recordCount = 0;
             $updateCount = 0;
 
-            // 查找所有参保完成时间已到期的员工
-            $employees = Employee::whereNotNull('insurance_completion_time')
-                ->where('insurance_completion_time', '<=', $today)
+            // 入职满30天仍未完成参保入职的员工需要检查
+            $employees = Employee::whereNotNull('hire_date')
+                ->whereDate('hire_date', '<=', $latestHireDate)
                 ->get();
 
             foreach ($employees as $employee) {
                 $checkCount++;
+                $deadlineDate = Carbon::parse($employee->hire_date)->addDays(30)->toDateString();
 
                 // 检查该员工在增减模块中的状态
                 $insuranceChange = InsuranceChange::where('employee_id', $employee->id)
@@ -61,6 +63,9 @@ class CronController extends Controller
                 } elseif ($insuranceChange->status !== 'completed') {
                     $shouldRecord = true;
                     $reason = '状态：' . ($insuranceChange->status === 'pending' ? '待处理' : $insuranceChange->status);
+                } elseif (!$insuranceChange->attachments || $insuranceChange->attachments->count() === 0) {
+                    $shouldRecord = true;
+                    $reason = '未上传附件';
                 }
 
                 // 如果需要记录，检查是否已存在今天的记录
@@ -76,7 +81,7 @@ class CronController extends Controller
                     $existingRecord = AssessmentRecord::where('account_set_id', $employee->account_set_id)
                         ->where('business_type', 'insurance_enrollment')
                         ->where('business_id', $employee->id)
-                        ->where('deadline_date', $employee->insurance_completion_time)
+                        ->where('deadline_date', $deadlineDate)
                         ->where('status', '!=', 'completed')
                         ->first();
 
@@ -89,7 +94,7 @@ class CronController extends Controller
                             'business_name' => "{$employee->name} - 参保入职",
                             'handler_id' => $handler['id'],
                             'handler_name' => $handler['name'],
-                            'deadline_date' => $employee->insurance_completion_time,
+                            'deadline_date' => $deadlineDate,
                             'remark' => $reason
                         ]);
 
@@ -129,23 +134,18 @@ class CronController extends Controller
     // 获取账套的经办人
     private function getAccountSetHandler($accountSetId)
     {
-        $setting = SystemSetting::where('account_set_id', $accountSetId)
-            ->where('key', 'handler_user_id')
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $accountSetId,
+            'insurance_enrollment'
+        );
 
-        if (!$setting || !$setting->value) {
-            return null;
-        }
-
-        $handlerUser = \App\Models\User::find($setting->value);
-
-        if (!$handlerUser) {
+        if (!$firstApprover) {
             return null;
         }
 
         return [
-            'id' => $handlerUser->id,
-            'name' => $handlerUser->name
+            'id' => $firstApprover->user_id,
+            'name' => $firstApprover->user_name
         ];
     }
 }

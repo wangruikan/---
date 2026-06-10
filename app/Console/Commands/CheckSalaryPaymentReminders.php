@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ApprovalFlowConfig;
 use App\Models\Project;
 use App\Models\Notification;
-use App\Models\User;
 use Illuminate\Console\Command;
 use Carbon\Carbon;
 
@@ -63,12 +63,10 @@ class CheckSalaryPaymentReminders extends Command
                 continue;
             }
 
-            // 获取第一个审批节点的用户
-            $users = User::whereHas('accountSets', function($query) use ($accountSet) {
-                    $query->where('account_sets.id', $accountSet->id)
-                          ->where('account_set_users.approval_level', 1);
-                })
-                ->get();
+            $users = ApprovalFlowConfig::getFirstEffectiveApprovers(
+                (int) $accountSet->id,
+                '工资付款申请'
+            );
 
             if ($users->count() === 0) {
                 $this->warn("  → 警告：没有找到第一审批节点的用户，跳过");

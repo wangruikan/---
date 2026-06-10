@@ -477,7 +477,7 @@ class PendingTaskService
             }
 
             // 获取处理人（项目的第一个审批节点账号）
-            $handler = self::getProjectOperator($documentDelivery->project_id, $documentDelivery->account_set_id);
+            $handler = self::getProjectOperator($documentDelivery->project_id, $documentDelivery->account_set_id, 'document_delivery');
             if (!$handler) {
                 Log::warning('无法确定文档交付处理人', [
                     'delivery_id' => $documentDelivery->id,
@@ -563,17 +563,12 @@ class PendingTaskService
     /**
      * 获取项目的业务人员（第一个审批节点账号）
      */
-    private static function getProjectOperator($projectId, $accountSetId)
+    private static function getProjectOperator($projectId, $accountSetId, $businessType = null)
     {
-        // 从项目所属账套中获取第一个审批人（approval_level 最小的）
-        $firstApprover = \DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
-            ->where('users.is_active', true)
-            ->orderBy('account_set_users.approval_level')
-            ->select('users.*')
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $accountSetId,
+            $businessType ? (string) $businessType : null
+        );
 
         return $firstApprover ? User::find($firstApprover->id) : null;
     }
@@ -873,7 +868,7 @@ class PendingTaskService
             }
 
             // 获取项目的第一个审批节点的人（业务人员）
-            $operator = self::getProjectOperator($projectId, $accountSetId);
+            $operator = self::getProjectOperator($projectId, $accountSetId, '考勤申请');
             if (!$operator) {
                 Log::warning('未找到项目业务人员', [
                     'account_set_id' => $accountSetId,
@@ -957,7 +952,7 @@ class PendingTaskService
             }
 
             // 获取项目的第一个审批节点的人（业务人员）
-            $operator = self::getProjectOperator($projectId, $accountSetId);
+            $operator = self::getProjectOperator($projectId, $accountSetId, '工资表审批');
             if (!$operator) {
                 Log::warning('未找到项目业务人员', [
                     'account_set_id' => $accountSetId,

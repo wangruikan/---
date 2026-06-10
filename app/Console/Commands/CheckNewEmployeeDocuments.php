@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\AssessmentRecord;
 use App\Models\AccountSet;
@@ -184,13 +185,10 @@ class CheckNewEmployeeDocuments extends Command
      */
     private function getAccountSetHandler($accountSetId)
     {
-        $firstApprover = \DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
-            ->orderBy('account_set_users.approval_level')
-            ->select('users.id as user_id', 'users.name as user_name')
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $accountSetId,
+            'document_upload'
+        );
 
         if (!$firstApprover) {
             return null;

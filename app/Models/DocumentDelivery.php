@@ -29,6 +29,7 @@ class DocumentDelivery extends Model
         'delivery_method',
         'delivery_period',
         'status',
+        'handler_id',
         'required_documents',
         'submitted_documents',
         'express_number',

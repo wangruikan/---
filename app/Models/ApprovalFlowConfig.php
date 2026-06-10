@@ -30,6 +30,11 @@ class ApprovalFlowConfig extends Model
             'employee_deletion' => '员工删除审批',
             'employee_salary_adjustment' => '员工调薪审批',
             'employee_registration_form_update' => '登记表修改审批',
+            'insurance_enrollment' => '参保入职',
+            'document_upload' => '资料收集',
+            'document_delivery' => '资料交付',
+            'probation_period' => '试用期提醒',
+            'tax_declaration' => '税费申报',
             '工资表审批' => '工资表审批',
             '考勤申请' => '考勤申请',
             '发票申请' => '发票申请',
@@ -158,6 +163,46 @@ class ApprovalFlowConfig extends Model
                 'account_set_users.approval_level_name as level_name'
             )
             ->get();
+    }
+
+    public static function getFirstEffectiveLevel(
+        int $accountSetId,
+        ?string $businessType = null,
+        int $minLevel = self::MIN_APPROVAL_LEVEL
+    ): ?int {
+        $approver = self::getFirstEffectiveApprover($accountSetId, $businessType, $minLevel);
+
+        return $approver ? (int) $approver->approval_level : null;
+    }
+
+    public static function getFirstEffectiveApprovers(
+        int $accountSetId,
+        ?string $businessType = null,
+        int $minLevel = self::MIN_APPROVAL_LEVEL,
+        ?int $excludeUserId = null
+    ) {
+        $approvers = self::getEnabledApprovers($accountSetId, $businessType, $minLevel, $excludeUserId);
+        $firstApprover = $approvers->first();
+
+        if (!$firstApprover) {
+            return collect();
+        }
+
+        $firstLevel = (int) $firstApprover->approval_level;
+
+        return $approvers
+            ->filter(fn($approver) => (int) $approver->approval_level === $firstLevel)
+            ->values();
+    }
+
+    public static function getFirstEffectiveApprover(
+        int $accountSetId,
+        ?string $businessType = null,
+        int $minLevel = self::MIN_APPROVAL_LEVEL,
+        ?int $excludeUserId = null
+    ) {
+        return self::getFirstEffectiveApprovers($accountSetId, $businessType, $minLevel, $excludeUserId)
+            ->first();
     }
 
     public static function userCanApproveBusiness(

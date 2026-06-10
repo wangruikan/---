@@ -154,7 +154,10 @@ class ApprovalService
             }
             
             // 4. 更新业务数据状态
-            $this->updateBusinessStatus($businessType, $businessId, 'in_approval', $instance->id);
+            $instance->refresh();
+            if ($instance->status !== 'approved') {
+                $this->updateBusinessStatus($businessType, $businessId, 'in_approval', $instance->id);
+            }
             
             DB::commit();
             
@@ -1097,6 +1100,35 @@ class ApprovalService
                 }
                 break;
 
+            case 'personnel_change':
+                $personnelChangeRequest = \App\Models\PersonnelChangeRequest::find($businessId);
+                if ($personnelChangeRequest) {
+                    $data = [];
+
+                    if ($status === 'in_approval') {
+                        $data['status'] = 'in_approval';
+                    } elseif ($status === 'completed') {
+                        $data['status'] = 'approved';
+                    } elseif ($status === 'rejected') {
+                        $data['status'] = 'rejected';
+                    } elseif ($status === 'withdrawn') {
+                        $data['status'] = 'pending';
+                    }
+
+                    if ($instanceId) {
+                        $data['approval_flow_id'] = $instanceId;
+                    }
+
+                    if (!empty($data)) {
+                        $personnelChangeRequest->update($data);
+                        Log::info('人员汇总申请状态已更新', [
+                            'personnel_change_request_id' => $businessId,
+                            'new_status' => $data['status'] ?? 'unknown'
+                        ]);
+                    }
+                }
+                break;
+
             case 'material_request':
                 // 资料申请（公章/营业执照等物品资料的借用归还）
                 $materialRequest = \App\Models\MaterialRequest::with('items')->find($businessId);
@@ -1407,10 +1439,33 @@ class ApprovalService
                 'approver_name' => $nextRecord->approver_name
             ]);
         } else {
-            Log::warning('自动推进失败：未找到下一步待审批的记录', [
-                'instance_id' => $instanceId,
-                'current_step' => $currentRecord->step_order
-            ]);
+            $totalRecords = ApprovalRecord::where('instance_id', $instanceId)->count();
+
+            if ($currentRecord->step_order >= $totalRecords) {
+                $instance->update([
+                    'status' => 'approved',
+                    'completed_at' => now(),
+                ]);
+
+                $this->updateBusinessStatus(
+                    $instance->business_type,
+                    $instance->business_id,
+                    'completed',
+                    $instance->id
+                );
+
+                Log::info('自动推进检测为最后一步，审批流程已完成', [
+                    'instance_id' => $instanceId,
+                    'current_step' => $currentRecord->step_order,
+                    'total_records' => $totalRecords,
+                ]);
+            } else {
+                Log::warning('自动推进失败：未找到下一步待审批的记录', [
+                    'instance_id' => $instanceId,
+                    'current_step' => $currentRecord->step_order,
+                    'total_records' => $totalRecords,
+                ]);
+            }
         }
     }
     

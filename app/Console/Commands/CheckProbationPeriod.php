@@ -3,11 +3,11 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\ContractReminder;
 use App\Models\AssessmentRecord;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class CheckProbationPeriod extends Command
@@ -201,13 +201,10 @@ class CheckProbationPeriod extends Command
      */
     private function getBusinessHandler($employee)
     {
-        $firstApprover = DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $employee->account_set_id)
-            ->whereNotNull('account_set_users.approval_level')
-            ->orderBy('account_set_users.approval_level')
-            ->select('users.id as user_id', 'users.name as user_name')
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $employee->account_set_id,
+            'probation_period'
+        );
 
         if (!$firstApprover) {
             return [

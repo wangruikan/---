@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\InsuranceChange;
 use App\Models\AssessmentRecord;
@@ -58,25 +59,16 @@ class DailyAssessmentCheck
     private function performDailyCheck()
     {
         $today = Carbon::today();
+        $latestHireDate = $today->copy()->subDays(30)->toDateString();
 
-        // 检查 employees 表是否有 insurance_completion_time 字段
-        try {
-            $hasColumn = \Schema::hasColumn('employees', 'insurance_completion_time');
-            if (!$hasColumn) {
-                \Log::info('employees表中没有insurance_completion_time字段，跳过每日考核检查');
-                return;
-            }
-        } catch (\Exception $e) {
-            \Log::error('检查insurance_completion_time字段失败', ['error' => $e->getMessage()]);
-            return;
-        }
-
-        // 查找所有参保完成时间已到期的员工
-        $employees = Employee::whereNotNull('insurance_completion_time')
-            ->where('insurance_completion_time', '<=', $today)
+        // 入职满30天仍未完成参保入职的员工需要检查
+        $employees = Employee::whereNotNull('hire_date')
+            ->whereDate('hire_date', '<=', $latestHireDate)
             ->get();
 
         foreach ($employees as $employee) {
+            $deadlineDate = Carbon::parse($employee->hire_date)->addDays(30)->toDateString();
+
             // 检查该员工在增减模块中的状态
             $insuranceChange = InsuranceChange::where('employee_id', $employee->id)
                 ->where('account_set_id', $employee->account_set_id)
@@ -92,6 +84,9 @@ class DailyAssessmentCheck
             } elseif ($insuranceChange->status !== 'completed') {
                 $shouldRecord = true;
                 $reason = '状态：' . ($insuranceChange->status === 'pending' ? '待处理' : $insuranceChange->status);
+            } elseif (!$insuranceChange->attachments || $insuranceChange->attachments->count() === 0) {
+                $shouldRecord = true;
+                $reason = '未上传附件';
             }
 
             // 如果需要记录考核
@@ -107,7 +102,7 @@ class DailyAssessmentCheck
                 $existingRecord = AssessmentRecord::where('account_set_id', $employee->account_set_id)
                     ->where('business_type', 'insurance_enrollment')
                     ->where('business_id', $employee->id)
-                    ->where('deadline_date', $employee->insurance_completion_time)
+                    ->where('deadline_date', $deadlineDate)
                     ->where('status', '!=', 'completed')
                     ->first();
 
@@ -120,7 +115,7 @@ class DailyAssessmentCheck
                         'business_name' => "{$employee->name} - 参保入职",
                         'handler_id' => $handler['id'],
                         'handler_name' => $handler['name'],
-                        'deadline_date' => $employee->insurance_completion_time,
+                        'deadline_date' => $deadlineDate,
                         'remark' => $reason
                     ]);
 
@@ -141,17 +136,10 @@ class DailyAssessmentCheck
      */
     private function getAccountSetHandler($accountSetId)
     {
-        // 经办人 = 第一级审批人（approval_level最小的）
-        $firstApprover = \DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
-            ->orderBy('account_set_users.approval_level')
-            ->select(
-                'users.id as user_id',
-                'users.name as user_name'
-            )
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $accountSetId,
+            'insurance_enrollment'
+        );
 
         if (!$firstApprover) {
             return null;

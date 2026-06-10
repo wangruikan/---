@@ -3,11 +3,11 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\InsuranceChange;
 use App\Models\AssessmentRecord;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class CheckInsuranceDeadlines extends Command
 {
@@ -18,31 +18,21 @@ class CheckInsuranceDeadlines extends Command
     {
         $this->info('开始检查参保入职超期情况...');
 
-        // 检查 employees 表是否有 insurance_completion_time 字段
-        try {
-            $hasColumn = \Schema::hasColumn('employees', 'insurance_completion_time');
-            if (!$hasColumn) {
-                $this->info('employees表中没有insurance_completion_time字段，跳过检查');
-                return 0;
-            }
-        } catch (\Exception $e) {
-            $this->error('检查insurance_completion_time字段失败: ' . $e->getMessage());
-            return 0;
-        }
-
         $today = Carbon::today();
+        $latestHireDate = $today->copy()->subDays(30)->toDateString();
         $checkCount = 0;
         $recordCount = 0;
 
-        // 查找所有参保完成时间已到期的员工
-        $employees = Employee::whereNotNull('insurance_completion_time')
-            ->where('insurance_completion_time', '<=', $today)
+        // 入职满30天仍未完成参保入职的员工需要检查
+        $employees = Employee::whereNotNull('hire_date')
+            ->whereDate('hire_date', '<=', $latestHireDate)
             ->get();
 
         $this->info("找到 {$employees->count()} 个需要检查的员工");
 
         foreach ($employees as $employee) {
             $checkCount++;
+            $deadlineDate = Carbon::parse($employee->hire_date)->addDays(30)->toDateString();
 
             // 检查该员工在增减模块中的状态
             $insuranceChange = InsuranceChange::where('employee_id', $employee->id)
@@ -81,7 +71,7 @@ class CheckInsuranceDeadlines extends Command
                 $existingRecord = AssessmentRecord::where('account_set_id', $employee->account_set_id)
                     ->where('business_type', 'insurance_enrollment')
                     ->where('business_id', $employee->id)
-                    ->where('deadline_date', $employee->insurance_completion_time)
+                    ->where('deadline_date', $deadlineDate)
                     ->where('status', '!=', 'completed')
                     ->first();
 
@@ -94,7 +84,7 @@ class CheckInsuranceDeadlines extends Command
                         'business_name' => "{$employee->name} - 参保入职",
                         'handler_id' => $handler['id'],
                         'handler_name' => $handler['name'],
-                        'deadline_date' => $employee->insurance_completion_time,
+                        'deadline_date' => $deadlineDate,
                         'remark' => $reason
                     ]);
 
@@ -121,17 +111,10 @@ class CheckInsuranceDeadlines extends Command
     // 获取账套的第一个审批人（即经办人）
     private function getAccountSetHandler($accountSetId)
     {
-        // 经办人 = 第一级审批人（approval_level最小的）
-        $firstApprover = DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
-            ->orderBy('account_set_users.approval_level')
-            ->select(
-                'users.id as user_id',
-                'users.name as user_name'
-            )
-            ->first();
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $accountSetId,
+            'insurance_enrollment'
+        );
 
         if (!$firstApprover) {
             return null;

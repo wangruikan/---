@@ -3,9 +3,9 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use App\Models\ApprovalFlowConfig;
 use App\Models\TaxDeclarationConfig;
 use App\Models\TaxDeclarationTask;
-use App\Models\User;
 use App\Services\PendingTaskService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -107,15 +107,9 @@ class CheckTaxDeclarationReminders extends Command
      */
     private function getFirstApprover($accountSetId)
     {
-        $firstApprover = DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
-            ->where('users.is_active', true)
-            ->orderBy('account_set_users.approval_level')
-            ->select('users.*')
-            ->first();
-
-        return $firstApprover ? User::find($firstApprover->id) : null;
+        return ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $accountSetId,
+            'tax_declaration'
+        );
     }
 }

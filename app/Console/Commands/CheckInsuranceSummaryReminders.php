@@ -5,8 +5,7 @@ namespace App\Console\Commands;
 use App\Models\PaymentDueDateConfig;
 use App\Models\ProcessApproval;
 use App\Models\Notification;
-use App\Models\User;
-use App\Models\ApprovalRecord;
+use App\Models\ApprovalFlowConfig;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -200,15 +199,13 @@ class CheckInsuranceSummaryReminders extends Command
      */
     private function getFirstApprovers($accountSetId)
     {
-        // 查找该账套下第一审批节点（approval_level = 1）的用户
-        // approval_level 在 account_set_users 中间表中
-        $users = User::whereHas('accountSets', function($query) use ($accountSetId) {
-                $query->where('account_sets.id', $accountSetId)
-                      ->where('account_set_users.approval_level', 1);
-            })
-            ->pluck('id')
-            ->toArray();
-        
-        return $users;
+        return ApprovalFlowConfig::getFirstEffectiveApprovers(
+            (int) $accountSetId,
+            '保险汇总'
+        )
+            ->pluck('user_id')
+            ->map(fn($id) => (int) $id)
+            ->values()
+            ->all();
     }
 }

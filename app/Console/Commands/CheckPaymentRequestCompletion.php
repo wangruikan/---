@@ -3,13 +3,13 @@
 namespace App\Console\Commands;
 
 use App\Models\AccountSet;
+use App\Models\ApprovalFlowConfig;
 use App\Models\AssessmentRecord;
 use App\Models\PaymentRequest;
 use App\Models\ProcessApproval;
 use App\Models\Project;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class CheckPaymentRequestCompletion extends Command
@@ -84,17 +84,10 @@ class CheckPaymentRequestCompletion extends Command
      */
     private function getFirstApprover(int $accountSetId): ?object
     {
-        return DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->where('account_set_users.approval_level', 1) // 第一级审批人就是业务人员
-            ->select(
-                'users.id as user_id',
-                'users.name as user_name',
-                'account_set_users.approval_level',
-                'account_set_users.approval_level_name as level_name'
-            )
-            ->first();
+        return ApprovalFlowConfig::getFirstEffectiveApprover(
+            $accountSetId,
+            '保险汇总付款申请'
+        );
     }
 
     /**

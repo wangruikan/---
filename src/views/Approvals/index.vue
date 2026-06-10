@@ -690,7 +690,8 @@ import {
   returnRecord,
   rejectRecord,
   downloadApprovalAttachment,
-  getApprovalAttachmentDownloadUrl
+  getApprovalAttachmentDownloadUrl,
+  getApprovalAttachmentPreviewUrl
 } from '@/api/approvalFlow'
 import { getMySignature } from '@/api/signatures'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -1475,8 +1476,29 @@ const getRecordStatusText = (status) => {
   return texts[status] || status
 }
 
-// 查看/下载附件（通过 API 下载，携带认证）
+// 预览附件（浏览器直接打开）
 const handleViewAttachment = async (attachment) => {
+  if (!attachment.file_path) {
+    ElMessage.warning('无附件')
+    return
+  }
+
+  try {
+    const instanceId = resolveAttachmentInstanceId(attachment)
+    if (!instanceId) {
+      ElMessage.error('审批实例ID缺失，无法预览附件')
+      return
+    }
+
+    const previewUrl = getApprovalAttachmentPreviewUrl(instanceId, attachment.id)
+    window.open(previewUrl, '_blank', 'noopener,noreferrer')
+  } catch (error) {
+    console.error('Preview error:', error)
+    ElMessage.error('预览失败: ' + (error.message || '未知错误'))
+  }
+}
+
+const handleDownloadAttachment = async (attachment) => {
   if (!attachment.file_path) {
     ElMessage.warning('无附件')
     return
@@ -1508,11 +1530,6 @@ const handleViewAttachment = async (attachment) => {
     console.error('Download error:', error)
     ElMessage.error('下载失败: ' + (error.message || '未知错误'))
   }
-}
-
-const handleDownloadAttachment = async (attachment) => {
-  // 复用 handleViewAttachment 的逻辑
-  await handleViewAttachment(attachment)
 }
 
 // 上传前检查

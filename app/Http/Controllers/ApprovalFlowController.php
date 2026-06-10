@@ -843,6 +843,10 @@ class ApprovalFlowController extends Controller
                 $downloadName = "approval_attachment_{$attachmentId}";
             }
 
+            if ($request->boolean('preview')) {
+                return response()->file($filePath);
+            }
+
             return response()->download($filePath, $downloadName);
         } catch (\Exception $e) {
             Log::error('下载审批实例附件失败', [

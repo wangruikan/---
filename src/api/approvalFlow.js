@@ -117,6 +117,13 @@ export const getApprovalAttachmentDownloadUrl = (instanceId, attachmentId) => {
 }
 
 /**
+ * 获取审批实例附件预览地址（浏览器直接打开）
+ */
+export const getApprovalAttachmentPreviewUrl = (instanceId, attachmentId) => {
+  return `/api/approvals/${instanceId}/attachments/${attachmentId}/download?preview=1`
+}
+
+/**
  * 上传合成后的PDF
  */
 export const uploadSignedPDF = (recordId, formData) => {

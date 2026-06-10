@@ -5266,10 +5266,10 @@
       </template>
     </el-dialog>
 
-    <!-- 盖章签字对话框 -->
+    <!-- 盖章对话框 -->
     <el-dialog
       v-model="showSignatureDialog"
-      title="盖章签字"
+      title="盖章"
       width="600px"
       :close-on-click-modal="false"
     >
@@ -5299,7 +5299,7 @@
       <template #footer>
         <el-button @click="handleSignatureDialogClose">取消</el-button>
         <el-button type="primary" @click="handleSignatureSubmit" :loading="submitting">
-          确认盖章签字
+          提交
         </el-button>
       </template>
     </el-dialog>
@@ -10447,10 +10447,10 @@ const mergePDFAndUpload = async (contractId, filePath, signature, seal, stepOrde
   }
 }
 
-// 盖章签字完成处理
+// 盖章完成处理
 const handleSignatureComplete = async (signatureData) => {
   try {
-    // 1. 先合成PDF（盖章签字）
+    // 1. 先合成PDF（盖章）
     if (signatureData.use_signature || signatureData.selected_seal_id) {
       ElMessage.info('正在合成PDF，请稍候...')
       
@@ -10495,7 +10495,7 @@ const handleSignatureComplete = async (signatureData) => {
     })
     
     if (response.success) {
-      ElMessage.success('盖章签字完成，已直接提交二级审批')
+      ElMessage.success('盖章完成，已直接提交二级审批')
       await loadEmployeeContracts(currentEmployee.value.id)
     }
   } catch (error) {
@@ -10507,7 +10507,7 @@ const handleSignatureComplete = async (signatureData) => {
   }
 }
 
-// 关闭盖章签字对话框
+// 关闭盖章对话框
 const handleSignatureDialogClose = () => {
   signatureForm.use_signature = false
   signatureForm.selected_seal_id = null
@@ -10518,13 +10518,13 @@ const handleSignatureDialogClose = () => {
   currentContract.value = null
 }
 
-// 提交盖章签字
+// 提交盖章
 const handleSignatureSubmit = async () => {
   try {
     await handleSignatureComplete(signatureForm)
   } catch (error) {
     console.error('Signature submit error:', error)
-    ElMessage.error('盖章签字失败')
+    ElMessage.error('盖章失败')
   }
 }
 

@@ -28,7 +28,7 @@
             <el-option
               v-for="company in companyOptions"
               :key="company.name"
-              :label="`${company.name}（${company.count}枚）`"
+              :label="company.name"
               :value="company.name"
             />
           </el-select>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AccountSet;
+use App\Models\ApprovalFlowConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -450,7 +451,7 @@ class AccountSetController extends Controller
         }
 
         $validator = \Validator::make($request->all(), [
-            'approval_level' => 'nullable|integer|between:1,4',
+            'approval_level' => 'nullable|integer|between:' . ApprovalFlowConfig::MIN_APPROVAL_LEVEL . ',' . ApprovalFlowConfig::MAX_APPROVAL_LEVEL,
             'approval_level_name' => 'nullable|string|max:50'
         ]);
 

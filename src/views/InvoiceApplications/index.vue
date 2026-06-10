@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span class="title">发票申请管理</span>
-          <!-- 创建按钮 - 只有审批人（第2、3、4节点）可见 -->
+          <!-- 创建按钮 - 只有后续审批节点人员可见 -->
           <el-button v-if="canCreateTask" type="primary" @click="handleCreate">
             <el-icon><Plus /></el-icon>
             创建开票任务
@@ -2720,7 +2720,7 @@ const checkCreatePermission = async () => {
     })
     
     if (response.success) {
-      // 只有审批级别2、3、4可以创建任务
+      // 只有后续审批节点人员可以创建任务
       canCreateTask.value = response.has_access
       console.log('创建权限检查结果:', response)
     } else {

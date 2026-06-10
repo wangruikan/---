@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AssessmentRecord;
 use App\Models\ApprovalInstance;
+use App\Models\ApprovalFlowConfig;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,11 +20,11 @@ class ProcessRecordController extends Controller
         
         $accountSetId = $request->input('account_set_id');
         
-        // 检查用户权限：只有第2、3、4个审批节点的用户才能访问
+        // 检查用户权限：只有审批节点用户才能访问
         if (!$this->canViewProcessRecords($user, $accountSetId)) {
             return response()->json([
                 'success' => false,
-                'message' => '您没有权限查看流程记录，只有审批流程第2、3、4节点的用户才能访问'
+                'message' => '您没有权限查看流程记录，只有审批流程节点用户才能访问'
             ], 403);
         }
 
@@ -116,7 +117,7 @@ class ProcessRecordController extends Controller
 
     /**
      * 检查用户是否可以查看流程记录
-     * 只有审批流程中第2、3、4个节点的用户才能查看
+     * 只有审批流程节点用户才能查看
      */
     private function canViewProcessRecords($user, $accountSetId = null)
     {
@@ -141,17 +142,23 @@ class ProcessRecordController extends Controller
             $approver = \DB::table('account_set_users')
                 ->where('account_set_id', $accountSetId)
                 ->where('user_id', $user->id)
-                ->whereIn('approval_level', [1, 2, 3, 4])
+                ->whereBetween('approval_level', [
+                    ApprovalFlowConfig::MIN_APPROVAL_LEVEL,
+                    ApprovalFlowConfig::MAX_APPROVAL_LEVEL
+                ])
                 ->first();
             
             if ($approver) {
                 return true;
             }
         } else {
-            // 没有账套ID时，检查用户在任意账套中是否有2/3/4级别权限
+            // 没有账套ID时，检查用户在任意账套中是否有审批节点权限
             $approver = \DB::table('account_set_users')
                 ->where('user_id', $user->id)
-                ->whereIn('approval_level', [1, 2, 3, 4])
+                ->whereBetween('approval_level', [
+                    ApprovalFlowConfig::MIN_APPROVAL_LEVEL,
+                    ApprovalFlowConfig::MAX_APPROVAL_LEVEL
+                ])
                 ->first();
             
             if ($approver) {
@@ -177,11 +184,14 @@ class ProcessRecordController extends Controller
             ], 400);
         }
 
-        // 检查用户是否是该账套的审批人（审批级别 2、3、4）
+        // 检查用户是否是该账套的审批节点用户
         $approver = \DB::table('account_set_users')
             ->where('account_set_id', $accountSetId)
             ->where('user_id', $user->id)
-            ->whereIn('approval_level', [1, 2, 3, 4])
+            ->whereBetween('approval_level', [
+                ApprovalFlowConfig::MIN_APPROVAL_LEVEL,
+                ApprovalFlowConfig::MAX_APPROVAL_LEVEL
+            ])
             ->first();
 
         return response()->json([

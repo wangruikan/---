@@ -201,10 +201,12 @@
                   @change="handleApprovalLevelChange(row)"
                   style="width: 150px"
                 >
-                  <el-option label="第1级-经办" :value="1" />
-                  <el-option label="第2级-复核" :value="2" />
-                  <el-option label="第3级-审核" :value="3" />
-                  <el-option label="第4级-终审" :value="4" />
+                  <el-option
+                    v-for="option in approvalLevelOptions"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
                 </el-select>
                 <el-tag
                   v-if="row.approval_level"
@@ -391,6 +393,21 @@ import request from '@/api/request'
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+
+const MAX_APPROVAL_LEVEL = 10
+const approvalLevelNames = {
+  1: '经办',
+  2: '复核',
+  3: '审核',
+  4: '终审'
+}
+const approvalLevelOptions = Array.from({ length: MAX_APPROVAL_LEVEL }, (_, index) => {
+  const level = index + 1
+  return {
+    value: level,
+    label: `第${level}级-${approvalLevelNames[level] || '审批'}`
+  }
+})
 
 // 权限检查
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
@@ -859,30 +876,22 @@ const getRoleText = (role) => {
 }
 
 const getApprovalLevelText = (level) => {
-  const texts = {
-    1: '经办',
-    2: '复核',
-    3: '审核',
-    4: '终审'
+  const normalizedLevel = Number(level)
+  if (!normalizedLevel) {
+    return ''
   }
-  return texts[level] || ''
+
+  return approvalLevelNames[normalizedLevel] || `第${normalizedLevel}级审批`
 }
 
 const handleApprovalLevelChange = async (user) => {
   try {
-    const levelNames = {
-      1: '经办',
-      2: '复核',
-      3: '审核',
-      4: '终审'
-    }
-
     await request({
       url: `/account-sets/${currentAccountSetId.value}/users/${user.id}/approval-level`,
       method: 'put',
       data: {
         approval_level: user.approval_level,
-        approval_level_name: user.approval_level ? levelNames[user.approval_level] : null
+        approval_level_name: user.approval_level ? getApprovalLevelText(user.approval_level) : null
       }
     })
 

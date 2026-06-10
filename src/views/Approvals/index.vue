@@ -988,14 +988,14 @@ const mergePDFAndUpload = async (recordId, attachment, signature, seal, stepOrde
     const lastPage = pages[pages.length - 1]
     const { width, height } = lastPage.getSize()
     
-    // 根据审批级别确定位置（右下角，纵向排列）
-    const positions = {
-      1: { x: width - 200, y: 100 },  // 第1级：最下方
-      2: { x: width - 200, y: 150 },  // 第2级
-      3: { x: width - 200, y: 200 },  // 第3级
-      4: { x: width - 200, y: 250 },  // 第4级
+    // 最多支持10个审批节点：每列5个，避免后续节点盖章位置超出页面
+    const normalizedStep = Math.max(1, Number(stepOrder) || 1)
+    const rowIndex = (normalizedStep - 1) % 5
+    const columnIndex = Math.floor((normalizedStep - 1) / 5)
+    const pos = {
+      x: Math.max(20, width - 200 - columnIndex * 200),
+      y: Math.min(height - 80, 100 + rowIndex * 50)
     }
-    const pos = positions[stepOrder] || positions[1]
     
     // 添加签名
     if (signature && actionForm.use_signature) {

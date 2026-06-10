@@ -3,10 +3,15 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ApprovalFlowConfig extends Model
 {
+    public const MIN_APPROVAL_LEVEL = 1;
+    public const MAX_APPROVAL_LEVEL = 10;
+    public const APPROVER_MIN_LEVEL = 2;
+
     protected $fillable = [
         'account_set_id',
         'business_type',
@@ -81,9 +86,95 @@ class ApprovalFlowConfig extends Model
 
         return collect($config->enabled_levels ?? [])
             ->map(fn($level) => (int) $level)
-            ->filter(fn($level) => $level > 0)
+            ->filter(fn($level) => $level >= self::MIN_APPROVAL_LEVEL && $level <= self::MAX_APPROVAL_LEVEL)
             ->unique()
             ->values()
             ->all();
+    }
+
+    public static function approvalLevelRange(int $minLevel = self::MIN_APPROVAL_LEVEL): array
+    {
+        $minLevel = max(self::MIN_APPROVAL_LEVEL, min(self::MAX_APPROVAL_LEVEL, $minLevel));
+
+        return range($minLevel, self::MAX_APPROVAL_LEVEL);
+    }
+
+    public static function getEffectiveLevels(int $accountSetId, ?string $businessType = null, int $minLevel = self::MIN_APPROVAL_LEVEL): array
+    {
+        $minLevel = max(self::MIN_APPROVAL_LEVEL, min(self::MAX_APPROVAL_LEVEL, $minLevel));
+        $enabledLevels = $businessType ? self::getEnabledLevels($accountSetId, $businessType) : null;
+
+        if (is_array($enabledLevels)) {
+            return collect($enabledLevels)
+                ->filter(fn($level) => $level >= $minLevel && $level <= self::MAX_APPROVAL_LEVEL)
+                ->sort()
+                ->values()
+                ->all();
+        }
+
+        return DB::table('account_set_users')
+            ->where('account_set_id', $accountSetId)
+            ->whereNotNull('approval_level')
+            ->whereBetween('approval_level', [$minLevel, self::MAX_APPROVAL_LEVEL])
+            ->distinct()
+            ->orderBy('approval_level')
+            ->pluck('approval_level')
+            ->map(fn($level) => (int) $level)
+            ->values()
+            ->all();
+    }
+
+    public static function getEnabledApprovers(
+        int $accountSetId,
+        ?string $businessType = null,
+        int $minLevel = self::MIN_APPROVAL_LEVEL,
+        ?int $excludeUserId = null
+    ) {
+        $levels = self::getEffectiveLevels($accountSetId, $businessType, $minLevel);
+        if (empty($levels)) {
+            return collect();
+        }
+
+        $query = DB::table('account_set_users')
+            ->join('users', 'account_set_users.user_id', '=', 'users.id')
+            ->where('account_set_users.account_set_id', $accountSetId)
+            ->whereIn('account_set_users.approval_level', $levels)
+            ->where('users.is_active', true);
+
+        if ($excludeUserId) {
+            $query->where('users.id', '!=', $excludeUserId);
+        }
+
+        return $query
+            ->orderBy('account_set_users.approval_level')
+            ->select(
+                'users.id',
+                'users.id as user_id',
+                'users.name',
+                'users.name as user_name',
+                'users.nickname',
+                'users.email',
+                'account_set_users.approval_level',
+                'account_set_users.approval_level_name as level_name'
+            )
+            ->get();
+    }
+
+    public static function userCanApproveBusiness(
+        int $accountSetId,
+        ?string $businessType,
+        int $userId,
+        int $minLevel = self::MIN_APPROVAL_LEVEL
+    ): bool {
+        $levels = self::getEffectiveLevels($accountSetId, $businessType, $minLevel);
+        if (empty($levels)) {
+            return false;
+        }
+
+        return DB::table('account_set_users')
+            ->where('account_set_id', $accountSetId)
+            ->where('user_id', $userId)
+            ->whereIn('approval_level', $levels)
+            ->exists();
     }
 }

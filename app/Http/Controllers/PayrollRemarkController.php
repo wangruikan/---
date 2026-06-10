@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ApprovalFlowConfig;
 use App\Models\PayrollRemark;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -10,9 +11,6 @@ use Illuminate\Support\Facades\Validator;
 
 class PayrollRemarkController extends Controller
 {
-    /**
-     * 检查权限：只有审批级别2、3、4可以访问
-     */
     private function checkPermission()
     {
         $user = Auth::user();
@@ -22,13 +20,12 @@ class PayrollRemarkController extends Controller
             return false;
         }
 
-        $approver = DB::table('account_set_users')
-            ->where('account_set_id', $accountSetId)
-            ->where('user_id', $user->id)
-            ->whereIn('approval_level', [2, 3, 4])
-            ->first();
-
-        return $approver !== null;
+        return ApprovalFlowConfig::userCanApproveBusiness(
+            (int) $accountSetId,
+            '工资表审批',
+            (int) $user->id,
+            ApprovalFlowConfig::APPROVER_MIN_LEVEL
+        );
     }
 
     /**

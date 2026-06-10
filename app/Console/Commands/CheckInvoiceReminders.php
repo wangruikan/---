@@ -5,9 +5,8 @@ namespace App\Console\Commands;
 use App\Models\Project;
 use App\Models\InvoiceApplication;
 use App\Models\Notification;
-use App\Models\User;
+use App\Models\ApprovalFlowConfig;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class CheckInvoiceReminders extends Command
 {
@@ -84,17 +83,11 @@ class CheckInvoiceReminders extends Command
                     continue;
                 }
 
-                // 获取有开票权限的用户（第2、3、4审批节点的审批人和管理员）
-                $users = User::whereHas('accountSets', function($query) use ($accountSet) {
-                        $query->where('account_sets.id', $accountSet->id);
-                    })
-                    ->where(function($query) {
-                        $query->whereIn('role', ['admin', 'super_admin'])
-                              ->orWhereHas('accountSets', function($q) {
-                                  $q->whereIn('account_set_users.approval_level', [2, 3, 4]);
-                              });
-                    })
-                    ->get();
+                $users = ApprovalFlowConfig::getEnabledApprovers(
+                    (int) $accountSet->id,
+                    '发票申请',
+                    ApprovalFlowConfig::APPROVER_MIN_LEVEL
+                );
 
                 $this->info("  → 找到 {$users->count()} 个有开票权限的用户");
 

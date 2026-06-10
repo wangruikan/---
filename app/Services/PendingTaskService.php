@@ -6,6 +6,7 @@ use App\Models\PendingTask;
 use App\Models\InvoiceApplication;
 use App\Models\PaymentRequest;
 use App\Models\Employee;
+use App\Models\ApprovalFlowConfig;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
@@ -601,8 +602,7 @@ class PendingTaskService
                 return null;
             }
 
-            // 获取账套中第2、3、4审批节点的审批人
-            $approvers = self::getApprovers($accountSetId, [2, 3, 4]);
+            $approvers = self::getBusinessApprovers($accountSetId, '工资表审批');
             if ($approvers->isEmpty()) {
                 Log::warning('未找到审批人', [
                     'account_set_id' => $accountSetId,
@@ -692,8 +692,7 @@ class PendingTaskService
                 return null;
             }
 
-            // 获取账套中第2、3、4审批节点的审批人
-            $approvers = self::getApprovers($accountSetId, [2, 3, 4]);
+            $approvers = self::getBusinessApprovers($accountSetId, '考勤申请');
             if ($approvers->isEmpty()) {
                 Log::warning('未找到审批人', [
                     'account_set_id' => $accountSetId,
@@ -828,22 +827,16 @@ class PendingTaskService
     /**
      * 获取账套中指定审批级别的审批人
      */
-    private static function getApprovers($accountSetId, $levels = [])
+    private static function getBusinessApprovers($accountSetId, $businessType)
     {
-        $query = \DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level')
-            ->where('users.is_active', true);
-
-        if (!empty($levels)) {
-            $query->whereIn('account_set_users.approval_level', $levels);
-        }
-
-        $approvers = $query->select('users.*')->get();
+        $approvers = ApprovalFlowConfig::getEnabledApprovers(
+            (int) $accountSetId,
+            $businessType,
+            ApprovalFlowConfig::APPROVER_MIN_LEVEL
+        );
 
         return collect($approvers)->map(function($approver) {
-            return User::find($approver->id);
+            return User::find($approver->user_id);
         })->filter();
     }
 

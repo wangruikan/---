@@ -8,6 +8,7 @@ use App\Models\InvoiceProject;
 use App\Models\PendingTask;
 use App\Models\ProcessApproval;
 use App\Models\ApprovalNode;
+use App\Models\ApprovalFlowConfig;
 use App\Services\PendingTaskService;
 use App\Services\ApprovalService;
 use Illuminate\Http\Request;
@@ -1306,15 +1307,30 @@ class InvoiceApplicationController extends Controller
 
     /**
      * 检查创建发票申请的权限
-     * 第2、3、4审批节点的审批人可以创建
+     * 后续审批节点的审批人可以创建
      */
     public function checkCreatePermission(Request $request)
     {
         $user = Auth::user();
+        $accountSetId = (int) (
+            $request->input('account_set_id')
+            ?: $request->input('current_account_set_id')
+            ?: $request->header('X-Account-Set-Id')
+        );
+
+        $hasAccess = false;
+        if ($user && $accountSetId > 0) {
+            $hasAccess = ApprovalFlowConfig::userCanApproveBusiness(
+                $accountSetId,
+                '发票申请',
+                (int) $user->id,
+                ApprovalFlowConfig::APPROVER_MIN_LEVEL
+            );
+        }
 
         return response()->json([
             'success' => true,
-            'has_access' => true,
+            'has_access' => $hasAccess,
             'role' => $user ? $user->role : null
         ]);
     }

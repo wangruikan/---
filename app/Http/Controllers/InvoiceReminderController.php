@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Notification;
-use App\Models\User;
+use App\Models\ApprovalFlowConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -90,13 +90,14 @@ class InvoiceReminderController extends Controller
             ->where('data', 'LIKE', '%"month":"' . $month . '"%')
             ->delete();
 
-        // 获取后面3个审批节点的人员（第2、3、4审批节点）
-        $approvers = User::whereHas('accountSets', function($query) use ($accountSetId) {
-                $query->where('account_sets.id', $accountSetId)
-                      ->whereIn('account_set_users.approval_level', [2, 3, 4]);
-            })
-            ->where('id', '!=', $user->id) // 排除当前用户
-            ->get();
+        $approvers = $accountSetId
+            ? ApprovalFlowConfig::getEnabledApprovers(
+                (int) $accountSetId,
+                '发票申请',
+                ApprovalFlowConfig::APPROVER_MIN_LEVEL,
+                (int) $user->id
+            )
+            : collect();
 
         // 为其他审批人更新或创建"已提交原因"通知
         foreach ($approvers as $approver) {

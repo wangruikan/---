@@ -207,32 +207,11 @@ class ApprovalService
      */
     private function getAccountSetApprovers($accountSetId, $minApprovalLevel = null, $businessType = null)
     {
-        $query = DB::table('account_set_users')
-            ->join('users', 'account_set_users.user_id', '=', 'users.id')
-            ->where('account_set_users.account_set_id', $accountSetId)
-            ->whereNotNull('account_set_users.approval_level');
-
-        if ($minApprovalLevel !== null) {
-            $query->where('account_set_users.approval_level', '>=', $minApprovalLevel);
-        }
-
-        if ($businessType) {
-            $enabledLevels = ApprovalFlowConfig::getEnabledLevels((int) $accountSetId, (string) $businessType);
-            if (is_array($enabledLevels)) {
-                $query->whereIn('account_set_users.approval_level', $enabledLevels);
-            }
-        }
-
-        return $query
-            ->orderBy('account_set_users.approval_level')
-            ->select(
-                'users.id as user_id',
-                'users.name as user_name',
-                'account_set_users.approval_level',
-                'account_set_users.approval_level_name as level_name'
-            )
-            ->get()
-            ->toArray();
+        return ApprovalFlowConfig::getEnabledApprovers(
+            (int) $accountSetId,
+            $businessType ? (string) $businessType : null,
+            $minApprovalLevel ?? ApprovalFlowConfig::MIN_APPROVAL_LEVEL
+        )->toArray();
     }
     
     /**

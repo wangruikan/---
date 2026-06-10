@@ -76,10 +76,12 @@
           </el-form-item>
           <el-form-item label="当前步骤">
             <el-select v-model="filterForm.current_step" placeholder="请选择当前步骤" clearable style="width: 180px">
-              <el-option label="第1步" value="1" />
-              <el-option label="第2步" value="2" />
-              <el-option label="第3步" value="3" />
-              <el-option label="第4步" value="4" />
+              <el-option
+                v-for="option in approvalStepOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="创建时间">
@@ -240,6 +242,14 @@ import { getProcessRecords, getProcessRecordStats } from '@/api/processRecord'
 import { useAccountSetStore } from '@/stores/accountSet'
 
 const accountSetStore = useAccountSetStore()
+const MAX_APPROVAL_LEVEL = 10
+const approvalStepOptions = Array.from({ length: MAX_APPROVAL_LEVEL }, (_, index) => {
+  const step = index + 1
+  return {
+    value: String(step),
+    label: `第${step}步`
+  }
+})
 
 // 统计数据
 const stats = reactive({

@@ -1,5 +1,49 @@
 import request from './request'
 
+const getApprovalStorageBaseUrl = () => {
+  const baseURL = request.defaults.baseURL || ''
+
+  if (/^https?:\/\//i.test(baseURL)) {
+    return baseURL.replace(/\/api\/?$/i, '')
+  }
+
+  if (import.meta.env.DEV) {
+    return 'http://localhost:8000'
+  }
+
+  return window.location.origin
+}
+
+const normalizeApprovalStoragePath = (filePath) => {
+  const rawPath = String(filePath || '').trim()
+  if (!rawPath) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(rawPath)) {
+    return rawPath
+  }
+
+  let normalizedPath = rawPath.replace(/\\/g, '/').replace(/^\/+/, '')
+
+  if (normalizedPath.startsWith('storage/')) {
+    normalizedPath = normalizedPath.slice('storage/'.length)
+  }
+
+  const [pathname, query = ''] = normalizedPath.split('?')
+  const encodedPath = pathname
+    .split('/')
+    .filter(Boolean)
+    .map(segment => encodeURIComponent(segment))
+    .join('/')
+
+  if (!encodedPath) {
+    return ''
+  }
+
+  return `${getApprovalStorageBaseUrl()}/storage/${encodedPath}${query ? `?${query}` : ''}`
+}
+
 /**
  * 创建审批流程
  */
@@ -117,10 +161,10 @@ export const getApprovalAttachmentDownloadUrl = (instanceId, attachmentId) => {
 }
 
 /**
- * 获取审批实例附件预览地址（浏览器直接打开）
+ * 获取审批实例附件真实文件地址（浏览器直接打开）
  */
-export const getApprovalAttachmentPreviewUrl = (instanceId, attachmentId) => {
-  return `/api/approvals/${instanceId}/attachments/${attachmentId}/download?preview=1`
+export const getApprovalAttachmentFileUrl = (filePath) => {
+  return normalizeApprovalStoragePath(filePath)
 }
 
 /**

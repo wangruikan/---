@@ -197,6 +197,9 @@
             <el-descriptions-item label="员工姓名" v-if="currentDetail.business_type === 'employee_contract' && currentDetail.business_data?.employee">
               {{ currentDetail.business_data.employee.name }}
             </el-descriptions-item>
+            <el-descriptions-item label="项目名称" v-if="currentDetail.business_type === 'employee_contract' && getEmployeeContractProjectNames(currentDetail.business_data)">
+              {{ getEmployeeContractProjectNames(currentDetail.business_data) }}
+            </el-descriptions-item>
             <el-descriptions-item label="合同类型" v-if="currentDetail.business_type === 'employee_contract' && currentDetail.business_data?.contract_type">
               {{ getContractTypeText(currentDetail.business_data.contract_type) }}
             </el-descriptions-item>
@@ -691,7 +694,7 @@ import {
   rejectRecord,
   downloadApprovalAttachment,
   getApprovalAttachmentDownloadUrl,
-  getApprovalAttachmentPreviewUrl
+  getApprovalAttachmentFileUrl
 } from '@/api/approvalFlow'
 import { getMySignature } from '@/api/signatures'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -1384,6 +1387,21 @@ const getContractTypeText = (type) => {
   return texts[type] || type
 }
 
+const getEmployeeContractProjectNames = (businessData) => {
+  const projects = businessData?.employee?.projects || []
+  if (!Array.isArray(projects) || projects.length === 0) {
+    return ''
+  }
+
+  const activeProjects = projects.filter(project => project?.pivot?.status === 'active')
+  const displayProjects = activeProjects.length > 0 ? activeProjects : projects
+
+  return displayProjects
+    .map(project => project?.name)
+    .filter(Boolean)
+    .join('、')
+}
+
 const getInitiatorName = (row) => {
   return row.instance?.creator?.name || row.creator?.name || '-'
 }
@@ -1484,13 +1502,12 @@ const handleViewAttachment = async (attachment) => {
   }
 
   try {
-    const instanceId = resolveAttachmentInstanceId(attachment)
-    if (!instanceId) {
-      ElMessage.error('审批实例ID缺失，无法预览附件')
+    const previewUrl = getApprovalAttachmentFileUrl(attachment.file_path)
+    if (!previewUrl) {
+      ElMessage.error('附件地址不存在，无法打开')
       return
     }
 
-    const previewUrl = getApprovalAttachmentPreviewUrl(instanceId, attachment.id)
     window.open(previewUrl, '_blank', 'noopener,noreferrer')
   } catch (error) {
     console.error('Preview error:', error)

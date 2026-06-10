@@ -98,7 +98,7 @@ class ApprovalInstance extends Model
     {
         switch ($this->business_type) {
             case 'employee_contract':
-                return \App\Models\EmployeeContract::find($this->business_id);
+                return \App\Models\EmployeeContract::with(['employee.projects'])->find($this->business_id);
             case 'offline_onboarding':
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
             case '保险汇总':

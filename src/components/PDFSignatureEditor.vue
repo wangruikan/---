@@ -1,5 +1,5 @@
 <template>
-  <div class="pdf-signature-editor">
+  <div class="pdf-signature-editor" :class="{ 'is-fullscreen': fullscreen }">
     <div class="editor-layout">
       <!-- 左侧：PDF预览区 -->
       <div class="pdf-preview-area">
@@ -170,6 +170,10 @@ const props = defineProps({
     type: Object,
     default: () => ({ x: 80, y: 85 })
   },
+  fullscreen: {
+    type: Boolean,
+    default: false
+  },
   allowedSeal: {
     type: Object,
     default: null
@@ -274,10 +278,10 @@ const renderPage = async (pageNum) => {
     if (!canvas) return
     
     const container = canvasContainer.value
-    const containerWidth = container.clientWidth - 40
+    const containerWidth = container.clientWidth - (props.fullscreen ? 96 : 40)
     
     // 计算缩放比例
-    currentScale = Math.min(containerWidth / viewport.width, 1.5)
+    currentScale = Math.min(containerWidth / viewport.width, props.fullscreen ? 1.65 : 1.5)
     const scaledViewport = page.getViewport({ scale: currentScale })
     
     // 设置Canvas尺寸（考虑设备像素比，避免模糊）
@@ -660,6 +664,13 @@ defineExpose({
   max-height: 800px;
 }
 
+.pdf-signature-editor.is-fullscreen {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+}
+
 .editor-layout {
   flex: 1;
   display: flex;
@@ -916,5 +927,50 @@ canvas.cursor-crosshair {
   padding: 16px 0 0 0;
   border-top: 2px solid #e4e7ed;
   margin-top: 16px;
+}
+
+.pdf-signature-editor.is-fullscreen .editor-layout {
+  gap: 12px;
+  min-height: 0;
+}
+
+.pdf-signature-editor.is-fullscreen .pdf-preview-area {
+  border-radius: 0;
+  min-width: 0;
+}
+
+.pdf-signature-editor.is-fullscreen .preview-header {
+  padding: 10px 14px;
+}
+
+.pdf-signature-editor.is-fullscreen .pdf-canvas-container {
+  padding: 18px 48px;
+  min-height: 0;
+}
+
+.pdf-signature-editor.is-fullscreen .tools-area {
+  width: 300px;
+  flex: 0 0 300px;
+  border-radius: 0;
+  min-height: 0;
+}
+
+.pdf-signature-editor.is-fullscreen .tools-header {
+  padding: 12px 14px;
+}
+
+.pdf-signature-editor.is-fullscreen .tools-body {
+  padding: 12px;
+}
+
+.pdf-signature-editor.is-fullscreen .tool-section {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+
+.pdf-signature-editor.is-fullscreen .editor-footer {
+  padding: 8px 0 0 0;
+  margin-top: 8px;
+  flex-shrink: 0;
 }
 </style>

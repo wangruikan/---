@@ -36,7 +36,8 @@
                 :class="{ 
                   'selected': selectedPlaceholderIndex === idx,
                   'dragging': isDraggingPlaceholder && selectedPlaceholderIndex === idx,
-                  'signature-placeholder': placeholder.type === 'employee_signature'
+                  'signature-placeholder': placeholder.type === 'employee_signature',
+                  'stamp-placeholder': placeholder.type === 'company_stamp'
                 }"
                 :style="{
                   position: 'absolute',
@@ -44,14 +45,14 @@
                   top: (placeholder.y + 30) + 'px',
                   width: placeholder.width + 'px',
                   height: placeholder.height + 'px',
-                  border: placeholder.type === 'employee_signature' ? '2px dashed #E6A23C' : '2px dashed #409EFF',
-                  backgroundColor: placeholder.type === 'employee_signature' ? 'rgba(230, 162, 60, 0.15)' : 'rgba(64, 158, 255, 0.1)',
+                  border: placeholder.type === 'company_stamp' ? '2px dashed #F56C6C' : (placeholder.type === 'employee_signature' ? '2px dashed #E6A23C' : '2px dashed #409EFF'),
+                  backgroundColor: placeholder.type === 'company_stamp' ? 'rgba(245, 108, 108, 0.12)' : (placeholder.type === 'employee_signature' ? 'rgba(230, 162, 60, 0.15)' : 'rgba(64, 158, 255, 0.1)'),
                   cursor: 'move',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: placeholder.type === 'employee_signature' ? '12px' : '10px',
-                  color: placeholder.type === 'employee_signature' ? '#E6A23C' : '#409EFF',
+                  fontSize: placeholder.type === 'company_stamp' || placeholder.type === 'employee_signature' ? '12px' : '10px',
+                  color: placeholder.type === 'company_stamp' ? '#F56C6C' : (placeholder.type === 'employee_signature' ? '#E6A23C' : '#409EFF'),
                   fontWeight: 'bold',
                   userSelect: 'none',
                   whiteSpace: 'normal',
@@ -194,7 +195,8 @@ const fieldExamples = {
   household_address: '湖南省长沙市岳麓区',
   residence_address: '北京市朝阳区',
   contact_address: '北京市朝阳区XX路',
-  employee_signature: '[签名]'
+  employee_signature: '[签名]',
+  company_stamp: '[公司盖章]'
 }
 
 const fallbackLabels = {
@@ -235,7 +237,8 @@ const fallbackLabels = {
   household_address: '户籍地址',
   residence_address: '居住地址',
   contact_address: '通讯地址',
-  employee_signature: '员工签字'
+  employee_signature: '员工签字',
+  company_stamp: '公司盖章'
 }
 
 const resolvePlaceholderLabel = (type) => {
@@ -252,6 +255,10 @@ const resolvePlaceholderLabel = (type) => {
 }
 
 const getDefaultPlaceholderSize = (type) => {
+  if (type === 'company_stamp') {
+    return { width: 150, height: 150 }
+  }
+
   if (type === 'employee_signature') {
     return { width: 150, height: 50 }
   }
@@ -303,8 +310,8 @@ watch(() => props.templateId, () => {
         type: pos.type,
         x: pos.x,
         y: pos.y,
-        width: pos.type === 'employee_signature' ? (pos.width || defaultSize.width) : defaultSize.width,
-        height: pos.type === 'employee_signature' ? (pos.height || defaultSize.height) : defaultSize.height,
+        width: pos.width || defaultSize.width,
+        height: pos.height || defaultSize.height,
         page: pos.page || 0
       }
     })
@@ -529,11 +536,33 @@ const previewPositions = () => {
   ElMessage.info('请查看左侧PDF上的占位符位置')
 }
 
+const buildPositionsForSave = () => {
+  const pageElements = document.querySelectorAll('.pdf-page-item')
+
+  return placeholderList.value.map((placeholder) => {
+    const pageElement = pageElements[placeholder.page]
+    const imageElement = pageElement?.querySelector('.pdf-image')
+    const imageWidth = imageElement?.clientWidth || imageElement?.naturalWidth || 0
+    const imageHeight = imageElement?.clientHeight || imageElement?.naturalHeight || 0
+
+    return {
+      ...placeholder,
+      x_percent: imageWidth > 0 ? (placeholder.x / imageWidth) * 100 : null,
+      y_percent: imageHeight > 0 ? (placeholder.y / imageHeight) * 100 : null,
+      width_percent: imageWidth > 0 ? (placeholder.width / imageWidth) * 100 : null,
+      height_percent: imageHeight > 0 ? (placeholder.height / imageHeight) * 100 : null,
+      page_width: imageWidth || null,
+      page_height: imageHeight || null,
+      render_scale: 1.5
+    }
+  })
+}
+
 // 保存位置
 const savePositions = () => {
   emit('save', {
     templateId: props.templateId,
-    positions: placeholderList.value
+    positions: buildPositionsForSave()
   })
 }
 
@@ -578,7 +607,8 @@ const getPlaceholderLabel = (type) => {
     household_address: '户籍地址',
     residence_address: '居住地址',
     contact_address: '通讯地址',
-    employee_signature: '员工签字'
+    employee_signature: '员工签字',
+    company_stamp: '公司盖章'
   }
   return labels[type] || type
 }

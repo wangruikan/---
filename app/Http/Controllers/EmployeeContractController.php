@@ -234,7 +234,7 @@ class EmployeeContractController extends Controller
             if ($contract->signature_image) {
                 
                 // 检查是否有预设的多签名位置
-                $signaturePositions = $contract->signature_positions;
+                $signaturePositions = $this->filterEmployeeSignaturePositions($contract->signature_positions);
                 
                 if (!empty($signaturePositions) && is_array($signaturePositions)) {
                     // 使用预设的多个签名位置
@@ -1083,7 +1083,7 @@ class EmployeeContractController extends Controller
 
     /**
      * 提取小程序签约阶段需要保留的占位符坐标
-     * 当前支持：employee_signature、previous_company
+     * 当前支持：employee_signature、previous_company、company_stamp
      */
     private function extractContractPlaceholderPositions($rawPlaceholderPositions): array
     {
@@ -1099,7 +1099,7 @@ class EmployeeContractController extends Controller
             return [];
         }
 
-        $allowedTypes = ['employee_signature', 'previous_company'];
+        $allowedTypes = ['employee_signature', 'previous_company', 'company_stamp'];
         $result = [];
 
         foreach ($positions as $pos) {
@@ -1112,23 +1112,63 @@ class EmployeeContractController extends Controller
                 continue;
             }
 
-            $isAbsolute = isset($pos['x']) && isset($pos['y']);
-            $defaultWidth = $type === 'employee_signature' ? 150 : 180;
-            $defaultHeight = $type === 'employee_signature' ? 50 : 24;
+            $defaultWidth = match ($type) {
+                'employee_signature' => 150,
+                'company_stamp' => 150,
+                default => 180,
+            };
+            $defaultHeight = match ($type) {
+                'employee_signature' => 50,
+                'company_stamp' => 150,
+                default => 24,
+            };
 
             $result[] = [
                 'type' => $type,
                 'x' => isset($pos['x']) ? (float) $pos['x'] : 0,
                 'y' => isset($pos['y']) ? (float) $pos['y'] : 0,
-                'x_percent' => $isAbsolute ? null : ($pos['x_percent'] ?? null),
-                'y_percent' => $isAbsolute ? null : ($pos['y_percent'] ?? null),
+                'x_percent' => isset($pos['x_percent']) ? (float) $pos['x_percent'] : null,
+                'y_percent' => isset($pos['y_percent']) ? (float) $pos['y_percent'] : null,
+                'width_percent' => isset($pos['width_percent']) ? (float) $pos['width_percent'] : null,
+                'height_percent' => isset($pos['height_percent']) ? (float) $pos['height_percent'] : null,
                 'width' => isset($pos['width']) ? (float) $pos['width'] : $defaultWidth,
                 'height' => isset($pos['height']) ? (float) $pos['height'] : $defaultHeight,
                 'page' => isset($pos['page']) ? (int) $pos['page'] : 0,
+                'page_width' => isset($pos['page_width']) ? (float) $pos['page_width'] : null,
+                'page_height' => isset($pos['page_height']) ? (float) $pos['page_height'] : null,
+                'render_scale' => isset($pos['render_scale']) ? (float) $pos['render_scale'] : null,
             ];
         }
 
         return $result;
+    }
+
+    private function filterEmployeeSignaturePositions($positions): array
+    {
+        if (empty($positions)) {
+            return [];
+        }
+
+        $positions = is_array($positions) ? $positions : json_decode($positions, true);
+        if (!is_array($positions)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($positions as $position) {
+            if (!is_array($position)) {
+                continue;
+            }
+
+            $type = $position['type'] ?? null;
+            if ($type !== null && $type !== 'employee_signature') {
+                continue;
+            }
+
+            $result[] = $position;
+        }
+
+        return array_values($result);
     }
 
     /**
@@ -1407,6 +1447,7 @@ class EmployeeContractController extends Controller
 
         try {
             $contract = EmployeeContract::findOrFail($request->contract_id);
+            $oldFilePath = $contract->contract_file;
             
             // 接收前端生成的已签名PDF文件
             $signedPdf = $request->file('signed_pdf');
@@ -1426,7 +1467,7 @@ class EmployeeContractController extends Controller
             
             \Log::info('已签名PDF保存成功', [
                 'contract_id' => $request->contract_id,
-                'old_file' => $contract->contract_file,
+                'old_file' => $oldFilePath,
                 'new_file' => $path
             ]);
 

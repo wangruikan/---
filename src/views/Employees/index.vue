@@ -5607,7 +5607,8 @@ const getDefaultStampSelection = () => ({
   stamp_selection_mode: 'none',
   stamp_company: '',
   stamp_type: '',
-  stamp_id: null
+  stamp_id: null,
+  stamp_name: ''
 })
 
 const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
@@ -10439,11 +10440,17 @@ const mergePDFAndUpload = async (contractId, filePath, signature, seal, stepOrde
     })
     
     console.log('PDF合成响应:', response)
-    return response.success
+    return {
+      success: !!response.success,
+      filePath: response.data?.file_path || ''
+    }
   } catch (error) {
     console.error('Merge PDF error:', error)
     console.error('Error response:', error.response?.data)
-    return false
+    return {
+      success: false,
+      filePath: ''
+    }
   }
 }
 
@@ -10460,7 +10467,7 @@ const handleSignatureComplete = async (signatureData) => {
         return
       }
       
-      const mergeSuccess = await mergePDFAndUpload(
+      const mergeResult = await mergePDFAndUpload(
         currentContract.value.id,
         contractFile,
         signatureData.use_signature ? mySignature.value : null,
@@ -10468,9 +10475,13 @@ const handleSignatureComplete = async (signatureData) => {
         1 // 发起人签字
       )
       
-      if (!mergeSuccess) {
+      if (!mergeResult.success) {
         ElMessage.error('PDF合成失败')
         return
+      }
+
+      if (mergeResult.filePath) {
+        currentContract.value.contract_file = mergeResult.filePath
       }
     }
     
@@ -10480,27 +10491,16 @@ const handleSignatureComplete = async (signatureData) => {
       return
     }
 
-    // 2. 创建审批流程（跳过发起人审批）
-    const response = await request({
-      url: '/approvals',
-      method: 'post',
-      data: {
-        business_type: 'employee_contract',  // 业务类型
-        business_id: currentContract.value.id,  // 合同ID
-        employee_id: currentEmployee.value.id,
-        skip_initiator: true,  // 跳过发起人审批
-        stamp_method: signatureData.stamp_method || 'online',  // 盖章方式
-        ...(stampResult?.value || signatureData.stamp_selection)
-      }
+    await submitContractApproval(currentContract.value, {
+      stamp_method: signatureData.stamp_method || 'online',
+      stamp_selection: stampResult?.value || signatureData.stamp_selection
     })
-    
-    if (response.success) {
-      ElMessage.success('盖章完成，已直接提交二级审批')
-      await loadEmployeeContracts(currentEmployee.value.id)
-    }
+
+    ElMessage.success('盖章完成，已直接提交二级审批')
+    await loadEmployeeContracts(currentEmployee.value.id)
   } catch (error) {
     console.error('Signature complete error:', error)
-    ElMessage.error(error.response?.data?.message || '提交失败')
+    ElMessage.error(error.response?.data?.message || error.message || '提交失败')
   } finally {
     showSignatureDialog.value = false
     currentContract.value = null

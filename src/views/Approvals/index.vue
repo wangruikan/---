@@ -427,22 +427,31 @@
           </el-select>
           <div class="form-tip">💡 抄送人员会收到通知并可以查看审批进度</div>
         </el-form-item>
+
+        <el-alert
+          v-if="requiresStampPreviewBeforeApprove"
+          :title="approvalStampPreviewReady ? '已完成盖章预览，点击“通过”后将自动完成盖章。' : '当前是最后一个审批节点，请先点击“签名盖章”完成预览，再点击“通过”。'"
+          :type="approvalStampPreviewReady ? 'success' : 'warning'"
+          :closable="false"
+          style="margin-bottom: 12px;"
+        />
       </el-form>
       
       <template #footer>
         <el-button @click="showActionDialog = false">取消</el-button>
         <el-button 
           v-if="hasContractAttachment"
-          type="warning" 
+          :type="approvalStampPreviewReady ? 'success' : 'warning'"
           @click="openPDFEditor"
         >
           <el-icon><Edit /></el-icon>
-                  签名盖章
+          {{ approvalStampPreviewReady ? '已预览盖章' : '签名盖章' }}
         </el-button>
         <el-button 
           type="success" 
           @click="handleActionSubmit('approve')" 
           :loading="submitting && actionType === 'approve'"
+          :disabled="requiresStampPreviewBeforeApprove && !approvalStampPreviewReady"
         >
           通过
         </el-button>
@@ -503,23 +512,27 @@
       </template>
     </el-dialog>
     
-    <!-- PDF签名编辑器对话框 -->
-    <el-dialog
-      v-model="showPDFEditor"
-      title="PDF签名盖章编辑器"
-      width="90%"
-      top="5vh"
-      :close-on-click-modal="false"
-    >
-      <PDFSignatureEditor
-        v-if="showPDFEditor && currentPDFUrl"
-        :pdf-url="currentPDFUrl"
-        :allowed-seal="selectedApprovalStamp"
-        :show-seal-section="!!selectedApprovalStamp"
-        @confirm="handlePDFEditorConfirm"
-        @cancel="showPDFEditor = false"
-      />
-    </el-dialog>
+    <!-- PDF签名编辑器全屏层 -->
+    <Teleport to="body">
+      <div v-if="showPDFEditor && currentPDFUrl" ref="pdfStampFullscreenRef" class="native-stamp-fullscreen">
+        <div class="native-stamp-header">
+          <span>PDF签名盖章编辑器</span>
+          <el-button text @click="closePDFEditor">
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+        <div class="native-stamp-body">
+          <PDFSignatureEditor
+            :pdf-url="currentPDFUrl"
+            :allowed-seal="selectedApprovalStamp"
+            :show-seal-section="!!selectedApprovalStamp"
+            fullscreen
+            @confirm="handlePDFEditorConfirm"
+            @cancel="closePDFEditor"
+          />
+        </div>
+      </div>
+    </Teleport>
     
     <!-- 批量盖章 - 步骤1：选择文件 -->
     <el-dialog
@@ -561,40 +574,42 @@
     </el-dialog>
     
     <!-- 批量盖章 - 步骤2：设置盖章位置 -->
-    <el-dialog
-      v-model="showBatchStampPositionDialog"
-      title="批量盖章 - 设置盖章位置"
-      width="90%"
-      top="5vh"
-      :close-on-click-modal="false"
-    >
-      <div style="margin-bottom: 16px;">
-        <el-alert
-          title="请在下方PDF上拖动印章到合适位置，此位置将应用到所有选中的文件"
-          type="info"
-          :closable="false"
-        />
+    <Teleport to="body">
+      <div v-if="showBatchStampPositionDialog && batchStampFirstPDFUrl" ref="batchStampFullscreenRef" class="native-stamp-fullscreen">
+        <div class="native-stamp-header">
+          <span>批量盖章 - 设置盖章位置</span>
+          <el-button text @click="closeBatchStampPosition">
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+        <div class="native-stamp-tip">
+          <el-alert
+            title="请在下方PDF上拖动印章到合适位置，此位置将应用到所有选中的文件"
+            type="info"
+            :closable="false"
+          />
+        </div>
+        <div class="native-stamp-body">
+          <PDFSignatureEditor
+            ref="batchStampEditorRef"
+            :pdf-url="batchStampFirstPDFUrl"
+            :allowed-seal="selectedApprovalStamp"
+            :show-seal-section="!!selectedApprovalStamp"
+            :preview-mode="true"
+            fullscreen
+            @position-change="handleBatchStampPositionChange"
+            @cancel="closeBatchStampPosition"
+          />
+        </div>
+        <div class="native-stamp-footer">
+          <el-button @click="closeBatchStampPosition">取消</el-button>
+          <el-button @click="backToBatchStampSelect">上一步</el-button>
+          <el-button type="primary" @click="goToBatchStampPreview">
+            下一步：预览确认
+          </el-button>
+        </div>
       </div>
-      
-      <PDFSignatureEditor
-        v-if="showBatchStampPositionDialog && batchStampFirstPDFUrl"
-        ref="batchStampEditorRef"
-        :pdf-url="batchStampFirstPDFUrl"
-        :allowed-seal="selectedApprovalStamp"
-        :show-seal-section="!!selectedApprovalStamp"
-        :preview-mode="true"
-        @position-change="handleBatchStampPositionChange"
-        @cancel="showBatchStampPositionDialog = false"
-      />
-      
-      <template #footer>
-        <el-button @click="showBatchStampPositionDialog = false">取消</el-button>
-        <el-button @click="backToBatchStampSelect">上一步</el-button>
-        <el-button type="primary" @click="goToBatchStampPreview">
-          下一步：预览确认
-        </el-button>
-      </template>
-    </el-dialog>
+    </Teleport>
     
     <!-- 批量盖章 - 步骤3：预览确认 -->
     <el-dialog
@@ -650,39 +665,42 @@
     </el-dialog>
     
     <!-- 批量盖章 - 单个文件位置调整 -->
-    <el-dialog
-      v-model="showSingleStampAdjustDialog"
-      title="调整盖章位置"
-      width="90%"
-      top="5vh"
-      :close-on-click-modal="false"
-    >
-      <PDFSignatureEditor
-        v-if="showSingleStampAdjustDialog && singleAdjustPDFUrl"
-        ref="singleAdjustEditorRef"
-        :pdf-url="singleAdjustPDFUrl"
-        :allowed-seal="selectedApprovalStamp"
-        :show-seal-section="!!selectedApprovalStamp"
-        :preview-mode="true"
-        :initial-position="singleAdjustInitialPosition"
-        @position-change="handleSingleAdjustPositionChange"
-        @cancel="showSingleStampAdjustDialog = false"
-      />
-      
-      <template #footer>
-        <el-button @click="showSingleStampAdjustDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmSingleAdjust">
-          确认调整
-        </el-button>
-      </template>
-    </el-dialog>
+    <Teleport to="body">
+      <div v-if="showSingleStampAdjustDialog && singleAdjustPDFUrl" ref="singleStampFullscreenRef" class="native-stamp-fullscreen">
+        <div class="native-stamp-header">
+          <span>调整盖章位置</span>
+          <el-button text @click="closeSingleStampAdjust">
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+        <div class="native-stamp-body">
+          <PDFSignatureEditor
+            ref="singleAdjustEditorRef"
+            :pdf-url="singleAdjustPDFUrl"
+            :allowed-seal="selectedApprovalStamp"
+            :show-seal-section="!!selectedApprovalStamp"
+            :preview-mode="true"
+            :initial-position="singleAdjustInitialPosition"
+            fullscreen
+            @position-change="handleSingleAdjustPositionChange"
+            @cancel="closeSingleStampAdjust"
+          />
+        </div>
+        <div class="native-stamp-footer">
+          <el-button @click="closeSingleStampAdjust">取消</el-button>
+          <el-button type="primary" @click="confirmSingleAdjust">
+            确认调整
+          </el-button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Picture, Files, Tickets, Upload } from '@element-plus/icons-vue'
+import { Document, Picture, Files, Tickets, Upload, Close } from '@element-plus/icons-vue'
 import { 
   getMyTasks,
   getMyApproved,
@@ -715,6 +733,8 @@ const showPDFSelector = ref(false)
 const pdfList = ref([])
 const selectedPDFIndex = ref(0)
 const selectedAttachmentId = ref(null) // 记录用户选择的附件ID
+const pendingSignedPDFBlob = ref(null)
+const pendingSignedPDFMeta = ref(null)
 const actionType = ref('')
 const currentApproval = ref(null)
 const currentDetail = ref(null)
@@ -737,6 +757,9 @@ const singleAdjustPDFUrl = ref('')
 const singleAdjustIndex = ref(-1)
 const singleAdjustInitialPosition = ref({ x: 80, y: 85 })
 const singleAdjustEditorRef = ref(null)
+const pdfStampFullscreenRef = ref(null)
+const batchStampFullscreenRef = ref(null)
+const singleStampFullscreenRef = ref(null)
 
 const activeTab = ref('my-tasks')
 const approvals = ref([])
@@ -776,6 +799,31 @@ const resolveAttachmentInstanceId = (attachment) => {
 // 判断是否是第一步（第一步不能退回）
 const isFirstStep = computed(() => {
   return currentApproval.value?.step_order === 1
+})
+
+const isFinalApprovalStep = computed(() => {
+  const currentStepOrder = Number(currentApproval.value?.step_order || 0)
+  const totalSteps = Number(currentApproval.value?.instance?.total_steps || 0)
+
+  if (currentStepOrder > 0 && totalSteps > 0) {
+    return currentStepOrder === totalSteps
+  }
+
+  const records = currentApproval.value?.instance?.records
+  if (!Array.isArray(records) || records.length === 0) {
+    return false
+  }
+
+  const maxStepOrder = Math.max(...records.map(record => Number(record?.step_order || 0)))
+  return currentStepOrder > 0 && currentStepOrder === maxStepOrder
+})
+
+const requiresStampPreviewBeforeApprove = computed(() => {
+  return actionType.value === 'approve' && isFinalApprovalStep.value && hasContractAttachment.value
+})
+
+const approvalStampPreviewReady = computed(() => {
+  return !!pendingSignedPDFBlob.value && !!pendingSignedPDFMeta.value?.attachmentId
 })
 
 const actionFormRules = computed(() => {
@@ -875,6 +923,9 @@ const handleViewDetail = async (row) => {
 const handleApprove = async (row) => {
   try {
   actionType.value = 'approve'
+    pendingSignedPDFBlob.value = null
+    pendingSignedPDFMeta.value = null
+    selectedAttachmentId.value = null
     
     // 加载完整的审批实例数据（包括附件）
     const instanceId = row.instance_id || row.instance?.id
@@ -923,8 +974,15 @@ const handleActionSubmit = async (type) => {
         
       // 如果是审批通过
         if (type === 'approve') {
-        // 如果选择了签名或印章，需要先合成PDF
-        if ((actionForm.use_signature || actionForm.selected_seal_id) && currentApproval.value.instance) {
+        if (requiresStampPreviewBeforeApprove.value && !approvalStampPreviewReady.value) {
+          ElMessage.warning('请先点击“签名盖章”完成预览后，再点击“通过”')
+          return
+        }
+
+        if (requiresStampPreviewBeforeApprove.value && approvalStampPreviewReady.value) {
+          ElMessage.info('正在自动完成盖章，请稍候...')
+          await uploadPendingPreviewStampedPDF()
+        } else if ((actionForm.use_signature || actionForm.selected_seal_id) && currentApproval.value.instance) {
           const instance = currentApproval.value.instance
           if (instance.business_type === 'employee_contract' && instance.attachments && instance.attachments.length > 0) {
             ElMessage.info('正在合成PDF，请稍候...')
@@ -1075,6 +1133,55 @@ const mergePDFAndUpload = async (recordId, attachment, signature, seal, stepOrde
   }
 }
 
+const uploadPendingPreviewStampedPDF = async () => {
+  if (!pendingSignedPDFBlob.value || !pendingSignedPDFMeta.value?.attachmentId) {
+    return true
+  }
+
+  const formData = new FormData()
+  formData.append('signed_pdf', pendingSignedPDFBlob.value, pendingSignedPDFMeta.value.fileName || 'signed.pdf')
+  formData.append('attachment_id', pendingSignedPDFMeta.value.attachmentId)
+
+  const response = await request({
+    url: `/approvals/records/${currentApproval.value.id}/upload-signed-pdf`,
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+
+  if (!response?.success) {
+    throw new Error(response?.message || 'PDF上传失败')
+  }
+
+  return true
+}
+
+const enterNativeFullscreen = async (targetRef) => {
+  await nextTick()
+  const target = targetRef.value
+  if (!target || document.fullscreenElement) {
+    return
+  }
+
+  try {
+    await target.requestFullscreen?.()
+  } catch (error) {
+    console.warn('进入浏览器全屏失败，已使用页面内全屏:', error)
+  }
+}
+
+const exitNativeFullscreen = async () => {
+  if (!document.fullscreenElement) {
+    return
+  }
+
+  try {
+    await document.exitFullscreen?.()
+  } catch (error) {
+    console.warn('退出浏览器全屏失败:', error)
+  }
+}
+
 const handleDetailDialogClose = () => {
   currentDetail.value = null
 }
@@ -1084,6 +1191,9 @@ const handleActionDialogClose = () => {
   actionForm.cc_users = []
   actionForm.use_signature = false
   actionForm.selected_seal_id = null
+  pendingSignedPDFBlob.value = null
+  pendingSignedPDFMeta.value = null
+  selectedAttachmentId.value = null
   actionFormRef.value?.resetFields()
 }
 
@@ -1234,6 +1344,7 @@ const openPDFEditor = async () => {
     currentPDFUrl.value = getApprovalAttachmentDownloadUrl(instanceId, attachment.id)
     selectedAttachmentId.value = attachment.id // 记录选择的附件ID
     showPDFEditor.value = true
+    enterNativeFullscreen(pdfStampFullscreenRef)
     return
   }
   
@@ -1297,42 +1408,48 @@ const confirmPDFSelection = () => {
   selectedAttachmentId.value = attachment.id // 记录选择的附件ID
   showPDFSelector.value = false
   showPDFEditor.value = true
+  enterNativeFullscreen(pdfStampFullscreenRef)
 }
 
 // PDF编辑器确认
 const handlePDFEditorConfirm = async (data) => {
   try {
     loading.value = true
-    
-    // 1. 上传合成后的PDF，并携带选择的附件ID
-    const formData = new FormData()
-    formData.append('signed_pdf', data.pdfBlob, 'signed.pdf')
-    
-    // 携带用户选择的附件ID，告诉后端要覆盖哪个文件
-    if (selectedAttachmentId.value) {
-      formData.append('attachment_id', selectedAttachmentId.value)
+
+    if (requiresStampPreviewBeforeApprove.value) {
+      pendingSignedPDFBlob.value = data.pdfBlob
+      pendingSignedPDFMeta.value = {
+        attachmentId: selectedAttachmentId.value,
+        fileName: 'signed.pdf'
+      }
+    } else {
+      const formData = new FormData()
+      formData.append('signed_pdf', data.pdfBlob, 'signed.pdf')
+
+      if (selectedAttachmentId.value) {
+        formData.append('attachment_id', selectedAttachmentId.value)
+      }
+
+      await request({
+        url: `/approvals/records/${currentApproval.value.id}/upload-signed-pdf`,
+        method: 'post',
+        data: formData,
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
     }
-    
-    await request({
-      url: `/approvals/records/${currentApproval.value.id}/upload-signed-pdf`,
-      method: 'post',
-      data: formData,
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    
-    // 2. 更新表单数据（保留签名印章信息，但不自动提交）
+
+    // 更新表单数据（保留签名印章信息，但不自动提交）
     if (data.hasSignature) {
       actionForm.use_signature = true
     }
     if (data.hasSeal && data.sealId) {
       actionForm.selected_seal_id = data.sealId
     }
-    
-    // 3. 关闭PDF编辑器，返回审批操作对话框
+
+    // 关闭PDF编辑器，返回审批操作对话框
     showPDFEditor.value = false
-    ElMessage.success('PDF签名盖章成功，请点击"通过"按钮完成审批')
-    
-    // 注意：不再自动提交审批，用户需要手动点击"通过"按钮
+    await exitNativeFullscreen()
+    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '盖章预览已确认，请点击“通过”自动完成盖章' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
     
   } catch (error) {
     console.error('PDF处理失败:', error)
@@ -1340,6 +1457,21 @@ const handlePDFEditorConfirm = async (data) => {
   } finally {
     loading.value = false
   }
+}
+
+const closePDFEditor = () => {
+  showPDFEditor.value = false
+  exitNativeFullscreen()
+}
+
+const closeBatchStampPosition = () => {
+  showBatchStampPositionDialog.value = false
+  exitNativeFullscreen()
+}
+
+const closeSingleStampAdjust = () => {
+  showSingleStampAdjustDialog.value = false
+  exitNativeFullscreen()
 }
 
 // 辅助函数
@@ -1786,11 +1918,13 @@ const goToBatchStampPosition = () => {
   
   showBatchStampSelectDialog.value = false
   showBatchStampPositionDialog.value = true
+  enterNativeFullscreen(batchStampFullscreenRef)
 }
 
 // 返回文件选择步骤
 const backToBatchStampSelect = () => {
   showBatchStampPositionDialog.value = false
+  exitNativeFullscreen()
   showBatchStampSelectDialog.value = true
 }
 
@@ -1832,6 +1966,7 @@ const goToBatchStampPreview = () => {
   })
   
   showBatchStampPositionDialog.value = false
+  exitNativeFullscreen()
   showBatchStampPreviewDialog.value = true
 }
 
@@ -1839,6 +1974,7 @@ const goToBatchStampPreview = () => {
 const backToBatchStampPosition = () => {
   showBatchStampPreviewDialog.value = false
   showBatchStampPositionDialog.value = true
+  enterNativeFullscreen(batchStampFullscreenRef)
 }
 
 // 调整单个文件的盖章位置
@@ -1848,6 +1984,7 @@ const adjustSingleStamp = (previewIndex) => {
   singleAdjustPDFUrl.value = file.fileUrl
   singleAdjustInitialPosition.value = { ...file.stampPosition }
   showSingleStampAdjustDialog.value = true
+  enterNativeFullscreen(singleStampFullscreenRef)
 }
 
 // 处理单个文件位置调整变化
@@ -1870,6 +2007,7 @@ const confirmSingleAdjust = () => {
     ElMessage.success('位置已调整')
   }
   showSingleStampAdjustDialog.value = false
+  exitNativeFullscreen()
 }
 
 // 确认批量盖章
@@ -2095,6 +2233,52 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   margin-top: 5px;
+}
+
+.native-stamp-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483647 !important;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.native-stamp-header {
+  flex-shrink: 0;
+  height: 42px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e4e7ed;
+  font-weight: 600;
+}
+
+.native-stamp-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+}
+
+.native-stamp-footer {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.native-stamp-tip {
+  flex-shrink: 0;
+  padding: 8px 10px 0;
 }
 
 /* 附件列表样式 */

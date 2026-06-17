@@ -1625,8 +1625,30 @@ const availablePlaceholderFields = ref({
   household_address: '户籍地址',
   residence_address: '居住地址',
   contact_address: '通讯地址',
-  employee_signature: '员工签字'
+  employee_signature: '员工签字',
+  company_stamp: '公司盖章'
 })
+
+const ensureLaborStampPlaceholderField = (fields, contractType) => {
+  const normalizedFields = Array.isArray(fields) ? fields : []
+
+  if (contractType !== 'labor') {
+    return normalizedFields
+  }
+
+  const baseFields = normalizedFields.length > 0
+    ? normalizedFields
+    : ['name', 'id_number', 'phone', 'address'].map(key => ({
+      key,
+      label: availablePlaceholderFields.value[key]
+    }))
+
+  if (baseFields.some(field => (field?.key || field) === 'company_stamp')) {
+    return baseFields
+  }
+
+  return [...baseFields, { key: 'company_stamp', label: '公司盖章' }]
+}
 
 // 资料配置相关
 const showDocumentConfigDialog = ref(false)
@@ -2647,16 +2669,16 @@ const openPlaceholderSetup = async (template, contractType) => {
       try {
         const fieldsRes = await request.get(`/projects/${projectId}/placeholder-fields`)
         if (fieldsRes.success && fieldsRes.data) {
-          currentProjectPlaceholderFields.value = fieldsRes.data
+          currentProjectPlaceholderFields.value = ensureLaborStampPlaceholderField(fieldsRes.data, contractType)
         } else {
-          currentProjectPlaceholderFields.value = []
+          currentProjectPlaceholderFields.value = ensureLaborStampPlaceholderField([], contractType)
         }
       } catch (e) {
         console.warn('获取项目占位符字段配置失败，使用默认字段:', e)
-        currentProjectPlaceholderFields.value = []
+        currentProjectPlaceholderFields.value = ensureLaborStampPlaceholderField([], contractType)
       }
     } else {
-      currentProjectPlaceholderFields.value = []
+      currentProjectPlaceholderFields.value = ensureLaborStampPlaceholderField([], contractType)
     }
     
     // 直接设置PDF URL，让PDF.js组件处理

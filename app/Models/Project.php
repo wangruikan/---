@@ -264,6 +264,7 @@ class Project extends Model
             'residence_address' => '居住地址',
             'contact_address' => '通讯地址',
             'employee_signature' => '员工签字',
+            'company_stamp' => '公司盖章',
         ];
     }
 

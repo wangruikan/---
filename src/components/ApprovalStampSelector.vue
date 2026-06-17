@@ -168,6 +168,8 @@ const fixedStampTypes = [
   { type: 'hr', title: '人事部专用章' }
 ]
 
+const hiddenSelectionTypes = new Set(['bank', 'cash'])
+
 const localMode = ref('stamp')
 const localCompany = ref('')
 const localType = ref('')
@@ -205,6 +207,7 @@ const typeOptions = computed(() => {
   if (!localCompany.value) return []
 
   return fixedStampTypes
+    .filter(typeConfig => !hiddenSelectionTypes.has(typeConfig.type))
     .filter(typeConfig => !allowedTypeSet.value || allowedTypeSet.value.has(typeConfig.type))
     .map(typeConfig => {
       const stamp = availableStamps.value.find(item => (

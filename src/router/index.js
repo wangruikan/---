@@ -252,6 +252,12 @@ const routes = [
         meta: { title: '审批管理' }
       },
       {
+        path: '/file-stamp',
+        name: 'FileStamp',
+        component: () => import('@/views/FileStamp/index.vue'),
+        meta: { title: '文件盖章' }
+      },
+      {
         path: '/approval-flow-configs',
         name: 'ApprovalFlowConfigs',
         component: () => import('@/views/ApprovalFlowConfigs/index.vue'),

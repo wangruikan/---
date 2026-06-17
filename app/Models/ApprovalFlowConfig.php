@@ -46,6 +46,7 @@ class ApprovalFlowConfig extends Model
             '社保付款发票审批' => '社保付款发票审批',
             '公积金付款发票审批' => '公积金付款发票审批',
             '保险汇总' => '保险汇总审批',
+            '文件盖章' => '文件盖章',
             '报销申请' => '报销申请',
             'reimbursement' => '报销申请（兼容）',
             'material_request' => '资料申请',

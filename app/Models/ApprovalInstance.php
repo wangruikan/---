@@ -102,6 +102,7 @@ class ApprovalInstance extends Model
             case 'offline_onboarding':
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
             case '保险汇总':
+            case '文件盖章':
                 return \App\Models\ProcessApproval::with(['initiator', 'attachments'])
                     ->find($this->business_id);
             case '付款申请':

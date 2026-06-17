@@ -271,11 +271,11 @@
             </el-descriptions-item>
             
             <!-- 保险汇总详情显示 -->
-            <el-descriptions-item label="流程详情" :span="2" v-if="currentDetail.business_type === '保险汇总' && currentDetail.business_data">
+            <el-descriptions-item label="流程详情" :span="2" v-if="['保险汇总', '文件盖章'].includes(currentDetail.business_type) && currentDetail.business_data">
               <div class="process-detail">
                 <div class="process-info">
-                  <p><strong>流程标题：</strong>{{ currentDetail.business_data.title || '-' }}</p>
-                  <p><strong>月份：</strong>{{ currentDetail.business_data.month || '-' }}</p>
+                  <p><strong>{{ currentDetail.business_type === '文件盖章' ? '文件名称' : '流程标题' }}：</strong>{{ currentDetail.business_data.title || '-' }}</p>
+                  <p v-if="currentDetail.business_type !== '文件盖章'"><strong>月份：</strong>{{ currentDetail.business_data.month || '-' }}</p>
                   <p><strong>发起人：</strong>{{ currentDetail.business_data.initiator?.name || '-' }}</p>
                   <p><strong>描述：</strong>{{ currentDetail.business_data.description || '-' }}</p>
                   <p v-if="currentDetail.business_data.attachments && currentDetail.business_data.attachments.length > 0">
@@ -1488,6 +1488,7 @@ const getBusinessTypeText = (row) => {
     'payment_application': '付款申请',
     '工资表审批': '工资表审批',
     '保险汇总': '保险汇总',
+    '文件盖章': '文件盖章',
     '付款申请': '付款申请',
     '考勤申请': '考勤审批',
     '工资付款申请': '工资付款',

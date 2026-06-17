@@ -975,6 +975,7 @@ class ApprovalService
                 break;
             
             case '保险汇总':
+            case '文件盖章':
                 // 更新流程管理的状态
                 $process = \App\Models\ProcessApproval::find($businessId);
                 if ($process) {
@@ -2566,6 +2567,7 @@ class ApprovalService
             '保险汇总付款申请' => '保险汇总付款申请',
             '发票申请' => '发票申请',
             '保险汇总' => '保险汇总审批',
+            '文件盖章' => '文件盖章',
             '付款申请' => '付款申请',
             '考勤申请' => '考勤申请',
             '报销申请' => '报销申请',
@@ -2933,6 +2935,10 @@ class ApprovalService
     private function applyStampIfExists($instance, $approverId)
     {
         try {
+            if ($instance->business_type === '文件盖章') {
+                return;
+            }
+
             // 尝试从业务数据获取付款方式，默认为银行转账
             $stampType = 'bank';
             $businessType = $instance->business_type;

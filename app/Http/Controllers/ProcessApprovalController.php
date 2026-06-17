@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use App\Traits\ChecksPermission;
 
@@ -25,9 +26,13 @@ class ProcessApprovalController extends Controller
      */
     public function index(Request $request)
     {
-        // 汇总申请查看权限
-        if ($response = $this->checkPermission('process_approval.view')) {
-            return $response;
+        $isFileStampList = $request->input('category') === 'file_stamp';
+
+        if (!$isFileStampList) {
+            // 汇总申请查看权限
+            if ($response = $this->checkPermission('process_approval.view')) {
+                return $response;
+            }
         }
         // 从请求参数中获取账套ID
         $accountSetId = $request->input('current_account_set_id');
@@ -42,9 +47,15 @@ class ProcessApprovalController extends Controller
         $query = ProcessApproval::with(['initiator', 'approvalInstance.records', 'attachments'])
             ->where('account_set_id', $accountSetId);
 
+        if ($isFileStampList) {
+            $query->where('initiator_id', $request->user()->id);
+        }
+
         // 按类型筛选
         if ($request->has('category') && $request->category) {
             $query->where('category', $request->category);
+        } else {
+            $query->where('category', '!=', 'file_stamp');
         }
 
         // 按月份筛选
@@ -98,9 +109,11 @@ class ProcessApprovalController extends Controller
      */
     public function store(Request $request)
     {
-        // 汇总申请创建权限
-        if ($response = $this->checkPermission('process_approval.create')) {
-            return $response;
+        if ($request->input('category') !== 'file_stamp') {
+            // 汇总申请创建权限
+            if ($response = $this->checkPermission('process_approval.create')) {
+                return $response;
+            }
         }
         $request->validate([
             'title' => 'required|string|max:255',
@@ -153,12 +166,21 @@ class ProcessApprovalController extends Controller
      */
     public function uploadAttachment(Request $request, $id)
     {
-        // 汇总申请编辑权限
-        if ($response = $this->checkPermission('process_approval.edit')) {
-            return $response;
-        }
-
         $process = ProcessApproval::findOrFail($id);
+
+        if ($process->category === 'file_stamp') {
+            if ((int) $process->initiator_id !== (int) $request->user()->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只能上传本人发起的盖章文件'
+                ], 403);
+            }
+        } else {
+            // 汇总申请编辑权限
+            if ($response = $this->checkPermission('process_approval.edit')) {
+                return $response;
+            }
+        }
 
         if ($process->status !== 'draft') {
             return response()->json([
@@ -335,10 +357,6 @@ class ProcessApprovalController extends Controller
      */
     public function submit(Request $request, $id)
     {
-        // 汇总申请提交权限
-        if ($response = $this->checkPermission('process_approval.submit')) {
-            return $response;
-        }
         $request->validate([
             'stamp_method' => 'nullable|in:online,offline',
             'stamp_selection_mode' => 'nullable|in:stamp,none',
@@ -348,6 +366,20 @@ class ProcessApprovalController extends Controller
         ]);
 
         $process = ProcessApproval::with('attachments')->findOrFail($id);
+
+        if ($process->category === 'file_stamp') {
+            if ((int) $process->initiator_id !== (int) $request->user()->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只能提交本人发起的盖章申请'
+                ], 403);
+            }
+        } else {
+            // 汇总申请提交权限
+            if ($response = $this->checkPermission('process_approval.submit')) {
+                return $response;
+            }
+        }
 
         if ($process->status !== 'draft') {
             return response()->json([
@@ -398,10 +430,12 @@ class ProcessApprovalController extends Controller
                 }
             }
 
+            $businessType = $process->category === 'file_stamp' ? '文件盖章' : '保险汇总';
+
             // 使用审批服务创建审批实例（跳过发起人审批）
             $instance = $this->approvalService->createApprovalInstance(
                 $process->account_set_id,
-                '保险汇总', // 业务类型：保险汇总表审批
+                $businessType,
                 $process->id,        // 业务ID：流程ID
                 $request->user()->id,
                 $attachments,
@@ -441,11 +475,21 @@ class ProcessApprovalController extends Controller
      */
     public function destroy(Request $request, $id)
     {
-        // 汇总申请删除权限
-        if ($response = $this->checkPermission('process_approval.delete')) {
-            return $response;
-        }
         $process = ProcessApproval::findOrFail($id);
+
+        if ($process->category === 'file_stamp') {
+            if ((int) $process->initiator_id !== (int) $request->user()->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只能删除本人发起的盖章申请'
+                ], 403);
+            }
+        } else {
+            // 汇总申请删除权限
+            if ($response = $this->checkPermission('process_approval.delete')) {
+                return $response;
+            }
+        }
 
         // 只有草稿或已驳回的流程才能删除
         if (!in_array($process->status, ['draft', 'rejected'])) {

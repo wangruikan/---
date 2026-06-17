@@ -1574,7 +1574,9 @@ const getCurrentStepIndex = () => {
 
 const getApprovalRecords = () => {
   if (!currentDetail.value) return []
-  return currentDetail.value.records || []
+  const records = currentDetail.value.records || []
+  const rejectedIndex = records.findIndex(record => record.status === 'rejected')
+  return rejectedIndex === -1 ? records : records.slice(0, rejectedIndex + 1)
 }
 
 const getStepDescription = (record) => {

@@ -338,13 +338,12 @@ class TaxDeclarationController extends Controller
     public function getTasks(Request $request)
     {
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('account_set_id');
-        $year = (int)($request->input('year') ?: now()->year);
-        if ($year < 1970 || $year > 2100) {
-            $year = now()->year;
-        }
+        [$targetMonth, $year, $month] = $this->resolveTaskMonth($request);
+        $targetStartDate = sprintf('%s-01', $targetMonth);
+        $targetEndDate = now()->copy()->setDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
 
         $visibleUntilDate = $this->getVisibleTaskEndDate($year);
-        if ($visibleUntilDate === null) {
+        if ($visibleUntilDate === null || $targetStartDate > $visibleUntilDate) {
             return response()->json([
                 'success' => true,
                 'data' => [],
@@ -354,7 +353,7 @@ class TaxDeclarationController extends Controller
             ]);
         }
 
-        $configIds = $this->syncTasksFromConfigs($accountSetId, $year, $visibleUntilDate);
+        $configIds = $this->syncTasksFromConfigs($accountSetId, $year, $visibleUntilDate, $targetMonth);
         
         $query = TaxDeclarationTask::where('account_set_id', $accountSetId)
             ->whereIn('config_id', $configIds)
@@ -366,7 +365,7 @@ class TaxDeclarationController extends Controller
         }
         
         $query->where('year', $year)
-            ->whereDate('declaration_date', '<=', $visibleUntilDate);
+            ->whereBetween('declaration_date', [$targetStartDate, $targetEndDate]);
         
         $tasks = $query->orderBy('declaration_date', 'desc')
             ->paginate(20);
@@ -388,7 +387,7 @@ class TaxDeclarationController extends Controller
     /**
      * 根据当前税费申报配置补齐任务，避免依赖定时任务预先生成。
      */
-    private function syncTasksFromConfigs($accountSetId, int $year, ?string $visibleUntilDate): array
+    private function syncTasksFromConfigs($accountSetId, int $year, ?string $visibleUntilDate, ?string $targetMonth = null): array
     {
         if (!$accountSetId) {
             return [];
@@ -404,6 +403,10 @@ class TaxDeclarationController extends Controller
             }
 
             foreach ($declarationDates as $declarationDate) {
+                if ($targetMonth !== null && substr($declarationDate, 0, 7) !== $targetMonth) {
+                    continue;
+                }
+
                 if ($visibleUntilDate !== null && $declarationDate > $visibleUntilDate) {
                     continue;
                 }
@@ -464,6 +467,18 @@ class TaxDeclarationController extends Controller
         }
 
         return $configIds;
+    }
+
+    private function resolveTaskMonth(Request $request): array
+    {
+        $month = $request->input('month');
+
+        if (is_string($month) && preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+            return [$month, (int) substr($month, 0, 4), (int) substr($month, 5, 2)];
+        }
+
+        $now = now();
+        return [$now->format('Y-m'), $now->year, $now->month];
     }
 
     private function getVisibleTaskEndDate(int $year): ?string

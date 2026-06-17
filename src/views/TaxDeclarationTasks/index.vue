@@ -13,18 +13,18 @@
               <el-option label="已完成" value="completed" />
             </el-select>
           </el-form-item>
-          <el-form-item label="年份">
+          <el-form-item label="月份">
             <el-date-picker
-              v-model="searchForm.year"
-              type="year"
-              placeholder="选择年份"
-              value-format="YYYY"
+              v-model="searchForm.month"
+              type="month"
+              placeholder="选择月份"
+              value-format="YYYY-MM"
               clearable
               style="width: 150px"
             />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" @click="loadTasks">查询</el-button>
+            <el-button type="primary" @click="handleSearch">查询</el-button>
             <el-button @click="handleResetSearch">重置</el-button>
           </el-form-item>
         </el-form>
@@ -207,12 +207,18 @@ import { useAccountSetStore } from '@/stores/accountSet'
 
 const accountSetStore = useAccountSetStore()
 
+function getCurrentMonth() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${now.getFullYear()}-${month}`
+}
+
 // 申报任务相关
 const tasks = ref([])
 const tasksLoading = ref(false)
 const searchForm = reactive({
   status: '',
-  year: new Date().getFullYear().toString()
+  month: getCurrentMonth()
 })
 
 const pagination = reactive({
@@ -233,7 +239,7 @@ const loadTasks = async () => {
     const response = await getTasks({
       account_set_id: accountSetStore.currentAccountSetId,
       status: searchForm.status,
-      year: searchForm.year,
+      month: searchForm.month,
       page: pagination.currentPage,
       per_page: pagination.pageSize
     })
@@ -247,10 +253,15 @@ const loadTasks = async () => {
   }
 }
 
+const handleSearch = () => {
+  pagination.currentPage = 1
+  loadTasks()
+}
+
 // 重置任务搜索
 const handleResetSearch = () => {
   searchForm.status = ''
-  searchForm.year = new Date().getFullYear().toString()
+  searchForm.month = getCurrentMonth()
   pagination.currentPage = 1
   loadTasks()
 }

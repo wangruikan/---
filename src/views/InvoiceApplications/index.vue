@@ -182,33 +182,13 @@
       >
         <el-row :gutter="20">
           <el-col :span="24">
-            <el-form-item label="项目" prop="project_name">
-              <el-autocomplete
+            <el-form-item label="商品名称/项目" prop="project_name">
+              <el-input
                 v-model="createForm.project_name"
-                :fetch-suggestions="querySearchCreateProjects"
-                placeholder="请输入或选择项目"
+                placeholder="请输入商品名称/项目"
                 clearable
                 style="width: 100%"
-                @input="handleCreateProjectInput"
-                @select="handleCreateProjectSelect"
               />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24" v-if="createProjectInvoiceInfoOptions.length > 0">
-            <el-form-item label="开票信息备注" prop="remark">
-              <el-select
-                v-model="createForm.remark"
-                placeholder="请选择开票信息备注"
-                style="width: 100%"
-                @change="handleCreateInvoiceInfoRemarkChange"
-              >
-                <el-option
-                  v-for="option in createProjectInvoiceInfoOptions"
-                  :key="`project-invoice-remark-${option.value}`"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -1242,7 +1222,7 @@ const createForm = reactive({
 })
 
 const createFormRules = {
-  project_name: [{ required: true, message: '请输入项目', trigger: 'blur' }],
+  project_name: [{ required: true, message: '请输入商品名称/项目', trigger: 'blur' }],
   period_year: [{ required: true, message: '请选择所属期年份', trigger: 'change' }],
   period_month: [{ required: true, message: '请选择所属期月份', trigger: 'change' }],
   company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
@@ -1377,9 +1357,6 @@ const itemFormRules = {
 // 发票项目列表
 const invoiceProjects = ref([])
 
-// 项目列表
-const projects = ref([])
-
 // 开票详情表单
 const invoiceDetailsForm = reactive({
   period_year: null,
@@ -1447,186 +1424,6 @@ const totalAmount = computed(() => {
   if (!currentApplication.value.items) return 0
   return currentApplication.value.items.reduce((sum, item) => sum + Number(item.amount), 0)
 })
-
-// 有效的项目列表（过滤null和无效项）
-const validProjects = computed(() => {
-  if (!Array.isArray(projects.value)) return []
-  return projects.value.filter(p => p && p.id)
-})
-
-const normalizeProjectInvoiceInfos = (project) => {
-  if (!project || typeof project !== 'object') {
-    return []
-  }
-
-  const normalized = Array.isArray(project.invoice_infos)
-    ? project.invoice_infos.map(item => ({
-      remark: String(item?.remark || '').trim(),
-      company_name: String(item?.company_name || item?.invoice_company_name || '').trim(),
-      tax_number: String(item?.tax_number || item?.invoice_tax_number || '').trim(),
-      company_address: String(item?.company_address || item?.invoice_company_address || '').trim(),
-      company_phone: String(item?.company_phone || item?.invoice_company_phone || '').trim(),
-      bank_name: String(item?.bank_name || item?.invoice_bank_name || '').trim(),
-      bank_account: String(item?.bank_account || item?.invoice_bank_account || '').trim(),
-      bank_code: String(item?.bank_code || item?.invoice_bank_code || '').trim()
-    })).filter(item => {
-      return item.remark ||
-        item.company_name ||
-        item.tax_number ||
-        item.company_address ||
-        item.company_phone ||
-        item.bank_name ||
-        item.bank_account ||
-        item.bank_code
-    })
-    : []
-
-  if (normalized.length > 0) {
-    return normalized
-  }
-
-  const legacyInvoiceInfo = {
-    remark: '默认开票信息',
-    company_name: String(project.invoice_company_name || project.invoice_company || project.company_name || '').trim(),
-    tax_number: String(project.invoice_tax_number || '').trim(),
-    company_address: String(project.invoice_company_address || '').trim(),
-    company_phone: String(project.invoice_company_phone || '').trim(),
-    bank_name: String(project.invoice_bank_name || '').trim(),
-    bank_account: String(project.invoice_bank_account || '').trim(),
-    bank_code: String(project.invoice_bank_code || '').trim()
-  }
-
-  const hasLegacyValue = [
-    legacyInvoiceInfo.company_name,
-    legacyInvoiceInfo.tax_number,
-    legacyInvoiceInfo.company_address,
-    legacyInvoiceInfo.company_phone,
-    legacyInvoiceInfo.bank_name,
-    legacyInvoiceInfo.bank_account,
-    legacyInvoiceInfo.bank_code
-  ].some(Boolean)
-
-  return hasLegacyValue ? [legacyInvoiceInfo] : []
-}
-
-const currentCreateProject = computed(() => {
-  return findProjectById(createForm.project_id) || findProjectByName(createForm.project_name)
-})
-
-const createProjectInvoiceInfos = computed(() => {
-  return normalizeProjectInvoiceInfos(currentCreateProject.value)
-})
-
-const createProjectInvoiceInfoOptions = computed(() => {
-  return createProjectInvoiceInfos.value.map((item, index) => ({
-    label: item.remark || `开票信息${index + 1}`,
-    value: item.remark || `开票信息${index + 1}`
-  }))
-})
-
-const findProjectById = (projectId) => {
-  if (projectId === null || projectId === undefined || projectId === '') return null
-  const targetId = String(projectId)
-  return validProjects.value.find(project => String(project.id) === targetId) || null
-}
-
-const findProjectByName = (projectName) => {
-  const targetName = String(projectName || '').trim()
-  if (!targetName) return null
-  return validProjects.value.find(project => String(project.name || '').trim() === targetName) || null
-}
-
-const applyCreateProjectInvoiceInfoByRemark = (project, remark) => {
-  const selectedProject = typeof project === 'object' && project !== null
-    ? project
-    : findProjectById(project)
-
-  if (!selectedProject) {
-    if (!createForm.project_name?.trim()) {
-      createForm.company_name = ''
-      createForm.remark = ''
-    }
-    return
-  }
-
-  const invoiceInfos = normalizeProjectInvoiceInfos(selectedProject)
-  if (!invoiceInfos.length) {
-    createForm.company_name =
-      selectedProject.invoice_company_name ||
-      selectedProject.invoice_company ||
-      selectedProject.company_name ||
-      ''
-    createForm.remark = ''
-    return
-  }
-
-  const selectedRemark = String(remark || '').trim()
-  const matchedInvoiceInfo = invoiceInfos.find(item => item.remark === selectedRemark) || invoiceInfos[0]
-
-  createForm.remark = matchedInvoiceInfo.remark || selectedRemark
-  createForm.company_name = matchedInvoiceInfo.company_name || ''
-}
-
-const fillCreateInvoiceInfoByProject = (project) => {
-  const selectedProject = typeof project === 'object' && project !== null
-    ? project
-    : findProjectById(project)
-
-  if (!selectedProject) {
-    if (!createForm.project_name?.trim()) {
-      createForm.company_name = ''
-    }
-    return
-  }
-
-  createForm.project_id = selectedProject.id
-  createForm.project_name = selectedProject.name || ''
-  applyCreateProjectInvoiceInfoByRemark(selectedProject, createForm.remark)
-}
-
-const querySearchCreateProjects = (queryString, cb) => {
-  const keyword = String(queryString || '').trim().toLowerCase()
-  const result = validProjects.value
-    .filter(project => {
-      const name = String(project.name || '').trim().toLowerCase()
-      return !keyword || name.includes(keyword)
-    })
-    .map(project => ({
-      value: project.name || '',
-      project
-    }))
-  cb(result)
-}
-
-const handleCreateProjectInput = (value) => {
-  createForm.project_name = String(value || '')
-  const matchedProject = findProjectByName(createForm.project_name)
-  createForm.project_id = matchedProject?.id || null
-
-  if (matchedProject) {
-    fillCreateInvoiceInfoByProject(matchedProject)
-  } else {
-    createForm.remark = ''
-    createForm.company_name = ''
-  }
-}
-
-const handleCreateProjectSelect = (selected) => {
-  const selectedProject = selected?.project || findProjectByName(selected?.value)
-  if (!selectedProject) {
-    createForm.project_name = selected?.value || ''
-    createForm.project_id = null
-    createForm.remark = ''
-    createForm.company_name = ''
-    return
-  }
-
-  fillCreateInvoiceInfoByProject(selectedProject)
-}
-
-const handleCreateInvoiceInfoRemarkChange = (value) => {
-  applyCreateProjectInvoiceInfoByRemark(currentCreateProject.value, value)
-}
 
 const resetCreateItems = () => {
   createItems.value = [buildInvoiceItemFromProject(null)]
@@ -1911,41 +1708,6 @@ const loadInvoiceProjects = async () => {
   }
 }
 
-// 加载项目列表
-const loadProjects = async () => {
-  try {
-    // 确保账套已选择
-    if (!accountSetStore.currentAccountSet?.id) {
-      console.warn('未选择账套，无法加载项目列表')
-      projects.value = []
-      return
-    }
-    
-    const response = await request({
-      url: '/projects',
-      method: 'get',
-      params: {
-        current_account_set_id: accountSetStore.currentAccountSet.id,
-        all: true
-      }
-    })
-    
-    console.log('项目列表响应:', response)
-    
-    if (response.success) {
-      // 处理可能的数据结构：response.data 或 response.data.data
-      const projectData = response.data?.data || response.data || []
-      console.log('解析后的项目数据:', projectData)
-      projects.value = Array.isArray(projectData) ? projectData : []
-    } else {
-      projects.value = []
-    }
-  } catch (error) {
-    console.error('加载项目列表失败', error)
-    projects.value = []
-  }
-}
-
 // 搜索
 const handleSearch = () => {
   pagination.current = 1
@@ -2137,6 +1899,7 @@ const handleConfirmCreate = async () => {
     syncCreateCalculatedAmounts()
     const projectName = String(createForm.project_name || '').trim()
     createForm.project_name = projectName
+    createForm.project_id = null
     createForm.task_name = (projectName || '开票') + `${createForm.year}年${createForm.month}月`
 
     await createFormRef.value.validate()
@@ -2868,16 +2631,6 @@ const formatDateTime = (dateTime) => {
   })
 }
 
-// 监听账套变化
-watch(
-  () => accountSetStore.currentAccountSet,
-  (newAccountSet) => {
-    if (newAccountSet?.id) {
-      loadProjects()
-    }
-  }
-)
-
 // 监听开票方式变化，自动清空扣除额（如果不是全额或差额）
 watch(
   () => createForm.invoice_method,
@@ -2964,7 +2717,6 @@ watch(
 onMounted(() => {
   loadData()
   loadInvoiceProjects()
-  loadProjects()
   syncCreateCalculatedAmounts()
 })
 </script>

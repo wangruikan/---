@@ -1101,8 +1101,8 @@ class PendingTaskService
             }
 
             // 生成任务标题和描述
-            $title = "{$task->company_name} {$task->declaration_date->format('Y-m-d')} 税费申报待处理";
-            $description = "公司 {$task->company_name} 的税费申报任务需要处理，申报日期：{$task->declaration_date->format('Y-m-d')}";
+            $title = "{$task->company_name} {$task->declaration_date->format('Y-m')} 税费申报待处理";
+            $description = "公司 {$task->company_name} 的税费申报任务需要处理，申报月份：{$task->declaration_date->format('Y-m')}";
 
             // 创建待办任务
             $pendingTask = \App\Models\PendingTask::create([

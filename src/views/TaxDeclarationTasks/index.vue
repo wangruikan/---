@@ -46,9 +46,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="申报日期" width="120">
+        <el-table-column label="申报月份" width="120">
           <template #default="{ row }">
-            {{ formatDate(row.declaration_date) }}
+            {{ formatMonth(row.declaration_date) }}
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
@@ -103,7 +103,7 @@
         <el-descriptions-item label="ID">{{ currentTask.id }}</el-descriptions-item>
         <el-descriptions-item label="公司名称">{{ currentTask.company_name }}</el-descriptions-item>
         <el-descriptions-item label="操作员">{{ currentTask.handler_name }}</el-descriptions-item>
-        <el-descriptions-item label="申报日期">{{ formatDate(currentTask.declaration_date) }}</el-descriptions-item>
+        <el-descriptions-item label="申报月份">{{ formatMonth(currentTask.declaration_date) }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="currentTask.status === 'completed' ? 'success' : 'warning'">
             {{ currentTask.status === 'completed' ? '已完成' : '待处理' }}
@@ -428,6 +428,12 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   // 如果是完整的日期时间格式，只取日期部分
   return dateStr.split(' ')[0]
+}
+
+const formatMonth = (dateStr) => {
+  if (!dateStr) return '-'
+  const value = String(dateStr).split(' ')[0]
+  return value.slice(0, 7)
 }
 
 const formatDateTime = (dateStr) => {

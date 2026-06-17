@@ -62,7 +62,11 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="declaration_date" label="申报日期" width="100" />
+            <el-table-column label="申报月份" width="150">
+              <template #default="{ row }">
+                {{ formatDeclarationRule(row) }}
+              </template>
+            </el-table-column>
             <el-table-column label="创建人" width="120">
               <template #default="{ row }">
                 {{ row.creator?.name || row.creator_name || '-' }}
@@ -129,24 +133,53 @@
           </el-select>
         </el-form-item>
         <el-form-item label="申报周期" prop="period_type">
-          <el-select v-model="configForm.period_type" placeholder="请选择申报周期" style="width: 100%">
+          <el-select
+            v-model="configForm.period_type"
+            placeholder="请选择申报周期"
+            style="width: 100%"
+            @change="handlePeriodTypeChange"
+          >
             <el-option label="月度" value="monthly" />
             <el-option label="季度" value="quarterly" />
             <el-option label="年度" value="yearly" />
           </el-select>
         </el-form-item>
-        <el-form-item label="申报日期" prop="declaration_date">
-          <el-date-picker
-            v-model="configForm.declaration_date"
-            type="date"
-            placeholder="选择申报日期"
-            format="MM-DD"
-            value-format="MM-DD"
-            style="width: 100%"
-          />
+        <el-form-item
+          v-if="configForm.period_type === 'quarterly'"
+          label="申报月份"
+          prop="declaration_date"
+        >
+          <el-select v-model="configForm.declaration_date" placeholder="请选择季度内月份" style="width: 100%">
+            <el-option
+              v-for="month in quarterMonthOptions"
+              :key="month.value"
+              :label="month.label"
+              :value="month.value"
+            />
+          </el-select>
           <div style="color: #909399; font-size: 12px; margin-top: 5px">
-            选择月份和日期，例如：01-15 表示每年1月15日
+            只按月份生成任务，例如第2个月会生成 2月、5月、8月、11月任务
           </div>
+        </el-form-item>
+        <el-form-item
+          v-else-if="configForm.period_type === 'yearly'"
+          label="申报月份"
+          prop="declaration_date"
+        >
+          <el-select v-model="configForm.declaration_date" placeholder="请选择月份" style="width: 100%">
+            <el-option
+              v-for="month in monthOptions"
+              :key="month.value"
+              :label="month.label"
+              :value="month.value"
+            />
+          </el-select>
+          <div style="color: #909399; font-size: 12px; margin-top: 5px">
+            只按月份生成任务，例如选择6月表示每年6月生成
+          </div>
+        </el-form-item>
+        <el-form-item v-else-if="configForm.period_type === 'monthly'" label="申报月份">
+          <div class="form-tip">月度会每个月生成一条任务，不需要再选择具体日期。</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -209,12 +242,23 @@ const configForm = reactive({
   declaration_date: ''
 })
 
+const monthOptions = Array.from({ length: 12 }, (_, index) => {
+  const month = String(index + 1).padStart(2, '0')
+  return { label: `${index + 1}月`, value: month }
+})
+
+const quarterMonthOptions = [
+  { label: '季度第1个月', value: '01' },
+  { label: '季度第2个月', value: '02' },
+  { label: '季度第3个月', value: '03' }
+]
+
 const configRules = {
   company_name: [{ required: true, message: '请输入公司名称', trigger: 'blur' }],
   tax_category_ids: [{ required: true, message: '请选择税种', trigger: 'change' }],
   period_type: [{ required: true, message: '请选择申报周期', trigger: 'change' }],
   declaration_date: [
-    { required: true, message: '请选择申报日期', trigger: 'change' }
+    { required: true, message: '请选择申报月份', trigger: 'change' }
   ]
 }
 
@@ -330,6 +374,21 @@ const handleCreateConfig = () => {
   configDialogVisible.value = true
 }
 
+const handlePeriodTypeChange = () => {
+  if (configForm.period_type === 'monthly') {
+    configForm.declaration_date = ''
+    return
+  }
+
+  const month = normalizeConfigMonth(configForm.declaration_date)
+  if (configForm.period_type === 'quarterly') {
+    configForm.declaration_date = ['01', '02', '03'].includes(month) ? month : '01'
+    return
+  }
+
+  configForm.declaration_date = month || '01'
+}
+
 // 编辑配置
 const handleEditConfig = (row) => {
   configDialogMode.value = 'edit'
@@ -338,7 +397,7 @@ const handleEditConfig = (row) => {
     company_name: row.company_name,
     tax_category_ids: row.tax_category_ids,
     period_type: row.period_type,
-    declaration_date: row.declaration_date
+    declaration_date: row.period_type === 'monthly' ? '' : normalizeConfigMonth(row.declaration_date)
   })
   configDialogVisible.value = true
 }
@@ -354,7 +413,7 @@ const handleSubmitConfig = async () => {
       company_name: configForm.company_name,
       tax_category_ids: configForm.tax_category_ids,
       period_type: configForm.period_type,
-      declaration_date: configForm.declaration_date
+      declaration_date: configForm.period_type === 'monthly' ? '' : configForm.declaration_date
     }
     
     if (configDialogMode.value === 'create') {
@@ -414,6 +473,31 @@ const getPeriodTypeTag = (type) => {
   return tags[type] || 'info'
 }
 
+const normalizeConfigMonth = (value) => {
+  if (!value) return ''
+  const month = String(value).slice(0, 2)
+  return /^\d{2}$/.test(month) ? month : ''
+}
+
+const formatDeclarationRule = (row) => {
+  if (row.period_type === 'monthly') {
+    return '每月'
+  }
+
+  const month = Number(normalizeConfigMonth(row.declaration_date))
+  if (!month) return '-'
+
+  if (row.period_type === 'quarterly') {
+    return `每季度第${month}个月`
+  }
+
+  if (row.period_type === 'yearly') {
+    return `每年${month}月`
+  }
+
+  return row.declaration_date || '-'
+}
+
 onMounted(() => {
   loadCategories()
   loadConfigs()
@@ -437,5 +521,10 @@ onMounted(() => {
 
 .tab-header {
   margin-bottom: 20px;
+}
+
+.form-tip {
+  color: #909399;
+  font-size: 12px;
 }
 </style>

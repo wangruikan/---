@@ -196,8 +196,15 @@ class TaxDeclarationController extends Controller
             'tax_category_ids' => 'required|array|min:1',
             'tax_category_ids.*' => 'integer|exists:tax_categories,id',
             'period_type' => 'required|in:monthly,quarterly,yearly',
-            'declaration_date' => 'required|string|regex:/^\d{2}-\d{2}$/',
+            'declaration_date' => 'nullable|string|max:5',
         ]);
+        $validator->after(function ($validator) use ($request) {
+            $this->validateDeclarationMonth(
+                $validator,
+                $request->input('period_type'),
+                $request->input('declaration_date')
+            );
+        });
 
         if ($validator->fails()) {
             return response()->json([
@@ -207,12 +214,17 @@ class TaxDeclarationController extends Controller
         }
 
         try {
+            $declarationDate = $this->normalizeDeclarationDate(
+                $request->period_type,
+                $request->declaration_date
+            );
+
             $config = TaxDeclarationConfig::create([
                 'account_set_id' => $request->account_set_id,
                 'company_name' => $request->company_name,
                 'tax_category_ids' => $request->tax_category_ids,
                 'period_type' => $request->period_type,
-                'declaration_date' => $request->declaration_date,
+                'declaration_date' => $declarationDate,
                 'created_by' => $request->user()?->id ?? Auth::id(),
             ]);
 
@@ -244,8 +256,15 @@ class TaxDeclarationController extends Controller
             'tax_category_ids' => 'required|array|min:1',
             'tax_category_ids.*' => 'integer|exists:tax_categories,id',
             'period_type' => 'required|in:monthly,quarterly,yearly',
-            'declaration_date' => 'required|string|regex:/^\d{2}-\d{2}$/',
+            'declaration_date' => 'nullable|string|max:5',
         ]);
+        $validator->after(function ($validator) use ($request) {
+            $this->validateDeclarationMonth(
+                $validator,
+                $request->input('period_type'),
+                $request->input('declaration_date')
+            );
+        });
 
         if ($validator->fails()) {
             return response()->json([
@@ -255,13 +274,18 @@ class TaxDeclarationController extends Controller
         }
 
         try {
+            $declarationDate = $this->normalizeDeclarationDate(
+                $request->period_type,
+                $request->declaration_date
+            );
+
             $config = TaxDeclarationConfig::findOrFail($id);
             
             $config->update([
                 'company_name' => $request->company_name,
                 'tax_category_ids' => $request->tax_category_ids,
                 'period_type' => $request->period_type,
-                'declaration_date' => $request->declaration_date,
+                'declaration_date' => $declarationDate,
             ]);
 
             return response()->json([
@@ -362,82 +386,156 @@ class TaxDeclarationController extends Controller
         $configIds = $configs->pluck('id')->all();
 
         foreach ($configs as $config) {
-            $declarationDate = $this->buildDeclarationDate($year, $config->declaration_date);
-            if (!$declarationDate) {
+            $declarationDates = $this->buildDeclarationDates($year, $config);
+            if (empty($declarationDates)) {
                 continue;
             }
 
-            $task = TaxDeclarationTask::where('config_id', $config->id)
-                ->where('year', $year)
-                ->orderByDesc('id')
-                ->first();
+            foreach ($declarationDates as $declarationDate) {
+                $task = $this->findExistingTaskForMonth($config->id, $year, $declarationDate);
 
-            if ($task) {
-                $task->update([
-                    'account_set_id' => $config->account_set_id,
-                    'company_name' => $config->company_name,
-                    'tax_category_ids' => $config->tax_category_ids,
-                    'declaration_date' => $declarationDate,
-                ]);
-                continue;
-            }
+                if ($task) {
+                    $task->update([
+                        'account_set_id' => $config->account_set_id,
+                        'company_name' => $config->company_name,
+                        'tax_category_ids' => $config->tax_category_ids,
+                        'declaration_date' => $declarationDate,
+                    ]);
+                    continue;
+                }
 
-            $handler = ApprovalFlowConfig::getFirstEffectiveApprover(
-                (int) $config->account_set_id,
-                'tax_declaration'
-            );
+                $handler = ApprovalFlowConfig::getFirstEffectiveApprover(
+                    (int) $config->account_set_id,
+                    'tax_declaration'
+                );
 
-            if (!$handler) {
-                Log::warning('税费申报任务动态生成失败：未找到操作员', [
-                    'config_id' => $config->id,
-                    'account_set_id' => $config->account_set_id,
-                ]);
-                continue;
-            }
+                if (!$handler) {
+                    Log::warning('税费申报任务动态生成失败：未找到操作员', [
+                        'config_id' => $config->id,
+                        'account_set_id' => $config->account_set_id,
+                    ]);
+                    continue;
+                }
 
-            try {
-                DB::beginTransaction();
+                try {
+                    DB::beginTransaction();
 
-                $task = TaxDeclarationTask::create([
-                    'account_set_id' => $config->account_set_id,
-                    'config_id' => $config->id,
-                    'company_name' => $config->company_name,
-                    'tax_category_ids' => $config->tax_category_ids,
-                    'declaration_date' => $declarationDate,
-                    'year' => $year,
-                    'handler_id' => $handler->id,
-                    'handler_name' => $handler->name,
-                    'status' => 'pending',
-                ]);
+                    $task = TaxDeclarationTask::create([
+                        'account_set_id' => $config->account_set_id,
+                        'config_id' => $config->id,
+                        'company_name' => $config->company_name,
+                        'tax_category_ids' => $config->tax_category_ids,
+                        'declaration_date' => $declarationDate,
+                        'year' => $year,
+                        'handler_id' => $handler->id,
+                        'handler_name' => $handler->name,
+                        'status' => 'pending',
+                    ]);
 
-                PendingTaskService::createTaxDeclarationTask($task);
+                    PendingTaskService::createTaxDeclarationTask($task);
 
-                DB::commit();
-            } catch (\Exception $e) {
-                DB::rollBack();
-                Log::error('税费申报任务动态生成失败', [
-                    'config_id' => $config->id,
-                    'year' => $year,
-                    'error' => $e->getMessage(),
-                ]);
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('税费申报任务动态生成失败', [
+                        'config_id' => $config->id,
+                        'year' => $year,
+                        'declaration_date' => $declarationDate,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         }
 
         return $configIds;
     }
 
-    private function buildDeclarationDate(int $year, ?string $monthDay): ?string
+    private function validateDeclarationMonth($validator, ?string $periodType, ?string $value): void
     {
-        if (!is_string($monthDay) || !preg_match('/^\d{2}-\d{2}$/', $monthDay)) {
-            return null;
+        if (!is_string($periodType)) {
+            return;
         }
 
-        $date = "{$year}-{$monthDay}";
-        try {
-            return \Carbon\Carbon::createFromFormat('Y-m-d', $date)->format('Y-m-d');
-        } catch (\Exception $e) {
-            return null;
+        if ($periodType === 'monthly') {
+            return;
         }
+
+        if (!is_string($value) || $value === '') {
+            $validator->errors()->add('declaration_date', '请选择申报月份');
+            return;
+        }
+
+        $month = $this->extractMonth($value);
+
+        if ($periodType === 'quarterly' && ($month < 1 || $month > 3)) {
+            $validator->errors()->add('declaration_date', '季度申报月份只能选择第1、2、3个月');
+        }
+
+        if ($periodType === 'yearly' && ($month < 1 || $month > 12)) {
+            $validator->errors()->add('declaration_date', '年度申报月份只能选择1-12月');
+        }
+    }
+
+    private function normalizeDeclarationDate(string $periodType, ?string $value): string
+    {
+        if ($periodType === 'monthly') {
+            return '01-01';
+        }
+
+        $month = $this->extractMonth($value);
+        return sprintf('%02d-01', $month > 0 ? $month : 1);
+    }
+
+    private function buildDeclarationDates(int $year, TaxDeclarationConfig $config): array
+    {
+        $month = $this->extractMonth($config->declaration_date);
+
+        if ($config->period_type === 'monthly') {
+            if ($month < 1 || $month > 12) {
+                return [];
+            }
+
+            return array_map(function ($currentMonth) use ($year) {
+                return sprintf('%d-%02d-01', $year, $currentMonth);
+            }, range(1, 12));
+        }
+
+        if ($config->period_type === 'quarterly') {
+            if ($month < 1 || $month > 3) {
+                return [];
+            }
+
+            return array_map(function ($quarterStartMonth) use ($year, $month) {
+                return sprintf('%d-%02d-01', $year, $quarterStartMonth + $month - 1);
+            }, [1, 4, 7, 10]);
+        }
+
+        if ($month < 1 || $month > 12) {
+            return [];
+        }
+
+        return [sprintf('%d-%02d-01', $year, $month)];
+    }
+
+    private function extractMonth(?string $value): int
+    {
+        if (!is_string($value) || !preg_match('/^\d{2}(?:-\d{2})?$/', $value)) {
+            return 0;
+        }
+
+        return (int) substr($value, 0, 2);
+    }
+
+    private function findExistingTaskForMonth($configId, int $year, string $declarationDate): ?TaxDeclarationTask
+    {
+        $month = substr($declarationDate, 5, 2);
+
+        return TaxDeclarationTask::where('config_id', $configId)
+            ->where('year', $year)
+            ->whereYear('declaration_date', $year)
+            ->whereMonth('declaration_date', (int) $month)
+            ->orderByDesc('id')
+            ->first();
     }
 
     private function appendConfigCreatorFallback(TaxDeclarationConfig $config): void

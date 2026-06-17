@@ -30,12 +30,21 @@ class TaxDeclarationConfig extends Model
     protected $auditableFields = [
         'company_name' => '公司名称',
         'period_type' => '申报周期',
-        'declaration_date' => '申报日期',
+        'declaration_date' => '申报月份',
     ];
 
     public function getAuditIdentifier()
     {
-        return $this->company_name . ' - ' . $this->declaration_date;
+        if ($this->period_type === 'monthly') {
+            return $this->company_name . ' - 每月';
+        }
+
+        $month = (int) substr((string) $this->declaration_date, 0, 2);
+        if ($this->period_type === 'quarterly') {
+            return $this->company_name . ' - 每季度第' . $month . '个月';
+        }
+
+        return $this->company_name . ' - 每年' . $month . '月';
     }
 
     /**

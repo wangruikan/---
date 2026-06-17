@@ -41,7 +41,7 @@ class TaxDeclarationTask extends Model
 
     public function getAuditIdentifier()
     {
-        return $this->company_name . ' - ' . $this->declaration_date->format('Y-m-d');
+        return $this->company_name . ' - ' . $this->declaration_date->format('Y-m');
     }
 
     /**

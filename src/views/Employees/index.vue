@@ -2455,18 +2455,30 @@
                   </el-col>
                 </el-row>
                 <el-row :gutter="20">
-                  <el-col :span="8">
+                  <el-col :span="6">
                     <el-form-item label="公积金账户">
                       <el-input :value="registrationForm?.housing_fund_account || '-'" />
                     </el-form-item>
                   </el-col>
-                  <el-col :span="8">
+                  <el-col :span="6">
                     <el-form-item label="银行账号">
                       <el-input :value="registrationForm?.bank_account || '-'" />
                     </el-form-item>
                   </el-col>
-                  <el-col :span="8">
-                    <el-form-item label="开户支行">
+                  <el-col :span="6">
+                    <el-form-item label="户名">
+                      <el-input :value="registrationForm?.bank_account_holder || '-'" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="6">
+                    <el-form-item label="开户行">
+                      <el-input :value="registrationForm?.bank_name || '-'" />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <el-row :gutter="20">
+                  <el-col :span="24">
+                    <el-form-item label="开户地/支行">
                       <el-input :value="registrationForm?.bank_branch || '-'" />
                     </el-form-item>
                   </el-col>
@@ -4454,19 +4466,33 @@
               </el-col>
             </el-row>
             <el-row :gutter="20">
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="公积金账户">
                   <el-input v-model="registrationFormUpdateForm.data.housing_fund_account" placeholder="请输入公积金账户" clearable />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="12">
                 <el-form-item label="银行账号">
                   <el-input v-model="registrationFormUpdateForm.data.bank_account" placeholder="请输入银行账号" clearable />
                 </el-form-item>
               </el-col>
-              <el-col :span="8">
-                <el-form-item label="开户支行">
-                  <el-input v-model="registrationFormUpdateForm.data.bank_name" placeholder="请输入开户支行" clearable />
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="户名">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_account_holder" placeholder="请输入户名" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="开户行">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_name" placeholder="请输入开户行" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="24">
+                <el-form-item label="开户地/支行">
+                  <el-input v-model="registrationFormUpdateForm.data.bank_branch" placeholder="请输入开户地/支行" clearable />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -5932,7 +5958,9 @@ const employeeRegistrationFormUpdateSections = [
       { prop: 'job_title', label: '职务' },
       { prop: 'housing_fund_account', label: '公积金账户' },
       { prop: 'bank_account', label: '银行账号' },
-      { prop: 'bank_name', label: '开户支行' }
+      { prop: 'bank_account_holder', label: '户名' },
+      { prop: 'bank_name', label: '开户行' },
+      { prop: 'bank_branch', label: '开户地/支行' }
     ]
   },
   {
@@ -10263,7 +10291,9 @@ const loadRegistrationForm = async (employeeId) => {
         ...sourceData,
         // 兼容旧字段 -> 新字段
         job_title: sourceData.job_title || sourceData.position || '',
+        bank_account_holder: sourceData.bank_account_holder || '',
         bank_name: sourceData.bank_name || sourceData.bank_branch || '',
+        bank_branch: sourceData.bank_branch || sourceData.bank_name || '',
         document_address: sourceData.document_address || sourceData.document_delivery_address || '',
         disability_level: sourceData.disability_level || sourceData.disability_certificate || '',
         engineering_skills: sourceData.engineering_skills || sourceData.engineering_certificates || '',
@@ -10275,7 +10305,6 @@ const loadRegistrationForm = async (employeeId) => {
         education_type: sourceData.education_type || sourceData.education_nature || sourceData.education_property || '',
         // 兼容页面历史字段命名
         position: sourceData.position || sourceData.job_title || '',
-        bank_branch: sourceData.bank_branch || sourceData.bank_name || '',
         document_delivery_address: sourceData.document_delivery_address || sourceData.document_address || '',
         disability_certificate: sourceData.disability_certificate || sourceData.disability_level || '',
         engineering_certificates: sourceData.engineering_certificates || sourceData.engineering_skills || '',
@@ -11267,7 +11296,8 @@ const getChangeComparison = (detail) => {
     native_place: '籍贯',
     bank_account: '银行账号',
     bank_account_holder: '户名',
-    bank_branch: '开户行',
+    bank_name: '开户行',
+    bank_branch: '开户地/支行',
     bank_province: '开户行省份',
     basic_salary: '基本工资',
     project_name: '项目名称',

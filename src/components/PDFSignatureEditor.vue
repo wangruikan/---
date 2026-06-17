@@ -3,17 +3,14 @@
     <div class="editor-layout">
       <!-- 左侧：PDF预览区 -->
       <div class="pdf-preview-area">
-        <div class="preview-header">
-          <span>合同预览</span>
-          <div class="page-controls">
-            <el-button size="small" @click="prevPage" :disabled="currentPage <= 1">
-              <el-icon><ArrowLeft /></el-icon>
-            </el-button>
-            <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
-            <el-button size="small" @click="nextPage" :disabled="currentPage >= totalPages">
-              <el-icon><ArrowRight /></el-icon>
-            </el-button>
-          </div>
+        <div class="floating-page-controls">
+          <el-button size="small" circle @click="prevPage" :disabled="currentPage <= 1">
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
+          <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+          <el-button size="small" circle @click="nextPage" :disabled="currentPage >= totalPages">
+            <el-icon><ArrowRight /></el-icon>
+          </el-button>
         </div>
         
         <div class="pdf-canvas-container" ref="canvasContainer">
@@ -682,31 +679,34 @@ defineExpose({
   flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
   background: #f5f7fa;
   border-radius: 8px;
   overflow: hidden;
   border: 2px solid #e4e7ed;
 }
 
-.preview-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  font-weight: 600;
-}
-
-.page-controls {
+.floating-page-controls {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #dcdfe6;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
 }
 
 .page-info {
-  padding: 0 10px;
+  min-width: 42px;
+  text-align: center;
   font-size: 14px;
+  font-weight: 600;
+  color: #303133;
 }
 
 .pdf-canvas-container {
@@ -939,12 +939,8 @@ canvas.cursor-crosshair {
   min-width: 0;
 }
 
-.pdf-signature-editor.is-fullscreen .preview-header {
-  padding: 10px 14px;
-}
-
 .pdf-signature-editor.is-fullscreen .pdf-canvas-container {
-  padding: 18px 48px;
+  padding: 8px 48px 18px;
   min-height: 0;
 }
 

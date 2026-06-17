@@ -515,12 +515,9 @@
     <!-- PDF签名编辑器全屏层 -->
     <Teleport to="body">
       <div v-if="showPDFEditor && currentPDFUrl" ref="pdfStampFullscreenRef" class="native-stamp-fullscreen">
-        <div class="native-stamp-header">
-          <span>PDF签名盖章编辑器</span>
-          <el-button text @click="closePDFEditor">
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
+        <el-button class="native-stamp-close" text circle @click="closePDFEditor">
+          <el-icon><Close /></el-icon>
+        </el-button>
         <div class="native-stamp-body">
           <PDFSignatureEditor
             :pdf-url="currentPDFUrl"
@@ -576,12 +573,9 @@
     <!-- 批量盖章 - 步骤2：设置盖章位置 -->
     <Teleport to="body">
       <div v-if="showBatchStampPositionDialog && batchStampFirstPDFUrl" ref="batchStampFullscreenRef" class="native-stamp-fullscreen">
-        <div class="native-stamp-header">
-          <span>批量盖章 - 设置盖章位置</span>
-          <el-button text @click="closeBatchStampPosition">
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
+        <el-button class="native-stamp-close" text circle @click="closeBatchStampPosition">
+          <el-icon><Close /></el-icon>
+        </el-button>
         <div class="native-stamp-tip">
           <el-alert
             title="请在下方PDF上拖动印章到合适位置，此位置将应用到所有选中的文件"
@@ -667,12 +661,9 @@
     <!-- 批量盖章 - 单个文件位置调整 -->
     <Teleport to="body">
       <div v-if="showSingleStampAdjustDialog && singleAdjustPDFUrl" ref="singleStampFullscreenRef" class="native-stamp-fullscreen">
-        <div class="native-stamp-header">
-          <span>调整盖章位置</span>
-          <el-button text @click="closeSingleStampAdjust">
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
+        <el-button class="native-stamp-close" text circle @click="closeSingleStampAdjust">
+          <el-icon><Close /></el-icon>
+        </el-button>
         <div class="native-stamp-body">
           <PDFSignatureEditor
             ref="singleAdjustEditorRef"
@@ -2247,15 +2238,16 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.native-stamp-header {
-  flex-shrink: 0;
-  height: 42px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #e4e7ed;
-  font-weight: 600;
+.native-stamp-close {
+  position: fixed !important;
+  top: 8px;
+  right: 8px;
+  z-index: 2147483647;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid #dcdfe6 !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
 }
 
 .native-stamp-body {
@@ -2263,7 +2255,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 8px 10px;
+  padding: 0;
   overflow: hidden;
 }
 

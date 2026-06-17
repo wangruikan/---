@@ -184,6 +184,7 @@ const props = defineProps({
 const emit = defineEmits(['confirm', 'cancel', 'position-change'])
 const router = useRouter()
 const userStore = useUserStore()
+const SEAL_DRAW_SCALE = 1.3
 
 const canvasContainer = ref()
 const canvasWrapper = ref()
@@ -382,9 +383,12 @@ const handleCanvasClick = (e) => {
     yPercent: yPercent.toFixed(2)
   })
   
-  // 签名/印章尺寸
-  const stampWidth = selectedTool.value.type === 'signature' ? 120 : 80
-  const stampHeight = selectedTool.value.type === 'signature' ? 60 : 80
+  // 签名/印章实际写入 PDF 的尺寸；印章预览需要按当前 PDF 缩放比例换算成屏幕尺寸。
+  const stampWidth = selectedTool.value.type === 'signature' ? 120 : 80 * SEAL_DRAW_SCALE
+  const stampHeight = selectedTool.value.type === 'signature' ? 60 : 80 * SEAL_DRAW_SCALE
+  const previewScale = selectedTool.value.type === 'seal' ? currentScale : 1
+  const previewStampWidth = stampWidth * previewScale
+  const previewStampHeight = stampHeight * previewScale
   
   // 创建签名/印章对象（坐标居中调整）
   const newStamp = {
@@ -392,8 +396,8 @@ const handleCanvasClick = (e) => {
     type: selectedTool.value.type,
     image: selectedTool.value.data.image_url,
     name: selectedTool.value.name,
-    xPercent: Math.max(0, Math.min(100 - (stampWidth / displayWidth * 100), xPercent - (stampWidth / displayWidth * 100 / 2))),
-    yPercent: Math.max(0, Math.min(100 - (stampHeight / displayHeight * 100), yPercent - (stampHeight / displayHeight * 100 / 2))),
+    xPercent: Math.max(0, Math.min(100 - (previewStampWidth / displayWidth * 100), xPercent - (previewStampWidth / displayWidth * 100 / 2))),
+    yPercent: Math.max(0, Math.min(100 - (previewStampHeight / displayHeight * 100), yPercent - (previewStampHeight / displayHeight * 100 / 2))),
     width: stampWidth,
     height: stampHeight,
     page: currentPage.value,
@@ -420,11 +424,13 @@ const getCurrentPageStamps = () => {
 
 // 获取签名/印章的样式
 const getStampStyle = (stamp) => {
+  const previewScale = stamp.type === 'seal' ? currentScale : 1
+
   return {
     left: `${stamp.xPercent}%`,
     top: `${stamp.yPercent}%`,
-    width: `${stamp.width}px`,
-    height: `${stamp.height}px`,
+    width: `${stamp.width * previewScale}px`,
+    height: `${stamp.height * previewScale}px`,
   }
 }
 
@@ -575,6 +581,7 @@ const mergePDFWithStamps = async () => {
           y: y,
           width: drawWidth,
           height: drawHeight,
+          opacity: stamp.type === 'seal' ? 0.7 : 1,
         })
       } catch (error) {
         console.error(`  ❌ 添加 ${stamp.name} 失败:`, error)

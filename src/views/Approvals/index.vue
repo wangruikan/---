@@ -714,6 +714,7 @@ import PDFSignatureEditor from '@/components/PDFSignatureEditor.vue'
 
 const accountSetStore = useAccountSetStore()
 const router = useRouter()
+const SEAL_DRAW_SCALE = 1.3
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -1097,8 +1098,9 @@ const mergePDFAndUpload = async (recordId, attachment, signature, seal, stepOrde
       lastPage.drawImage(sealImage, {
         x: pos.x + 130,
         y: pos.y,
-        width: 60,
-        height: 60,
+        width: 60 * SEAL_DRAW_SCALE,
+        height: 60 * SEAL_DRAW_SCALE,
+        opacity: 0.7,
       })
     }
     
@@ -2072,8 +2074,8 @@ const confirmBatchStamp = async () => {
         }
         
         // 6. 计算印章位置和大小
-        const stampWidth = file.stampPosition.width || 80
-        const stampHeight = file.stampPosition.height || 80
+        const stampWidth = file.stampPosition.width || (80 * SEAL_DRAW_SCALE)
+        const stampHeight = file.stampPosition.height || (80 * SEAL_DRAW_SCALE)
         const x = (file.stampPosition.x / 100) * pdfWidth
         const y = pdfHeight - ((file.stampPosition.y / 100) * pdfHeight) - stampHeight
         
@@ -2083,6 +2085,7 @@ const confirmBatchStamp = async () => {
           y: y,
           width: stampWidth,
           height: stampHeight,
+          opacity: 0.7,
         })
         
         // 8. 保存合成后的PDF

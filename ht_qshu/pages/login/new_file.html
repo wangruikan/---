@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>极氪007&GT dTCS与VDC 2.0 对比演示</title>
+<style>
+  body {
+    margin: 0;
+    padding: 20px;
+    background: #0f0f1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  .panel {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 20px 25px;
+    width: 960px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.7);
+  }
+  .panel-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: #111;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 360px;
+    background: #f9f9f9;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+  }
+  .footnote {
+    font-size: 12px;
+    color: #333;
+    margin-top: 8px;
+    text-align: center;
+    background: #f0f0f0;
+    padding: 6px 12px;
+    border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+
+<!-- dTCS 面板 -->
+<div class="panel">
+  <div class="panel-title">
+    <span style="background:#e74c3c; color:#fff; padding:4px 16px; border-radius:20px;">dTCS</span>
+    分布式牵引力控制对比
+  </div>
+  <canvas id="canvasTCS" width="910" height="360"></canvas>
+  <div class="footnote">
+    <strong>核心技术：</strong>普通TCS依赖中央ECU，信号往返约<strong style="color:#e74c3c;">200ms</strong>，车轮空转明显；极氪007&GT dTCS将控制器就近放在轮边，控制回路<strong style="color:#0984e3;">＜10ms</strong>，打滑苗头瞬间抑制。
+  </div>
+</div>
+
+<!-- VDC 2.0 面板 -->
+<div class="panel">
+  <div class="panel-title">
+    <span style="background:#0984e3; color:#fff; padding:4px 16px; border-radius:20px;">VDC 2.0</span>
+    前馈式车辆动态控制对比
+  </div>
+  <canvas id="canvasVDC" width="910" height="360"></canvas>
+  <div class="footnote">
+    <strong>核心技术：</strong>传统反馈VDC等侧滑发生后才制动纠正；极氪007&GT VDC 2.0实时读取方向盘转角与加速踏板，通过车辆模型<strong style="color:#0984e3;">提前预测</strong>并主动在外侧车轮施加制动力，实现<strong style="color:#00b894;">“防滑于未然”</strong>。
+  </div>
+</div>
+
+<script>
+(function() {
+  // ========== dTCS 动画（传统车辆响应延迟改为200ms）==========
+  const canvasTCS = document.getElementById('canvasTCS');
+  const ctxTCS = canvasTCS.getContext('2d');
+  const W_TCS = canvasTCS.width;
+  const H_TCS = canvasTCS.height;
+  let timeTCS = 0;
+
+  function drawTCS() {
+    ctxTCS.clearRect(0, 0, W_TCS, H_TCS);
+    const cycle = 4.5;
+    const t = timeTCS % cycle;
+    const lowMu = t > 0.8 && t < 2.5;
+    const slipStart = 0.95;
+    const roadY = 280;
+    const carY = roadY - 35;
+    const leftCX = W_TCS * 0.28;
+    const rightCX = W_TCS * 0.72;
+
+    // 路面
+    ctxTCS.fillStyle = '#4a4a4a';
+    ctxTCS.fillRect(0, roadY, W_TCS, 15);
+    if (lowMu) {
+      ctxTCS.fillStyle = '#5dade2';
+      ctxTCS.fillRect(W_TCS * 0.2, roadY, W_TCS * 0.6, 15);
+      if (Math.sin(timeTCS * 20) > 0) {
+        ctxTCS.fillStyle = 'rgba(255,255,255,0.4)';
+        ctxTCS.fillRect(W_TCS * 0.3, roadY, W_TCS * 0.4, 6);
+      }
+      ctxTCS.font = 'bold 14px "PingFang SC"';
+      ctxTCS.fillStyle = '#fff';
+      ctxTCS.textAlign = 'center';
+      ctxTCS.shadowColor = '#000';
+      ctxTCS.shadowBlur = 4;
+      ctxTCS.fillText('⚠️ 低附着力路面（冰面）', W_TCS * 0.5, roadY + 32);
+      ctxTCS.shadowBlur = 0;
+    }
+
+    let rotL = timeTCS * 5, rotR = timeTCS * 5;
+    let slipL = 0, slipR = 0;
+    let torqueL = lowMu ? 1 : 0.3, torqueR = lowMu ? 1 : 0.3;
+
+    if (lowMu && t > slipStart) {
+      const elapsed = t - slipStart;
+      // 普通 TCS：延迟 200ms 响应
+      if (elapsed < 0.2) {
+        slipL = Math.min(1, elapsed / 0.1);
+        rotL = timeTCS * 5 * (1 + slipL * 3);
+      } else {
+        torqueL = 0.2;
+        slipL = Math.max(0, 1 - (elapsed - 0.2) / 0.3);
+        rotL = timeTCS * 5 * (1 + slipL * 1.8);
+      }
+      // dTCS：延迟 8ms 响应（不变）
+      if (elapsed < 0.01) {
+        slipR = Math.min(0.4, elapsed / 0.01);
+        rotR = timeTCS * 5 * (1 + slipR * 2);
+      } else {
+        torqueR = 0.25;
+        slipR = 0.03;
+        rotR = timeTCS * 5 * (1 + slipR);
+      }
+    }
+
+    function drawCar(ctx, cx, y, wheelRot, slip, color) {
+      ctx.fillStyle = '#2c3e50';
+      ctx.fillRect(cx - 35, y - 12, 70, 24);
+      ctx.fillStyle = '#aed6f1';
+      ctx.fillRect(cx - 15, y - 8, 30, 14);
+      const wheelX = cx + 20;
+      const wheelY = y + 12;
+      ctx.save();
+      ctx.translate(wheelX, wheelY);
+      ctx.rotate(wheelRot);
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 10, Math.sin(a) * 10);
+        ctx.strokeStyle = '#ddd';
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(cx - 20, wheelY, 10, 0, Math.PI * 2);
+      ctx.fill();
+      if (slip > 0.1) {
+        ctx.beginPath();
+        ctx.arc(wheelX, wheelY, 16, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    drawCar(ctxTCS, leftCX, carY, rotL, slipL, '#e74c3c');
+    drawCar(ctxTCS, rightCX, carY, rotR, slipR, '#0984e3');
+
+    // 车辆标签
+    ctxTCS.font = 'bold 16px "PingFang SC"';
+    ctxTCS.textAlign = 'center';
+    ctxTCS.fillStyle = '#e74c3c';
+    ctxTCS.fillText('传统车辆', leftCX, carY - 50);
+    ctxTCS.fillStyle = '#0984e3';
+    ctxTCS.fillText('极氪007&GT', rightCX, carY - 50); // 修改
+
+    // 扭矩条
+    function bar(ctx, x, y, val, color) {
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(x - 12, y - 15, 24, 10);
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 11, y - 14, 22 * val, 8);
+    }
+    bar(ctxTCS, leftCX, carY - 57, torqueL, '#e74c3c');
+    bar(ctxTCS, rightCX, carY - 57, torqueR, '#0984e3');
+
+    // 中央 ECU
+    const ecuX = W_TCS * 0.5, ecuY = 42;
+    ctxTCS.fillStyle = '#333';
+    ctxTCS.font = 'bold 12px "PingFang SC"';
+    ctxTCS.textAlign = 'center';
+    ctxTCS.fillText('中央 ECU', ecuX, ecuY - 6);
+    ctxTCS.fillRect(ecuX - 25, ecuY, 50, 18);
+
+    // 传统信号线（信号动画时间调整至约0.3秒）
+    let sigN = 0;
+    if (lowMu && t > slipStart) sigN = Math.min(1, (t - slipStart) / 0.3);
+    ctxTCS.beginPath();
+    ctxTCS.moveTo(leftCX + 20, carY + 12);
+    ctxTCS.lineTo(ecuX, ecuY + 9);
+    ctxTCS.strokeStyle = '#e74c3c';
+    ctxTCS.lineWidth = 2;
+    ctxTCS.setLineDash([5, 5]);
+    ctxTCS.stroke();
+    ctxTCS.setLineDash([]);
+    if (sigN > 0 && sigN < 1) {
+      const px = leftCX + 20 + (ecuX - (leftCX + 20)) * sigN;
+      const py = (carY + 12) + (ecuY + 9 - (carY + 12)) * sigN;
+      ctxTCS.fillStyle = '#e74c3c';
+      ctxTCS.beginPath();
+      ctxTCS.arc(px, py, 5, 0, Math.PI * 2);
+      ctxTCS.fill();
+    }
+
+    // 轮边控制器
+    let sigD = 0;
+    if (lowMu && t > slipStart) sigD = Math.min(1, (t - slipStart) / 0.02);
+    const controllerCX = rightCX + 30;
+    const controllerTopY = carY - 28;
+    const controllerH = 22;
+    const controllerW = 70;
+
+    ctxTCS.fillStyle = '#0984e3';
+    ctxTCS.fillRect(controllerCX - controllerW/2, controllerTopY, controllerW, controllerH);
+    ctxTCS.font = 'bold 13px "PingFang SC"';
+    ctxTCS.textAlign = 'center';
+    ctxTCS.fillStyle = '#fff';
+    ctxTCS.fillText('轮边控制器', controllerCX, controllerTopY + controllerH/2 + 5);
+
+    ctxTCS.beginPath();
+    ctxTCS.moveTo(rightCX + 20, carY + 12);
+    ctxTCS.lineTo(controllerCX, controllerTopY + controllerH);
+    ctxTCS.strokeStyle = '#0984e3';
+    ctxTCS.lineWidth = 2;
+    ctxTCS.stroke();
+    if (sigD > 0 && sigD < 1) {
+      const dx = controllerCX - (rightCX + 20);
+      const dy = (controllerTopY + controllerH) - (carY + 12);
+      const px = rightCX + 20 + dx * sigD;
+      const py = carY + 12 + dy * sigD;
+      ctxTCS.fillStyle = '#0984e3';
+      ctxTCS.beginPath();
+      ctxTCS.arc(px, py, 4, 0, Math.PI * 2);
+      ctxTCS.fill();
+    }
+
+    // 响应延迟（200ms）
+    ctxTCS.font = 'bold 14px "PingFang SC"';
+    ctxTCS.textAlign = 'center';
+    ctxTCS.fillStyle = '#e74c3c';
+    ctxTCS.fillText('响应延迟 ≈ 200 ms', leftCX, carY + 65);
+    ctxTCS.fillStyle = '#0984e3';
+    ctxTCS.fillText('响应延迟 < 10 ms', rightCX, carY + 65);
+  }
+
+  function loopTCS(ts) {
+    const cycle = 4.5;
+    const t = timeTCS % cycle;
+    let speedFactor = 1.0;
+    if (t > 0.9 && t < 1.1) {
+      speedFactor = 0.25; // 慢动作聚焦打滑瞬间
+    }
+    timeTCS += 0.016 * speedFactor;
+    drawTCS();
+    requestAnimationFrame(loopTCS);
+  }
+  loopTCS(0);
+
+  // ========== VDC 2.0 动画（方向盘中移 + 慢动作 + 重合）==========
+  const canvasVDC = document.getElementById('canvasVDC');
+  const ctxVDC = canvasVDC.getContext('2d');
+  const W_VDC = canvasVDC.width;
+  const H_VDC = canvasVDC.height;
+  let timeVDC = 0;
+
+  function drawVDC() {
+    ctxVDC.clearRect(0, 0, W_VDC, H_VDC);
+    const cycle = 5.0;
+    const rawProgress = (timeVDC % cycle) / (cycle * 0.75);
+    const progress = Math.min(1, rawProgress);
+    const trigger = 0.5;
+    const slowStart = 0.45;
+    const slowEnd = 0.55;
+
+    const laneY1 = H_VDC * 0.30;
+    const laneY2 = H_VDC * 0.70;
+    const curveOffset = 40;
+
+    function drawLane(y, active) {
+      ctxVDC.strokeStyle = '#7f8c8d';
+      ctxVDC.lineWidth = 22;
+      ctxVDC.beginPath();
+      ctxVDC.moveTo(20, y);
+      ctxVDC.quadraticCurveTo(W_VDC/2, y - curveOffset, W_VDC - 20, y);
+      ctxVDC.stroke();
+      if (active) {
+        ctxVDC.strokeStyle = '#0984e3';
+        ctxVDC.lineWidth = 24;
+        ctxVDC.globalAlpha = 0.15;
+        ctxVDC.beginPath();
+        ctxVDC.moveTo(20, y);
+        ctxVDC.quadraticCurveTo(W_VDC/2, y - curveOffset, W_VDC - 20, y);
+        ctxVDC.stroke();
+        ctxVDC.globalAlpha = 1;
+      }
+    }
+    drawLane(laneY1, false);
+    drawLane(laneY2, true);
+
+    let steerBase = progress * 0.6;
+    let steerExtra = 0;
+    const inSlow = progress >= slowStart && progress <= slowEnd;
+    if (progress >= trigger) {
+      steerExtra = 2.5;
+    }
+    const totalSteer = steerBase + steerExtra;
+
+    const steerX = 200, steerY = 50;
+    ctxVDC.save();
+    ctxVDC.translate(steerX, steerY);
+    ctxVDC.rotate(totalSteer);
+    ctxVDC.strokeStyle = progress >= trigger ? '#e74c3c' : '#333';
+    ctxVDC.lineWidth = 3;
+    if (progress >= trigger) {
+      ctxVDC.shadowColor = '#e74c3c';
+      ctxVDC.shadowBlur = 10;
+    }
+    ctxVDC.beginPath();
+    ctxVDC.arc(0, 0, 18, 0, Math.PI * 2);
+    ctxVDC.stroke();
+    ctxVDC.beginPath();
+    ctxVDC.moveTo(-14, 0); ctxVDC.lineTo(14, 0);
+    ctxVDC.moveTo(0, -14); ctxVDC.lineTo(0, 14);
+    ctxVDC.stroke();
+    ctxVDC.shadowBlur = 0;
+    ctxVDC.restore();
+
+    ctxVDC.font = '12px "PingFang SC"';
+    ctxVDC.fillStyle = '#333';
+    ctxVDC.textAlign = 'center';
+    ctxVDC.fillText('方向盘转角', steerX, steerY + 35);
+    if (progress >= trigger) {
+      ctxVDC.font = 'bold 16px "PingFang SC"';
+      ctxVDC.fillStyle = '#e74c3c';
+      ctxVDC.fillText('❗ 突然多打半圈', steerX, steerY + 55);
+    } else if (inSlow) {
+      ctxVDC.font = '11px "PingFang SC"';
+      ctxVDC.fillStyle = '#e67e22';
+      ctxVDC.fillText('即将突变...', steerX, steerY + 55);
+    }
+
+    const carX = 80 + progress * (W_VDC - 160);
+    const laneYFunc = (baseY, tVal) => baseY - 4 * curveOffset * tVal * (1 - tVal);
+
+    let slipFB = 0;
+    if (progress > trigger) {
+      slipFB = Math.min(1, (progress - trigger) * 4);
+    }
+    const idealY1 = laneYFunc(laneY1, progress);
+    const carY1 = idealY1 - slipFB * 80;
+    const angleBase1 = steerBase * 0.6;
+    const spinAngle = slipFB * (Math.PI / 2);
+    const carAngle1 = angleBase1 + spinAngle;
+
+    const carY2 = laneYFunc(laneY2, progress);
+    const carAngle2 = steerBase * 0.7;
+
+    function drawCarVDC(ctx, x, y, angle, brake, color) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      const w = 72, h = 28;
+      ctx.fillStyle = color;
+      ctx.fillRect(-w/2, -h/2, w, h);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-12, -8, 24, 16);
+      ctx.fillStyle = '#111';
+      const wheelW = 10, wheelH = 5;
+      ctx.fillRect(-w/2 + 6, -h/2 - 2, wheelW, wheelH);
+      ctx.fillRect( w/2 - 16, -h/2 - 2, wheelW, wheelH);
+      ctx.fillRect(-w/2 + 6, h/2 - 3, wheelW, wheelH);
+      ctx.fillRect( w/2 - 16, h/2 - 3, wheelW, wheelH);
+      if (brake > 0) {
+        ctx.beginPath();
+        ctx.arc(w/2 - 11, -h/2 + 1, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+    }
+
+    drawCarVDC(ctxVDC, carX, carY1, carAngle1, 0, '#e74c3c');
+    drawCarVDC(ctxVDC, carX, carY2, carAngle2, 0, '#0984e3');
+
+    ctxVDC.strokeStyle = '#00b894';
+    ctxVDC.lineWidth = 2;
+    ctxVDC.setLineDash([5, 5]);
+    ctxVDC.beginPath();
+    ctxVDC.moveTo(80, laneY2);
+    ctxVDC.quadraticCurveTo(W_VDC/2, laneY2 - curveOffset, W_VDC - 80, laneY2);
+    ctxVDC.stroke();
+    ctxVDC.setLineDash([]);
+    ctxVDC.fillStyle = '#00b894';
+    ctxVDC.fillText('理想轨迹', W_VDC - 110, laneY2 - 60);
+
+    ctxVDC.fillStyle = '#e74c3c';
+    ctxVDC.fillText('侧滑角 ≈ ' + Math.round(slipFB * 90) + '°', 30, laneY1 - 40);
+    ctxVDC.fillStyle = '#0984e3';
+    ctxVDC.fillText('侧滑角 ≈ 0°', 30, laneY2 - 40);
+
+    ctxVDC.font = 'bold 16px "PingFang SC"';
+    ctxVDC.fillStyle = '#e74c3c';
+    ctxVDC.fillText('传统车辆', 30, laneY1 - 60);
+    ctxVDC.fillStyle = '#0984e3';
+    ctxVDC.fillText('极氪007&GT', 30, laneY2 - 60); // 修改
+  }
+
+  function loopVDC(ts) {
+    const cycle = 5.0;
+    const rawProgress = (timeVDC % cycle) / (cycle * 0.75);
+    const progress = Math.min(1, rawProgress);
+    let speedFactor = 1.0;
+    if (progress >= 0.45 && progress <= 0.55) {
+      speedFactor = 0.25;
+    }
+    timeVDC += 0.016 * speedFactor;
+    drawVDC();
+    requestAnimationFrame(loopVDC);
+  }
+  loopVDC(0);
+})();
+</script>
+</body>
+</html>

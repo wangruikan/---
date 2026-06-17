@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>极氪007&GT · CCD电磁减振 + 空气弹簧</title>
+<style>
+  body {
+    margin: 0; padding: 20px;
+    background: #0b0f17;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh;
+    font-family: 'PingFang SC','Microsoft YaHei',sans-serif;
+  }
+  .panel {
+    background: #11151e; border-radius: 24px; padding: 20px 25px;
+    width: 960px; box-shadow: 0 30px 60px rgba(0,0,0,0.8), 0 0 0 2px rgba(255,255,255,0.05);
+  }
+  .panel-title {
+    font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  canvas { display: block; width: 100%; height: 360px; background: transparent; border-radius: 12px; }
+  .footnote {
+    font-size: 12px; color: #b0b8c0; margin-top: 8px; text-align: center;
+    background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="panel-title">
+    <span style="background:#0984e3; color:#fff; padding:4px 16px; border-radius:20px;">CCD + 空悬</span>
+    坑洼路面与车辆转向 独立演示
+  </div>
+  <canvas id="canvasCDC" width="910" height="360"></canvas>
+  <div class="footnote">
+    <strong>核心技术：</strong>毫秒级电磁阀配合路面预瞄，遇坑洼增大孔径降低阻尼，转向时收窄孔径提高阻尼，实现全场景自适应。
+  </div>
+</div>
+<script>
+(function() {
+  const canvas = document.getElementById('canvasCDC');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    W = rect.width - 60; H = 360;
+    canvas.width = W; canvas.height = H;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  let time = 0;
+  const LEFT_X = 0.22, RIGHT_X = 0.78;
+  const SYRINGE_Y = 115;
+  const SYRINGE_H = 155, SYRINGE_W = 44;
+  const CYCLE = 5.0;
+  const PUNCH_START = 1.2;
+  const PUNCH_DUR = 0.4;
+  const REBOUND_DUR = 1.2;
+  let valveLeft = 0.85, valveRight = 0.06;
+  let pistonLeft = 0, pistonRight = 0;
+  let punchPhase = 0, punchProgress = 0;
+  function roundRect(ctx, x, y, w, h, r) {
+    if (w < 2 * r) r = w / 2; if (h < 2 * r) r = h / 2;
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+  function drawGrid() {
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    const step = 40;
+    for (let x = step; x < W; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = step; y < H; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(0,255,255,0.06)';
+    ctx.lineWidth = 2;
+    const scanY = (time * 50) % H;
+    ctx.beginPath(); ctx.moveTo(0, scanY); ctx.lineTo(W, scanY); ctx.stroke();
+  }
+  function drawTitle() {
+    const titleY = 35;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#0984e3';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 34px "PingFang SC"';
+    ctx.fillText('极氪007&GT', W/2, titleY);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#74b9ff';
+    ctx.font = 'bold 14px "PingFang SC"';
+    ctx.fillText('CCD电磁减振系统 + 空气弹簧', W/2, titleY + 28);
+    ctx.strokeStyle = '#0984e3';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(W/2 - 130, titleY + 40);
+    ctx.lineTo(W/2 + 130, titleY + 40);
+    ctx.stroke();
+  }
+  // 左侧坑洼预瞄
+  function drawLeftPreview() {
+    const cx = LEFT_X * W;
+    const baseY = SYRINGE_Y + SYRINGE_H + 55;
+    const offset = (time * 40) % 60;
+    ctx.strokeStyle = 'rgba(0,255,255,0.7)'; ctx.lineWidth = 2;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath(); ctx.moveTo(cx - 70, baseY - offset); ctx.lineTo(cx + 70, baseY - offset); ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 2; i++) {
+      const r = 12 + i * 8;
+      ctx.beginPath(); ctx.arc(cx, baseY - offset, r, Math.PI * 1.7, Math.PI * 2.3);
+      ctx.strokeStyle = rgba(0,255,255,${0.4 - i * 0.1}); ctx.stroke();
+    }
+    ctx.font = 'bold 12px "PingFang SC"'; ctx.fillStyle = '#0ff'; ctx.textAlign = 'center';
+    ctx.fillText('🔍 路面预瞄：前方坑洼', cx, baseY - 30);
+    ctx.fillText('→ 增大孔径，降低阻尼', cx, baseY - 12);
+  }
+  // 右侧转向预瞄
+  function drawRightPreview() {
+    const cx = RIGHT_X * W;
+    const baseY = SYRINGE_Y + SYRINGE_H + 55;
+    const offset = (time * 40 + 30) % 60;
+    ctx.strokeStyle = 'rgba(255,80,80,0.7)'; ctx.lineWidth = 2;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath(); ctx.moveTo(cx - 70, baseY - offset); ctx.lineTo(cx + 70, baseY - offset); ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 2; i++) {
+      const r = 12 + i * 8;
+      ctx.beginPath(); ctx.arc(cx, baseY - offset, r, Math.PI * 1.7, Math.PI * 2.3);
+      ctx.strokeStyle = rgba(255,80,80,${0.4 - i * 0.1}); ctx.stroke();
+    }
+    ctx.font = 'bold 12px "PingFang SC"'; ctx.fillStyle = '#ff6666'; ctx.textAlign = 'center';
+    ctx.fillText('🔍 路面预瞄：转向', cx, baseY - 30);
+    ctx.fillText('→ 收窄孔径，提高阻尼', cx, baseY - 12);
+  }
+  function drawSyringe(cx, pistonPos, valveOpen, isComfort) {
+    const x = cx - SYRINGE_W/2, y = SYRINGE_Y, bodyH = SYRINGE_H;
+    const oilTop = y + 22 + pistonPos * (bodyH - 44);
+    const valveY = y + bodyH * 0.6, valveH = 8;
+    const glassGrad = ctx.createLinearGradient(x, y, x + SYRINGE_W, y);
+    glassGrad.addColorStop(0, 'rgba(255,255,255,0.08)');
+    glassGrad.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+    glassGrad.addColorStop(1, 'rgba(255,255,255,0.08)');
+    ctx.fillStyle = glassGrad;
+    roundRect(ctx, x, y, SYRINGE_W, bodyH, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#3a4a5a'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x + 6, y + 15); ctx.lineTo(x + 6, y + bodyH - 10); ctx.stroke();
+    const valveW = SYRINGE_W - 8;
+    if (isComfort) {
+      ctx.shadowColor = '#2e86de'; ctx.shadowBlur = 12;
+      ctx.fillStyle = '#2e86de'; roundRect(ctx, cx - valveW/2, valveY, valveW, valveH, 5); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.moveTo(cx, valveY + 2); ctx.lineTo(cx - 6, valveY + valveH/2); ctx.lineTo(cx, valveY + valveH - 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx, valveY + 2); ctx.lineTo(cx + 6, valveY + valveH/2); ctx.lineTo(cx, valveY + valveH - 2); ctx.fill();
+    } else {
+      const gapW = Math.max(3, valveW * valveOpen);
+      ctx.shadowColor = '#e84118'; ctx.shadowBlur = 15;
+      ctx.fillStyle = '#e84118'; roundRect(ctx, cx - gapW/2, valveY, gapW, valveH, 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx - gapW/2 - 4, valveY + 2); ctx.lineTo(cx + gapW/2 + 4, valveY + valveH - 2);
+      ctx.moveTo(cx + gapW/2 + 4, valveY + 2); ctx.lineTo(cx - gapW/2 - 4, valveY + valveH - 2); ctx.stroke();
+    }
+    ctx.fillStyle = isComfort ? 'rgba(46, 134, 222, 0.25)' : 'rgba(232, 65, 24, 0.2)';
+    ctx.fillRect(x + 2, oilTop, SYRINGE_W - 4, y + bodyH - oilTop - 2);
+    for (let i = 0; i < 3; i++) {
+      const seed = i * 2.1 + time * (isComfort ? 1.4 : 0.2);
+      const pY = oilTop + 15 + (seed * 20) % (y + bodyH - oilTop - 25);
+      const pX = cx - 12 + Math.sin(seed * 3) * 12;
+      if (pY > valveY + valveH || pY < valveY) {
+        const particleColor = isComfort ? '#2ecc71' : '#f39c12';
+        ctx.shadowColor = particleColor; ctx.shadowBlur = 8;
+        ctx.fillStyle = particleColor; ctx.beginPath(); ctx.arc(pX, pY, 3.5, 0, Math.PI2); ctx.fill();
+        ctx.shadowBlur = 0;        ctx.fillStyle = particleColor; ctx.globalAlpha = 0.4;
+        ctx.beginPath(); ctx.arc(pX - 1, pY - 1, 2, 0, Math.PI2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    const pistonY = oilTop;
+    ctx.fillStyle = '#1e272e'; ctx.fillRect(x - 3, pistonY - 5, SYRINGE_W + 6, 10);
+    ctx.fillStyle = '#485460'; ctx.fillRect(x - 1, pistonY - 2, SYRINGE_W + 2, 3);
+    const rodTop = y - 35;
+    ctx.strokeStyle = '#3a4a5a'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(cx, rodTop); ctx.lineTo(cx, pistonY); ctx.stroke();
+    ctx.strokeStyle = '#5a6a7a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, rodTop); ctx.lineTo(cx, pistonY); ctx.stroke();
+    ctx.fillStyle = '#bdc3c7'; ctx.beginPath(); ctx.arc(cx, rodTop - 12, 14, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 2; ctx.stroke();
+    if (!isComfort && pistonPos < 0.12) {
+      ctx.strokeStyle = '#e84118'; ctx.lineWidth = 2.5; ctx.shadowColor = '#e84118'; ctx.shadowBlur = 8;
+      for (let j = -1; j <= 1; j+=2) {
+        ctx.beginPath(); ctx.moveTo(cx + j8, rodTop - 20); ctx.lineTo(cx + j15, rodTop - 33); ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+    }
+    if (punchPhase === 0 && (valveLeft > 0.9 || valveRight < 0.03)) {
+      ctx.fillStyle = '#ffd700'; ctx.font = 'bold 10px "PingFang SC"'; ctx.textAlign = 'center';
+      ctx.fillText('电磁阀响应 < 10 ms', cx, valveY - 10);
+    }
+    ctx.fillStyle = isComfort ? '#1e3a5f' : '#4f1a1a';
+    roundRect(ctx, cx - 50, y - 45, 100, 24, 12); ctx.fill();
+    ctx.fillStyle = isComfort ? '#4da6ff' : '#ff5e57';
+    ctx.font = 'bold 13px "PingFang SC"'; ctx.textAlign = 'center';
+    ctx.fillText(isComfort ? '坑洼路面 舒适' : '车辆转向 运动', cx, y - 27);
+    ctx.fillStyle = '#aaa'; ctx.font = '10px "PingFang SC"';
+    ctx.fillText(isComfort ? '阻尼小·吸收颠簸' : '阻尼大·支撑车身', cx, y - 11);
+  }
+  function drawAirSpring() {
+    const cx = W/2, baseY = 340;
+    let ratio = 0.9;
+    if (punchPhase === 1) ratio = 0.55; else if (punchPhase === 2) ratio = 0.75;
+    const curH = 45 * ratio, springTop = baseY - curH;
+    ctx.shadowColor = '#0984e3'; ctx.shadowBlur = 15;
+    ctx.fillStyle = 'rgba(9, 132, 227, 0.4)'; ctx.strokeStyle = '#74b9ff'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(cx, springTop + curH/2, 38, curH/2, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.save(); ctx.strokeStyle = '#74b9ff'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(cx - 38, springTop + curH);
+    for (let i = 0; i < 5; i++) {
+      const yLine = springTop + curH - (i + 0.5) * (curH / 5);
+      ctx.lineTo(cx + 38, yLine);
+    }
+    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    ctx.fillStyle = '#2d3e50'; ctx.fillRect(cx - 45, springTop - 8, 90, 10);
+    ctx.fillStyle = '#4a6278'; ctx.fillRect(cx - 45, springTop - 8, 90, 3);
+    if (punchPhase === 1 || punchPhase === 2) {
+      const fistY = punchPhase === 1 ? springTop - 22 : springTop - 45;
+      ctx.shadowColor = '#e74c3c'; ctx.shadowBlur = 20;
+      ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(cx, fistY, 18, 0, Math.PI2); ctx.fill();
+      ctx.shadowBlur = 0;      if (punchPhase === 1 && punchProgress < 0.7) {        const waveR = 15 + punchProgress * 45;        ctx.strokeStyle = rgba(231, 76, 60, ${0.7 - punchProgress}); ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(cx, springTop + 5, waveR, 0, Math.PI2); ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = '#3a4a5a'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(cx - 28, springTop); ctx.lineTo(LEFT_X * W, SYRINGE_Y + SYRINGE_H);
+    ctx.moveTo(cx + 28, springTop); ctx.lineTo(RIGHT_X * W, SYRINGE_Y + SYRINGE_H); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  function updateState() {
+    const ct = time % CYCLE;
+    if (ct >= 0.6 && ct < 0.65) {
+      valveLeft = 0.95; valveRight = 0.02;
+    }
+    if (ct >= PUNCH_START && ct < PUNCH_START + PUNCH_DUR) {
+      punchPhase = 1; punchProgress = (ct - PUNCH_START) / PUNCH_DUR;
+      pistonLeft = punchProgress * 0.55; // 左侧压缩幅度缩小
+      pistonRight = punchProgress * 0.1;
+    } else if (ct >= PUNCH_START + PUNCH_DUR && ct < PUNCH_START + PUNCH_DUR + REBOUND_DUR) {
+      punchPhase = 2; punchProgress = (ct - PUNCH_START - PUNCH_DUR) / REBOUND_DUR;
+      pistonLeft = 0.55 * Math.max(0, 1 - punchProgress * 2);
+      pistonRight = 0.1 * Math.max(0, 1 - punchProgress * 1.2);
+    } else {
+      punchPhase = 0; punchProgress = 0; pistonLeft = 0; pistonRight = 0;
+      if (ct < 0.6 || ct >= 4.0) {
+        valveLeft = 0.85; valveRight = 0.06;
+      }
+    }
+  }
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawGrid();
+    drawTitle();
+    drawLeftPreview();
+    drawRightPreview();
+    drawSyringe(LEFT_X * W, pistonLeft, valveLeft, true);
+    drawSyringe(RIGHT_X * W, pistonRight, valveRight, false);
+    drawAirSpring();
+  }
+  function loop(ts) {
+    if (!W || !H) { resize(); requestAnimationFrame(loop); return; }
+    const delta = Math.min(0.05, (ts - (loop.lastTime || ts)) / 1000);
+    loop.lastTime = ts; time += delta; updateState(); draw();
+    requestAnimationFrame(loop);
+  }
+  loop(0);
+})();
+</script>
+</body>
+</html>

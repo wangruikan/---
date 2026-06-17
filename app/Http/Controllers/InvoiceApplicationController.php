@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\InvoiceApplication;
 use App\Models\InvoiceItem;
 use App\Models\InvoiceProject;
-use App\Models\PendingTask;
 use App\Models\ProcessApproval;
 use App\Models\ApprovalNode;
 use App\Models\ApprovalFlowConfig;
@@ -128,19 +127,19 @@ class InvoiceApplicationController extends Controller
             'project_id' => 'nullable|exists:projects,id',
             'project_name' => 'required|string|max:100',
             'remark' => 'nullable|string|max:500',
-            'period_year' => 'required|integer|min:2000|max:2100',
-            'period_month' => 'required|integer|min:1|max:12',
-            'company_name' => 'required|string|max:200',
-            'application_date' => 'required|date',
-            'invoice_method' => 'required|string|max:20',
-            'invoice_type' => 'required|string|max:50',
+            'period_year' => 'nullable|integer|min:2000|max:2100',
+            'period_month' => 'nullable|integer|min:1|max:12',
+            'company_name' => 'nullable|string|max:200',
+            'application_date' => 'nullable|date',
+            'invoice_method' => 'nullable|string|max:20',
+            'invoice_type' => 'nullable|string|max:50',
             'deduction_amount' => 'nullable|numeric|min:0',
-            'tax_rate' => 'required|numeric|min:0|max:1',
+            'tax_rate' => 'nullable|numeric|min:0|max:1',
             'amount_excluding_tax' => 'nullable|numeric|min:0',
             'invoice_tax_amount' => 'nullable|numeric|min:0',
-            'invoice_amount' => 'required|numeric|min:0',
+            'invoice_amount' => 'nullable|numeric|min:0',
             'tax_amount' => 'nullable|numeric|min:0',
-            'invoice_date' => 'required|date',
+            'invoice_date' => 'nullable|date',
             'earliest_invoice_date' => 'nullable|date',
             'is_completed' => 'nullable|boolean',
             'invoicer' => 'nullable|string|max:100',
@@ -154,15 +153,6 @@ class InvoiceApplicationController extends Controller
             'project_id.exists' => '项目不存在',
             'project_name.required' => '请输入项目',
             'project_name.max' => '项目不能超过100个字符',
-            'period_year.required' => '请选择所属期-年份',
-            'period_month.required' => '请选择所属期-月份',
-            'company_name.required' => '请输入单位名称',
-            'application_date.required' => '请选择申请日期',
-            'invoice_method.required' => '请选择开票方式',
-            'invoice_type.required' => '请输入开票种类',
-            'tax_rate.required' => '请选择税率',
-            'invoice_amount.required' => '请输入开票金额',
-            'invoice_date.required' => '请选择开票日期',
         ]);
 
         if ($validator->fails()) {
@@ -193,7 +183,7 @@ class InvoiceApplicationController extends Controller
         $applicationNo = InvoiceApplication::generateApplicationNo();
 
         // 兼容中文/英文的开票方式入参，统一保存为 full/diff/none
-        $rawInvoiceMethod = trim((string)($request->input('invoice_method') ?? ''));
+        $rawInvoiceMethod = trim((string)($request->input('invoice_method') ?? 'none'));
         $normalizedKey = mb_strtolower($rawInvoiceMethod);
         $invoiceMethodMap = [
             'full' => 'full',
@@ -225,9 +215,9 @@ class InvoiceApplicationController extends Controller
         }
 
         $calculatedAmounts = $this->calculateInvoiceAmounts(
-            $request->input('invoice_amount'),
+            $request->input('invoice_amount', 0),
             $deductionAmount,
-            $request->input('tax_rate')
+            $request->input('tax_rate', 0)
         );
 
         $application = InvoiceApplication::create([
@@ -245,12 +235,12 @@ class InvoiceApplicationController extends Controller
             'company_name' => $request->input('company_name'),
             'application_date' => $request->input('application_date'),
             'invoice_method' => $normalizedInvoiceMethod,
-            'invoice_type' => $request->input('invoice_type'),
+            'invoice_type' => $request->input('invoice_type', ''),
             'deduction_amount' => $deductionAmount,
-            'tax_rate' => $request->input('tax_rate'),
+            'tax_rate' => $request->input('tax_rate', 0),
             'amount_excluding_tax' => $calculatedAmounts['amount_excluding_tax'],
             'invoice_tax_amount' => $calculatedAmounts['invoice_tax_amount'],
-            'invoice_amount' => $request->input('invoice_amount'),
+            'invoice_amount' => $request->input('invoice_amount', 0),
             'tax_amount' => $calculatedAmounts['tax_amount'],
             'invoice_date' => $request->input('invoice_date'),
             'earliest_invoice_date' => $request->input('earliest_invoice_date'),
@@ -262,9 +252,11 @@ class InvoiceApplicationController extends Controller
             'created_by' => $user->id,
         ]);
 
+        PendingTaskService::createInvoiceFillTask($application->fresh());
+
         return response()->json([
             'success' => true,
-            'message' => '创建成功',
+            'message' => '创建成功，已生成发票信息填写待办',
             'data' => $application->load('items')
         ]);
     }
@@ -1468,16 +1460,12 @@ class InvoiceApplicationController extends Controller
             return false;
         }
 
-        if ((int) $application->created_by === (int) $user->id) {
+        $handler = PendingTaskService::getInvoiceFillHandler($application);
+        if ($handler && (int) $handler->id === (int) $user->id) {
             return true;
         }
 
-        return PendingTask::where('account_set_id', $application->account_set_id)
-            ->where('task_type', 'invoice_fill')
-            ->where('related_id', $application->id)
-            ->where('related_type', 'InvoiceApplication')
-            ->where('handler_id', $user->id)
-            ->exists();
+        return false;
     }
 
     private function syncInvoiceCompletionStatus(InvoiceApplication $application)

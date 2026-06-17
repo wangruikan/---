@@ -18,11 +18,11 @@ class PendingTaskService
     public static function createInvoiceFillTask(InvoiceApplication $application)
     {
         try {
-            $handler = User::find($application->created_by);
+            $handler = self::getInvoiceFillHandler($application);
             if (!$handler) {
                 Log::warning('无法确定发票填写待办处理人', [
                     'invoice_application_id' => $application->id,
-                    'created_by' => $application->created_by,
+                    'account_set_id' => $application->account_set_id,
                 ]);
                 return null;
             }
@@ -35,6 +35,13 @@ class PendingTaskService
                 ->first();
 
             if ($existingTask) {
+                if ((int) $existingTask->handler_id !== (int) $handler->id) {
+                    $existingTask->update([
+                        'handler_id' => $handler->id,
+                        'handler_name' => $handler->name,
+                    ]);
+                }
+
                 return $existingTask;
             }
 
@@ -72,6 +79,17 @@ class PendingTaskService
             ]);
             return null;
         }
+    }
+
+    public static function getInvoiceFillHandler(InvoiceApplication $application): ?User
+    {
+        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $application->account_set_id,
+            '发票申请',
+            ApprovalFlowConfig::MIN_APPROVAL_LEVEL
+        );
+
+        return $firstApprover ? User::find($firstApprover->user_id) : null;
     }
 
     /**

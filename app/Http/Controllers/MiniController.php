@@ -1924,6 +1924,10 @@ class MiniController extends Controller
                 $formData['native_place_detail'] = $employee->household_address ?? ($formData['native_place_detail'] ?? '');
                 $formData['id_card_valid_from'] = $formData['id_card_valid_from'] ?? $employee->id_card_valid_from;
                 $formData['id_card_valid_until'] = $formData['id_card_valid_until'] ?? $employee->id_card_valid_until;
+                $formData['bank_account'] = $formData['bank_account'] ?? $employee->bank_account;
+                $formData['bank_account_holder'] = $formData['bank_account_holder'] ?? $employee->bank_account_holder;
+                $formData['bank_name'] = $formData['bank_name'] ?? $employee->bank_name;
+                $formData['bank_branch'] = $formData['bank_branch'] ?? $employee->bank_branch;
                 $formData['education_type'] = $this->normalizeEducationTypeValue($formData['education_type'] ?? '');
 
                 if (empty($formData['native_place'])) {
@@ -1975,7 +1979,9 @@ class MiniController extends Controller
             'job_title' => 'required|string|max:100',
             'housing_fund_account' => 'required|string|max:50',
             'bank_account' => 'required|string|max:50',
+            'bank_account_holder' => 'required|string|max:100',
             'bank_name' => 'required|string|max:100',
+            'bank_branch' => 'required|string|max:200',
             'name' => 'required|string|max:50',
             'english_name' => 'required|string|max:50',
             'gender' => 'required|in:male,female',
@@ -2072,7 +2078,9 @@ class MiniController extends Controller
             'job_title' => '职务',
             'housing_fund_account' => '公积金账户',
             'bank_account' => '银行账号',
-            'bank_name' => '开户支行名称',
+            'bank_account_holder' => '户名',
+            'bank_name' => '开户行',
+            'bank_branch' => '开户地/支行',
             'name' => '姓名',
             'english_name' => '英文名',
             'gender' => '性别',
@@ -2223,7 +2231,9 @@ class MiniController extends Controller
                     'job_title' => $request->job_title,
                     'housing_fund_account' => $request->housing_fund_account,
                     'bank_account' => $request->bank_account,
+                    'bank_account_holder' => $request->bank_account_holder,
                     'bank_name' => $request->bank_name,
+                    'bank_branch' => $request->bank_branch,
                     'name' => $request->name,
                     'english_name' => $request->english_name,
                     'gender' => $request->gender,
@@ -2313,7 +2323,9 @@ class MiniController extends Controller
                 'household_type' => $normalizedHouseholdType,
                 'contact_address' => $hasNativePlaceDetailPayload ? $nativePlaceDetail : $request->document_address,
                 'bank_account' => $request->bank_account,
-                'bank_branch' => $request->bank_name,
+                'bank_account_holder' => $request->bank_account_holder,
+                'bank_name' => $request->bank_name,
+                'bank_branch' => $request->bank_branch,
                 'emergency_contact' => $request->emergency_contact1_name,
                 'emergency_phone' => $request->emergency_contact1_phone,
                 'remarks' => $request->remarks,

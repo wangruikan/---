@@ -6128,6 +6128,120 @@ const normalizeInsuranceRegionIdForSubmit = (value) => {
   return value
 }
 
+const normalizeDateKey = (value) => {
+  if (!value) return ''
+  if (value instanceof Date) {
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, '0')
+    const day = String(value.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const normalized = String(value)
+  return normalized.includes('T') || normalized.includes(' ') ? normalized.slice(0, 10) : normalized.slice(0, 10)
+}
+
+const getSelectedProjectStartDate = () => {
+  const projectIds = Array.isArray(form.project_ids) ? form.project_ids.filter(Boolean) : []
+  if (projectIds.length === 0 || projects.value.length === 0) return ''
+
+  const startDates = projectIds
+    .map((projectId) => {
+      const project = projects.value.find((item) => String(item.id) === String(projectId))
+      return normalizeDateKey(project?.start_date)
+    })
+    .filter(Boolean)
+
+  if (startDates.length === 0) return ''
+  return startDates.sort()[0]
+}
+
+const validateDateNotBeforeSelectedProjectStart = (rule, value, callback) => {
+  if (!value) {
+    callback()
+    return
+  }
+
+  const projectStartDate = getSelectedProjectStartDate()
+  if (!projectStartDate) {
+    callback()
+    return
+  }
+
+  const currentDate = normalizeDateKey(value)
+  if (currentDate && currentDate < projectStartDate) {
+    const fieldLabels = {
+      hire_date: '入职日期',
+      contract_start_date: '合同开始日期'
+    }
+    callback(new Error(`${fieldLabels[rule.field] || '日期'}不能早于所选项目开始日期(${projectStartDate})`))
+    return
+  }
+
+  callback()
+}
+
+const insurancePairFieldMeta = {
+  social_security_region_id: { pairedField: 'social_insurance_enrollment_date', regionLabel: '社保地区', dateLabel: '社保参保日期', fieldType: 'region' },
+  social_insurance_enrollment_date: { pairedField: 'social_security_region_id', regionLabel: '社保地区', dateLabel: '社保参保日期', fieldType: 'date' },
+  medical_insurance_region_id: { pairedField: 'medical_insurance_enrollment_date', regionLabel: '医保地区', dateLabel: '医保参保日期', fieldType: 'region' },
+  medical_insurance_enrollment_date: { pairedField: 'medical_insurance_region_id', regionLabel: '医保地区', dateLabel: '医保参保日期', fieldType: 'date' },
+  housing_fund_region_id: { pairedField: 'provident_fund_enrollment_date', regionLabel: '公积金地区', dateLabel: '公积金参保日期', fieldType: 'region' },
+  provident_fund_enrollment_date: { pairedField: 'housing_fund_region_id', regionLabel: '公积金地区', dateLabel: '公积金参保日期', fieldType: 'date' },
+  large_medical_insurance_config_id: { pairedField: 'large_medical_enrollment_date', regionLabel: '大额医疗保险', dateLabel: '大额医疗参保日期', fieldType: 'region' },
+  large_medical_enrollment_date: { pairedField: 'large_medical_insurance_config_id', regionLabel: '大额医疗保险', dateLabel: '大额医疗参保日期', fieldType: 'date' }
+}
+
+const isFilledInsuranceField = (field, value) => {
+  if (field === 'social_security_region_id' || field === 'medical_insurance_region_id' || field === 'housing_fund_region_id') {
+    return value !== null && value !== undefined && value !== '' && value !== NO_INSURANCE_OPTION_VALUE
+  }
+
+  return value !== null && value !== undefined && value !== ''
+}
+
+const validateInsurancePairCompleteness = (rule, value, callback) => {
+  const meta = insurancePairFieldMeta[rule.field]
+  if (!meta) {
+    callback()
+    return
+  }
+
+  const currentFilled = isFilledInsuranceField(rule.field, value)
+  const pairedFilled = isFilledInsuranceField(meta.pairedField, form[meta.pairedField])
+
+  if (currentFilled && !pairedFilled) {
+    callback(new Error(meta.fieldType === 'region' ? `请选择${meta.dateLabel}` : `请选择${meta.regionLabel}`))
+    return
+  }
+
+  if (!currentFilled && pairedFilled) {
+    callback(new Error(meta.fieldType === 'region' ? `请选择${meta.regionLabel}` : `请选择${meta.dateLabel}`))
+    return
+  }
+
+  callback()
+}
+
+const triggerDateAndInsuranceValidation = async () => {
+  await nextTick()
+  if (!formRef.value) return
+  const fields = [
+    'hire_date',
+    'contract_start_date',
+    'social_security_region_id',
+    'social_insurance_enrollment_date',
+    'medical_insurance_region_id',
+    'medical_insurance_enrollment_date',
+    'housing_fund_region_id',
+    'provident_fund_enrollment_date',
+    'large_medical_insurance_config_id',
+    'large_medical_enrollment_date'
+  ]
+  fields.forEach((field) => {
+    formRef.value?.validateField?.(field)
+  })
+}
+
 const buildMergedSalaryItems = (source) => {
   const fixedAliases = new Set(FIXED_SALARY_ITEM_CONFIGS.flatMap((config) => config.aliases))
   const customItems = normalizeSalaryItems(source?.salary_items)
@@ -6503,10 +6617,12 @@ const formRules = {
     { required: true, message: '请选择出生日期', trigger: 'change' }
   ],
   hire_date: [
-    { required: true, message: '请选择入职日期', trigger: 'change' }
+    { required: true, message: '请选择入职日期', trigger: 'change' },
+    { validator: validateDateNotBeforeSelectedProjectStart, trigger: 'change' }
   ],
   contract_start_date: [
-    { required: true, message: '请选择合同开始日期', trigger: 'change' }
+    { required: true, message: '请选择合同开始日期', trigger: 'change' },
+    { validator: validateDateNotBeforeSelectedProjectStart, trigger: 'change' }
   ],
   contract_end_date: [
     { required: true, message: '请选择合同结束日期', trigger: 'change' }
@@ -6514,11 +6630,30 @@ const formRules = {
   project_ids: [
     { required: true, message: '请选择所属项目', trigger: 'change' }
   ],
-  // 保险信息改为非必填
-  // large_medical_enrollment_date 保持非必填
-  // basic_salary: [
-  //   { required: true, message: '请输入基础工资', trigger: 'blur' }
-  // ]
+  social_security_region_id: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  social_insurance_enrollment_date: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  medical_insurance_region_id: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  medical_insurance_enrollment_date: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  housing_fund_region_id: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  provident_fund_enrollment_date: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  large_medical_insurance_config_id: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ],
+  large_medical_enrollment_date: [
+    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+  ]
 }
 
 // 从身份证号码中解析性别和出生日期
@@ -7482,6 +7617,7 @@ const handleProjectIdsChange = async (projectIds) => {
   selectedHousingFundConfig.value = null
   selectedLargeMedicalInsuranceConfig.value = null
   availableHousingFundConfigs.value = []
+  await triggerDateAndInsuranceValidation()
 }
 
 // 加载项目的其他保险信息

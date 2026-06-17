@@ -58,8 +58,18 @@
 			</view>
 			
 			<view class="form-item">
-				<text class="label">开户支行名称</text>
-				<input type="text" placeholder="请输入开户支行名称" v-model="formData.bank_name" />
+				<text class="label">户名</text>
+				<input type="text" placeholder="请输入户名" v-model="formData.bank_account_holder" />
+			</view>
+
+			<view class="form-item">
+				<text class="label">开户行</text>
+				<input type="text" placeholder="请输入开户行" v-model="formData.bank_name" />
+			</view>
+
+			<view class="form-item">
+				<text class="label">开户地/支行</text>
+				<input type="text" placeholder="请输入开户地/支行" v-model="formData.bank_branch" />
 			</view>
 		</view>
 		
@@ -566,7 +576,9 @@ export default {
 				job_title: '',
 				housing_fund_account: '',
 				bank_account: '',
+				bank_account_holder: '',
 				bank_name: '',
+				bank_branch: '',
 				// 一、个人资料
 				name: '',
 				english_name: '',
@@ -866,7 +878,9 @@ export default {
 				{ key: 'job_title', label: '职务' },
 				{ key: 'housing_fund_account', label: '公积金账户' },
 				{ key: 'bank_account', label: '银行账号' },
-				{ key: 'bank_name', label: '开户支行名称' },
+				{ key: 'bank_account_holder', label: '户名' },
+				{ key: 'bank_name', label: '开户行' },
+				{ key: 'bank_branch', label: '开户地/支行' },
 				{ key: 'name', label: '姓名' },
 				{ key: 'english_name', label: '英文名' },
 				{ key: 'gender', label: '性别' },
@@ -1108,7 +1122,9 @@ export default {
 							job_title: '工程师',
 							housing_fund_account: '1234567890',
 							bank_account: '6222021234567890123',
-						bank_name: '中国工商银行北京分行',
+							bank_account_holder: '张三',
+							bank_name: '中国工商银行北京分行',
+							bank_branch: '北京建国路支行',
 						name: '张三',
 						english_name: 'Zhang San',
 						gender: 'male',

@@ -206,6 +206,75 @@ class EmployeeController extends ApiController
         return null;
     }
 
+    /**
+     * 检查入职日期、合同开始日期是否早于项目开始时间
+     */
+    private function checkEmploymentDateVsProjectStart(array $projectIds, Request $request): ?string
+    {
+        $dateFields = [
+            'hire_date' => '入职日期',
+            'contract_start_date' => '合同开始日期',
+        ];
+
+        $hasDate = false;
+        foreach (array_keys($dateFields) as $field) {
+            if ($request->filled($field)) {
+                $hasDate = true;
+                break;
+            }
+        }
+
+        if (!$hasDate) {
+            return null;
+        }
+
+        $earliestStartDate = Project::whereIn('id', $projectIds)->min('start_date');
+        if (!$earliestStartDate) {
+            return null;
+        }
+
+        $earliestStartDate = date('Y-m-d', strtotime($earliestStartDate));
+
+        foreach ($dateFields as $field => $label) {
+            if ($request->filled($field)) {
+                $dateValue = date('Y-m-d', strtotime($request->input($field)));
+                if ($dateValue < $earliestStartDate) {
+                    return "{$label}({$dateValue}) 不可早于项目开始时间({$earliestStartDate})";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 检查保险地区和参保日期是否成对填写
+     */
+    private function checkInsuranceFieldPairs(Request $request): ?string
+    {
+        $pairs = [
+            ['region' => 'social_security_region_id', 'date' => 'social_insurance_enrollment_date', 'regionLabel' => '社保地区', 'dateLabel' => '社保参保日期'],
+            ['region' => 'medical_insurance_region_id', 'date' => 'medical_insurance_enrollment_date', 'regionLabel' => '医保地区', 'dateLabel' => '医保参保日期'],
+            ['region' => 'housing_fund_region_id', 'date' => 'provident_fund_enrollment_date', 'regionLabel' => '公积金地区', 'dateLabel' => '公积金参保日期'],
+            ['region' => 'large_medical_insurance_config_id', 'date' => 'large_medical_enrollment_date', 'regionLabel' => '大额医疗保险', 'dateLabel' => '大额医疗参保日期'],
+        ];
+
+        foreach ($pairs as $pair) {
+            $regionFilled = $request->filled($pair['region']);
+            $dateFilled = $request->filled($pair['date']);
+
+            if ($regionFilled && !$dateFilled) {
+                return "{$pair['regionLabel']}已填写时，必须同时填写{$pair['dateLabel']}";
+            }
+
+            if (!$regionFilled && $dateFilled) {
+                return "{$pair['dateLabel']}已填写时，必须同时填写{$pair['regionLabel']}";
+            }
+        }
+
+        return null;
+    }
+
     public function index(Request $request)
     {
         // 人员档案查看权限
@@ -457,6 +526,24 @@ class EmployeeController extends ApiController
                         'message' => "身份证号 {$request->id_number} 在项目 {$projectId} 中已存在"
                     ], 422);
                 }
+            }
+        }
+
+        if ($request->has('project_ids') && is_array($request->project_ids)) {
+            $employmentDateError = $this->checkEmploymentDateVsProjectStart($request->project_ids, $request);
+            if ($employmentDateError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $employmentDateError
+                ], 422);
+            }
+
+            $insuranceFieldError = $this->checkInsuranceFieldPairs($request);
+            if ($insuranceFieldError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $insuranceFieldError
+                ], 422);
             }
         }
 
@@ -719,6 +806,22 @@ class EmployeeController extends ApiController
             ? $request->project_ids
             : $employee->project_ids;
         if (!empty($projectIdsForCheck)) {
+            $employmentDateError = $this->checkEmploymentDateVsProjectStart($projectIdsForCheck, $request);
+            if ($employmentDateError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $employmentDateError
+                ], 422);
+            }
+
+            $insuranceFieldError = $this->checkInsuranceFieldPairs($request);
+            if ($insuranceFieldError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $insuranceFieldError
+                ], 422);
+            }
+
             $insuranceDateError = $this->checkInsuranceDateVsProjectStart($projectIdsForCheck, $request);
             if ($insuranceDateError) {
                 return response()->json([
@@ -1702,7 +1805,6 @@ class EmployeeController extends ApiController
 
         $aliases = [
             'position' => 'job_title',
-            'bank_branch' => 'bank_name',
             'document_delivery_address' => 'document_address',
             'disability_certificate' => 'disability_level',
             'engineering_certificates' => 'engineering_skills',
@@ -3333,6 +3435,11 @@ class EmployeeController extends ApiController
                         $formData['signature'] = $host . '/storage/' . $formData['signature'];
                     }
                 }
+
+                $formData['bank_account'] = $formData['bank_account'] ?? $employee->bank_account;
+                $formData['bank_account_holder'] = $formData['bank_account_holder'] ?? $employee->bank_account_holder;
+                $formData['bank_name'] = $formData['bank_name'] ?? $employee->bank_name;
+                $formData['bank_branch'] = $formData['bank_branch'] ?? $employee->bank_branch;
                 
                 return response()->json([
                     'success' => true,

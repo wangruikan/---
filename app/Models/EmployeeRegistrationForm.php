@@ -20,7 +20,9 @@ class EmployeeRegistrationForm extends Model
         'job_title',
         'housing_fund_account',
         'bank_account',
+        'bank_account_holder',
         'bank_name',
+        'bank_branch',
         // 一、个人资料
         'name',
         'english_name',

@@ -6,6 +6,8 @@ use App\Models\TaxCategory;
 use App\Models\TaxDeclarationConfig;
 use App\Models\TaxDeclarationTask;
 use App\Models\TaxDeclarationAttachment;
+use App\Models\ApprovalFlowConfig;
+use App\Models\OperationLog;
 use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -174,6 +176,7 @@ class TaxDeclarationController extends Controller
         // 加载税种信息
         foreach ($configs as $config) {
             $config->tax_categories_list = $config->taxCategories;
+            $this->appendConfigCreatorFallback($config);
         }
         
         return response()->json([
@@ -210,7 +213,7 @@ class TaxDeclarationController extends Controller
                 'tax_category_ids' => $request->tax_category_ids,
                 'period_type' => $request->period_type,
                 'declaration_date' => $request->declaration_date,
-                'created_by' => Auth::id(),
+                'created_by' => $request->user()?->id ?? Auth::id(),
             ]);
 
             return response()->json([
@@ -311,8 +314,15 @@ class TaxDeclarationController extends Controller
     public function getTasks(Request $request)
     {
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('account_set_id');
+        $year = (int)($request->input('year') ?: now()->year);
+        if ($year < 1970 || $year > 2100) {
+            $year = now()->year;
+        }
+
+        $configIds = $this->syncTasksFromConfigs($accountSetId, $year);
         
         $query = TaxDeclarationTask::where('account_set_id', $accountSetId)
+            ->whereIn('config_id', $configIds)
             ->with(['handler', 'completedBy', 'attachments']);
         
         // 筛选条件
@@ -320,9 +330,7 @@ class TaxDeclarationController extends Controller
             $query->where('status', $request->status);
         }
         
-        if ($request->has('year') && $request->year) {
-            $query->where('year', $request->year);
-        }
+        $query->where('year', $year);
         
         $tasks = $query->orderBy('declaration_date', 'desc')
             ->paginate(20);
@@ -339,6 +347,112 @@ class TaxDeclarationController extends Controller
             'current_page' => $tasks->currentPage(),
             'per_page' => $tasks->perPage(),
         ]);
+    }
+
+    /**
+     * 根据当前税费申报配置补齐任务，避免依赖定时任务预先生成。
+     */
+    private function syncTasksFromConfigs($accountSetId, int $year): array
+    {
+        if (!$accountSetId) {
+            return [];
+        }
+
+        $configs = TaxDeclarationConfig::where('account_set_id', $accountSetId)->get();
+        $configIds = $configs->pluck('id')->all();
+
+        foreach ($configs as $config) {
+            $declarationDate = $this->buildDeclarationDate($year, $config->declaration_date);
+            if (!$declarationDate) {
+                continue;
+            }
+
+            $task = TaxDeclarationTask::where('config_id', $config->id)
+                ->where('year', $year)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($task) {
+                $task->update([
+                    'account_set_id' => $config->account_set_id,
+                    'company_name' => $config->company_name,
+                    'tax_category_ids' => $config->tax_category_ids,
+                    'declaration_date' => $declarationDate,
+                ]);
+                continue;
+            }
+
+            $handler = ApprovalFlowConfig::getFirstEffectiveApprover(
+                (int) $config->account_set_id,
+                'tax_declaration'
+            );
+
+            if (!$handler) {
+                Log::warning('税费申报任务动态生成失败：未找到操作员', [
+                    'config_id' => $config->id,
+                    'account_set_id' => $config->account_set_id,
+                ]);
+                continue;
+            }
+
+            try {
+                DB::beginTransaction();
+
+                $task = TaxDeclarationTask::create([
+                    'account_set_id' => $config->account_set_id,
+                    'config_id' => $config->id,
+                    'company_name' => $config->company_name,
+                    'tax_category_ids' => $config->tax_category_ids,
+                    'declaration_date' => $declarationDate,
+                    'year' => $year,
+                    'handler_id' => $handler->id,
+                    'handler_name' => $handler->name,
+                    'status' => 'pending',
+                ]);
+
+                PendingTaskService::createTaxDeclarationTask($task);
+
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('税费申报任务动态生成失败', [
+                    'config_id' => $config->id,
+                    'year' => $year,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $configIds;
+    }
+
+    private function buildDeclarationDate(int $year, ?string $monthDay): ?string
+    {
+        if (!is_string($monthDay) || !preg_match('/^\d{2}-\d{2}$/', $monthDay)) {
+            return null;
+        }
+
+        $date = "{$year}-{$monthDay}";
+        try {
+            return \Carbon\Carbon::createFromFormat('Y-m-d', $date)->format('Y-m-d');
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    private function appendConfigCreatorFallback(TaxDeclarationConfig $config): void
+    {
+        if ($config->creator) {
+            $config->creator_name = $config->creator->name;
+            return;
+        }
+
+        $log = OperationLog::where('model_type', TaxDeclarationConfig::class)
+            ->where('model_id', $config->id)
+            ->orderBy('created_at')
+            ->first();
+
+        $config->creator_name = $log?->user_name;
     }
 
     /**

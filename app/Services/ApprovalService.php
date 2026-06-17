@@ -2605,6 +2605,23 @@ class ApprovalService
                 $form->update($formData);
             }
 
+            $employeeBankFields = [
+                'bank_account',
+                'bank_account_holder',
+                'bank_name',
+                'bank_branch',
+            ];
+            $employeeData = [];
+            foreach ($employeeBankFields as $field) {
+                if (array_key_exists($field, $newData) && Schema::hasColumn('employees', $field)) {
+                    $employeeData[$field] = $newData[$field];
+                }
+            }
+
+            if (!empty($employeeData)) {
+                \App\Models\Employee::where('id', $formUpdateRequest->employee_id)->update($employeeData);
+            }
+
             return;
         }
 

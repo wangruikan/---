@@ -117,11 +117,6 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('09:00')
                  ->timezone('Asia/Shanghai');
         
-        // 每天早上8点检查税费申报提醒
-        $schedule->command('tax:check-reminders')
-                 ->dailyAt('08:00')
-                 ->timezone('Asia/Shanghai');
-
         $schedule->command('project:check-end-reminders')
                  ->dailyAt('08:15')
                  ->timezone('Asia/Shanghai');

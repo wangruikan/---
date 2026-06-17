@@ -17,7 +17,7 @@
             <el-table-column prop="name" label="税种名称" min-width="200" />
             <el-table-column label="创建人" width="120">
               <template #default="{ row }">
-                {{ row.creator?.name || '-' }}
+                {{ row.creator?.name || row.creator_name || '-' }}
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="创建时间" width="180" />
@@ -65,7 +65,7 @@
             <el-table-column prop="declaration_date" label="申报日期" width="100" />
             <el-table-column label="创建人" width="120">
               <template #default="{ row }">
-                {{ row.creator?.name || '-' }}
+                {{ row.creator?.name || row.creator_name || '-' }}
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="创建时间" width="180" />

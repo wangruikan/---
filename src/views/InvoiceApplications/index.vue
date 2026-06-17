@@ -1160,8 +1160,10 @@ const canEditInvoice = computed(() => permissionStore.hasPermission('invoice_app
 const canDeleteInvoice = computed(() => permissionStore.hasPermission('invoice_applications.delete'))
 const canApproveInvoice = computed(() => permissionStore.hasPermission('invoice_applications.approve'))
 
-// 权限控制：是否可以创建任务（只有审批人可以）
-const canCreateTask = ref(false)
+// 权限控制：是否可以创建任务
+const canCreateTask = computed(() => {
+  return !!accountSetStore.currentAccountSetId && canCreateInvoice.value
+})
 
 const invoiceTypeOptions = [
   { label: '普通发票', value: '普通发票' },
@@ -2828,34 +2830,6 @@ const getApprovalDescription = (approval) => {
   return ''
 }
 
-// 检查创建权限（只有审批人可以创建任务）
-const checkCreatePermission = async () => {
-  try {
-    const accountSetId = accountSetStore.currentAccountSetId
-    if (!accountSetId) {
-      canCreateTask.value = false
-      return
-    }
-    
-    const response = await request({
-      url: '/invoice-applications/check-permission/create',
-      method: 'get',
-      params: { account_set_id: accountSetId }
-    })
-    
-    if (response.success) {
-      // 只有后续审批节点人员可以创建任务
-      canCreateTask.value = response.has_access
-      console.log('创建权限检查结果:', response)
-    } else {
-      canCreateTask.value = false
-    }
-  } catch (error) {
-    console.error('检查创建权限失败:', error)
-    canCreateTask.value = false
-  }
-}
-
 const handleRouteInvoiceFill = async () => {
   const action = route.query.action
   const invoiceId = route.query.id
@@ -2991,7 +2965,6 @@ onMounted(() => {
   loadData()
   loadInvoiceProjects()
   loadProjects()
-  checkCreatePermission()
   syncCreateCalculatedAmounts()
 })
 </script>

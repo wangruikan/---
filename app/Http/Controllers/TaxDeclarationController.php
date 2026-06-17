@@ -343,7 +343,18 @@ class TaxDeclarationController extends Controller
             $year = now()->year;
         }
 
-        $configIds = $this->syncTasksFromConfigs($accountSetId, $year);
+        $visibleUntilDate = $this->getVisibleTaskEndDate($year);
+        if ($visibleUntilDate === null) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+                'total' => 0,
+                'current_page' => 1,
+                'per_page' => 20,
+            ]);
+        }
+
+        $configIds = $this->syncTasksFromConfigs($accountSetId, $year, $visibleUntilDate);
         
         $query = TaxDeclarationTask::where('account_set_id', $accountSetId)
             ->whereIn('config_id', $configIds)
@@ -354,7 +365,8 @@ class TaxDeclarationController extends Controller
             $query->where('status', $request->status);
         }
         
-        $query->where('year', $year);
+        $query->where('year', $year)
+            ->whereDate('declaration_date', '<=', $visibleUntilDate);
         
         $tasks = $query->orderBy('declaration_date', 'desc')
             ->paginate(20);
@@ -376,7 +388,7 @@ class TaxDeclarationController extends Controller
     /**
      * 根据当前税费申报配置补齐任务，避免依赖定时任务预先生成。
      */
-    private function syncTasksFromConfigs($accountSetId, int $year): array
+    private function syncTasksFromConfigs($accountSetId, int $year, ?string $visibleUntilDate): array
     {
         if (!$accountSetId) {
             return [];
@@ -392,6 +404,10 @@ class TaxDeclarationController extends Controller
             }
 
             foreach ($declarationDates as $declarationDate) {
+                if ($visibleUntilDate !== null && $declarationDate > $visibleUntilDate) {
+                    continue;
+                }
+
                 $task = $this->findExistingTaskForMonth($config->id, $year, $declarationDate);
 
                 if ($task) {
@@ -448,6 +464,21 @@ class TaxDeclarationController extends Controller
         }
 
         return $configIds;
+    }
+
+    private function getVisibleTaskEndDate(int $year): ?string
+    {
+        $now = now();
+
+        if ($year > $now->year) {
+            return null;
+        }
+
+        if ($year < $now->year) {
+            return sprintf('%d-12-31', $year);
+        }
+
+        return $now->copy()->endOfMonth()->format('Y-m-d');
     }
 
     private function validateDeclarationMonth($validator, ?string $periodType, ?string $value): void

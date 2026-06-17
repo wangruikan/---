@@ -1491,6 +1491,51 @@ class EmployeeController extends ApiController
         }
     }
 
+    /**
+     * 上传登记表一寸照片（PC端登记表修改审批使用）
+     */
+    public function uploadRegistrationFormPhoto(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'photo' => 'required|image|max:5120',
+        ], [
+            'photo.required' => '请上传照片',
+            'photo.image' => '请上传图片文件',
+            'photo.max' => '照片大小不能超过5MB',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $file = $request->file('photo');
+        $extension = $file->getClientOriginalExtension() ?: 'jpg';
+        $filename = uniqid('photo_', true) . '_' . time() . '.' . $extension;
+        $dir = public_path('uploads/photos');
+
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $file->move($dir, $filename);
+
+        $path = 'uploads/photos/' . $filename;
+        $url = request()->getSchemeAndHttpHost() . '/' . $path;
+
+        return response()->json([
+            'success' => true,
+            'message' => '照片上传成功',
+            'data' => [
+                'path' => $path,
+                'url' => $url,
+            ],
+        ]);
+    }
+
     private function resolveEmployeeRegistrationFormType(Employee $employee, $selectedProjectId = null): string
     {
         if ($selectedProjectId) {
@@ -1590,13 +1635,16 @@ class EmployeeController extends ApiController
             'employee_id',
             'account_set_id',
             'signature',
-            'photo',
             'created_at',
             'updated_at',
             'gender_text',
             'marital_status_text',
             'household_type_text',
         ];
+
+        if ($formType !== 'onboarding') {
+            $blockedFields[] = 'photo';
+        }
 
         $allowedFields = array_values(array_diff(array_unique($allowedFields), $blockedFields));
         $arrayFields = [

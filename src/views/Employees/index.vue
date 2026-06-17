@@ -4026,10 +4026,22 @@
             <el-row :gutter="20" style="margin-bottom: 20px;">
               <el-col :span="24">
                 <el-form-item label="一寸照片">
-                  <div v-if="registrationFormUpdateForm.data.photo" class="photo-display">
-                    <img :src="registrationFormUpdateForm.data.photo" alt="员工寸照" style="width: 100px; height: 130px; object-fit: cover; border: 1px solid #dcdfe6; border-radius: 4px;" />
+                  <div class="registration-photo-editor">
+                    <div v-if="registrationFormUpdateForm.data.photo" class="photo-display">
+                      <img :src="registrationFormUpdateForm.data.photo_preview || registrationFormUpdateForm.data.photo" alt="员工寸照" style="width: 100px; height: 130px; object-fit: cover; border: 1px solid #dcdfe6; border-radius: 4px;" />
+                    </div>
+                    <el-text v-else type="info">该员工尚未上传寸照</el-text>
+                    <el-upload
+                      :show-file-list="false"
+                      :auto-upload="false"
+                      accept="image/jpeg,image/jpg,image/png"
+                      :on-change="handleRegistrationFormPhotoChange"
+                    >
+                      <el-button type="primary" size="small" :loading="registrationFormPhotoUploading">
+                        {{ registrationFormUpdateForm.data.photo ? '更换照片' : '上传照片' }}
+                      </el-button>
+                    </el-upload>
                   </div>
-                  <el-text v-else type="info">该员工尚未上传寸照</el-text>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -5735,6 +5747,7 @@ const currentSalarySnapshot = ref({
 const showRegistrationFormUpdateDialog = ref(false)
 const registrationFormUpdateLoading = ref(false)
 const submittingRegistrationFormUpdate = ref(false)
+const registrationFormPhotoUploading = ref(false)
 const registrationFormUpdateEmployee = ref(null)
 const registrationFormUpdateStampSelectorRef = ref(null)
 const registrationFormUpdateForm = reactive({
@@ -8163,8 +8176,52 @@ const removeRegistrationFormUpdateArrayRow = (section, index) => {
   registrationFormUpdateForm.data[section.prop].splice(index, 1)
 }
 
+const handleRegistrationFormPhotoChange = async (uploadFile) => {
+  const file = uploadFile?.raw
+  if (!file) return
+
+  const isImage = ['image/jpeg', 'image/jpg', 'image/png'].includes(file.type)
+  const isLt5M = file.size / 1024 / 1024 < 5
+
+  if (!isImage) {
+    ElMessage.error('只能上传 JPG/PNG 格式的照片')
+    return
+  }
+  if (!isLt5M) {
+    ElMessage.error('照片大小不能超过 5MB')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('photo', file)
+
+  try {
+    registrationFormPhotoUploading.value = true
+    const response = await request({
+      url: '/employees/registration-form-photo/upload',
+      method: 'post',
+      data: formData,
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+
+    if (!response?.success) {
+      throw new Error(response?.message || '照片上传失败')
+    }
+
+    registrationFormUpdateForm.data.photo = response.data?.path || response.data?.url || ''
+    registrationFormUpdateForm.data.photo_preview = response.data?.url || registrationFormUpdateForm.data.photo
+    ElMessage.success('照片已更新，提交审批后生效')
+  } catch (error) {
+    console.error('Upload registration form photo error:', error)
+    ElMessage.error(error.response?.data?.message || error.message || '照片上传失败')
+  } finally {
+    registrationFormPhotoUploading.value = false
+  }
+}
+
 const buildRegistrationFormUpdateSubmitData = () => {
   const data = { ...registrationFormUpdateForm.data }
+  delete data.photo_preview
   currentRegistrationFormUpdateArraySections.value.forEach((section) => {
     const rows = Array.isArray(data[section.prop]) ? data[section.prop] : []
     data[section.prop] = rows.filter((row) =>
@@ -11219,6 +11276,12 @@ const getChangeComparison = (detail) => {
   color: #909399;
   margin-top: 6px;
   line-height: 1.4;
+}
+
+.registration-photo-editor {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
 }
 
 /* 表单间距优化 */

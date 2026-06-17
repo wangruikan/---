@@ -2585,7 +2585,6 @@ class ApprovalService
             'employee_id',
             'account_set_id',
             'signature',
-            'photo',
             'created_at',
             'updated_at',
         ];

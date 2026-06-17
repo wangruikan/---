@@ -430,7 +430,7 @@
 
         <el-alert
           v-if="requiresStampPreviewBeforeApprove"
-          :title="approvalStampPreviewReady ? '已完成盖章预览，点击“通过”后将自动完成盖章。' : '当前是最后一个审批节点，请先点击“签名盖章”完成预览，再点击“通过”。'"
+          :title="approvalStampPreviewReady ? '已完成盖章预览，点击“通过”后将自动完成盖章。' : '当前是最后一个审批节点且已选择公司章，请先点击“签名盖章”并确认盖章，再点击“通过”。'"
           :type="approvalStampPreviewReady ? 'success' : 'warning'"
           :closable="false"
           style="margin-bottom: 12px;"
@@ -451,7 +451,6 @@
           type="success" 
           @click="handleActionSubmit('approve')" 
           :loading="submitting && actionType === 'approve'"
-          :disabled="requiresStampPreviewBeforeApprove && !approvalStampPreviewReady"
         >
           通过
         </el-button>
@@ -811,7 +810,10 @@ const isFinalApprovalStep = computed(() => {
 })
 
 const requiresStampPreviewBeforeApprove = computed(() => {
-  return actionType.value === 'approve' && isFinalApprovalStep.value && hasContractAttachment.value
+  return actionType.value === 'approve'
+    && isFinalApprovalStep.value
+    && hasContractAttachment.value
+    && !!selectedApprovalStamp.value
 })
 
 const approvalStampPreviewReady = computed(() => {
@@ -967,7 +969,7 @@ const handleActionSubmit = async (type) => {
       // 如果是审批通过
         if (type === 'approve') {
         if (requiresStampPreviewBeforeApprove.value && !approvalStampPreviewReady.value) {
-          ElMessage.warning('请先点击“签名盖章”完成预览后，再点击“通过”')
+          ElMessage.warning('当前审批已选择公司章，请先点击“签名盖章”并确认盖章后，再点击“通过”')
           return
         }
 

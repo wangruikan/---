@@ -252,8 +252,20 @@ const getStatusTagType = (status) => {
 }
 
 const getCurrentApproverName = (row) => {
-  const pendingRecord = row.approval_instance?.records?.find(record => record.status === 'pending')
-  return pendingRecord?.approver_name || '-'
+  if (row.current_approver_name && row.current_approver_name !== '-') {
+    return row.current_approver_name
+  }
+
+  const instance = row.approval_instance || {}
+  const records = Array.isArray(instance.records) ? instance.records : []
+  const pendingRecord = records.find(record => record.status === 'pending')
+  if (pendingRecord?.approver_name) {
+    return pendingRecord.approver_name
+  }
+
+  const currentStep = Number(instance.current_step || 0)
+  const currentRecord = records.find(record => Number(record.step_order || 0) === currentStep)
+  return currentRecord?.approver_name || '-'
 }
 
 const formatDateTime = (value) => {

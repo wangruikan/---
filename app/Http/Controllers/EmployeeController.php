@@ -1627,6 +1627,8 @@ class EmployeeController extends ApiController
                 'bank_branch',
                 'emergency_contact',
                 'emergency_phone',
+                'id_card_valid_from',
+                'id_card_valid_until',
             ]);
         }
 
@@ -1666,6 +1668,8 @@ class EmployeeController extends ApiController
             'fill_date',
             'entry_date',
             'signature_date',
+            'id_card_valid_from',
+            'id_card_valid_until',
         ];
 
         $filtered = [];

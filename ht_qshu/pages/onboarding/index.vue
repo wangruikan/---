@@ -41,6 +41,20 @@
 				<text class="label required">身份证号码</text>
 				<input type="idcard" placeholder="请输入身份证号码" v-model="formData.id_number" maxlength="18" @blur="onIdNumberChange" />
 			</view>
+
+			<view class="form-item">
+				<text class="label">身份证有效期开始</text>
+				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_from)" @change="onIdCardValidFromChange">
+					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_from) || '请选择日期' }}</view>
+				</picker>
+			</view>
+
+			<view class="form-item">
+				<text class="label">身份证有效期至</text>
+				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_until)" @change="onIdCardValidUntilChange">
+					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_until) || '长期有效可不填' }}</view>
+				</picker>
+			</view>
 			
 			<!-- 出生年月（根据身份证自动计算） -->
 			<view class="form-item">
@@ -406,6 +420,8 @@ export default {
 				place_of_origin_detail: '',
 				birth_date: '',
 				id_number: '',
+				id_card_valid_from: '',
+				id_card_valid_until: '',
 				current_residence: '',
 				household_registration: '',
 				marital_status: '',
@@ -584,6 +600,12 @@ export default {
 		onDateChange(e) {
 			this.formData.registration_date = e.detail.value
 		},
+		onIdCardValidFromChange(e) {
+			this.formData.id_card_valid_from = e.detail.value
+		},
+		onIdCardValidUntilChange(e) {
+			this.formData.id_card_valid_until = e.detail.value
+		},
 		
 		// 格式化日期用于picker的value（需要YYYY-MM-DD格式）
 		formatDateForPicker(dateStr) {
@@ -674,6 +696,8 @@ export default {
 				{ key: 'name', label: '姓名' },
 				{ key: 'gender', label: '性别' },
 				{ key: 'id_number', label: '身份证号码' },
+				{ key: 'id_card_valid_from', label: '身份证有效期开始' },
+				{ key: 'id_card_valid_until', label: '身份证有效期至' },
 				{ key: 'birth_date', label: '出生年月' },
 				{ key: 'ethnicity', label: '民族' },
 				{ key: 'political_status', label: '政治面貌' },
@@ -1012,6 +1036,8 @@ export default {
 							place_of_origin_detail: '某某街道某某号',
 							birth_date: `${birthYear}-${String(birthMonth).padStart(2, '0')}`,
 							id_number: '110101199005011234',
+							id_card_valid_from: '2020-01-01',
+							id_card_valid_until: '2040-01-01',
 							current_residence: '北京市朝阳区某某街道某某号',
 							household_registration: '北京市朝阳区',
 							marital_status: '已婚',
@@ -1143,6 +1169,8 @@ export default {
 				submitData.place_of_origin_city = placeRegion[1] || ''
 				submitData.place_of_origin_district = placeRegion[2] || ''
 				submitData.place_of_origin_detail = placeDetail
+				submitData.id_card_valid_from = this.formData.id_card_valid_from || ''
+				submitData.id_card_valid_until = this.formData.id_card_valid_until || ''
 				const contactRegion = Array.isArray(this.formData.contact_address_region) ? this.formData.contact_address_region : []
 				const contactDetail = (this.formData.contact_address_detail || '').trim()
 				const fullContactAddress = [...contactRegion, contactDetail].filter(item => !!item).join('')

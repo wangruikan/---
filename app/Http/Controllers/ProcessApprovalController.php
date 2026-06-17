@@ -47,10 +47,6 @@ class ProcessApprovalController extends Controller
         $query = ProcessApproval::with(['initiator', 'approvalInstance.records', 'attachments'])
             ->where('account_set_id', $accountSetId);
 
-        if ($isFileStampList) {
-            $query->where('initiator_id', $request->user()->id);
-        }
-
         // 按类型筛选
         if ($request->has('category') && $request->category) {
             $query->where('category', $request->category);
@@ -77,6 +73,12 @@ class ProcessApprovalController extends Controller
             $process->has_payment_request = \App\Models\PaymentRequest::where('insurance_summary_id', $process->id)
                 ->whereNotNull('approval_instance_id')
                 ->exists();
+
+            $pendingRecord = $process->approvalInstance?->records?->firstWhere('status', 'pending');
+            $process->current_approver_name = $pendingRecord?->approver_name
+                ?? $process->approvalInstance?->records?->first()?->approver_name
+                ?? '-';
+
             return $process;
         });
 

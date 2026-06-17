@@ -2106,6 +2106,18 @@
               </el-row>
               <el-row :gutter="20">
                 <el-col :span="12">
+                  <el-form-item label="身份证有效期开始">
+                    <el-input :value="formatDate(onboardingForm?.id_card_valid_from)" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="身份证有效期至">
+                    <el-input :value="formatDate(onboardingForm?.id_card_valid_until)" placeholder="-" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
+                <el-col :span="12">
                   <el-form-item label="现居住地">
                     <el-input :value="onboardingForm?.current_residence || '-'" placeholder="-" />
                   </el-form-item>
@@ -2532,6 +2544,18 @@
                   <el-col :span="8">
                     <el-form-item label="户口状态">
                       <el-input :value="getHouseholdTypeText(registrationForm?.household_type)" />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <el-row :gutter="20">
+                  <el-col :span="8">
+                    <el-form-item label="身份证有效期开始">
+                      <el-input :value="formatDate(registrationForm?.id_card_valid_from)" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="8">
+                    <el-form-item label="身份证有效期至">
+                      <el-input :value="formatDate(registrationForm?.id_card_valid_until)" />
                     </el-form-item>
                   </el-col>
                 </el-row>
@@ -4093,6 +4117,18 @@
             </el-row>
             <el-row :gutter="20">
               <el-col :span="12">
+                <el-form-item label="身份证有效期开始">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.id_card_valid_from" type="date" value-format="YYYY-MM-DD" placeholder="请选择身份证有效期开始" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="身份证有效期至">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.id_card_valid_until" type="date" value-format="YYYY-MM-DD" placeholder="请选择身份证有效期至" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
                 <el-form-item label="现居住地">
                   <el-input v-model="registrationFormUpdateForm.data.current_residence" placeholder="请输入现居住地" clearable />
                 </el-form-item>
@@ -4514,6 +4550,18 @@
                   <el-select v-model="registrationFormUpdateForm.data.household_type" placeholder="请选择户口状态" style="width: 100%;" clearable>
                     <el-option v-for="option in householdTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
                   </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-form-item label="身份证有效期开始">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.id_card_valid_from" type="date" value-format="YYYY-MM-DD" placeholder="请选择身份证有效期开始" style="width: 100%;" clearable />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="身份证有效期至">
+                  <el-date-picker v-model="registrationFormUpdateForm.data.id_card_valid_until" type="date" value-format="YYYY-MM-DD" placeholder="请选择身份证有效期至" style="width: 100%;" clearable />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -5794,6 +5842,8 @@ const onboardingFormUpdateSections = [
       { prop: 'place_of_origin', label: '籍贯' },
       { prop: 'birth_date', label: '出生日期', type: 'date' },
       { prop: 'id_number', label: '身份证号' },
+      { prop: 'id_card_valid_from', label: '身份证有效期开始', type: 'date' },
+      { prop: 'id_card_valid_until', label: '身份证有效期至', type: 'date' },
       { prop: 'current_residence', label: '现居住地', span: 24 },
       { prop: 'household_registration', label: '户口所在地', span: 24 },
       { prop: 'marital_status', label: '婚姻状况', type: 'select', options: maritalStatusOptions },
@@ -5900,6 +5950,8 @@ const employeeRegistrationFormUpdateSections = [
       { prop: 'marital_status', label: '婚姻状况', type: 'select', options: maritalStatusOptions },
       { prop: 'has_children', label: '是否有子女', type: 'select', options: yesNoTextOptions },
       { prop: 'id_number', label: '身份证/护照' },
+      { prop: 'id_card_valid_from', label: '身份证有效期开始', type: 'date' },
+      { prop: 'id_card_valid_until', label: '身份证有效期至', type: 'date' },
       { prop: 'household_type', label: '户口状态', type: 'select', options: householdTypeOptions },
       { prop: 'current_address', label: '现居住地址', span: 24 },
       { prop: 'postal_code', label: '邮编' },
@@ -6423,11 +6475,7 @@ const employeeDraft = useFormDraft(
 )
 
 const isInsuranceFieldsLocked = computed(() => {
-  if (isViewMode.value) {
-    return true
-  }
-
-  return !!form.contract_status && form.contract_status !== 'unsigned'
+  return isViewMode.value
 })
 
 const formRules = {

@@ -98,6 +98,20 @@
 				<text class="label required">身份证号码</text>
 				<input type="idcard" placeholder="请输入身份证号码" v-model="formData.id_number" maxlength="18" @blur="onIdNumberChange" />
 			</view>
+
+			<view class="form-item">
+				<text class="label">身份证有效期开始</text>
+				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_from)" @change="onIdCardValidFromChange">
+					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_from) || '请选择日期' }}</view>
+				</picker>
+			</view>
+
+			<view class="form-item">
+				<text class="label">身份证有效期至</text>
+				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_until)" @change="onIdCardValidUntilChange">
+					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_until) || '长期有效可不填' }}</view>
+				</picker>
+			</view>
 			
 			<view class="form-item">
 				<text class="label">出生日期</text>
@@ -567,6 +581,8 @@ export default {
 				marital_status: '',
 				has_children: '',
 				id_number: '',
+				id_card_valid_from: '',
+				id_card_valid_until: '',
 				household_type: '',
 				current_address: '',
 				postal_code: '',
@@ -686,6 +702,8 @@ export default {
 					const { signature, ...otherData } = data
 					this.formData = { ...this.formData, ...otherData }
 					this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
+					this.formData.id_card_valid_from = data.id_card_valid_from || ''
+					this.formData.id_card_valid_until = data.id_card_valid_until || ''
 
 					const nativePlaceRegion = [
 						data.native_place_province || '',
@@ -726,6 +744,8 @@ export default {
 		// 各种选择器变化处理
 		onFillDateChange(e) { this.formData.fill_date = e.detail.value },
 		onEntryDateChange(e) { this.formData.entry_date = e.detail.value },
+		onIdCardValidFromChange(e) { this.formData.id_card_valid_from = e.detail.value },
+		onIdCardValidUntilChange(e) { this.formData.id_card_valid_until = e.detail.value },
 		onGenderChange(e) { this.formData.gender = e.detail.value },
 		onPoliticalChange(e) {
 			this.politicalIndex = e.detail.value
@@ -852,6 +872,8 @@ export default {
 				{ key: 'gender', label: '性别' },
 				{ key: 'height', label: '身高' },
 				{ key: 'birth_date', label: '出生日期' },
+				{ key: 'id_card_valid_from', label: '身份证有效期开始' },
+				{ key: 'id_card_valid_until', label: '身份证有效期至' },
 				{ key: 'political_status', label: '政治面貌' },
 				{ key: 'education_level', label: '文化程度' },
 				{ key: 'education_type', label: '学历性质' },
@@ -1086,14 +1108,16 @@ export default {
 							job_title: '工程师',
 							housing_fund_account: '1234567890',
 							bank_account: '6222021234567890123',
-							bank_name: '中国工商银行北京分行',
-							name: '张三',
-							english_name: 'Zhang San',
-							gender: 'male',
-							height: '175',
-							birth_date: '1990-05-15',
-							id_number: '110101199005150015',
-							political_status: '群众',
+						bank_name: '中国工商银行北京分行',
+						name: '张三',
+						english_name: 'Zhang San',
+						gender: 'male',
+						height: '175',
+						birth_date: '1990-05-15',
+						id_number: '110101199005150015',
+						id_card_valid_from: '2020-01-01',
+						id_card_valid_until: '2040-01-01',
+						political_status: '群众',
 							education_level: '本科',
 							education_type: '统招',
 							native_place: '北京市北京市朝阳区某某街道',
@@ -1173,6 +1197,8 @@ export default {
 				submitData.native_place_district = nativePlaceRegion[2] || ''
 				submitData.native_place_detail = nativePlaceDetail
 				submitData.native_place_region = nativePlaceRegion
+				submitData.id_card_valid_from = this.formData.id_card_valid_from || ''
+				submitData.id_card_valid_until = this.formData.id_card_valid_until || ''
 				submitData.signature = this.formData.signaturePath
 				delete submitData.signaturePath
 				

@@ -1519,6 +1519,8 @@ class MiniController extends Controller
                 $formData['bank_account_holder'] = $employee->bank_account_holder ?? '';
                 $formData['bank_name'] = $employee->bank_name ?? '';
                 $formData['bank_branch'] = $employee->bank_branch ?? '';
+                $formData['id_card_valid_from'] = $formData['id_card_valid_from'] ?? $employee->id_card_valid_from;
+                $formData['id_card_valid_until'] = $formData['id_card_valid_until'] ?? $employee->id_card_valid_until;
 
                 if (empty($formData['contact_address'])) {
                     $contactAddressParts = array_filter([
@@ -1606,6 +1608,8 @@ class MiniController extends Controller
             'weight' => 'nullable|numeric|min:1|max:500',
             'marital_status' => 'nullable|string|max:20',
             'id_number' => 'required|string|size:18',
+            'id_card_valid_from' => 'nullable|date',
+            'id_card_valid_until' => 'nullable|date',
             'current_residence' => 'nullable|string|max:200',
             'household_registration' => 'nullable|string|max:200',
             'position' => 'nullable|string|max:100',
@@ -1784,6 +1788,8 @@ class MiniController extends Controller
                     'weight' => $request->weight,
                     'marital_status' => $request->marital_status,
                     'id_number' => $request->id_number,
+                    'id_card_valid_from' => $request->id_card_valid_from,
+                    'id_card_valid_until' => $request->id_card_valid_until,
                     'current_residence' => $request->current_residence,
                     'household_registration' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->household_registration,
                     'position' => $request->position,
@@ -1805,6 +1811,8 @@ class MiniController extends Controller
                 'name' => $request->name,
                 'gender' => $request->gender,
                 'id_number' => $this->resolveEmployeeIdNumber($employee, $request->id_number),
+                'id_card_valid_from' => $request->id_card_valid_from,
+                'id_card_valid_until' => $request->id_card_valid_until,
                 'birth_date' => $request->birth_date,
                 'marital_status' => $request->marital_status,
                 'position' => $request->position,
@@ -1914,6 +1922,8 @@ class MiniController extends Controller
                 $formData['native_place_city'] = $employee->household_city ?? ($formData['native_place_city'] ?? '');
                 $formData['native_place_district'] = $employee->household_district ?? ($formData['native_place_district'] ?? '');
                 $formData['native_place_detail'] = $employee->household_address ?? ($formData['native_place_detail'] ?? '');
+                $formData['id_card_valid_from'] = $formData['id_card_valid_from'] ?? $employee->id_card_valid_from;
+                $formData['id_card_valid_until'] = $formData['id_card_valid_until'] ?? $employee->id_card_valid_until;
                 $formData['education_type'] = $this->normalizeEducationTypeValue($formData['education_type'] ?? '');
 
                 if (empty($formData['native_place'])) {
@@ -1983,6 +1993,8 @@ class MiniController extends Controller
             'marital_status' => 'required|string|max:20',
             'has_children' => 'required|string|max:20',
             'id_number' => 'required|string|size:18',
+            'id_card_valid_from' => 'nullable|date',
+            'id_card_valid_until' => 'nullable|date',
             'household_type' => 'required|string|max:20',
             'current_address' => 'required|string|max:200',
             'postal_code' => 'required|string|max:10',
@@ -2224,6 +2236,8 @@ class MiniController extends Controller
                     'marital_status' => $request->marital_status,
                     'has_children' => $request->has_children,
                     'id_number' => $request->id_number,
+                    'id_card_valid_from' => $request->id_card_valid_from,
+                    'id_card_valid_until' => $request->id_card_valid_until,
                     'household_type' => $request->household_type,
                     'current_address' => $request->current_address,
                     'postal_code' => $request->postal_code,
@@ -2284,6 +2298,8 @@ class MiniController extends Controller
                 'name' => $request->name,
                 'gender' => $request->gender,
                 'id_number' => $this->resolveEmployeeIdNumber($employee, $request->id_number),
+                'id_card_valid_from' => $request->id_card_valid_from,
+                'id_card_valid_until' => $request->id_card_valid_until,
                 'birth_date' => $request->birth_date,
                 'marital_status' => $request->marital_status,
                 'position' => $request->entry_position,

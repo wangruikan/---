@@ -8,7 +8,30 @@
     <el-tabs v-model="activeTab" type="card" class="tabs-container">
       <!-- 社保细分标签页 -->
       <el-tab-pane label="社保细分" name="social">
-        <div class="tab-header">
+        <div class="list-toolbar">
+          <div class="toolbar-filters">
+            <el-select
+              v-model="selectedSocialRegionId"
+              class="region-filter-input"
+              placeholder="请选择地区"
+              clearable
+              filterable
+            >
+              <el-option
+                v-for="region in regions"
+                :key="region.id"
+                :label="region.name"
+                :value="region.id"
+              />
+            </el-select>
+            <el-tag type="info">共 {{ regions.length }} 个地区</el-tag>
+            <el-tag v-if="selectedSocialRegionId" type="success">
+              筛选结果 {{ filteredSocialRegions.length }} 个
+            </el-tag>
+            <el-tag v-if="selectedRegions.length" type="warning">
+              已选 {{ selectedRegions.length }} 个
+            </el-tag>
+          </div>
           <el-button v-if="canCreateSocialSecurity" type="primary" @click="showCreateDialog = true">
             <el-icon><Plus /></el-icon>
             新建社保地区
@@ -23,7 +46,7 @@
         </div>
       </template>
 
-      <el-table :data="regions" v-loading="loading" stripe @selection-change="handleSelectionChange">
+      <el-table :data="filteredSocialRegions" v-loading="loading" stripe @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" />
         <el-table-column prop="name" label="地区名称" width="200" />
         <el-table-column prop="code" label="社保编号" width="180" />
@@ -290,7 +313,30 @@
 
       <!-- 医保细分标签页 -->
       <el-tab-pane label="医保细分" name="medical">
-        <div class="tab-header">
+        <div class="list-toolbar">
+          <div class="toolbar-filters">
+            <el-select
+              v-model="selectedMedicalRegionId"
+              class="region-filter-input"
+              placeholder="请选择地区"
+              clearable
+              filterable
+            >
+              <el-option
+                v-for="region in medicalRegions"
+                :key="region.id"
+                :label="region.name"
+                :value="region.id"
+              />
+            </el-select>
+            <el-tag type="info">共 {{ medicalRegions.length }} 个地区</el-tag>
+            <el-tag v-if="selectedMedicalRegionId" type="success">
+              筛选结果 {{ filteredMedicalRegions.length }} 个
+            </el-tag>
+            <el-tag v-if="selectedMedicalRegions.length" type="warning">
+              已选 {{ selectedMedicalRegions.length }} 个
+            </el-tag>
+          </div>
           <el-button type="primary" @click="openCreateMedicalRegionDialog">
             <el-icon><Plus /></el-icon>
             新建医保地区
@@ -305,7 +351,7 @@
             </div>
           </template>
 
-          <el-table :data="medicalRegions" v-loading="medicalLoading" stripe @selection-change="handleMedicalSelectionChange">
+          <el-table :data="filteredMedicalRegions" v-loading="medicalLoading" stripe @selection-change="handleMedicalSelectionChange">
             <el-table-column type="selection" width="55" />
             <el-table-column prop="name" label="地区名称" width="200" />
             <el-table-column prop="code" label="医保编号" width="180" />
@@ -1024,6 +1070,7 @@ const availableFields = ref([
 const loading = ref(false)
 const submitting = ref(false)
 const regions = ref([])
+const selectedSocialRegionId = ref(null)
 const selectedRegions = ref([])
 const showCreateDialog = ref(false)
 const showSocialLimitDialog = ref(false)
@@ -1050,6 +1097,7 @@ const adjustmentFormRef = ref()
 // 医保响应式数据
 const medicalLoading = ref(false)
 const medicalRegions = ref([])
+const selectedMedicalRegionId = ref(null)
 const selectedMedicalRegions = ref([])
 const showCreateMedicalDialog = ref(false)
 const showMedicalLimitDialog = ref(false)
@@ -1062,6 +1110,16 @@ const currentMedicalRegion = ref(null)
 const currentMedicalLimitRegion = ref(null)
 const currentLargeMedicalRegion = ref(null)
 const MAX_MEDICAL_INSURANCE_TYPES = 2
+
+const filteredSocialRegions = computed(() => {
+  if (!selectedSocialRegionId.value) return regions.value
+  return regions.value.filter(region => region.id === selectedSocialRegionId.value)
+})
+
+const filteredMedicalRegions = computed(() => {
+  if (!selectedMedicalRegionId.value) return medicalRegions.value
+  return medicalRegions.value.filter(region => region.id === selectedMedicalRegionId.value)
+})
 
 // 表单数据
 const regionForm = ref({
@@ -2810,6 +2868,26 @@ const saveTemplate = async () => {
 .page-header h2 {
   margin: 0;
   color: #303133;
+}
+
+.list-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 0 0 16px;
+}
+
+.toolbar-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.region-filter-input {
+  width: 260px;
 }
 
 .tab-header {

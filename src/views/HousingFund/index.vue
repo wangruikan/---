@@ -2,12 +2,36 @@
   <div class="housing-fund-container">
     <div class="page-header">
       <h2>公积金管理</h2>
-      <div class="header-buttons">
-        <el-button type="primary" @click="showCreateRegionDialog = true">
-          <el-icon><Plus /></el-icon>
-          新建地区
-        </el-button>
+    </div>
+
+    <div class="list-toolbar">
+      <div class="toolbar-filters">
+        <el-select
+          v-model="selectedFilterRegionId"
+          class="region-filter-input"
+          placeholder="请选择地区"
+          clearable
+          filterable
+        >
+          <el-option
+            v-for="region in regions"
+            :key="region.id"
+            :label="region.region_name"
+            :value="region.id"
+          />
+        </el-select>
+        <el-tag type="info">共 {{ regions.length }} 个地区</el-tag>
+        <el-tag v-if="selectedFilterRegionId" type="success">
+          筛选结果 {{ filteredRegions.length }} 个
+        </el-tag>
+        <el-tag v-if="selectedRegions.length" type="warning">
+          已选 {{ selectedRegions.length }} 个
+        </el-tag>
       </div>
+      <el-button type="primary" @click="showCreateRegionDialog = true">
+        <el-icon><Plus /></el-icon>
+        新建地区
+      </el-button>
     </div>
 
     <!-- 地区列表 -->
@@ -18,7 +42,7 @@
         </div>
       </template>
 
-      <el-table :data="regions" v-loading="loading" stripe @selection-change="handleSelectionChange">
+      <el-table :data="filteredRegions" v-loading="loading" stripe @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" />
         <el-table-column prop="region_name" label="地区名称" width="200" />
         <el-table-column prop="account_number" label="公积金账号" width="180" />
@@ -453,7 +477,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Edit, Download, Search, Refresh, Setting, Document, Printer, View, CopyDocument, ArrowDown, ArrowUp, Rank, Grid, List } from '@element-plus/icons-vue'
+import { Plus, Delete, Edit, Download, Refresh, Setting, Document, Printer, View, CopyDocument, ArrowDown, ArrowUp, Rank, Grid, List } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
 import request from '@/api/request'
 import ReportTemplateDesigner from '@/components/ReportTemplateDesigner.vue'
@@ -661,6 +685,7 @@ const configLoading = ref(false)
 const saving = ref(false)
 const submitting = ref(false)
 const regions = ref([])
+const selectedFilterRegionId = ref(null)
 const selectedRegions = ref([])
 const configs = ref([])
 const selectedRegion = ref(null)
@@ -677,6 +702,11 @@ const historyLoading = ref(false)
 const regionHistories = ref([])
 const historyTitle = ref('')
 const currentConfigForLimit = ref(null)
+
+const filteredRegions = computed(() => {
+  if (!selectedFilterRegionId.value) return regions.value
+  return regions.value.filter(region => region.id === selectedFilterRegionId.value)
+})
 
 // 地区表单
 const regionForm = reactive({
@@ -1750,6 +1780,26 @@ onMounted(() => {
 .page-header h2 {
   margin: 0;
   color: #303133;
+}
+
+.list-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 0 0 16px;
+}
+
+.toolbar-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.region-filter-input {
+  width: 260px;
 }
 
 .region-list-card {

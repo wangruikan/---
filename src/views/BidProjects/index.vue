@@ -439,6 +439,7 @@ const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
 
 // 权限控制
+const isAdminUser = computed(() => permissionStore.isAdmin || ['admin', 'super_admin'].includes(userStore.userInfo?.role))
 const canCreateBidProject = computed(() => permissionStore.hasPermission('bid_projects.create'))
 const canEditBidProject = computed(() => permissionStore.hasPermission('bid_projects.edit'))
 const canDeleteBidProject = computed(() => permissionStore.hasPermission('bid_projects.delete'))
@@ -453,6 +454,9 @@ const userApprovalLevel = ref(null)
 
 // 判断是否为第1个审批节点（发起人）
 const isFirstApprovalNode = computed(() => {
+  if (isAdminUser.value) {
+    return false
+  }
   return userApprovalLevel.value === null || userApprovalLevel.value === undefined
 })
 

@@ -45,25 +45,27 @@ export function getEmployeeDeductions(params) {
 }
 
 // 获取项目员工列表
-export function getProjectEmployees(projectId, currentAccountSetId) {
+export function getProjectEmployees(projectId, currentAccountSetId, month) {
   return request({
     url: '/special-deductions/employees/project',
     method: 'get',
     params: { 
       project_id: projectId,
-      current_account_set_id: currentAccountSetId
+      current_account_set_id: currentAccountSetId,
+      month
     }
   })
 }
 
 // 获取员工专项扣除详情
-export function getEmployeeDeductionDetail(employeeId, projectId, currentAccountSetId) {
+export function getEmployeeDeductionDetail(employeeId, projectId, currentAccountSetId, month) {
   return request({
     url: `/special-deductions/employees/${employeeId}/detail`,
     method: 'get',
     params: { 
       project_id: projectId,
-      current_account_set_id: currentAccountSetId
+      current_account_set_id: currentAccountSetId,
+      month
     }
   })
 }

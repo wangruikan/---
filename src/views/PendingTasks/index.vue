@@ -246,6 +246,14 @@ const handleViewTask = (task) => {
       path: '/salary-sheets',
       query: params
     })
+  } else if (task.task_type === 'special_deduction') {
+    const params = typeof task.route_params === 'string'
+      ? JSON.parse(task.route_params)
+      : (task.route_params || {})
+    router.push({
+      path: '/special-deductions',
+      query: params
+    })
   } else if (task.task_type === 'tax_declaration') {
     // 跳转到税费申报任务页面
     router.push('/tax-declaration-tasks')

@@ -980,6 +980,8 @@ class SalaryController extends Controller
 
             $configuredEmployeeIds = \App\Models\EmployeeDeductionDetail::where('account_set_id', $accountSetId)
                 ->where('is_active', 1)
+                ->whereNull('project_id')
+                ->where('month', $month)
                 ->whereIn('employee_id', $targetEmployeeIds)
                 ->pluck('employee_id')
                 ->unique()
@@ -2250,6 +2252,9 @@ class SalaryController extends Controller
         
         // 查询该员工的专项扣除详情
         $deductionDetail = \App\Models\EmployeeDeductionDetail::where('employee_id', $employee->id)
+            ->where('account_set_id', $employee->account_set_id)
+            ->whereNull('project_id')
+            ->where('month', $month)
             ->where('is_active', 1)
             ->first();
         

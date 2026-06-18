@@ -24,6 +24,7 @@ class DynamicScheduledTaskService
         $this->syncBasisTasks($accountSetId, $month);
         $this->syncSheetTasks($accountSetId, $month);
         $this->syncDocumentDeliveries($accountSetId, $month);
+        $this->syncSpecialDeductions($accountSetId, $month);
     }
 
     public function syncBasisTasks($accountSetId, ?string $month = null): void
@@ -128,6 +129,16 @@ class DynamicScheduledTaskService
                     $deliveryService->sendNewPeriodReminder($delivery, $operatorId);
                 }
             });
+    }
+
+    public function syncSpecialDeductions($accountSetId, ?string $month = null): void
+    {
+        $month = $this->normalizeMonth($month);
+        if (!$accountSetId || !$month || $this->isFutureMonth($month)) {
+            return;
+        }
+
+        PendingTaskService::createSpecialDeductionTask((int) $accountSetId, $month);
     }
 
     private function firstOrCreateBasisRecord(

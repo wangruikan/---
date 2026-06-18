@@ -6,6 +6,7 @@ use App\Models\SpecialDeductionItem;
 use App\Models\EmployeeDeductionDetail;
 use App\Models\Employee;
 use App\Models\Project;
+use App\Services\PendingTaskService;
 use App\Traits\ChecksPermission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,28 +41,47 @@ class SpecialDeductionController extends Controller
         return $currentAccountSetId;
     }
 
+    private function normalizeMonth(?string $month = null): string
+    {
+        if ($month && preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+            return $month;
+        }
+
+        return now('Asia/Shanghai')->format('Y-m');
+    }
+
+    private function activeEmployeesQuery($accountSetId)
+    {
+        return Employee::where('employees.account_set_id', $accountSetId)
+            ->where('employees.contract_status', 'active');
+    }
+
+    private function getProjectNamesByEmployeeIds(array $employeeIds): array
+    {
+        if (empty($employeeIds)) {
+            return [];
+        }
+
+        return DB::table('employee_projects')
+            ->join('projects', 'employee_projects.project_id', '=', 'projects.id')
+            ->whereIn('employee_projects.employee_id', $employeeIds)
+            ->select('employee_projects.employee_id', 'projects.name as project_name')
+            ->orderBy('projects.name', 'asc')
+            ->get()
+            ->groupBy('employee_id')
+            ->map(function ($rows) {
+                return $rows->pluck('project_name')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->implode('、');
+            })
+            ->toArray();
+    }
+
     private function normalizeImportValue($value): string
     {
         return trim((string)($value ?? ''));
-    }
-
-    private function parseImportEnabled($value)
-    {
-        $raw = $this->normalizeImportValue($value);
-        if ($raw === '') {
-            return null;
-        }
-
-        $normalized = strtolower($raw);
-        if (in_array($normalized, ['是', 'yes', 'y', '1', 'true'], true)) {
-            return true;
-        }
-
-        if (in_array($normalized, ['否', 'no', 'n', '0', 'false'], true)) {
-            return false;
-        }
-
-        return 'invalid';
     }
 
     private function getImportCell(array $row, array $keys): string
@@ -216,7 +236,7 @@ class SpecialDeductionController extends Controller
             
             $validated = $request->validate([
                 'name' => 'required|string|max:100',
-                'amount' => 'required|numeric|min:0',
+                'amount' => 'nullable|numeric|min:0',
                 'description' => 'nullable|string',
                 'is_active' => 'boolean',
                 'sort_order' => 'integer',
@@ -226,7 +246,7 @@ class SpecialDeductionController extends Controller
             $item = SpecialDeductionItem::create([
                 'account_set_id' => $accountSetId,
                 'name' => $validated['name'],
-                'amount' => $validated['amount'],
+                'amount' => $validated['amount'] ?? 0,
                 'project_id' => null,  // 所有扣除项目都是通用的
                 'description' => $validated['description'] ?? null,
                 'is_active' => $validated['is_active'] ?? true,
@@ -264,7 +284,7 @@ class SpecialDeductionController extends Controller
 
             $validated = $request->validate([
                 'name' => 'string|max:100',
-                'amount' => 'numeric|min:0',
+                'amount' => 'nullable|numeric|min:0',
                 'description' => 'nullable|string',
                 'is_active' => 'boolean',
                 'sort_order' => 'integer',
@@ -272,6 +292,7 @@ class SpecialDeductionController extends Controller
 
             // 确保 project_id 始终为 null（通用项目）
             $validated['project_id'] = null;
+            $validated['amount'] = $validated['amount'] ?? 0;
             $item->update($validated);
 
             return response()->json([
@@ -337,23 +358,24 @@ class SpecialDeductionController extends Controller
 
         try {
             $accountSetId = $this->getAccountSetId($request);
+            $month = $this->normalizeMonth($request->input('month'));
 
-            // 获取所有在职员工及其项目信息
-            $query = Employee::where('employees.account_set_id', $accountSetId)
-                ->where('employees.contract_status', 'active') // 只显示在职员工
-                ->leftJoin('employee_projects', 'employees.id', '=', 'employee_projects.employee_id')
-                ->leftJoin('projects', 'employee_projects.project_id', '=', 'projects.id')
+            // 以员工为分页单位，项目只用于筛选和展示，避免多项目员工重复占行。
+            $query = $this->activeEmployeesQuery($accountSetId)
                 ->select(
                     'employees.id as employee_id',
                     'employees.name as employee_name',
-                    'employees.id_number',
-                    'projects.id as project_id',
-                    'projects.name as project_name'
+                    'employees.id_number'
                 );
 
             // 按项目筛选
             if ($request->has('project_id') && $request->project_id !== '') {
-                $query->where('projects.id', $request->project_id);
+                $query->whereExists(function ($q) use ($request) {
+                    $q->select(DB::raw(1))
+                        ->from('employee_projects')
+                        ->whereColumn('employee_projects.employee_id', 'employees.id')
+                        ->where('employee_projects.project_id', $request->project_id);
+                });
             }
 
             // 搜索员工姓名或身份证号
@@ -364,40 +386,23 @@ class SpecialDeductionController extends Controller
                 });
             }
 
-            $employees = $query->distinct()
+            $employees = $query
                 ->orderBy('employees.name', 'asc')
                 ->paginate($request->get('per_page', 20));
 
-            // 按员工分组，处理一个员工多个项目的情况
-            $employeeGroups = [];
-            foreach ($employees->items() as $employee) {
-                $employeeId = $employee->employee_id;
-                if (!isset($employeeGroups[$employeeId])) {
-                    $employeeGroups[$employeeId] = [
-                        'employee_id' => $employee->employee_id,
-                        'employee_name' => $employee->employee_name,
-                        'id_number' => $employee->id_number,
-                        'projects' => []
-                    ];
-                }
-                
-                // 添加项目信息（如果有的话）
-                if ($employee->project_id) {
-                    $employeeGroups[$employeeId]['projects'][] = [
-                        'project_id' => $employee->project_id,
-                        'project_name' => $employee->project_name
-                    ];
-                }
-            }
+            $employeeIds = collect($employees->items())->pluck('employee_id')->filter()->values()->all();
+            $projectNamesByEmployeeId = $this->getProjectNamesByEmployeeIds($employeeIds);
 
             // 为每个员工加载专项扣除信息
             $result = [];
-            foreach ($employeeGroups as $employeeGroup) {
-                $employeeId = $employeeGroup['employee_id'];
+            foreach ($employees->items() as $employee) {
+                $employeeId = $employee->employee_id;
                 
                 // 获取该员工的所有专项扣除设置
                 $deductionDetails = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
                     ->where('employee_id', $employeeId)
+                    ->whereNull('project_id')
+                    ->where('month', $month)
                     ->where('is_active', true)
                     ->get();
 
@@ -418,41 +423,21 @@ class SpecialDeductionController extends Controller
                     $deductionDetailIds[] = $detail->id;
                 }
 
-                // 如果有项目关联，为每个项目创建一条记录
-                if (!empty($employeeGroup['projects'])) {
-                    foreach ($employeeGroup['projects'] as $project) {
-                        $result[] = [
-                            'employee_id' => $employeeId,
-                            'employee_name' => $employeeGroup['employee_name'],
-                            'id_number' => $employeeGroup['id_number'],
-                            'project_id' => $project['project_id'],
-                            'project_name' => $project['project_name'],
-                            'deduction_items_array' => $deductionItems,
-                            'deduction_items' => $deductionItems,
-                            'deduction_detail_ids' => $deductionDetailIds,
-                            'total_amount' => $totalAmount,
-                            'effective_date' => null, // 已删除effective_date字段
-                            'is_active' => $deductionDetails->count() > 0 ? true : false,
-                            'has_deduction' => $deductionDetails->count() > 0
-                        ];
-                    }
-                } else {
-                    // 没有项目关联的员工
-                    $result[] = [
-                        'employee_id' => $employeeId,
-                        'employee_name' => $employeeGroup['employee_name'],
-                        'id_number' => $employeeGroup['id_number'],
-                        'project_id' => null,
-                        'project_name' => '未分配项目',
-                        'deduction_items_array' => $deductionItems,
-                        'deduction_items' => $deductionItems,
-                        'deduction_detail_ids' => $deductionDetailIds,
-                        'total_amount' => $totalAmount,
-                        'effective_date' => null, // 已删除effective_date字段
-                        'is_active' => $deductionDetails->count() > 0 ? true : false,
-                        'has_deduction' => $deductionDetails->count() > 0
-                    ];
-                }
+                $result[] = [
+                    'employee_id' => $employeeId,
+                    'employee_name' => $employee->employee_name,
+                    'id_number' => $employee->id_number,
+                    'project_id' => null,
+                    'project_name' => $projectNamesByEmployeeId[$employeeId] ?? '未分配项目',
+                    'deduction_items_array' => $deductionItems,
+                    'deduction_items' => $deductionItems,
+                    'deduction_detail_ids' => $deductionDetailIds,
+                    'total_amount' => $totalAmount,
+                    'month' => $month,
+                    'effective_date' => null, // 已删除effective_date字段
+                    'is_active' => $deductionDetails->count() > 0 ? true : false,
+                    'has_deduction' => $deductionDetails->count() > 0
+                ];
             }
 
             return response()->json([
@@ -481,92 +466,45 @@ class SpecialDeductionController extends Controller
         try {
             $accountSetId = $this->getAccountSetId($request);
             $projectId = $request->get('project_id');
+            $month = $this->normalizeMonth($request->input('month'));
 
-            // 获取所有在职员工及其项目信息
-            $query = Employee::where('employees.account_set_id', $accountSetId)
-                ->where('employees.contract_status', 'active') // 只显示在职员工
-                ->leftJoin('employee_projects', 'employees.id', '=', 'employee_projects.employee_id')
-                ->leftJoin('projects', 'employee_projects.project_id', '=', 'projects.id')
+            // 获取在职员工，项目仅作为筛选条件。
+            $query = $this->activeEmployeesQuery($accountSetId)
                 ->select(
                     'employees.id as employee_id',
                     'employees.name as employee_name',
-                    'employees.id_number',
-                    'projects.id as project_id',
-                    'projects.name as project_name'
+                    'employees.id_number'
                 );
 
             // 如果指定了项目，则筛选该项目下的员工
             if ($projectId) {
-                $query->where('projects.id', $projectId);
+                $query->whereExists(function ($q) use ($projectId) {
+                    $q->select(DB::raw(1))
+                        ->from('employee_projects')
+                        ->whereColumn('employee_projects.employee_id', 'employees.id')
+                        ->where('employee_projects.project_id', $projectId);
+                });
             }
 
-            $employees = $query->distinct()
+            $employees = $query
                 ->orderBy('employees.name', 'asc')
                 ->get();
 
-            // 按员工分组
-            $employeeGroups = [];
-            foreach ($employees as $employee) {
-                $employeeId = $employee->employee_id;
-                if (!isset($employeeGroups[$employeeId])) {
-                    $employeeGroups[$employeeId] = [
-                        'employee_id' => $employee->employee_id,
-                        'employee_name' => $employee->employee_name,
-                        'id_number' => $employee->id_number,
-                        'projects' => []
-                    ];
-                }
-                
-                // 添加项目信息（如果有的话）
-                if ($employee->project_id) {
-                    $employeeGroups[$employeeId]['projects'][] = [
-                        'project_id' => $employee->project_id,
-                        'project_name' => $employee->project_name
-                    ];
-                }
-            }
-
-            // 获取已有专项扣除的员工ID（按项目筛选）
-            $existingEmployeeIds = [];
-            if ($projectId) {
-                $existingEmployeeIds = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
-                    ->where('project_id', $projectId)
-                    ->pluck('employee_id')
-                    ->toArray();
-            } else {
-                // 如果没有指定项目，获取所有专项扣除的员工ID
-                $existingEmployeeIds = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
-                    ->pluck('employee_id')
-                    ->toArray();
-            }
+            $existingEmployeeIds = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
+                ->whereNull('project_id')
+                ->where('month', $month)
+                ->where('is_active', true)
+                ->pluck('employee_id')
+                ->toArray();
 
             $result = [];
-            foreach ($employeeGroups as $employeeGroup) {
-                // 如果有项目筛选，只显示该项目下的员工
-                if ($projectId && empty($employeeGroup['projects'])) {
-                    continue;
-                }
-                
-                // 检查员工是否有项目关联（如果指定了项目）
-                $hasProjectAccess = true;
-                if ($projectId) {
-                    $hasProjectAccess = false;
-                    foreach ($employeeGroup['projects'] as $project) {
-                        if ($project['project_id'] == $projectId) {
-                            $hasProjectAccess = true;
-                            break;
-                        }
-                    }
-                }
-                
-                if ($hasProjectAccess) {
-                    $result[] = [
-                        'id' => $employeeGroup['employee_id'],
-                        'name' => $employeeGroup['employee_name'],
-                        'id_number' => $employeeGroup['id_number'],
-                        'has_deduction' => in_array($employeeGroup['employee_id'], $existingEmployeeIds),
-                    ];
-                }
+            foreach ($employees as $employee) {
+                $result[] = [
+                    'id' => $employee->employee_id,
+                    'name' => $employee->employee_name,
+                    'id_number' => $employee->id_number,
+                    'has_deduction' => in_array($employee->employee_id, $existingEmployeeIds),
+                ];
             }
 
             return response()->json([
@@ -594,7 +532,8 @@ class SpecialDeductionController extends Controller
 
             $validated = $request->validate([
                 'employee_id' => 'required|exists:employees,id',
-                'project_id' => 'required|exists:projects,id',
+                'project_id' => 'nullable|exists:projects,id',
+                'month' => 'nullable|date_format:Y-m',
                 'deduction_items' => 'required|array',
                 'deduction_items.*.id' => 'required|exists:special_deduction_items,id',
                 'deduction_items.*.amount' => 'required|numeric|min:0',
@@ -609,10 +548,10 @@ class SpecialDeductionController extends Controller
                 [
                     'account_set_id' => $accountSetId,
                     'employee_id' => $validated['employee_id'],
-                    'project_id' => $validated['project_id'],
+                    'project_id' => null,
+                    'month' => $this->normalizeMonth($validated['month'] ?? null),
                 ],
                 [
-                    'effective_date' => $validated['effective_date'] ?? now(),
                     'is_active' => $validated['is_active'] ?? true,
                     'updated_by' => $request->user()->id,
                 ]
@@ -625,6 +564,7 @@ class SpecialDeductionController extends Controller
             $detail->load(['employee', 'project']);
 
             DB::commit();
+            PendingTaskService::createSpecialDeductionTask($accountSetId, $this->normalizeMonth($validated['month'] ?? null));
 
             return response()->json([
                 'success' => true,
@@ -654,7 +594,8 @@ class SpecialDeductionController extends Controller
             $validated = $request->validate([
                 'employee_ids' => 'required|array',
                 'employee_ids.*' => 'exists:employees,id',
-                'project_id' => 'required|exists:projects,id',
+                'project_id' => 'nullable|exists:projects,id',
+                'month' => 'nullable|date_format:Y-m',
                 'deduction_items' => 'required|array',
                 'deduction_items.*.id' => 'required|exists:special_deduction_items,id',
                 'deduction_items.*.amount' => 'required|numeric|min:0',
@@ -673,7 +614,8 @@ class SpecialDeductionController extends Controller
                         [
                             'account_set_id' => $accountSetId,
                             'employee_id' => $employeeId,
-                            'project_id' => $validated['project_id'],
+                            'project_id' => null,
+                            'month' => $this->normalizeMonth($validated['month'] ?? null),
                         ],
                         [
                             'deduction_items' => '', // 先设置空值，避免数据库错误
@@ -701,6 +643,7 @@ class SpecialDeductionController extends Controller
             }
 
             DB::commit();
+            PendingTaskService::createSpecialDeductionTask($accountSetId, $this->normalizeMonth($validated['month'] ?? null));
 
             return response()->json([
                 'success' => true,
@@ -731,13 +674,17 @@ class SpecialDeductionController extends Controller
             $validated = $request->validate([
                 'rows' => 'required|array|min:1',
                 'rows.*' => 'array',
-                'project_id' => 'required|exists:projects,id',
+                'project_id' => 'nullable|exists:projects,id',
+                'month' => 'nullable|date_format:Y-m',
             ]);
 
-            $project = Project::where('account_set_id', $accountSetId)
-                ->find($validated['project_id']);
+            $project = null;
+            if (!empty($validated['project_id'])) {
+                $project = Project::where('account_set_id', $accountSetId)
+                    ->find($validated['project_id']);
+            }
 
-            if (!$project) {
+            if (!empty($validated['project_id']) && !$project) {
                 return response()->json([
                     'success' => false,
                     'message' => '所选项目不存在或不属于当前账套'
@@ -779,49 +726,52 @@ class SpecialDeductionController extends Controller
                         continue;
                     }
 
-                    $hasProject = DB::table('employee_projects')
-                        ->where('employee_id', $employee->id)
-                        ->where('project_id', $project->id)
-                        ->exists();
+                    if ($project) {
+                        $hasProject = DB::table('employee_projects')
+                            ->where('employee_id', $employee->id)
+                            ->where('project_id', $project->id)
+                            ->exists();
 
-                    if (!$hasProject) {
-                        $errors[] = "第 {$rowNumber} 行：员工 {$employee->name} 不属于项目 {$project->name}";
-                        continue;
+                        if (!$hasProject) {
+                            $errors[] = "第 {$rowNumber} 行：员工 {$employee->name} 不属于项目 {$project->name}";
+                            continue;
+                        }
                     }
 
                     $importDeductionItems = [];
                     foreach ($deductionItems as $deductionItem) {
-                        $enabled = $this->parseImportEnabled($this->getImportCell($row, [$deductionItem->name]));
-                        if ($enabled === null || $enabled === false) {
+                        $amountText = $this->getImportCell($row, [$deductionItem->name]);
+                        if ($amountText === '') {
                             continue;
                         }
 
-                        if ($enabled === 'invalid') {
-                            $errors[] = "第 {$rowNumber} 行：{$deductionItem->name} 请填写是或否";
+                        if (!is_numeric($amountText) || (float) $amountText < 0) {
+                            $errors[] = "第 {$rowNumber} 行：{$deductionItem->name} 请填写大于等于 0 的金额";
                             continue 2;
                         }
 
                         $importDeductionItems[] = [
                             'id' => $deductionItem->id,
-                            'amount' => $deductionItem->amount,
+                            'amount' => round((float) $amountText, 2),
                         ];
                     }
 
                     if (empty($importDeductionItems)) {
-                        EmployeeDeductionDetail::where('account_set_id', $accountSetId)
-                            ->where('employee_id', $employee->id)
-                            ->where('project_id', $project->id)
-                            ->delete();
-                        $successCount++;
-                        continue;
+                        $importDeductionItems = $deductionItems->map(function ($deductionItem) {
+                            return [
+                                'id' => $deductionItem->id,
+                                'amount' => 0,
+                            ];
+                        })->all();
                     }
 
-                    DB::transaction(function () use ($accountSetId, $employee, $project, $importDeductionItems, $request) {
+                    DB::transaction(function () use ($accountSetId, $employee, $project, $importDeductionItems, $request, $validated) {
                         $detail = EmployeeDeductionDetail::updateOrCreate(
                             [
                                 'account_set_id' => $accountSetId,
                                 'employee_id' => $employee->id,
-                                'project_id' => $project->id,
+                                'project_id' => null,
+                                'month' => $this->normalizeMonth($validated['month'] ?? null),
                             ],
                             [
                                 'deduction_items' => '',
@@ -846,6 +796,7 @@ class SpecialDeductionController extends Controller
             }
 
             $errorCount = count($errors);
+            PendingTaskService::createSpecialDeductionTask($accountSetId, $this->normalizeMonth($validated['month'] ?? null));
 
             return response()->json([
                 'success' => true,
@@ -875,10 +826,12 @@ class SpecialDeductionController extends Controller
         try {
             $accountSetId = $this->getAccountSetId($request);
             $projectId = $request->get('project_id');
+            $month = $this->normalizeMonth($request->input('month'));
 
             $detail = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
                 ->where('employee_id', $employeeId)
-                ->where('project_id', $projectId)
+                ->whereNull('project_id')
+                ->where('month', $month)
                 ->with(['employee', 'project'])
                 ->first();
 

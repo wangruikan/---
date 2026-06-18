@@ -6,6 +6,8 @@ use App\Models\PendingTask;
 use App\Models\InvoiceApplication;
 use App\Models\PaymentRequest;
 use App\Models\Employee;
+use App\Models\EmployeeDeductionDetail;
+use App\Models\SpecialDeductionItem;
 use App\Models\ApprovalFlowConfig;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -607,6 +609,98 @@ class PendingTaskService
         );
 
         return $firstApprover ? User::find($firstApprover->id) : null;
+    }
+
+    public static function createSpecialDeductionTask($accountSetId, $month)
+    {
+        try {
+            if (!SpecialDeductionItem::where('account_set_id', $accountSetId)->where('is_active', true)->exists()) {
+                self::completeSpecialDeductionTask($accountSetId, $month);
+                return null;
+            }
+
+            $activeEmployeeIds = Employee::where('account_set_id', $accountSetId)
+                ->where('contract_status', 'active')
+                ->pluck('id');
+
+            if ($activeEmployeeIds->isEmpty()) {
+                self::completeSpecialDeductionTask($accountSetId, $month);
+                return null;
+            }
+
+            $configuredCount = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
+                ->where('month', $month)
+                ->where('is_active', true)
+                ->whereNull('project_id')
+                ->whereIn('employee_id', $activeEmployeeIds)
+                ->distinct('employee_id')
+                ->count('employee_id');
+
+            if ($configuredCount >= $activeEmployeeIds->count()) {
+                self::completeSpecialDeductionTask($accountSetId, $month);
+                return null;
+            }
+
+            $operator = self::getProjectOperator(null, $accountSetId, '工资表审批');
+            if (!$operator) {
+                Log::warning('未找到专项扣除待办处理人', [
+                    'account_set_id' => $accountSetId,
+                    'month' => $month,
+                ]);
+                return null;
+            }
+
+            $existingTask = PendingTask::where('account_set_id', $accountSetId)
+                ->where('task_type', 'special_deduction')
+                ->where('related_type', 'AccountSet')
+                ->where('handler_id', $operator->id)
+                ->where('status', 'pending')
+                ->get()
+                ->first(function (PendingTask $task) use ($month) {
+                    $routeParams = json_decode($task->route_params, true);
+                    return is_array($routeParams) && ($routeParams['month'] ?? null) === $month;
+                });
+
+            if ($existingTask) {
+                return $existingTask;
+            }
+
+            return PendingTask::create([
+                'account_set_id' => $accountSetId,
+                'task_type' => 'special_deduction',
+                'title' => "{$month} 专项扣除待设置",
+                'description' => "{$month} 在职人员专项扣除金额需要设置，请及时处理。",
+                'related_id' => $accountSetId,
+                'related_type' => 'AccountSet',
+                'handler_id' => $operator->id,
+                'handler_name' => $operator->name,
+                'status' => 'pending',
+                'route_name' => 'special-deductions',
+                'route_params' => json_encode(['month' => $month, 'tab' => 'employees']),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('创建专项扣除待办任务失败', [
+                'account_set_id' => $accountSetId,
+                'month' => $month,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    public static function completeSpecialDeductionTask($accountSetId, $month): void
+    {
+        PendingTask::where('account_set_id', $accountSetId)
+            ->where('task_type', 'special_deduction')
+            ->where('related_type', 'AccountSet')
+            ->where('status', 'pending')
+            ->get()
+            ->each(function (PendingTask $task) use ($month) {
+                $routeParams = json_decode($task->route_params, true);
+                if (is_array($routeParams) && ($routeParams['month'] ?? null) === $month) {
+                    $task->markAsCompleted();
+                }
+            });
     }
 
     /**

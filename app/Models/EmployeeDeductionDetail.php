@@ -12,6 +12,7 @@ class EmployeeDeductionDetail extends Model
         'account_set_id',
         'employee_id',
         'project_id',
+        'month',
         'deduction_items',
         'total_amount',
         'is_active',

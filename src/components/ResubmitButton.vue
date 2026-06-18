@@ -62,6 +62,10 @@ const props = defineProps({
   businessId: {
     type: [Number, String],
     default: null
+  },
+  canResubmit: {
+    type: Boolean,
+    default: null
   }
 })
 
@@ -85,6 +89,10 @@ const stampForm = reactive({
 
 // 判断是否可以重新发起
 const canResubmit = computed(() => {
+  if (props.canResubmit !== null) {
+    return props.canResubmit
+  }
+
   // 优先使用后端返回的 can_resubmit 字段
   if (props.record.can_resubmit !== undefined) {
     return props.record.can_resubmit

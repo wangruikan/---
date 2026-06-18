@@ -169,9 +169,19 @@
                       v-if="scope.row.has_payment_request && scope.row.payment_request_status === 'rejected'"
                       type="danger"
                       size="small"
+                      style="margin-right: 8px"
                     >
                       付款已驳回
                     </el-tag>
+                    <el-button
+                      v-if="scope.row.has_payment_request && scope.row.payment_request_status === 'rejected'"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="handleCreatePayment(scope.row)"
+                    >
+                      重新发起付款
+                    </el-button>
                     <el-tag
                       v-if="scope.row.has_payment_request && scope.row.payment_request_status === 'paid'"
                       type="info"
@@ -188,6 +198,7 @@
                     <ResubmitButton
                       :record="scope.row"
                       :business-id="scope.row.salary_approval_id"
+                      :can-resubmit="scope.row.approval_status === 'rejected'"
                       business-type="工资表审批"
                       @success="handleSearch"
                     />
@@ -1062,6 +1073,7 @@
           v-if="currentSheet && currentSheet.has_approval && currentSheet.approval_status === 'rejected'"
           :record="currentSheet"
           :business-id="currentSheet.salary_approval_id"
+          :can-resubmit="currentSheet.approval_status === 'rejected'"
           business-type="工资表审批"
           @success="handleSalaryResubmitSuccess"
         />
@@ -1080,11 +1092,11 @@
           审批拒绝
         </el-button>
         <el-button
-          v-if="currentSheet && currentSheet.status === 'approved' && !currentSheet.has_payment_request"
+          v-if="currentSheet && currentSheet.status === 'approved' && (!currentSheet.has_payment_request || currentSheet.payment_request_status === 'rejected')"
           type="success"
           @click="handleCreatePaymentFromDetail"
         >
-          发起付款
+          {{ currentSheet.payment_request_status === 'rejected' ? '重新发起付款' : '发起付款' }}
         </el-button>
       </template>
     </el-dialog>

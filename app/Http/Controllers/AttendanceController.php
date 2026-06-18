@@ -865,15 +865,14 @@ class AttendanceController extends Controller
             }
         }
 
-        $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
+        $instance = app(ApprovalService::class)->createApprovalInstance(
             $accountSetId,
             '考勤申请',
             $sheet->id,
             $user->id,
-            $user->name,
             $attachments,
+            false,
             $stampMethod,
-            '经办提交，自动通过',
             $stampOptions
         );
 

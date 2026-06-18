@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
+use App\Services\DynamicScheduledTaskService;
 use App\Traits\ChecksPermission;
 
 class SalaryController extends Controller
@@ -37,6 +38,8 @@ class SalaryController extends Controller
         // 【账套过滤】
         $currentAccountSetId = $request->input('current_account_set_id');
         if ($currentAccountSetId) {
+            app(DynamicScheduledTaskService::class)->syncBasisTasks($currentAccountSetId, $request->input('month'));
+            app(DynamicScheduledTaskService::class)->syncSheetTasks($currentAccountSetId, $request->input('month'));
             $query->where('account_set_id', $currentAccountSetId);
         } elseif ($request->user()->role !== 'admin') {
             $query->whereRaw('1 = 0');

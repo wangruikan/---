@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use App\Services\DynamicScheduledTaskService;
 
 class SalarySheetController extends Controller
 {
@@ -21,6 +22,8 @@ class SalarySheetController extends Controller
     {
         try {
             $accountSetId = $this->getAccountSetId($request);
+            app(DynamicScheduledTaskService::class)->syncBasisTasks($accountSetId, $request->input('month'));
+            app(DynamicScheduledTaskService::class)->syncSheetTasks($accountSetId, $request->input('month'));
             
             $query = SalarySheet::where('account_set_id', $accountSetId)
                 ->with(['project', 'attendanceSheet'])

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\BasisRecord;
 use App\Models\Project;
 use App\Models\ProjectDeliveryConfig;
+use App\Models\SalaryApproval;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -95,7 +96,9 @@ class DynamicScheduledTaskService
                     PendingTaskService::createAttendanceSheetTask($accountSetId, $project->id, $month);
                 }
 
-                PendingTaskService::createSalarySheetTask($accountSetId, $project->id, $month);
+                if (!$this->hasSubmittedSalaryApproval($accountSetId, (int) $project->id, $month)) {
+                    PendingTaskService::createSalarySheetTask($accountSetId, $project->id, $month);
+                }
             });
     }
 
@@ -119,7 +122,11 @@ class DynamicScheduledTaskService
             ->get()
             ->each(function (ProjectDeliveryConfig $config) use ($deliveryService, $date) {
                 $period = $deliveryService->generateDeliveryPeriod($config->delivery_cycle, $date->copy());
-                $deliveryService->createDeliveryRecord($config, $period);
+                $delivery = $deliveryService->createDeliveryRecord($config, $period);
+                $operatorId = $deliveryService->getProjectOperatorId($config->project_id);
+                if ($operatorId) {
+                    $deliveryService->sendNewPeriodReminder($delivery, $operatorId);
+                }
             });
     }
 
@@ -161,6 +168,15 @@ class DynamicScheduledTaskService
             ->value('account_set_users.user_id');
 
         return $userId ? (int) $userId : null;
+    }
+
+    private function hasSubmittedSalaryApproval(int $accountSetId, int $projectId, string $month): bool
+    {
+        return SalaryApproval::where('account_set_id', $accountSetId)
+            ->where('project_id', $projectId)
+            ->where('month', $month)
+            ->whereIn('status', ['pending', 'approved'])
+            ->exists();
     }
 
     private function normalizeMonth(?string $month): ?string

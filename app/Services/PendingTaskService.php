@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 class PendingTaskService
 {
     /**
-     * 发票申请审批通过后，创建填写发票号码待办
+     * 发票申请创建后，创建填写发票信息待办
      */
     public static function createInvoiceFillTask(InvoiceApplication $application)
     {
@@ -35,18 +35,31 @@ class PendingTaskService
                 ->first();
 
             if ($existingTask) {
+                $updateData = [];
                 if ((int) $existingTask->handler_id !== (int) $handler->id) {
+                    $updateData['handler_id'] = $handler->id;
+                    $updateData['handler_name'] = $handler->name;
+                }
+
+                $routeParams = [
+                    'id' => $application->id,
+                    'action' => 'fill_invoice_info',
+                ];
+                if (($existingTask->route_params ?? []) !== $routeParams) {
+                    $updateData['route_params'] = json_encode($routeParams);
+                }
+
+                if (!empty($updateData)) {
                     $existingTask->update([
-                        'handler_id' => $handler->id,
-                        'handler_name' => $handler->name,
+                        ...$updateData,
                     ]);
                 }
 
                 return $existingTask;
             }
 
-            $title = "{$application->project_name} 发票号码待填写";
-            $description = "发票申请 {$application->application_no} 已审批通过，请填写发票号码。";
+            $title = "{$application->project_name} 发票信息待填写";
+            $description = "发票申请 {$application->application_no} 已创建，请填写发票信息并发起审批。";
 
             $task = PendingTask::create([
                 'account_set_id' => $application->account_set_id,
@@ -61,7 +74,7 @@ class PendingTaskService
                 'route_name' => 'invoice-applications',
                 'route_params' => json_encode([
                     'id' => $application->id,
-                    'action' => 'fill_invoice_number',
+                    'action' => 'fill_invoice_info',
                 ]),
             ]);
 
@@ -101,6 +114,11 @@ class PendingTaskService
             return 0;
         }
 
+        return self::completeInvoiceFillTask($application);
+    }
+
+    public static function completeInvoiceFillTask(InvoiceApplication $application)
+    {
         $tasks = PendingTask::where('account_set_id', $application->account_set_id)
             ->where('task_type', 'invoice_fill')
             ->where('related_id', $application->id)

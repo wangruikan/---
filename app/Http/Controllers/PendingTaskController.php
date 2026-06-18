@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PendingTask;
+use App\Services\DynamicScheduledTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -22,6 +23,11 @@ class PendingTaskController extends Controller
                 'message' => '请选择账套'
             ], 400);
         }
+
+        app(DynamicScheduledTaskService::class)->syncForAccountSet(
+            $accountSetId,
+            $request->input('month')
+        );
 
         $status = $request->input('status', 'pending'); // pending 或 completed
         
@@ -55,6 +61,11 @@ class PendingTaskController extends Controller
                 'message' => '请选择账套'
             ], 400);
         }
+
+        app(DynamicScheduledTaskService::class)->syncForAccountSet(
+            $accountSetId,
+            $request->input('month')
+        );
 
         $pendingCount = PendingTask::where('account_set_id', $accountSetId)
             ->where('handler_id', $user->id)

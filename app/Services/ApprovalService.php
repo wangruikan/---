@@ -187,6 +187,15 @@ class ApprovalService
         $initiatorComment = '经办提交，自动通过',
         $options = []
     ) {
+        $options = array_merge([
+            'start_approval_level' => 2,
+            'initiator_step_name' => ApprovalFlowConfig::formatLevelName(1),
+            'initiator_name' => $createdByName,
+            'initiator_comment' => $initiatorComment,
+        ], $options, [
+            'auto_approve_initiator' => true,
+        ]);
+
         return $this->createApprovalInstance(
             $accountSetId,
             $businessType,
@@ -195,13 +204,7 @@ class ApprovalService
             $attachments,
             false,
             $stampMethod,
-            array_merge($options, [
-                'auto_approve_initiator' => true,
-                'start_approval_level' => 2,
-                'initiator_step_name' => ApprovalFlowConfig::formatLevelName(1),
-                'initiator_name' => $createdByName,
-                'initiator_comment' => $initiatorComment,
-            ])
+            $options
         );
     }
     
@@ -494,6 +497,20 @@ class ApprovalService
             
             // 创建考核记录
             $this->createAssessmentForRejection($instance, $record, $comment);
+
+            if (in_array($instance->business_type, ['发票申请', '发票申请（重新提交）'], true)) {
+                $invoiceApplication = \App\Models\InvoiceApplication::find($instance->business_id);
+                if ($invoiceApplication) {
+                    try {
+                        PendingTaskService::createInvoiceFillTask($invoiceApplication->fresh());
+                    } catch (\Exception $taskException) {
+                        Log::error('驳回后重建发票填写待办失败', [
+                            'invoice_application_id' => $invoiceApplication->id,
+                            'error' => $taskException->getMessage(),
+                        ]);
+                    }
+                }
+            }
             
             DB::commit();
             
@@ -938,18 +955,6 @@ class ApprovalService
                             ]);
                         }
 
-                        try {
-                            PendingTaskService::createInvoiceFillTask($invoiceApplication->fresh());
-                            Log::info('发票申请审批通过，已创建发票填写待办任务', [
-                                'invoice_application_id' => $businessId
-                            ]);
-                        } catch (\Exception $e) {
-                            Log::error('创建发票填写待办任务失败', [
-                                'invoice_application_id' => $businessId,
-                                'error' => $e->getMessage()
-                            ]);
-                        }
-                        
                         Log::info('发票申请审批已通过', [
                             'invoice_application_id' => $businessId,
                             'business_status' => $invoiceApplication->status  // 业务状态不变

@@ -38,11 +38,6 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('09:30')
                  ->timezone('Asia/Shanghai');
         
-        // 每月1日早上8点生成资料交付记录
-        $schedule->command('delivery:generate')
-                 ->monthlyOn(1, '08:00')
-                 ->timezone('Asia/Shanghai');
-        
         // 每月最后一天晚上20点检查未交付记录
         $schedule->command('delivery:check-pending')
                  ->lastDayOfMonth('20:00')
@@ -90,16 +85,6 @@ class Kernel extends ConsoleKernel
 
         $schedule->command('payment:check-reminders')
                  ->hourly()
-                 ->timezone('Asia/Shanghai');
-        
-        // 每月1日早上8点自动创建工资/考勤依据记录并生成待办
-        $schedule->command('basis:check-reminders')
-                 ->monthlyOn(1, '08:00')
-                 ->timezone('Asia/Shanghai');
-        
-        // 每月1日早上8点检查考勤表和工资表提交情况
-        $schedule->command('sheet:check-reminders')
-                 ->monthlyOn(1, '08:00')
                  ->timezone('Asia/Shanghai');
         
         // 每天早上9点检查未开票项目

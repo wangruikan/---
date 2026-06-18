@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use App\Services\DynamicScheduledTaskService;
 
 class PayrollController extends Controller
 {
@@ -237,6 +238,8 @@ class PayrollController extends Controller
             $accountSetId = $this->getAccountSetId($request);
             $month = $request->input('month', now()->format('Y-m'));
             $progressStatus = $this->normalizeProgressFilter($request->input('progress_status'));
+            app(DynamicScheduledTaskService::class)->syncBasisTasks($accountSetId, $month);
+            app(DynamicScheduledTaskService::class)->syncSheetTasks($accountSetId, $month);
 
             $validator = \Validator::make(
                 ['month' => $month],
@@ -375,6 +378,8 @@ class PayrollController extends Controller
         try {
             $accountSetId = $this->getAccountSetId($request);
             $month = $request->input('month', now()->format('Y-m'));
+            app(DynamicScheduledTaskService::class)->syncBasisTasks($accountSetId, $month);
+            app(DynamicScheduledTaskService::class)->syncSheetTasks($accountSetId, $month);
 
             $validator = \Validator::make(
                 ['month' => $month],

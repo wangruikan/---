@@ -104,7 +104,7 @@ class InvoiceApplicationController extends Controller
             
             // 确保 can_resubmit 字段被包含（通过访问 accessor 触发计算）
             $application->makeVisible(['can_resubmit']);
-            $application->can_fill_invoice = $this->canFillApprovedInvoice($application, $user);
+            $application->can_fill_invoice = $this->canFillInvoiceInfo($application, $user);
             
             return $application;
         });
@@ -282,7 +282,7 @@ class InvoiceApplicationController extends Controller
 
         // 计算总金额
         $application->total_amount = $application->items->sum('amount');
-        $application->can_fill_invoice = $this->canFillApprovedInvoice($application, Auth::user());
+        $application->can_fill_invoice = $this->canFillInvoiceInfo($application, Auth::user());
 
         return response()->json([
             'success' => true,
@@ -332,7 +332,7 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        if (!$application->canEdit()) {
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -430,7 +430,7 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        if (!$application->canEdit()) {
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -507,7 +507,7 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        if (!$application->canEdit()) {
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -741,8 +741,8 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        $canFillApprovedInvoice = $this->canFillApprovedInvoice($application, Auth::user());
-        if (!$application->canEdit() && !$canFillApprovedInvoice) {
+        $canFillInvoiceInfo = $this->canFillInvoiceInfo($application, Auth::user());
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -757,7 +757,7 @@ class InvoiceApplicationController extends Controller
 
             $attachmentType = $request->input('attachment_type');
             if (!$attachmentType) {
-                $attachmentType = $canFillApprovedInvoice ? 'invoice' : 'supporting';
+                $attachmentType = $canFillInvoiceInfo ? 'invoice' : 'supporting';
             }
 
             $attachments = $application->attachments ?? [];
@@ -807,8 +807,7 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        $canFillApprovedInvoice = $this->canFillApprovedInvoice($application, Auth::user());
-        if (!$application->canEdit() && !$canFillApprovedInvoice) {
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许编辑'
@@ -851,6 +850,13 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
+        if (!$this->canFillInvoiceInfo($application, Auth::user())) {
+            return response()->json([
+                'success' => false,
+                'message' => '只有第一个有效审批节点人员才能填写并提交审批'
+            ], 403);
+        }
+
         if (!$application->canSubmit()) {
             return response()->json([
                 'success' => false,
@@ -866,12 +872,34 @@ class InvoiceApplicationController extends Controller
             ], 400);
         }
 
+        $validationResponse = $this->validateInvoiceReadyToSubmit($application);
+        if ($validationResponse) {
+            return $validationResponse;
+        }
+
         $user = Auth::user();
         $accountSetId = $application->account_set_id;
         
         // 获取盖章方式，默认线上
         $stampMethod = $request->input('stamp_method', 'online');
         $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
+        $firstApprovalLevel = $this->getInvoiceFillApprovalLevel($accountSetId);
+        if (!$firstApprovalLevel) {
+            return response()->json([
+                'success' => false,
+                'message' => '未配置发票申请的填写节点'
+            ], 400);
+        }
+        if ($firstApprovalLevel >= ApprovalFlowConfig::MAX_APPROVAL_LEVEL) {
+            return response()->json([
+                'success' => false,
+                'message' => '发票申请流程未配置后续审批节点'
+            ], 400);
+        }
+        $approvalOptions = array_merge($stampOptions, [
+            'start_approval_level' => $firstApprovalLevel + 1,
+            'initiator_step_name' => ApprovalFlowConfig::formatLevelName($firstApprovalLevel),
+        ]);
 
         DB::beginTransaction();
         try {
@@ -884,16 +912,19 @@ class InvoiceApplicationController extends Controller
                 $this->buildApprovalAttachments($application),
                 $stampMethod,
                 '经办提交，自动通过',
-                $stampOptions
+                $approvalOptions
             );
 
             // 更新审批状态为审批中，业务状态保持不变
             $application->update([
                 'approval_status' => InvoiceApplication::APPROVAL_STATUS_PENDING,
                 'approval_instance_id' => $instance->id,
+                'submitter_id' => $user->id,
                 'submitted_at' => now(),
                 // status 业务状态保持不变（正常或红冲）
             ]);
+
+            PendingTaskService::completeInvoiceFillTask($application->fresh());
 
             DB::commit();
 
@@ -942,6 +973,13 @@ class InvoiceApplicationController extends Controller
             ], 400);
         }
 
+        if (!$this->canFillInvoiceInfo($application, Auth::user())) {
+            return response()->json([
+                'success' => false,
+                'message' => '只有第一个有效审批节点人员才能填写并提交审批'
+            ], 403);
+        }
+
         if ($application->items->count() === 0 || empty($application->attachments)) {
             return response()->json([
                 'success' => false,
@@ -953,6 +991,23 @@ class InvoiceApplicationController extends Controller
         $accountSetId = $application->account_set_id;
         $stampMethod = $request->input('stamp_method', 'online');
         $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
+        $firstApprovalLevel = $this->getInvoiceFillApprovalLevel($accountSetId);
+        if (!$firstApprovalLevel) {
+            return response()->json([
+                'success' => false,
+                'message' => '未配置发票申请的填写节点'
+            ], 400);
+        }
+        if ($firstApprovalLevel >= ApprovalFlowConfig::MAX_APPROVAL_LEVEL) {
+            return response()->json([
+                'success' => false,
+                'message' => '发票申请流程未配置后续审批节点'
+            ], 400);
+        }
+        $approvalOptions = array_merge($stampOptions, [
+            'start_approval_level' => $firstApprovalLevel + 1,
+            'initiator_step_name' => ApprovalFlowConfig::formatLevelName($firstApprovalLevel),
+        ]);
 
         DB::beginTransaction();
         try {
@@ -965,7 +1020,7 @@ class InvoiceApplicationController extends Controller
                 $this->buildApprovalAttachments($application),
                 $stampMethod,
                 '经办重新提交，自动通过',
-                $stampOptions
+                $approvalOptions
             );
 
             // 更新原申请：审批状态改为审批中，关联新审批实例
@@ -973,9 +1028,12 @@ class InvoiceApplicationController extends Controller
             $application->update([
                 'approval_status' => InvoiceApplication::APPROVAL_STATUS_PENDING,  // 审批状态：审批中
                 'approval_instance_id' => $instance->id,
+                'submitter_id' => $user->id,
                 'submitted_at' => now(),
                 // status 业务状态保持 red_flushed 不变
             ]);
+
+            PendingTaskService::completeInvoiceFillTask($application->fresh());
 
             DB::commit();
 
@@ -1064,8 +1122,8 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        // 只有草稿或已驳回状态可以修改
-        if (!$application->canEdit()) {
+        // 只有未提交/驳回且当前用户可编辑时可以修改
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许修改'
@@ -1112,8 +1170,8 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
-        // 只有可编辑状态才能修改
-        if (!$application->canEdit()) {
+        // 只有未提交/驳回且当前用户可编辑时可以修改
+        if (!$this->canEditInvoiceApplication($application, Auth::user())) {
             return response()->json([
                 'success' => false,
                 'message' => '当前状态不允许修改'
@@ -1299,7 +1357,6 @@ class InvoiceApplicationController extends Controller
 
     /**
      * 检查创建发票申请的权限
-     * 后续审批节点的审批人可以创建
      */
     public function checkCreatePermission(Request $request)
     {
@@ -1310,15 +1367,7 @@ class InvoiceApplicationController extends Controller
             ?: $request->header('X-Account-Set-Id')
         );
 
-        $hasAccess = false;
-        if ($user && $accountSetId > 0) {
-            $hasAccess = ApprovalFlowConfig::userCanApproveBusiness(
-                $accountSetId,
-                '发票申请',
-                (int) $user->id,
-                ApprovalFlowConfig::APPROVER_MIN_LEVEL
-            );
-        }
+        $hasAccess = $user && $accountSetId > 0 && $user->hasPermission('invoice_applications.create');
 
         return response()->json([
             'success' => true,
@@ -1456,16 +1505,62 @@ class InvoiceApplicationController extends Controller
 
     private function canFillApprovedInvoice(InvoiceApplication $application, $user)
     {
-        if ($application->approval_status !== InvoiceApplication::APPROVAL_STATUS_APPROVED) {
+        return $this->canFillInvoiceInfo($application, $user)
+            && $application->approval_status === InvoiceApplication::APPROVAL_STATUS_APPROVED;
+    }
+
+    private function canEditInvoiceApplication(InvoiceApplication $application, $user): bool
+    {
+        if (!$application->canEdit()) {
+            return false;
+        }
+
+        return $this->canFillInvoiceInfo($application, $user);
+    }
+
+    private function canFillInvoiceInfo(InvoiceApplication $application, $user): bool
+    {
+        if (!$user || $application->approval_status === InvoiceApplication::APPROVAL_STATUS_PENDING) {
             return false;
         }
 
         $handler = PendingTaskService::getInvoiceFillHandler($application);
-        if ($handler && (int) $handler->id === (int) $user->id) {
-            return true;
+        return $handler && (int) $handler->id === (int) $user->id;
+    }
+
+    private function getInvoiceFillApprovalLevel(int $accountSetId): ?int
+    {
+        return ApprovalFlowConfig::getFirstEffectiveLevel(
+            $accountSetId,
+            '发票申请',
+            ApprovalFlowConfig::MIN_APPROVAL_LEVEL
+        );
+    }
+
+    private function validateInvoiceReadyToSubmit(InvoiceApplication $application)
+    {
+        $requiredFields = [
+            'period_year' => '请选择所属期-年份',
+            'period_month' => '请选择所属期-月份',
+            'company_name' => '请输入单位名称',
+            'application_date' => '请选择申请日期',
+            'invoice_method' => '请选择开票方式',
+            'invoice_type' => '请选择开票种类',
+            'tax_rate' => '请选择税率',
+            'invoice_amount' => '请输入开票金额',
+            'invoice_date' => '请选择开票日期',
+        ];
+
+        foreach ($requiredFields as $field => $message) {
+            if ($application->{$field} === null || $application->{$field} === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                ], 400);
+            }
         }
 
-        return false;
+        return null;
     }
 
     private function syncInvoiceCompletionStatus(InvoiceApplication $application)
@@ -1485,8 +1580,6 @@ class InvoiceApplicationController extends Controller
 
         if ($shouldComplete) {
             PendingTaskService::checkAndCompleteInvoiceFillTask($application);
-        } else {
-            PendingTaskService::createInvoiceFillTask($application);
         }
     }
 

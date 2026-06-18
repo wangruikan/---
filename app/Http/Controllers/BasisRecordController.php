@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Carbon;
 use App\Traits\ChecksPermission;
+use App\Services\DynamicScheduledTaskService;
 
 class BasisRecordController extends Controller
 {
@@ -22,6 +23,10 @@ class BasisRecordController extends Controller
     {
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
         $type = $request->input('type'); // 'attendance' or 'salary'
+        app(DynamicScheduledTaskService::class)->syncBasisTasks(
+            $accountSetId,
+            $request->input('month')
+        );
         
         $query = BasisRecord::with(['project', 'creator', 'attachments'])
             ->where('account_set_id', $accountSetId);

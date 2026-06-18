@@ -122,7 +122,7 @@ const getTaskTypeName = (type) => {
   const typeMap = {
     'payment_receipt': '付款申请回执',
     'payment_supplement': '付款申请候补资料',
-    'invoice_fill': '发票号码填写',
+    'invoice_fill': '发票信息填写',
     'offline_contract': '线下合同上传',
     'document_delivery': '资料交付',
     'salary_basis': '工资依据上传',
@@ -210,7 +210,7 @@ const handleViewTask = (task) => {
       path: '/invoice-applications',
       query: {
         id: task.related_id,
-        action: 'fill_invoice_number',
+        action: 'fill_invoice_info',
         task_id: task.id
       }
     })

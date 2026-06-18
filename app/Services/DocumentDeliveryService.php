@@ -78,6 +78,15 @@ class DocumentDeliveryService
      */
     public function sendNewPeriodReminder(DocumentDelivery $delivery, $recipientId)
     {
+        $existingReminder = DocumentDeliveryReminder::where('delivery_id', $delivery->id)
+            ->where('reminder_type', 'new_period')
+            ->where('recipient_id', $recipientId)
+            ->first();
+
+        if ($existingReminder) {
+            return $existingReminder;
+        }
+
         DocumentDeliveryReminder::create([
             'account_set_id' => $delivery->account_set_id,
             'delivery_id' => $delivery->id,

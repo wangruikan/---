@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DocumentDelivery;
 use App\Models\DocumentDeliveryAttachment;
+use App\Services\DynamicScheduledTaskService;
 use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -26,6 +27,11 @@ class DocumentDeliveryController extends Controller
                     'message' => '请先选择账套'
                 ], 400);
             }
+
+            app(DynamicScheduledTaskService::class)->syncDocumentDeliveries(
+                $accountSetId,
+                $request->input('delivery_period')
+            );
 
             $query = DocumentDelivery::with(['project', 'submitter', 'attachments'])
                 ->where('account_set_id', $accountSetId);
@@ -525,6 +531,11 @@ class DocumentDeliveryController extends Controller
                     'message' => '请先选择账套'
                 ], 400);
             }
+
+            app(DynamicScheduledTaskService::class)->syncDocumentDeliveries(
+                $accountSetId,
+                $request->input('delivery_period')
+            );
 
             // 获取用户负责的项目的待办交付
             $deliveries = DocumentDelivery::with(['project', 'attachments'])

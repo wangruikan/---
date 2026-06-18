@@ -266,6 +266,12 @@ class ProjectController extends Controller
         // 【账套关联】自动关联到当前账套
         $projectData = $requestData;
         $projectData['status'] = $this->calculateProjectStatusByEndDate($projectData['end_date'] ?? null);
+        if ($request->has('requires_attendance')) {
+            $projectData['require_attendance'] = $request->input('requires_attendance');
+        }
+        if ($request->has('require_attendance')) {
+            $projectData['requires_attendance'] = $request->input('require_attendance');
+        }
         $currentAccountSetId = $request->input('current_account_set_id');
         if ($currentAccountSetId) {
             $projectData['account_set_id'] = $currentAccountSetId;

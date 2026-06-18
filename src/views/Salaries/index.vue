@@ -1030,6 +1030,15 @@
               </template>
             </el-table-column>
 
+            <el-table-column prop="deductions" width="120" align="right">
+              <template #header>
+                <FormulaHeader label="其他扣除" :formula="salaryFieldFormulaMap.deductions" />
+              </template>
+              <template #default="{ row }">
+                <span style="color: #F56C6C;">{{ formatMoney(row.deductions) }}</span>
+              </template>
+            </el-table-column>
+
             <el-table-column prop="net_salary" width="120" align="right">
               <template #header>
                 <FormulaHeader label="实发工资" :formula="salaryFieldFormulaMap.net_salary" />
@@ -1497,7 +1506,8 @@ const salaryFieldFormulaMap = {
   tax_already_withheld: '已扣缴税额 = 上个月的累计应扣缴税额。',
   cumulative_other_taxable: '直接取“累计其他应纳税项（合并扣税）”字段当前值。',
   tax_payable_or_refundable: '应补（退）税额 = 累计应扣缴税额 - 已扣缴税额。',
-  net_salary: '实发工资 = 本月应发工资 - 个人合计 - 应补（退）税额。',
+  deductions: '其他扣除 = 员工本月在“其他扣除”页设置的扣除项目合计。',
+  net_salary: '实发工资 = 本月应发工资 - 个人合计 - 应补（退）税额 - 其他扣除。',
   employee_signature: '员工签字展示栏，不参与系统计算。'
 }
 

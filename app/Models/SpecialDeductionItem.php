@@ -11,6 +11,7 @@ class SpecialDeductionItem extends Model
     protected $fillable = [
         'account_set_id',
         'project_id',
+        'item_type',
         'name',
         'amount',
         'description',

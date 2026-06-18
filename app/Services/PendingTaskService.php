@@ -614,7 +614,13 @@ class PendingTaskService
     public static function createSpecialDeductionTask($accountSetId, $month)
     {
         try {
-            if (!SpecialDeductionItem::where('account_set_id', $accountSetId)->where('is_active', true)->exists()) {
+            if (!SpecialDeductionItem::where('account_set_id', $accountSetId)
+                ->where(function ($query) {
+                    $query->where('item_type', 'special')
+                        ->orWhereNull('item_type');
+                })
+                ->where('is_active', true)
+                ->exists()) {
                 self::completeSpecialDeductionTask($accountSetId, $month);
                 return null;
             }
@@ -630,6 +636,7 @@ class PendingTaskService
 
             $configuredCount = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
                 ->where('month', $month)
+                ->where('deduction_type', 'special')
                 ->where('is_active', true)
                 ->whereNull('project_id')
                 ->whereIn('employee_id', $activeEmployeeIds)

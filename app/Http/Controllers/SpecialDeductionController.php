@@ -50,6 +50,149 @@ class SpecialDeductionController extends Controller
         return now('Asia/Shanghai')->format('Y-m');
     }
 
+    private function normalizeDeductionType(?string $type = null): string
+    {
+        return $type === 'other' ? 'other' : 'special';
+    }
+
+    private function isAllDeductionTypes(?string $type = null): bool
+    {
+        return $type === 'all';
+    }
+
+    private function deductionTypeText(string $type): string
+    {
+        return $type === 'other' ? '其他扣除' : '专项扣除';
+    }
+
+    private function applyItemTypeFilter($query, ?string $type = null)
+    {
+        $deductionType = $this->normalizeDeductionType($type);
+
+        return $query->where(function ($q) use ($deductionType) {
+            $q->where('item_type', $deductionType);
+            if ($deductionType === 'special') {
+                $q->orWhereNull('item_type');
+            }
+        });
+    }
+
+    private function validateDeductionItemsBelongToType($accountSetId, string $deductionType, array $deductionItems): void
+    {
+        $itemIds = collect($deductionItems)->pluck('id')->filter()->unique()->values()->all();
+        if (empty($itemIds)) {
+            return;
+        }
+
+        $validCount = $this->applyItemTypeFilter(
+            SpecialDeductionItem::where('account_set_id', $accountSetId)
+                ->whereIn('id', $itemIds),
+            $deductionType
+        )->count();
+
+        if ($validCount !== count($itemIds)) {
+            throw new \Exception($this->deductionTypeText($deductionType) . '项目类型不匹配，请刷新页面后重新选择');
+        }
+    }
+
+    private function groupDeductionItemsByType($accountSetId, array $deductionItems): array
+    {
+        $itemIds = collect($deductionItems)->pluck('id')->filter()->unique()->values()->all();
+        if (empty($itemIds)) {
+            return [
+                'special' => [],
+                'other' => [],
+            ];
+        }
+
+        $itemsById = SpecialDeductionItem::where('account_set_id', $accountSetId)
+            ->whereIn('id', $itemIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($itemsById->count() !== count($itemIds)) {
+            throw new \Exception('扣除项目不存在或不属于当前账套，请刷新页面后重新选择');
+        }
+
+        $groups = [
+            'special' => [],
+            'other' => [],
+        ];
+
+        foreach ($deductionItems as $deductionItem) {
+            $itemId = $deductionItem['id'];
+            $item = $itemsById->get($itemId);
+            $itemType = $this->normalizeDeductionType($item->item_type ?? null);
+            $groups[$itemType][] = [
+                'id' => $itemId,
+                'amount' => round((float) $deductionItem['amount'], 2),
+            ];
+        }
+
+        return $groups;
+    }
+
+    private function saveEmployeeDeductionGroups($accountSetId, $employeeId, string $month, array $groups, Request $request, array $replaceTypes, bool $keepEmptySpecial = false): array
+    {
+        $savedDetails = [];
+
+        foreach ($replaceTypes as $deductionType) {
+            $deductionItems = $groups[$deductionType] ?? [];
+
+            if (empty($deductionItems)) {
+                if ($keepEmptySpecial && $deductionType === 'special') {
+                    $detail = EmployeeDeductionDetail::updateOrCreate(
+                        [
+                            'account_set_id' => $accountSetId,
+                            'employee_id' => $employeeId,
+                            'project_id' => null,
+                            'month' => $month,
+                            'deduction_type' => $deductionType,
+                        ],
+                        [
+                            'deduction_items' => '',
+                            'total_amount' => 0,
+                            'is_active' => true,
+                            'updated_by' => $request->user() ? $request->user()->id : null,
+                        ]
+                    );
+                    $savedDetails[] = $detail;
+                    continue;
+                }
+
+                EmployeeDeductionDetail::where('account_set_id', $accountSetId)
+                    ->where('employee_id', $employeeId)
+                    ->whereNull('project_id')
+                    ->where('month', $month)
+                    ->where('deduction_type', $deductionType)
+                    ->delete();
+                continue;
+            }
+
+            $detail = EmployeeDeductionDetail::updateOrCreate(
+                [
+                    'account_set_id' => $accountSetId,
+                    'employee_id' => $employeeId,
+                    'project_id' => null,
+                    'month' => $month,
+                    'deduction_type' => $deductionType,
+                ],
+                [
+                    'deduction_items' => '',
+                    'total_amount' => 0,
+                    'is_active' => true,
+                    'updated_by' => $request->user() ? $request->user()->id : null,
+                ]
+            );
+
+            $detail->setDeductionItemsFromArray($deductionItems);
+            $detail->save();
+            $savedDetails[] = $detail;
+        }
+
+        return $savedDetails;
+    }
+
     private function activeEmployeesQuery($accountSetId)
     {
         return Employee::where('employees.account_set_id', $accountSetId)
@@ -100,6 +243,17 @@ class SpecialDeductionController extends Controller
         }
 
         return '';
+    }
+
+    private function getDeductionItemImportKeys(SpecialDeductionItem $item): array
+    {
+        $typeText = $this->deductionTypeText($this->normalizeDeductionType($item->item_type ?? null));
+
+        return [
+            $typeText . '-' . $item->name,
+            $typeText . '：' . $item->name,
+            $item->name,
+        ];
     }
 
     private function normalizeImportIdNumber($value): string
@@ -191,6 +345,10 @@ class SpecialDeductionController extends Controller
             // 按账套筛选
             $query = SpecialDeductionItem::where('account_set_id', $accountSetId);
 
+            if ($request->has('item_type') && $request->item_type !== '' && $request->item_type !== null && $request->item_type !== 'all') {
+                $this->applyItemTypeFilter($query, $request->input('item_type'));
+            }
+
             // 按状态筛选
             if ($request->has('is_active') && $request->is_active !== '' && $request->is_active !== null) {
                 $query->where('is_active', $request->is_active);
@@ -237,6 +395,7 @@ class SpecialDeductionController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:100',
                 'amount' => 'nullable|numeric|min:0',
+                'item_type' => 'nullable|in:special,other',
                 'description' => 'nullable|string',
                 'is_active' => 'boolean',
                 'sort_order' => 'integer',
@@ -248,6 +407,7 @@ class SpecialDeductionController extends Controller
                 'name' => $validated['name'],
                 'amount' => $validated['amount'] ?? 0,
                 'project_id' => null,  // 所有扣除项目都是通用的
+                'item_type' => $this->normalizeDeductionType($validated['item_type'] ?? null),
                 'description' => $validated['description'] ?? null,
                 'is_active' => $validated['is_active'] ?? true,
                 'sort_order' => $validated['sort_order'] ?? 0,
@@ -285,6 +445,7 @@ class SpecialDeductionController extends Controller
             $validated = $request->validate([
                 'name' => 'string|max:100',
                 'amount' => 'nullable|numeric|min:0',
+                'item_type' => 'nullable|in:special,other',
                 'description' => 'nullable|string',
                 'is_active' => 'boolean',
                 'sort_order' => 'integer',
@@ -293,6 +454,9 @@ class SpecialDeductionController extends Controller
             // 确保 project_id 始终为 null（通用项目）
             $validated['project_id'] = null;
             $validated['amount'] = $validated['amount'] ?? 0;
+            if (array_key_exists('item_type', $validated)) {
+                $validated['item_type'] = $this->normalizeDeductionType($validated['item_type'] ?? null);
+            }
             $item->update($validated);
 
             return response()->json([
@@ -359,6 +523,9 @@ class SpecialDeductionController extends Controller
         try {
             $accountSetId = $this->getAccountSetId($request);
             $month = $this->normalizeMonth($request->input('month'));
+            $deductionType = $this->isAllDeductionTypes($request->input('deduction_type'))
+                ? 'all'
+                : $this->normalizeDeductionType($request->input('deduction_type'));
 
             // 以员工为分页单位，项目只用于筛选和展示，避免多项目员工重复占行。
             $query = $this->activeEmployeesQuery($accountSetId)
@@ -404,20 +571,33 @@ class SpecialDeductionController extends Controller
                     ->whereNull('project_id')
                     ->where('month', $month)
                     ->where('is_active', true)
+                    ->when($deductionType !== 'all', function ($query) use ($deductionType) {
+                        $query->where('deduction_type', $deductionType);
+                    })
                     ->get();
 
                 $deductionItems = [];
+                $specialDeductionItems = [];
+                $otherDeductionItems = [];
                 $totalAmount = 0;
                 $deductionDetailIds = [];
                 foreach ($deductionDetails as $detail) {
+                    $detailType = $this->normalizeDeductionType($detail->deduction_type ?? null);
                     // 使用deduction_items_array访问器获取扣除项目
                     $items = $detail->deduction_items_array;
                     foreach ($items as $item) {
-                        $deductionItems[] = [
+                        $itemData = [
                             'id' => $item['id'],
                             'name' => $item['name'],
-                            'amount' => $item['amount']
+                            'amount' => $item['amount'],
+                            'deduction_type' => $detailType,
                         ];
+                        $deductionItems[] = $itemData;
+                        if ($detailType === 'other') {
+                            $otherDeductionItems[] = $itemData;
+                        } else {
+                            $specialDeductionItems[] = $itemData;
+                        }
                     }
                     $totalAmount += $detail->total_amount;
                     $deductionDetailIds[] = $detail->id;
@@ -431,9 +611,12 @@ class SpecialDeductionController extends Controller
                     'project_name' => $projectNamesByEmployeeId[$employeeId] ?? '未分配项目',
                     'deduction_items_array' => $deductionItems,
                     'deduction_items' => $deductionItems,
+                    'special_deduction_items' => $specialDeductionItems,
+                    'other_deduction_items' => $otherDeductionItems,
                     'deduction_detail_ids' => $deductionDetailIds,
                     'total_amount' => $totalAmount,
                     'month' => $month,
+                    'deduction_type' => $deductionType,
                     'effective_date' => null, // 已删除effective_date字段
                     'is_active' => $deductionDetails->count() > 0 ? true : false,
                     'has_deduction' => $deductionDetails->count() > 0
@@ -467,6 +650,9 @@ class SpecialDeductionController extends Controller
             $accountSetId = $this->getAccountSetId($request);
             $projectId = $request->get('project_id');
             $month = $this->normalizeMonth($request->input('month'));
+            $deductionType = $this->isAllDeductionTypes($request->input('deduction_type'))
+                ? 'all'
+                : $this->normalizeDeductionType($request->input('deduction_type'));
 
             // 获取在职员工，项目仅作为筛选条件。
             $query = $this->activeEmployeesQuery($accountSetId)
@@ -494,6 +680,9 @@ class SpecialDeductionController extends Controller
                 ->whereNull('project_id')
                 ->where('month', $month)
                 ->where('is_active', true)
+                ->when($deductionType !== 'all', function ($query) use ($deductionType) {
+                    $query->where('deduction_type', $deductionType);
+                })
                 ->pluck('employee_id')
                 ->toArray();
 
@@ -534,6 +723,7 @@ class SpecialDeductionController extends Controller
                 'employee_id' => 'required|exists:employees,id',
                 'project_id' => 'nullable|exists:projects,id',
                 'month' => 'nullable|date_format:Y-m',
+                'deduction_type' => 'nullable|in:special,other,all',
                 'deduction_items' => 'required|array',
                 'deduction_items.*.id' => 'required|exists:special_deduction_items,id',
                 'deduction_items.*.amount' => 'required|numeric|min:0',
@@ -542,34 +732,39 @@ class SpecialDeductionController extends Controller
             ]);
 
             DB::beginTransaction();
+            $month = $this->normalizeMonth($validated['month'] ?? null);
+            $deductionType = $this->isAllDeductionTypes($validated['deduction_type'] ?? null)
+                ? 'all'
+                : $this->normalizeDeductionType($validated['deduction_type'] ?? null);
+            $groups = $this->groupDeductionItemsByType($accountSetId, $validated['deduction_items']);
+            $replaceTypes = $deductionType === 'all' ? ['special', 'other'] : [$deductionType];
 
-            // 查找或创建员工专项扣除记录
-            $detail = EmployeeDeductionDetail::updateOrCreate(
-                [
-                    'account_set_id' => $accountSetId,
-                    'employee_id' => $validated['employee_id'],
-                    'project_id' => null,
-                    'month' => $this->normalizeMonth($validated['month'] ?? null),
-                ],
-                [
-                    'is_active' => $validated['is_active'] ?? true,
-                    'updated_by' => $request->user()->id,
-                ]
+            if ($deductionType !== 'all') {
+                $this->validateDeductionItemsBelongToType($accountSetId, $deductionType, $validated['deduction_items']);
+                $groups = [
+                    $deductionType => $validated['deduction_items'],
+                ];
+            }
+
+            $savedDetails = $this->saveEmployeeDeductionGroups(
+                $accountSetId,
+                $validated['employee_id'],
+                $month,
+                $groups,
+                $request,
+                $replaceTypes,
+                $deductionType === 'all'
             );
 
-            // 设置专项扣除项目
-            $detail->setDeductionItemsFromArray($validated['deduction_items']);
-            $detail->save();
-
-            $detail->load(['employee', 'project']);
-
             DB::commit();
-            PendingTaskService::createSpecialDeductionTask($accountSetId, $this->normalizeMonth($validated['month'] ?? null));
+            if ($deductionType === 'special' || $deductionType === 'all') {
+                PendingTaskService::createSpecialDeductionTask($accountSetId, $month);
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => '设置成功',
-                'data' => $detail
+                'message' => ($deductionType === 'all' ? '员工扣除' : $this->deductionTypeText($deductionType)) . '设置成功',
+                'data' => $savedDetails
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -596,6 +791,7 @@ class SpecialDeductionController extends Controller
                 'employee_ids.*' => 'exists:employees,id',
                 'project_id' => 'nullable|exists:projects,id',
                 'month' => 'nullable|date_format:Y-m',
+                'deduction_type' => 'nullable|in:special,other,all',
                 'deduction_items' => 'required|array',
                 'deduction_items.*.id' => 'required|exists:special_deduction_items,id',
                 'deduction_items.*.amount' => 'required|numeric|min:0',
@@ -603,31 +799,26 @@ class SpecialDeductionController extends Controller
             ]);
 
             DB::beginTransaction();
+            $month = $this->normalizeMonth($validated['month'] ?? null);
+            $deductionType = $this->isAllDeductionTypes($validated['deduction_type'] ?? null)
+                ? 'all'
+                : $this->normalizeDeductionType($validated['deduction_type'] ?? null);
+            $groups = $this->groupDeductionItemsByType($accountSetId, $validated['deduction_items']);
+            $replaceTypes = $deductionType === 'all' ? ['special', 'other'] : [$deductionType];
+
+            if ($deductionType !== 'all') {
+                $this->validateDeductionItemsBelongToType($accountSetId, $deductionType, $validated['deduction_items']);
+                $groups = [
+                    $deductionType => $validated['deduction_items'],
+                ];
+            }
 
             $successCount = 0;
             $errorCount = 0;
 
             foreach ($validated['employee_ids'] as $employeeId) {
                 try {
-                    // 先创建或更新记录，设置基本的扣除项目信息
-                    $detail = EmployeeDeductionDetail::updateOrCreate(
-                        [
-                            'account_set_id' => $accountSetId,
-                            'employee_id' => $employeeId,
-                            'project_id' => null,
-                            'month' => $this->normalizeMonth($validated['month'] ?? null),
-                        ],
-                        [
-                            'deduction_items' => '', // 先设置空值，避免数据库错误
-                            'total_amount' => 0, // 先设置0值
-                            'is_active' => $validated['is_active'] ?? true,
-                            'updated_by' => $request->user() ? $request->user()->id : null,
-                        ]
-                    );
-
-                    // 然后设置具体的扣除项目信息
-                    $detail->setDeductionItemsFromArray($validated['deduction_items']);
-                    $detail->save();
+                    $this->saveEmployeeDeductionGroups($accountSetId, $employeeId, $month, $groups, $request, $replaceTypes, $deductionType === 'all');
 
                     $successCount++;
                 } catch (\Exception $e) {
@@ -643,11 +834,13 @@ class SpecialDeductionController extends Controller
             }
 
             DB::commit();
-            PendingTaskService::createSpecialDeductionTask($accountSetId, $this->normalizeMonth($validated['month'] ?? null));
+            if ($deductionType === 'special' || $deductionType === 'all') {
+                PendingTaskService::createSpecialDeductionTask($accountSetId, $month);
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => "批量设置完成，成功 {$successCount} 名员工" . ($errorCount > 0 ? "，失败 {$errorCount} 名员工" : ""),
+                'message' => ($deductionType === 'all' ? '员工扣除' : $this->deductionTypeText($deductionType)) . "批量设置完成，成功 {$successCount} 名员工" . ($errorCount > 0 ? "，失败 {$errorCount} 名员工" : ""),
                 'success_count' => $successCount,
                 'error_count' => $errorCount
             ]);
@@ -738,9 +931,12 @@ class SpecialDeductionController extends Controller
                         }
                     }
 
-                    $importDeductionItems = [];
+                    $importDeductionItemsByType = [
+                        'special' => [],
+                        'other' => [],
+                    ];
                     foreach ($deductionItems as $deductionItem) {
-                        $amountText = $this->getImportCell($row, [$deductionItem->name]);
+                        $amountText = $this->getImportCell($row, $this->getDeductionItemImportKeys($deductionItem));
                         if ($amountText === '') {
                             continue;
                         }
@@ -750,39 +946,28 @@ class SpecialDeductionController extends Controller
                             continue 2;
                         }
 
-                        $importDeductionItems[] = [
+                        $itemType = $this->normalizeDeductionType($deductionItem->item_type ?? null);
+                        $importDeductionItemsByType[$itemType][] = [
                             'id' => $deductionItem->id,
                             'amount' => round((float) $amountText, 2),
                         ];
                     }
 
-                    if (empty($importDeductionItems)) {
-                        $importDeductionItems = $deductionItems->map(function ($deductionItem) {
-                            return [
-                                'id' => $deductionItem->id,
-                                'amount' => 0,
-                            ];
-                        })->all();
+                    if (empty($importDeductionItemsByType['special']) && empty($importDeductionItemsByType['other'])) {
+                        $errors[] = "第 {$rowNumber} 行：未填写任何扣除项目金额";
+                        continue;
                     }
 
-                    DB::transaction(function () use ($accountSetId, $employee, $project, $importDeductionItems, $request, $validated) {
-                        $detail = EmployeeDeductionDetail::updateOrCreate(
-                            [
-                                'account_set_id' => $accountSetId,
-                                'employee_id' => $employee->id,
-                                'project_id' => null,
-                                'month' => $this->normalizeMonth($validated['month'] ?? null),
-                            ],
-                            [
-                                'deduction_items' => '',
-                                'total_amount' => 0,
-                                'is_active' => true,
-                                'updated_by' => $request->user() ? $request->user()->id : null,
-                            ]
+                    DB::transaction(function () use ($accountSetId, $employee, $importDeductionItemsByType, $request, $validated) {
+                        $this->saveEmployeeDeductionGroups(
+                            $accountSetId,
+                            $employee->id,
+                            $this->normalizeMonth($validated['month'] ?? null),
+                            $importDeductionItemsByType,
+                            $request,
+                            ['special', 'other'],
+                            true
                         );
-
-                        $detail->setDeductionItemsFromArray($importDeductionItems);
-                        $detail->save();
                     });
 
                     $successCount++;
@@ -827,11 +1012,13 @@ class SpecialDeductionController extends Controller
             $accountSetId = $this->getAccountSetId($request);
             $projectId = $request->get('project_id');
             $month = $this->normalizeMonth($request->input('month'));
+            $deductionType = $this->normalizeDeductionType($request->input('deduction_type'));
 
             $detail = EmployeeDeductionDetail::where('account_set_id', $accountSetId)
                 ->where('employee_id', $employeeId)
                 ->whereNull('project_id')
                 ->where('month', $month)
+                ->where('deduction_type', $deductionType)
                 ->with(['employee', 'project'])
                 ->first();
 

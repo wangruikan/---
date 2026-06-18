@@ -28,7 +28,7 @@
                     <el-icon><Search /></el-icon>
                     搜索
                   </el-button>
-                  <el-button type="primary" @click="showCreateItemDialog = true">
+                  <el-button type="primary" @click="handleCreateSpecialItem">
                     <el-icon><Plus /></el-icon>
                     新增扣除项目
                   </el-button>
@@ -80,7 +80,7 @@
           </div>
         </el-tab-pane>
 
-        <!-- 人员管理 Tab -->
+        <!-- 人员专项管理 Tab -->
         <el-tab-pane label="人员专项管理" name="employees">
           <div class="tab-content">
             <!-- 工具栏 -->
@@ -129,10 +129,6 @@
                     <el-icon><Search /></el-icon>
                     搜索
                   </el-button>
-                  <el-button type="primary" :loading="pageSaving" @click="saveCurrentPageDeductions">
-                    <el-icon><Setting /></el-icon>
-                    保存当前页
-                  </el-button>
                   <el-button type="success" :loading="importing" @click="triggerImportTemplate">
                     <el-icon><Upload /></el-icon>
                     导入模板
@@ -159,22 +155,36 @@
               <el-table-column prop="employee_name" label="员工姓名" width="120" />
               <el-table-column prop="id_number" label="身份证号" width="180" />
               <el-table-column prop="project_name" label="所属项目" width="150" />
-              <el-table-column
-                v-for="item in safeAvailableDeductionItems"
-                :key="item.id"
-                :label="item.name"
-                min-width="140"
-              >
+              <el-table-column label="专项扣除项目" min-width="240">
                 <template #default="{ row }">
-                  <el-input-number
-                    v-model="row.deduction_amount_map[item.id]"
-                    :min="0"
-                    :precision="2"
-                    :controls="false"
-                    size="small"
-                    style="width: 110px"
-                    @change="updateRowTotal(row)"
-                  />
+                  <template v-if="row.special_deduction_items && row.special_deduction_items.length">
+                    <el-tag
+                      v-for="item in row.special_deduction_items"
+                      :key="item.id"
+                      type="info"
+                      effect="plain"
+                      style="margin: 2px 6px 2px 0"
+                    >
+                      {{ item.name }}：¥{{ formatAmount(item.amount) }}
+                    </el-tag>
+                  </template>
+                  <span v-else class="text-muted">未设置</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="其他扣除项目" min-width="240">
+                <template #default="{ row }">
+                  <template v-if="row.other_deduction_items && row.other_deduction_items.length">
+                    <el-tag
+                      v-for="item in row.other_deduction_items"
+                      :key="item.id"
+                      type="warning"
+                      effect="plain"
+                      style="margin: 2px 6px 2px 0"
+                    >
+                      {{ item.name }}：¥{{ formatAmount(item.amount) }}
+                    </el-tag>
+                  </template>
+                  <span v-else class="text-muted">未设置</span>
                 </template>
               </el-table-column>
               <el-table-column prop="total_amount" label="总扣除金额" width="120">
@@ -191,8 +201,8 @@
               </el-table-column>
               <el-table-column label="操作" width="150" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" :loading="row.saving" @click="saveEmployeeDeductionRow(row)">
-                    保存
+                  <el-button link type="primary" @click="handleSetEmployee(row)">
+                    设置
                   </el-button>
                   <el-button 
                     v-if="row.has_deduction" 
@@ -220,13 +230,79 @@
             </div>
           </div>
         </el-tab-pane>
+
+        <!-- 其他扣除项目设置 Tab -->
+        <el-tab-pane label="其他扣除" name="other">
+          <div class="tab-content">
+            <div class="toolbar">
+              <el-form :model="otherItemSearchForm" inline>
+                <el-form-item label="名称">
+                  <el-input
+                    v-model="otherItemSearchForm.search"
+                    placeholder="请输入其他扣除项目名称"
+                    clearable
+                    style="width: 200px"
+                    @keyup.enter="loadOtherDeductionItems"
+                  />
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button type="primary" @click="loadOtherDeductionItems">
+                    <el-icon><Search /></el-icon>
+                    搜索
+                  </el-button>
+                  <el-button type="primary" @click="handleCreateOtherItem">
+                    <el-icon><Plus /></el-icon>
+                    新增其他扣除项目
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <el-table
+              :data="safeOtherDeductionItems"
+              v-loading="otherItemsLoading"
+              stripe
+              border
+              style="margin-top: 20px"
+            >
+              <el-table-column prop="name" label="扣除项目名称" width="200" />
+              <el-table-column prop="description" label="说明描述" show-overflow-tooltip />
+              <el-table-column prop="sort_order" label="排序" width="80" />
+              <el-table-column prop="creator_name" label="创建人" width="100" />
+              <el-table-column prop="created_at" label="创建时间" width="160">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.created_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="150" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="handleEditItem(row, 'other')">编辑</el-button>
+                  <el-button link type="danger" @click="handleDeleteItem(row, 'other')">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="pagination">
+              <el-pagination
+                v-model:current-page="otherItemPagination.currentPage"
+                v-model:page-size="otherItemPagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="otherItemPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @size-change="loadOtherDeductionItems"
+                @current-change="loadOtherDeductionItems"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
     <!-- 新增/编辑扣除项目对话框 -->
     <el-dialog
       v-model="showCreateItemDialog"
-      :title="isEditItem ? '编辑扣除项目' : '新增扣除项目'"
+      :title="itemDialogTitle"
       width="600px"
       @close="handleItemDialogClose"
     >
@@ -271,7 +347,7 @@
     <!-- 设置员工专项扣除对话框 -->
     <el-dialog
       v-model="showSetEmployeeDialog"
-      title="设置员工专项扣除"
+      title="设置员工扣除"
       width="700px"
       @close="handleEmployeeDialogClose"
     >
@@ -289,7 +365,7 @@
           <el-input v-model="currentEmployee.project_name" disabled />
         </el-form-item>
 
-        <el-form-item label="专项扣除项目" prop="deduction_items" required>
+        <el-form-item label="扣除项目" prop="deduction_items" required>
           <div style="width: 100%">
             <div 
               v-for="(item, index) in employeeForm.deduction_items" 
@@ -305,7 +381,7 @@
                 <el-option
                   v-for="deductionItem in safeAvailableDeductionItems.filter(d => d)"
                   :key="deductionItem.id"
-                  :label="deductionItem.name"
+                  :label="formatDeductionItemOption(deductionItem)"
                   :value="deductionItem.id"
                 />
               </el-select>
@@ -353,7 +429,7 @@
     <!-- 批量设置对话框 -->
     <el-dialog
       v-model="showBatchSetDialog"
-      title="批量设置专项扣除"
+      title="批量设置扣除"
       width="800px"
       @close="handleBatchDialogClose"
     >
@@ -403,7 +479,7 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="专项扣除项目" prop="deduction_items" required>
+        <el-form-item label="扣除项目" prop="deduction_items" required>
           <div style="width: 100%">
             <div 
               v-for="(item, index) in batchForm.deduction_items" 
@@ -419,7 +495,7 @@
                 <el-option
                   v-for="deductionItem in safeAvailableDeductionItems.filter(d => d)"
                   :key="deductionItem.id"
-                  :label="deductionItem.name"
+                  :label="formatDeductionItemOption(deductionItem)"
                   :value="deductionItem.id"
                 />
               </el-select>
@@ -470,7 +546,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Setting, Delete, Download, Upload } from '@element-plus/icons-vue'
+import { Search, Plus, Delete, Download, Upload } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import { useAccountSetStore } from '@/stores/accountSet'
 import {
@@ -513,12 +589,25 @@ const itemPagination = reactive({
   total: 0
 })
 
+const otherDeductionItems = ref([])
+const safeOtherDeductionItems = computed(() => Array.isArray(otherDeductionItems.value) ? otherDeductionItems.value : [])
+const otherItemsLoading = ref(false)
+const otherItemSearchForm = reactive({
+  search: ''
+})
+const otherItemPagination = reactive({
+  currentPage: 1,
+  pageSize: 20,
+  total: 0
+})
+
 // 新增/编辑项目对话框
 const showCreateItemDialog = ref(false)
 const isEditItem = ref(false)
 const itemSubmitting = ref(false)
 const itemFormRef = ref(null)
 const currentItemId = ref(null)
+const currentItemType = ref('special')
 const itemForm = reactive({
   name: '',
   description: '',
@@ -545,7 +634,6 @@ const employeePagination = reactive({
 })
 const importFileInputRef = ref(null)
 const importing = ref(false)
-const pageSaving = ref(false)
 
 // 设置员工专项扣除对话框
 const showSetEmployeeDialog = ref(false)
@@ -559,7 +647,7 @@ const employeeForm = reactive({
   is_active: true
 })
 const employeeFormRules = {
-  deduction_items: [{ required: true, message: '请添加专项扣除项目', trigger: 'change' }]
+  deduction_items: [{ required: true, message: '请添加扣除项目', trigger: 'change' }]
 }
 
 // 批量设置对话框
@@ -576,7 +664,7 @@ const batchForm = reactive({
 })
 const batchFormRules = {
   employee_ids: [{ required: true, message: '请选择员工', trigger: 'change' }],
-  deduction_items: [{ required: true, message: '请添加专项扣除项目', trigger: 'change' }]
+  deduction_items: [{ required: true, message: '请添加扣除项目', trigger: 'change' }]
 }
 
 // 可用的扣除项目（通用项目 + 当前项目的项目）
@@ -596,6 +684,11 @@ const batchTotalDeductionAmount = computed(() => {
   }, 0).toFixed(2)
 })
 
+const itemDialogTitle = computed(() => {
+  const typeName = currentItemType.value === 'other' ? '其他扣除项目' : '扣除项目'
+  return isEditItem.value ? `编辑${typeName}` : `新增${typeName}`
+})
+
 // ==================== 方法 ====================
 const getCurrentMonth = () => {
   const date = new Date()
@@ -606,26 +699,28 @@ const normalizeMonth = (value) => {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || '')) ? value : getCurrentMonth()
 }
 
-const buildDeductionAmountMap = (items = []) => {
-  const map = {}
-  safeAvailableDeductionItems.value.forEach(item => {
-    map[item.id] = 0
-  })
-  ;(items || []).forEach(item => {
-    map[item.id] = Number(item.amount || 0)
-  })
-  return map
+const formatAmount = (value) => {
+  return Number(value || 0).toFixed(2)
 }
 
-const buildDeductionItemsFromRow = (row) => {
-  return safeAvailableDeductionItems.value.map(item => ({
-    id: item.id,
-    amount: Number(row.deduction_amount_map?.[item.id] || 0)
-  }))
+const getDeductionTypeLabel = (type) => {
+  return type === 'other' ? '其他扣除' : '专项扣除'
 }
 
-const updateRowTotal = (row) => {
-  row.total_amount = buildDeductionItemsFromRow(row).reduce((sum, item) => sum + item.amount, 0).toFixed(2)
+const formatDeductionItemOption = (item) => {
+  return `${getDeductionTypeLabel(item.item_type)}-${item.name}`
+}
+
+const sortDeductionItemsByType = (items) => {
+  const typeOrder = { special: 0, other: 1 }
+  return [...items].sort((a, b) => {
+    const aType = a.item_type === 'other' ? 'other' : 'special'
+    const bType = b.item_type === 'other' ? 'other' : 'special'
+    if (typeOrder[aType] !== typeOrder[bType]) {
+      return typeOrder[aType] - typeOrder[bType]
+    }
+    return Number(a.sort_order || 0) - Number(b.sort_order || 0) || Number(a.id || 0) - Number(b.id || 0)
+  })
 }
 
 // 加载项目列表
@@ -653,6 +748,7 @@ const loadDeductionItems = async () => {
       ...itemSearchForm,
       page: itemPagination.currentPage,
       per_page: itemPagination.pageSize,
+      item_type: 'special',
       current_account_set_id: currentAccountSetId.value
     }
     const res = await getDeductionItems(params)
@@ -669,12 +765,37 @@ const loadDeductionItems = async () => {
   }
 }
 
+const loadOtherDeductionItems = async () => {
+  otherItemsLoading.value = true
+  try {
+    const params = {
+      ...otherItemSearchForm,
+      page: otherItemPagination.currentPage,
+      per_page: otherItemPagination.pageSize,
+      item_type: 'other',
+      current_account_set_id: currentAccountSetId.value
+    }
+    const res = await getDeductionItems(params)
+    if (res.success) {
+      otherDeductionItems.value = (res.data || []).filter(item => item !== null)
+      otherItemPagination.total = res.total || 0
+    }
+  } catch (error) {
+    ElMessage.error('加载其他扣除项目失败')
+    console.error(error)
+    otherDeductionItems.value = []
+  } finally {
+    otherItemsLoading.value = false
+  }
+}
+
 // 加载可用扣除项目（用于设置员工专项扣除时选择）
 const loadAvailableDeductionItems = async (projectId) => {
   try {
     const params = {
       is_active: 1,
       per_page: 1000,
+      item_type: 'all',
       current_account_set_id: currentAccountSetId.value
     }
     const res = await getDeductionItems(params)
@@ -693,9 +814,10 @@ const getActiveDeductionItems = async () => {
   const res = await getDeductionItems({
     is_active: 1,
     per_page: 1000,
+    item_type: 'all',
     current_account_set_id: currentAccountSetId.value
   })
-  return res.success ? (res.data || []).filter(item => item !== null) : []
+  return res.success ? sortDeductionItemsByType((res.data || []).filter(item => item !== null)) : []
 }
 
 const formatTemplateDate = () => {
@@ -714,7 +836,7 @@ const handleDownloadImportTemplate = async () => {
       return
     }
 
-    const headers = ['员工姓名', '身份证号', ...items.map(item => item.name)]
+    const headers = ['员工姓名', '身份证号', ...items.map(item => formatDeductionItemOption(item))]
     const exampleRow = [
       '张三',
       '110101199001010011',
@@ -736,19 +858,19 @@ const handleDownloadImportTemplate = async () => {
       ['填写说明'],
       ['1. 身份证号必填，用于匹配员工。'],
       ['2. 身份证号列请按文本填写，避免 Excel 自动转成科学计数法。'],
-      ['3. 后续专项扣除列直接填写金额，空白表示 0。'],
-      ['4. 导入会按当前页面选择的月份，覆盖该员工当月专项扣除设置。'],
+      ['3. 后续扣除项目列直接填写金额，空白表示不设置该项目。'],
+      ['4. 模板包含专项扣除和其他扣除项目，导入时会按项目类型自动保存并覆盖该员工当月扣除设置。'],
       ['5. 如果页面选择了项目，只会导入该项目下的员工。'],
       [],
       ['当前启用扣除项目'],
-      ...items.map(item => [item.name])
+      ...items.map(item => [formatDeductionItemOption(item)])
     ])
     noteSheet['!cols'] = [{ wch: 28 }, { wch: 16 }]
 
     const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, sheet, '人员专项扣除导入')
+    XLSX.utils.book_append_sheet(workbook, sheet, '人员扣除导入')
     XLSX.utils.book_append_sheet(workbook, noteSheet, '填写说明')
-    XLSX.writeFile(workbook, `人员专项扣除导入模板_${formatTemplateDate()}.xlsx`)
+    XLSX.writeFile(workbook, `人员扣除导入模板_${formatTemplateDate()}.xlsx`)
   } catch (error) {
     console.error('下载导入模板失败:', error)
     ElMessage.error(error.message || '下载导入模板失败')
@@ -859,15 +981,28 @@ const handleImportFileChange = async (event) => {
       ElMessage.error(res.message || '导入失败')
     }
   } catch (error) {
-    console.error('导入专项扣除失败:', error)
+    console.error('导入人员扣除失败:', error)
     ElMessage.error(error.message || '导入失败')
   } finally {
     importing.value = false
   }
 }
 
+const handleCreateSpecialItem = () => {
+  currentItemType.value = 'special'
+  isEditItem.value = false
+  showCreateItemDialog.value = true
+}
+
+const handleCreateOtherItem = () => {
+  currentItemType.value = 'other'
+  isEditItem.value = false
+  showCreateItemDialog.value = true
+}
+
 // 编辑扣除项目
-const handleEditItem = (row) => {
+const handleEditItem = (row, itemType = 'special') => {
+  currentItemType.value = itemType
   isEditItem.value = true
   currentItemId.value = row.id
   Object.assign(itemForm, {
@@ -880,7 +1015,7 @@ const handleEditItem = (row) => {
 }
 
 // 删除扣除项目
-const handleDeleteItem = async (row) => {
+const handleDeleteItem = async (row, itemType = 'special') => {
   try {
     await ElMessageBox.confirm('确定要删除该扣除项目吗？', '提示', {
       type: 'warning'
@@ -888,7 +1023,11 @@ const handleDeleteItem = async (row) => {
     const res = await deleteDeductionItem(row.id)
     if (res.success) {
       ElMessage.success('删除成功')
-      loadDeductionItems()
+      if (itemType === 'other') {
+        loadOtherDeductionItems()
+      } else {
+        loadDeductionItems()
+      }
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -906,6 +1045,7 @@ const handleItemSubmit = async () => {
     const data = { 
       ...itemForm,
       is_active: true,
+      item_type: currentItemType.value,
       current_account_set_id: currentAccountSetId.value
     }
     let res
@@ -918,7 +1058,11 @@ const handleItemSubmit = async () => {
     if (res.success) {
       ElMessage.success(isEditItem.value ? '更新成功' : '创建成功')
       showCreateItemDialog.value = false
-      loadDeductionItems()
+      if (currentItemType.value === 'other') {
+        loadOtherDeductionItems()
+      } else {
+        loadDeductionItems()
+      }
     }
   } catch (error) {
     if (error !== false) {
@@ -933,6 +1077,7 @@ const handleItemSubmit = async () => {
 const handleItemDialogClose = () => {
   isEditItem.value = false
   currentItemId.value = null
+  currentItemType.value = 'special'
   Object.assign(itemForm, {
     name: '',
     description: '',
@@ -942,7 +1087,7 @@ const handleItemDialogClose = () => {
   itemFormRef.value?.clearValidate()
 }
 
-// 加载员工专项扣除列表
+// 加载员工扣除列表
 const loadEmployeeDeductions = async () => {
   console.log('开始加载员工专项扣除数据...')
   console.log('当前账套ID:', currentAccountSetId.value)
@@ -955,6 +1100,7 @@ const loadEmployeeDeductions = async () => {
       page: employeePagination.currentPage,
       per_page: employeePagination.pageSize,
       month: employeeSearchForm.month,
+      deduction_type: 'all',
       current_account_set_id: currentAccountSetId.value || undefined
     }
     if (employeeSearchForm.project_id) {
@@ -967,15 +1113,7 @@ const loadEmployeeDeductions = async () => {
     const res = await getEmployeeDeductions(params)
     console.log('API响应:', res)
     if (res.success) {
-      employeeDeductions.value = (res.data || []).filter(item => item !== null).map(row => {
-        const mappedRow = {
-          ...row,
-          deduction_amount_map: buildDeductionAmountMap(row.deduction_items || row.deduction_items_array || []),
-          saving: false
-        }
-        updateRowTotal(mappedRow)
-        return mappedRow
-      })
+      employeeDeductions.value = (res.data || []).filter(item => item !== null)
       employeePagination.total = res.total || 0
       console.log('员工数据:', employeeDeductions.value)
     }
@@ -1003,59 +1141,7 @@ const handleEmployeeMonthChange = () => {
   loadEmployeeDeductions()
 }
 
-const saveEmployeeDeductionRow = async (row) => {
-  row.saving = true
-  try {
-    const res = await setEmployeeDeduction({
-      employee_id: row.employee_id,
-      project_id: null,
-      month: employeeSearchForm.month,
-      deduction_items: buildDeductionItemsFromRow(row),
-      is_active: true,
-      current_account_set_id: currentAccountSetId.value
-    })
-    if (res.success) {
-      row.has_deduction = true
-      updateRowTotal(row)
-      ElMessage.success('保存成功')
-    }
-  } catch (error) {
-    ElMessage.error(error.message || '保存失败')
-  } finally {
-    row.saving = false
-  }
-}
-
-const saveCurrentPageDeductions = async () => {
-  if (safeEmployeeDeductions.value.length === 0) {
-    ElMessage.warning('当前没有需要保存的人员')
-    return
-  }
-
-  pageSaving.value = true
-  try {
-    for (const row of safeEmployeeDeductions.value) {
-      await setEmployeeDeduction({
-        employee_id: row.employee_id,
-        project_id: null,
-        month: employeeSearchForm.month,
-        deduction_items: buildDeductionItemsFromRow(row),
-        is_active: true,
-        current_account_set_id: currentAccountSetId.value
-      })
-      row.has_deduction = true
-      updateRowTotal(row)
-    }
-    ElMessage.success('当前页保存成功')
-    loadEmployeeDeductions()
-  } catch (error) {
-    ElMessage.error(error.message || '保存当前页失败')
-  } finally {
-    pageSaving.value = false
-  }
-}
-
-// 设置员工专项扣除
+// 设置员工扣除
 const handleSetEmployee = async (row) => {
   currentEmployee.value = {
     id: row.employee_id,
@@ -1071,7 +1157,7 @@ const handleSetEmployee = async (row) => {
   // 加载可用扣除项目
   await loadAvailableDeductionItems(row.project_id)
 
-  // 从row中直接获取现有的专项扣除设置
+  // 从row中直接获取现有的扣除设置
   if (row.deduction_items && row.deduction_items.length > 0) {
     employeeForm.deduction_items = row.deduction_items.map(item => ({
       id: item.id,
@@ -1084,7 +1170,7 @@ const handleSetEmployee = async (row) => {
   showSetEmployeeDialog.value = true
 }
 
-// 删除员工专项扣除
+// 删除员工扣除
 const handleDeleteEmployee = async (row) => {
   try {
     await ElMessageBox.confirm('确定要删除该员工的专项扣除设置吗？', '提示', {
@@ -1130,20 +1216,20 @@ const handleDeductionItemChange = (index) => {
   }
 }
 
-// 提交员工专项扣除设置
+// 提交员工扣除设置
 const handleEmployeeSubmit = async () => {
   try {
     await employeeFormRef.value.validate()
 
     if (employeeForm.deduction_items.length === 0) {
-      ElMessage.warning('请至少添加一个专项扣除项目')
+      ElMessage.warning('请至少添加一个扣除项目')
       return
     }
 
     // 验证每个项目都已选择
     const hasEmpty = employeeForm.deduction_items.some(item => !item.id || item.amount === null || item.amount === undefined)
     if (hasEmpty) {
-      ElMessage.warning('请完整填写所有专项扣除项目')
+      ElMessage.warning('请完整填写所有扣除项目')
       return
     }
 
@@ -1153,6 +1239,7 @@ const handleEmployeeSubmit = async () => {
       employee_id: employeeForm.employee_id,
       project_id: employeeForm.project_id,
       month: employeeSearchForm.month,
+      deduction_type: 'all',
       deduction_items: employeeForm.deduction_items,
       is_active: true,
       current_account_set_id: currentAccountSetId.value
@@ -1190,7 +1277,12 @@ const loadProjectEmployees = async () => {
   console.log('开始加载项目员工，项目ID:', employeeSearchForm.project_id)
   
   try {
-    const res = await getProjectEmployees(employeeSearchForm.project_id, currentAccountSetId.value, employeeSearchForm.month)
+    const res = await getProjectEmployees(
+      employeeSearchForm.project_id,
+      currentAccountSetId.value,
+      employeeSearchForm.month,
+      'all'
+    )
     console.log('项目员工API响应:', res)
     if (res.success) {
       projectEmployees.value = (res.data || []).filter(item => item !== null)
@@ -1241,14 +1333,14 @@ const handleBatchSubmit = async () => {
     }
 
     if (batchForm.deduction_items.length === 0) {
-      ElMessage.warning('请至少添加一个专项扣除项目')
+      ElMessage.warning('请至少添加一个扣除项目')
       return
     }
 
     // 验证每个项目都已选择
     const hasEmpty = batchForm.deduction_items.some(item => !item.id || item.amount === null || item.amount === undefined)
     if (hasEmpty) {
-      ElMessage.warning('请完整填写所有专项扣除项目')
+      ElMessage.warning('请完整填写所有扣除项目')
       return
     }
 
@@ -1258,6 +1350,7 @@ const handleBatchSubmit = async () => {
       employee_ids: batchForm.employee_ids,
       project_id: employeeSearchForm.project_id,
       month: employeeSearchForm.month,
+      deduction_type: 'all',
       deduction_items: batchForm.deduction_items,
       is_active: true,
       current_account_set_id: currentAccountSetId.value
@@ -1319,8 +1412,10 @@ const handleTabChange = (tabName) => {
   if (tabName === 'items') {
     loadDeductionItems()
   } else if (tabName === 'employees') {
-    // 切换到人员专项管理时，直接加载所有员工数据（不需要先选择项目）
+    employeePagination.currentPage = 1
     loadEmployeeDeductions()
+  } else if (tabName === 'other') {
+    loadOtherDeductionItems()
   }
 }
 
@@ -1335,13 +1430,22 @@ watch(showBatchSetDialog, (newValue) => {
 
 watch(activeTab, (newTab) => {
   if (newTab === 'employees') {
+    employeePagination.currentPage = 1
     loadEmployeeDeductions()
+  } else if (newTab === 'other') {
+    loadOtherDeductionItems()
   }
 })
 
 watch(currentAccountSetId, (newId) => {
   if (newId) {
-    loadEmployeeDeductions()
+    if (activeTab.value === 'items') {
+      loadDeductionItems()
+    } else if (activeTab.value === 'other') {
+      loadOtherDeductionItems()
+    } else {
+      loadEmployeeDeductions()
+    }
   }
 }, { immediate: true })
 
@@ -1350,8 +1454,8 @@ onMounted(async () => {
   console.log('页面初始化，开始加载数据...')
   console.log('当前账套ID:', currentAccountSetId.value)
   employeeSearchForm.month = normalizeMonth(route.query.month || employeeSearchForm.month)
-  if (route.query.tab === 'employees') {
-    activeTab.value = 'employees'
+  if (['employees', 'other'].includes(route.query.tab)) {
+    activeTab.value = route.query.tab
   }
   
   // 先确保账套初始化
@@ -1361,13 +1465,16 @@ onMounted(async () => {
     console.log('账套加载后，当前账套ID:', currentAccountSetId.value)
   }
   
-  // 加载项目和扣除项目
+  // 加载项目和当前页数据
   await loadProjects()
-  await loadDeductionItems()
-  
-  // 加载员工数据
-  console.log('开始加载员工数据，当前账套ID:', currentAccountSetId.value)
-  loadEmployeeDeductions()
+  if (activeTab.value === 'other') {
+    await loadOtherDeductionItems()
+  } else if (activeTab.value === 'employees') {
+    console.log('开始加载员工数据，当前账套ID:', currentAccountSetId.value)
+    await loadEmployeeDeductions()
+  } else {
+    await loadDeductionItems()
+  }
 })
 </script>
 

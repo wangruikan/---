@@ -972,6 +972,10 @@ class SalaryController extends Controller
 
         // 若账套启用了专项附加扣除项目，则生成工资表前强制校验员工是否已配置专项
         $enabledDeductionItemCount = \App\Models\SpecialDeductionItem::where('account_set_id', $accountSetId)
+            ->where(function ($query) {
+                $query->where('item_type', 'special')
+                    ->orWhereNull('item_type');
+            })
             ->where('is_active', 1)
             ->count();
 
@@ -982,6 +986,7 @@ class SalaryController extends Controller
                 ->where('is_active', 1)
                 ->whereNull('project_id')
                 ->where('month', $month)
+                ->where('deduction_type', 'special')
                 ->whereIn('employee_id', $targetEmployeeIds)
                 ->pluck('employee_id')
                 ->unique()
@@ -1202,6 +1207,9 @@ class SalaryController extends Controller
             // 计算当月专项扣除（6项扣除）
             $specialDeductionData = $this->calculateSpecialDeduction($employee, $month);
             $specialDeductionMonthly = $specialDeductionData['total']; // 当月专项附加扣除
+
+            $otherDeductionData = $this->calculateEmployeeDeduction($employee, $month, 'other');
+            $otherDeductionTotal = $otherDeductionData['total'];
             
             // 计算累计应纳税所得额 = 累计收入 - 累计减除费用(5000×月数) - 累计专项扣除(社保公积金) - 累计专项附加扣除
             list($year, $monthNum) = explode('-', $month);
@@ -1353,8 +1361,8 @@ class SalaryController extends Controller
                 'tax_payable_or_refundable' => $taxPayableOrRefundable,
             ]);
             
-            // 实发工资 = 应发工资 - 个人保险合计 - 应补（退）税额
-            $netSalary = $grossSalary - $personalInsuranceTotal - $taxPayableOrRefundable;
+            // 实发工资 = 应发工资 - 个人保险合计 - 应补（退）税额 - 其他扣除
+            $netSalary = $grossSalary - $personalInsuranceTotal - $taxPayableOrRefundable - $otherDeductionTotal;
             
             // 获取员工所属项目名称作为部门
             // employee->project_ids 是数组，可能属于多个项目
@@ -1418,6 +1426,7 @@ class SalaryController extends Controller
                 'taxable_income' => $cumulativeTaxableIncome,
                 'cumulative_other_taxable' => 0,                 // 累计其他应纳税项（合并扣税）
                 'tax_payable_or_refundable' => $taxPayableOrRefundable,  // 应补（退）税额
+                'deductions' => $otherDeductionTotal,
                 'employee_signature' => null,                    // 本人签字
                 'net_salary' => $netSalary,
                 'paid_salary' => 0,
@@ -1594,6 +1603,7 @@ class SalaryController extends Controller
                 'taxable_income' => $salary->taxable_income,
                 'cumulative_other_taxable' => $salary->cumulative_other_taxable,    // 累计其他应纳税项
                 'tax_payable_or_refundable' => $salary->tax_payable_or_refundable,  // 应补（退）税额
+                'deductions' => $salary->deductions,
                 'employee_signature' => $salary->employee_signature,                // 本人签字
                 'import_extra_columns' => $this->normalizeImportExtraColumns($salary->import_extra_columns ?? []),
                 'net_salary' => $salary->net_salary,
@@ -1605,6 +1615,7 @@ class SalaryController extends Controller
                 'compensation_details' => $compensationData['details'],
                 // 专项扣除详细明细
                 'special_deduction_details' => $this->calculateSpecialDeduction($salary->employee, $month),
+                'other_deduction_details' => $this->calculateEmployeeDeduction($salary->employee, $month, 'other'),
             ];
         });
 
@@ -2233,32 +2244,38 @@ class SalaryController extends Controller
      */
     private function calculateSpecialDeduction($employee, $month)
     {
-        // 获取该账套下所有启用的专项扣除项目
+        return $this->calculateEmployeeDeduction($employee, $month, 'special', true);
+    }
+
+    private function calculateEmployeeDeduction($employee, $month, string $deductionType, bool $includeAllItems = false)
+    {
+        if (!$employee) {
+            return [
+                'total' => 0,
+                'items' => [],
+            ];
+        }
+
         $allItems = \App\Models\SpecialDeductionItem::where('is_active', 1)
             ->where('account_set_id', $employee->account_set_id)
+            ->where(function ($query) use ($deductionType) {
+                $query->where('item_type', $deductionType);
+                if ($deductionType === 'special') {
+                    $query->orWhereNull('item_type');
+                }
+            })
             ->orderBy('sort_order', 'asc')
             ->orderBy('id', 'asc')
             ->get();
-        
-        \Log::info('专项扣除计算 - 查询项目', [
-            'employee_id' => $employee->id,
-            'employee_name' => $employee->name,
-            'employee_account_set_id' => $employee->account_set_id,
-            'found_items_count' => $allItems->count(),
-            'found_items' => $allItems->map(function($item) {
-                return ['id' => $item->id, 'name' => $item->name, 'account_set_id' => $item->account_set_id];
-            })->toArray(),
-        ]);
-        
-        // 查询该员工的专项扣除详情
+
         $deductionDetail = \App\Models\EmployeeDeductionDetail::where('employee_id', $employee->id)
             ->where('account_set_id', $employee->account_set_id)
             ->whereNull('project_id')
             ->where('month', $month)
+            ->where('deduction_type', $deductionType)
             ->where('is_active', 1)
             ->first();
-        
-        // 解析员工绑定的扣除项目（格式：1:100|2:100）
+
         $employeeItemsMap = [];
         if ($deductionDetail && !empty($deductionDetail->deduction_items)) {
             $parts = explode('|', $deductionDetail->deduction_items);
@@ -2269,13 +2286,17 @@ class SalaryController extends Controller
                 }
             }
         }
-        
-        // 构建所有项目的列表（包括员工未绑定的项目，金额为0）
+
         $items = [];
         $total = 0;
-        
+
         foreach ($allItems as $item) {
-            $amount = isset($employeeItemsMap[$item->id]) ? $employeeItemsMap[$item->id] : 0;
+            $hasAmount = array_key_exists($item->id, $employeeItemsMap);
+            if (!$includeAllItems && !$hasAmount) {
+                continue;
+            }
+
+            $amount = $hasAmount ? $employeeItemsMap[$item->id] : 0;
             $items[] = [
                 'id' => $item->id,
                 'name' => $item->name,
@@ -2283,10 +2304,10 @@ class SalaryController extends Controller
             ];
             $total += $amount;
         }
-        
+
         return [
             'total' => round($total, 2),
-            'items' => $items
+            'items' => $items,
         ];
     }
 
@@ -2505,6 +2526,12 @@ class SalaryController extends Controller
             $specialDeductionMonthly = round(floatval($specialDeductionData['total'] ?? 0), 2);
         }
 
+        $otherDeductionTotal = 0.0;
+        if ($employee) {
+            $otherDeductionData = $this->calculateEmployeeDeduction($employee, $month, 'other');
+            $otherDeductionTotal = round(floatval($otherDeductionData['total'] ?? 0), 2);
+        }
+
         $previousCumulativeSpecialDeduction = round(floatval($previousSalaries->sum('special_deduction_monthly')), 2);
         $cumulativeSpecialDeduction = round($previousCumulativeSpecialDeduction + $specialDeductionMonthly, 2);
 
@@ -2536,7 +2563,7 @@ class SalaryController extends Controller
 
         $taxPayableOrRefundable = round($cumulativeTaxPayable - $taxAlreadyWithheld, 2);
 
-        $netSalary = round($grossSalary - $personalInsuranceTotal - $taxPayableOrRefundable, 2);
+        $netSalary = round($grossSalary - $personalInsuranceTotal - $taxPayableOrRefundable - $otherDeductionTotal, 2);
 
         return [
             'cumulative_income' => $cumulativeIncome,
@@ -2550,6 +2577,7 @@ class SalaryController extends Controller
             'cumulative_tax_payable' => $cumulativeTaxPayable,
             'tax_already_withheld' => $taxAlreadyWithheld,
             'tax_payable_or_refundable' => $taxPayableOrRefundable,
+            'deductions' => $otherDeductionTotal,
             'net_salary' => $netSalary,
         ];
     }

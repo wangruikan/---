@@ -58,6 +58,10 @@ const props = defineProps({
   businessType: {
     type: String,
     required: true
+  },
+  businessId: {
+    type: [Number, String],
+    default: null
   }
 })
 
@@ -110,7 +114,7 @@ const handleResubmit = async () => {
     // 调用统一的重新发起 API
     await resubmitApproval({
       business_type: props.businessType,
-      business_id: props.record.id,
+      business_id: props.businessId || props.record.id,
       stamp_method: stampForm.stamp_method,
       ...(stampResult?.value || stampForm.stamp_selection)
     })

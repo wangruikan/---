@@ -105,10 +105,10 @@ class PaymentController extends Controller
     {
         $payment = Payment::findOrFail($id);
         
-        if ($payment->status !== 'draft') {
+        if (!in_array($payment->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只能修改草稿状态的付款申请'
+                'message' => '只能修改草稿或已驳回状态的付款申请'
             ], 422);
         }
         
@@ -162,10 +162,10 @@ class PaymentController extends Controller
     {
         $payment = Payment::findOrFail($id);
         
-        if ($payment->status !== 'draft') {
+        if (!in_array($payment->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只能提交草稿状态的付款申请'
+                'message' => '只能提交草稿或已驳回状态的付款申请'
             ], 422);
         }
 

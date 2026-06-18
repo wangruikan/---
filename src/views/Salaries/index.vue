@@ -187,6 +187,7 @@
                     </el-tag>
                     <ResubmitButton
                       :record="scope.row"
+                      :business-id="scope.row.salary_approval_id"
                       business-type="工资表审批"
                       @success="handleSearch"
                     />
@@ -1057,6 +1058,13 @@
         >
           提交审批
         </el-button>
+        <ResubmitButton
+          v-if="currentSheet && currentSheet.has_approval && currentSheet.approval_status === 'rejected'"
+          :record="currentSheet"
+          :business-id="currentSheet.salary_approval_id"
+          business-type="工资表审批"
+          @success="handleSalaryResubmitSuccess"
+        />
         <el-button
           v-if="currentSheet && currentSheet.status === 'submitted' && isApprover"
           type="success"
@@ -2049,6 +2057,11 @@ const handleView = (row) => {
   currentSheet.value = row
   detailDialogVisible.value = true
   loadSalaryDetails(row)
+}
+
+const handleSalaryResubmitSuccess = () => {
+  detailDialogVisible.value = false
+  handleSearch()
 }
 
 // 查看备注事项

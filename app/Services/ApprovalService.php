@@ -765,11 +765,15 @@ class ApprovalService
                 $salaryApproval = \App\Models\SalaryApproval::find($businessId);
                 if ($salaryApproval) {
                     if ($status === 'in_approval') {
-                        $salaryApproval->update([
+                        $data = [
                             'status' => 'pending',
                             'approved_by' => null,
                             'approved_at' => null,
-                        ]);
+                        ];
+                        if ($instanceId) {
+                            $data['approval_instance_id'] = $instanceId;
+                        }
+                        $salaryApproval->update($data);
                     } elseif ($status === 'completed') {
                         $salaryApproval->update([
                             'status' => 'approved',

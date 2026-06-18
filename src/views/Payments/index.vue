@@ -103,21 +103,21 @@
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
               </el-button>
-              <el-button 
-                v-if="row.status === 'draft'" 
-                type="warning" 
-                size="small" 
+              <el-button
+                v-if="canResubmit(row)"
+                type="warning"
+                size="small"
                 @click="handleEdit(row)"
               >
                 编辑
               </el-button>
-              <el-button 
-                v-if="row.status === 'draft'" 
-                type="success" 
-                size="small" 
+              <el-button
+                v-if="canResubmit(row)"
+                type="success"
+                size="small"
                 @click="handleSubmitForApproval(row)"
               >
-                提交
+                {{ row.status === 'rejected' ? '重新提交' : '提交' }}
               </el-button>
               <el-button 
                 v-if="row.status === 'approved'" 
@@ -336,6 +336,10 @@ const handleSizeChange = (size) => {
 const handleCurrentChange = (page) => {
   pagination.currentPage = page
   loadPayments()
+}
+
+const canResubmit = (row) => {
+  return ['draft', 'rejected'].includes(row?.status)
 }
 
 const handleView = (row) => {

@@ -8,7 +8,7 @@
         </div>
       </template>
 
-      <div v-else-if="canCreateForCurrentRegion" class="embedded-actions">
+      <div v-if="embedded && canCreateForCurrentRegion" class="embedded-actions">
         <el-button type="primary" @click="showCreateDialog">新建配置</el-button>
       </div>
 

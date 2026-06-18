@@ -111,10 +111,10 @@ class InvoiceController extends Controller
     {
         $invoice = Invoice::findOrFail($id);
         
-        if ($invoice->status !== 'draft') {
+        if (!in_array($invoice->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只能修改草稿状态的发票'
+                'message' => '只能修改草稿或已驳回状态的发票'
             ], 422);
         }
 
@@ -184,10 +184,10 @@ class InvoiceController extends Controller
     {
         $invoice = Invoice::findOrFail($id);
         
-        if ($invoice->status !== 'draft') {
+        if (!in_array($invoice->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只能提交草稿状态的发票'
+                'message' => '只能提交草稿或已驳回状态的发票'
             ], 422);
         }
 
@@ -271,4 +271,3 @@ class InvoiceController extends Controller
         ]);
     }
 }
-

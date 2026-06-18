@@ -5135,7 +5135,7 @@
                 size="small"
                 @click="handleSubmitApproval(row)"
               >
-                提交审批
+                {{ isContractApprovalRejected(row) ? '重新提交' : '提交审批' }}
               </el-button>
               <el-button 
                 type="info" 
@@ -9375,8 +9375,31 @@ const uploadForm = reactive({
 // 可用模板列表
 const availableTemplates = ref([])
 
+const normalizeContractApprovalStatus = (status) => {
+  const statusMap = {
+    '已驳回': 'rejected',
+    '已拒绝': 'rejected',
+    '驳回': 'rejected',
+    '拒绝': 'rejected',
+    '乙方已签署': 'employee_signed',
+    '员工已签署': 'employee_signed'
+  }
+  return statusMap[status] || status
+}
+
+const isContractApprovalRejected = (contract) => {
+  return [
+    contract?.status,
+    contract?.status_text,
+    contract?.approval_status,
+    contract?.approvalInstance?.status,
+    contract?.approval_instance?.status
+  ].map(normalizeContractApprovalStatus).includes('rejected')
+}
+
 const canSubmitContractApproval = (contract) => {
-  return contract?.status === 'employee_signed' && !['confidentiality', 'non_compete'].includes(contract?.contract_type)
+  const status = normalizeContractApprovalStatus(contract?.status)
+  return (status === 'employee_signed' || isContractApprovalRejected(contract)) && !['confidentiality', 'non_compete'].includes(contract?.contract_type)
 }
 
 const isContractSelectable = (row) => canSubmitContractApproval(row)

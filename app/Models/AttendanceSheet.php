@@ -130,12 +130,12 @@ class AttendanceSheet extends Model
     // 方法
     public function canEdit()
     {
-        return $this->status === self::STATUS_DRAFT;
+        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_REJECTED], true);
     }
 
     public function canSubmit()
     {
-        return $this->status === self::STATUS_DRAFT;
+        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_REJECTED], true);
     }
 
     public function canApprove()

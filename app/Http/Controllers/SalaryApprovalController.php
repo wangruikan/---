@@ -43,12 +43,8 @@ class SalaryApprovalController extends Controller
             $query->where('month', $request->month);
         }
 
-        // 状态筛选：默认不显示已驳回的记录
         if ($request->has('status') && $request->status) {
             $query->where('status', $request->status);
-        } else {
-            // 如果没有指定状态，默认排除已驳回的记录
-            $query->where('status', '!=', 'rejected');
         }
 
         if ($request->has('approval_type') && $request->approval_type) {

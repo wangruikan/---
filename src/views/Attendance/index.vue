@@ -141,7 +141,7 @@
                     查看详情
                   </el-button>
                   <el-button
-                    v-if="row.status === 'draft' && canCreateAttendance"
+                    v-if="canResubmitSheet(row) && canCreateAttendance"
                     type="warning"
                     size="small"
                     @click="handleEditSheet(row)"
@@ -149,7 +149,7 @@
                     编辑
                   </el-button>
                   <el-button
-                    v-if="row.status === 'draft' && canCreateAttendance"
+                    v-if="canResubmitSheet(row) && canCreateAttendance"
                     type="success"
                     size="small"
                     @click="handleSubmitSheet(row)"
@@ -384,7 +384,7 @@
           </el-table>
         </div>
 
-        <div class="attendance-data" v-if="currentSheet.status === 'draft' && canCreateAttendance">
+        <div class="attendance-data" v-if="canResubmitSheet(currentSheet) && canCreateAttendance">
           <div class="data-header">
             <h3>考勤数据录入</h3>
             <div class="data-actions">
@@ -1117,6 +1117,10 @@ const handleSizeChange = (size) => {
 const handleCurrentChange = (page) => {
   pagination.currentPage = page
   loadSheets()
+}
+
+const canResubmitSheet = (row) => {
+  return ['draft', 'rejected'].includes(row?.status)
 }
 
 const handleProjectChange = async (projectId) => {

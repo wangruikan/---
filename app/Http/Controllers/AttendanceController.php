@@ -71,12 +71,8 @@ class AttendanceController extends Controller
                 $query->byMonth($request->month);
             }
 
-            // 状态筛选：默认不显示已驳回的记录
             if ($request->filled('status')) {
                 $query->byStatus($request->status);
-            } else {
-                // 如果没有指定状态，默认排除已驳回的记录
-                $query->where('status', '!=', 'rejected');
             }
 
             // 分页

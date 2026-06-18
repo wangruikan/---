@@ -68,10 +68,8 @@ class ProcessApprovalController extends Controller
         
         // 添加 has_payment_request 字段
         $processes->getCollection()->transform(function ($process) {
-            // 仅当已创建审批流时，才视为“已发起付款”。
-            // 避免“付款申请记录已创建但审批流创建失败”导致流程卡住。
+            // 付款申请驳回后在付款申请页重提，汇总页只负责首次发起。
             $process->has_payment_request = \App\Models\PaymentRequest::where('insurance_summary_id', $process->id)
-                ->whereNotNull('approval_instance_id')
                 ->exists();
 
             $pendingRecord = $process->approvalInstance?->records?->firstWhere('status', 'pending');

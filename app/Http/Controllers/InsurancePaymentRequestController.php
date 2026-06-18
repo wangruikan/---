@@ -148,31 +148,13 @@ class InsurancePaymentRequestController extends Controller
                 'company' => $formData['company'] ?? null,
             ];
 
-            // 若存在历史付款申请，仅当已生成审批流时才阻止重复提交
+            // 付款申请被驳回后，应在付款申请列表重新发起审批，汇总源头只允许首次发起。
             $existingRequest = PaymentRequest::where('insurance_summary_id', $processApproval->id)->first();
             if ($existingRequest) {
-                if ($existingRequest->approval_instance_id) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => '该汇总流程已发起过付款申请'
-                    ], 422);
-                }
-
-                // 复用未完成记录（审批流尚未创建），避免流程卡死
-                $existingRequest->update($payload);
-
-                DB::commit();
-
-                \Log::info('已复用未完成的保险付款申请', [
-                    'payment_request_id' => $existingRequest->id,
-                    'process_approval_id' => $processApproval->id,
-                ]);
-
                 return response()->json([
-                    'success' => true,
-                    'message' => '已继续使用未完成的付款申请',
-                    'data' => $existingRequest->fresh()
-                ]);
+                    'success' => false,
+                    'message' => '该汇总流程已发起过付款申请'
+                ], 422);
             }
 
             // 创建付款申请记录

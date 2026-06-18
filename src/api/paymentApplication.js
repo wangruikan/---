@@ -68,7 +68,7 @@ export function submitPaymentApplication(id, data) {
 }
 
 /**
- * 重新申请（用于被驳回的付款申请）
+ * 重新发起审批（用于被驳回的付款申请）
  */
 export function resubmitPaymentApplication(id, data) {
   return request({

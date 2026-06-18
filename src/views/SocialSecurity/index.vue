@@ -96,7 +96,7 @@
     >
       <el-form :model="regionForm" :rules="regionRules" ref="regionFormRef" label-width="120px">
         <el-form-item label="地区名称" prop="name">
-          <el-input v-model="regionForm.name" placeholder="请输入地区名称" />
+          <el-input v-model="regionForm.name" placeholder="请输入地区名称" :disabled="!!editingRegion" />
         </el-form-item>
         <el-form-item label="社保编号" prop="code">
           <el-input v-model="regionForm.code" placeholder="请输入社保编号（可选）" />
@@ -375,7 +375,7 @@
         >
           <el-form :model="medicalRegionForm" :rules="regionRules" ref="medicalRegionFormRef" label-width="120px">
             <el-form-item label="地区名称" prop="name">
-              <el-input v-model="medicalRegionForm.name" placeholder="请输入地区名称" />
+              <el-input v-model="medicalRegionForm.name" placeholder="请输入地区名称" :disabled="!!editingMedicalRegion" />
             </el-form-item>
             <el-form-item label="医保编号" prop="code">
               <el-input v-model="medicalRegionForm.code" placeholder="请输入医保编号（可选）" />

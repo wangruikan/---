@@ -123,11 +123,11 @@ class SalaryPaymentRequestController extends Controller
                 ], 422);
             }
 
-            // 已驳回的工资付款申请允许重新发起，其它状态仍然阻止重复提交。
+            // 付款申请被驳回后，应在付款申请列表重新发起审批，工资源头只允许首次发起。
             $existingRequest = PaymentRequest::where('salary_approval_id', $salaryApproval->id)
                 ->orderByDesc('id')
                 ->first();
-            if ($existingRequest && $existingRequest->status !== 'rejected') {
+            if ($existingRequest) {
                 return response()->json([
                     'success' => false,
                     'message' => '该工资表已发起过付款申请'
@@ -200,26 +200,8 @@ class SalaryPaymentRequestController extends Controller
                 'company' => $formData['company'] ?? null,
             ];
 
-            if ($existingRequest) {
-                $existingRequest->attachments()->delete();
-                $existingRequest->invoiceAttachments()->delete();
-                $existingRequest->update(array_merge($paymentRequestData, [
-                    'approval_instance_id' => null,
-                    'invoice_approval_instance_id' => null,
-                    'invoice_status' => null,
-                    'invoice_uploaded_at' => null,
-                    'invoice_uploaded_by' => null,
-                    'approved_by' => null,
-                    'approved_at' => null,
-                    'paid_by' => null,
-                    'paid_at' => null,
-                    'rejection_reason' => null,
-                ]));
-                $paymentRequest = $existingRequest->fresh();
-            } else {
-                // 创建付款申请记录
-                $paymentRequest = PaymentRequest::create($paymentRequestData);
-            }
+            // 创建付款申请记录
+            $paymentRequest = PaymentRequest::create($paymentRequestData);
 
             // 开启候补资料时，给发起人生成待办
             PendingTaskService::createPaymentSupplementTask($paymentRequest);

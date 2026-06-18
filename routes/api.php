@@ -1107,7 +1107,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/upload-attachment', [App\Http\Controllers\PaymentApplicationController::class, 'uploadAttachment']);
         Route::delete('/{id}/attachments/{attachmentId}', [App\Http\Controllers\PaymentApplicationController::class, 'deleteAttachment']);
         Route::post('/{id}/submit', [App\Http\Controllers\PaymentApplicationController::class, 'submit']);
-        Route::post('/{id}/resubmit', [App\Http\Controllers\PaymentApplicationController::class, 'resubmit']); // 重新申请
+        Route::post('/{id}/resubmit', [App\Http\Controllers\PaymentApplicationController::class, 'resubmit']); // 重新发起审批
         Route::put('/{id}/supplement-attachment', [App\Http\Controllers\PaymentApplicationController::class, 'supplementAttachment']); // 确认补传完成
     });
 

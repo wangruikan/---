@@ -139,7 +139,7 @@
               :icon="RefreshRight" 
               @click="handleResubmit(row)"
             >
-              重新申请
+              重新发起审批
             </el-button>
             <el-button 
               v-if="row.can_supplement_attachment"
@@ -181,7 +181,7 @@
     <!-- 编辑/查看详情对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="dialogMode === 'view' ? '付款申请详情' : '重新申请'"
+      :title="dialogMode === 'view' ? '付款申请详情' : '重新发起审批'"
       width="800px"
     >
       <!-- 查看模式 -->
@@ -545,7 +545,7 @@
       <!-- 底部按钮 -->
       <template #footer v-if="dialogMode === 'edit'">
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleResubmitConfirm">提交重新申请</el-button>
+        <el-button type="primary" @click="handleResubmitConfirm">重新发起审批</el-button>
       </template>
 
     </el-dialog>
@@ -1084,7 +1084,7 @@ const handleSubmit = async () => {
   }
 }
 
-// 重新申请(用于被驳回的付款申请)
+// 重新发起审批(用于被驳回的付款申请)
 const handleResubmit = async (row) => {
   try {
     // 获取详情数据
@@ -1099,7 +1099,7 @@ const handleResubmit = async (row) => {
   }
 }
 
-// 提交重新申请
+// 提交重新发起审批
 const handleResubmitConfirm = async () => {
   try {
     // 验证必须至少有1个附件
@@ -1147,7 +1147,7 @@ const confirmResubmit = async () => {
     const res = await resubmitPaymentApplication(submitStampForm.applicationId, submitData)
     
     if (res.success) {
-      ElMessage.success('重新申请已提交审批')
+      ElMessage.success('重新发起审批成功')
       submitStampDialogVisible.value = false
       dialogVisible.value = false
       submitStampForm.stamp_method = 'online'
@@ -1155,10 +1155,10 @@ const confirmResubmit = async () => {
       submitStampForm.stamp_selection = getDefaultStampSelection()
       loadApplicationList()
     } else {
-      ElMessage.error(res.message || '重新申请失败')
+      ElMessage.error(res.message || '重新发起审批失败')
     }
   } catch (error) {
-    ElMessage.error(error.response?.data?.message || '重新申请失败')
+    ElMessage.error(error.response?.data?.message || '重新发起审批失败')
   }
 }
 

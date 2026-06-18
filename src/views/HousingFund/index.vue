@@ -152,7 +152,7 @@
     >
       <el-form :model="regionForm" :rules="regionRules" ref="regionFormRef" label-width="120px">
         <el-form-item label="地区名称" prop="region_name">
-          <el-input v-model="regionForm.region_name" placeholder="请输入地区名称，如：北京市" />
+          <el-input v-model="regionForm.region_name" placeholder="请输入地区名称，如：北京市" :disabled="!!editingRegion" />
         </el-form-item>
         <el-form-item label="公积金账号" prop="account_number">
           <el-input v-model="regionForm.account_number" placeholder="请输入公积金账号（可选）" />

@@ -801,7 +801,7 @@ class PaymentApplicationController extends Controller
     }
 
     /**
-     * Resubmit rejected payment_request.
+     * Resubmit approval for rejected payment_request.
      */
     public function resubmit(Request $request, $id)
     {
@@ -826,7 +826,7 @@ class PaymentApplicationController extends Controller
             if (!$application->approvalInstance || $application->approvalInstance->status !== 'rejected') {
                 return response()->json([
                     'success' => false,
-                    'message' => '只有被驳回的申请才能重新申请'
+                    'message' => '只有被驳回的申请才能重新发起审批'
                 ], 400);
             }
 
@@ -900,7 +900,7 @@ class PaymentApplicationController extends Controller
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => '请至少上传一个附件后再重新申请'
+                    'message' => '请至少上传一个附件后再重新发起审批'
                 ], 400);
             }
 
@@ -950,19 +950,19 @@ class PaymentApplicationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => '重新申请已提交审批',
+                'message' => '重新发起审批成功',
                 'data' => $application->load(['approvalInstance.records'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('重新申请提交失败', [
+            Log::error('重新发起审批失败', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => '重新申请提交失败: ' . $e->getMessage()
+                'message' => '重新发起审批失败: ' . $e->getMessage()
             ], 500);
         }
     }

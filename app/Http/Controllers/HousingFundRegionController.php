@@ -149,6 +149,13 @@ class HousingFundRegionController extends Controller
             'region_name' => 'required|string|max:255',
         ]);
 
+        if ((string) $request->region_name !== (string) $region->region_name) {
+            return response()->json([
+                'success' => false,
+                'message' => '地区名称创建后不能修改'
+            ], 422);
+        }
+
         // 检查新名称是否与其他地区冲突
         $existingRegion = HousingFundRegion::where('region_name', $request->region_name)
             ->where('account_set_id', $region->account_set_id)

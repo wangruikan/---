@@ -216,6 +216,13 @@ class MedicalInsuranceController extends Controller
             ], 403);
         }
 
+        if ((string) $request->input('name') !== (string) $region->name) {
+            return response()->json([
+                'success' => false,
+                'message' => '地区名称创建后不能修改'
+            ], 422);
+        }
+
         // 保存旧数据用于变更检测
         $oldData = $region->toArray();
 

@@ -23,6 +23,14 @@ export const createMaterialRequest = (data) => {
   })
 }
 
+export const resubmitMaterialRequest = (data) => {
+  return request({
+    url: '/material-requests',
+    method: 'post',
+    data
+  })
+}
+
 export const returnMaterialRequestMaterials = (id, data) => {
   return request({
     url: `/material-requests/${id}/return`,

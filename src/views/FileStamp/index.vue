@@ -42,8 +42,16 @@
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="row.status === 'rejected'"
+              link
+              type="warning"
+              @click="handleResubmit(row)"
+            >
+              重新提交
+            </el-button>
             <el-button
               v-if="row.attachments?.[0]"
               link
@@ -354,6 +362,25 @@ const handleSubmit = async () => {
     ElMessage.error(error.response?.data?.message || error.message || '提交失败')
   } finally {
     submitting.value = false
+  }
+}
+
+const handleResubmit = async (row) => {
+  const instance = row.approval_instance || {}
+  const submitData = {
+    stamp_method: instance.stamp_method || 'online',
+    stamp_selection_mode: instance.stamp_selection_mode || 'none',
+    stamp_company: instance.stamp_company || '',
+    stamp_type: instance.stamp_type || '',
+    stamp_id: instance.stamp_id || null
+  }
+
+  try {
+    await submitProcess(row.id, submitData)
+    ElMessage.success('已重新提交审批')
+    await loadList()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || error.message || '重新提交失败')
   }
 }
 

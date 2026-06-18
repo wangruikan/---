@@ -96,7 +96,7 @@
           <template #default="{ row }">
             <el-button link type="primary" :icon="View" @click="handleView(row)">查看</el-button>
             <el-button 
-              v-if="row.status === 'draft'" 
+              v-if="['draft', 'rejected'].includes(row.status)" 
               link 
               type="success" 
               :icon="Promotion" 
@@ -283,8 +283,8 @@
 
       <div style="margin-top: 20px;">
         <h4>附件列表</h4>
-        <!-- 草稿状态下显示上传按钮和填写表格按钮 -->
-        <div v-if="detailData.status === 'draft'" style="margin-bottom: 10px;">
+        <!-- 草稿/驳回状态下显示上传按钮和填写表格按钮 -->
+        <div v-if="['draft', 'rejected'].includes(detailData.status)" style="margin-bottom: 10px;">
           <el-upload
             action="#"
             :http-request="handleUploadRequest"
@@ -320,7 +320,7 @@
                 下载
               </el-button>
               <el-button 
-                v-if="detailData.status === 'draft'"
+                v-if="['draft', 'rejected'].includes(detailData.status)"
                 link 
                 type="danger" 
                 :icon="Delete" 

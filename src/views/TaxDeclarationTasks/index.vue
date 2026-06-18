@@ -307,7 +307,7 @@ const handleCompleteTask = async (row) => {
 const customUpload = async (options) => {
   const formData = new FormData()
   formData.append('file', options.file)
-  formData.append('task_id', uploadTaskId.value)
+  formData.append('task_id', uploadTaskId.value || currentTask.value?.id || '')
   
   try {
     const result = await uploadAttachment(formData)
@@ -315,6 +315,7 @@ const customUpload = async (options) => {
     if (result.success) {
       ElMessage.success('上传成功')
       options.onSuccess(result)
+      handleUploadSuccess()
     } else {
       ElMessage.error(result.message || '上传失败')
       options.onError(new Error(result.message || '上传失败'))
@@ -468,6 +469,11 @@ const handleUploadFile = (row) => {
 const handleUploadSuccess = () => {
   uploadDialogVisible.value = false
   loadTasks()
+  if (currentTask.value?.id) {
+    getTaskDetail(currentTask.value.id).then(response => {
+      currentTask.value = response.data
+    }).catch(() => {})
+  }
 }
 
 onMounted(() => {

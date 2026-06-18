@@ -102,7 +102,7 @@
                 查看详情
               </el-button>
               <el-button 
-                v-if="scope.row.status === 'pending'" 
+                v-if="['pending', 'rejected'].includes(scope.row.status)" 
                 link 
                 type="success" 
                 size="small" 
@@ -283,7 +283,7 @@
         <template #footer>
           <el-button @click="detailDialogVisible = false">关闭</el-button>
           <el-button 
-            v-if="currentRow && currentRow.status === 'pending'" 
+            v-if="currentRow && ['pending', 'rejected'].includes(currentRow.status)" 
             type="success" 
             @click="handleSubmit(currentRow)"
           >

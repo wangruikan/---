@@ -736,15 +736,15 @@ class TaxDeclarationController extends Controller
                     'message' => '任务已完成'
                 ], 400);
             }
-            
+
             DB::beginTransaction();
-            
+
             // 标记任务为已完成
             $task->markAsCompleted(Auth::id());
-            
+
             // 完成待办任务
             PendingTaskService::checkAndCompleteTaxDeclarationTask($task);
-            
+
             DB::commit();
 
             return response()->json([
@@ -753,7 +753,7 @@ class TaxDeclarationController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             Log::error('完成税费申报任务失败', [
                 'id' => $id,
                 'error' => $e->getMessage()

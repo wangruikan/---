@@ -54,6 +54,15 @@
             <template #default="{ row }">
               <el-button link type="primary" size="small" @click="openDetail(row)">查看</el-button>
               <el-button
+                v-if="row.status === 'rejected'"
+                link
+                type="warning"
+                size="small"
+                @click="openResubmit(row)"
+              >
+                重新申请
+              </el-button>
+              <el-button
                 v-if="row.status === 'in_use' && (row.returned_items || 0) < (row.total_items || 0)"
                 link
                 type="success"
@@ -350,6 +359,25 @@ const openCreate = async () => {
   attachmentFileList.value = []
   await loadAvailableMaterials()
   createDialogVisible.value = true
+}
+
+const openResubmit = async (row) => {
+  try {
+    const res = await getMaterialRequestDetail(row.id)
+    const detail = res.data
+
+    createForm.expected_return_date = detail.expected_return_date || new Date().toISOString().split('T')[0]
+    createForm.reason = detail.reason || ''
+    createForm.stamp_method = 'online'
+    createForm.stamp_selection = getDefaultStampSelection()
+    createForm.material_ids = (detail.items || []).map(item => item.material_asset_id).filter(Boolean)
+    attachmentFileList.value = []
+
+    await loadAvailableMaterials()
+    createDialogVisible.value = true
+  } catch (e) {
+    ElMessage.error('加载驳回申请失败')
+  }
 }
 
 const uploadApprovalAttachments = async (instanceId) => {

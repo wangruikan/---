@@ -181,6 +181,13 @@ class PersonnelChangeRequestController extends Controller
             $changeRequest = PersonnelChangeRequest::with('attachments')->findOrFail($request->personnel_change_request_id);
             $user = Auth::user();
 
+            if (!in_array($changeRequest->status, ['pending', 'rejected'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只有待审批或已驳回状态才能提交审批'
+                ], 400);
+            }
+
             // 准备附件数组
             $attachments = [];
             foreach ($changeRequest->attachments as $attachment) {
@@ -246,11 +253,11 @@ class PersonnelChangeRequestController extends Controller
         try {
             $changeRequest = PersonnelChangeRequest::findOrFail($id);
 
-            // 只有待审批状态才能删�?
-            if ($changeRequest->status !== 'pending') {
+            // 只有待审批和已驳回状态才能删除
+            if (!in_array($changeRequest->status, ['pending', 'rejected'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => '只有待审批状态的申请才能删除'
+                    'message' => '只有待审批或已驳回状态的申请才能删除'
                 ], 403);
             }
 

@@ -184,10 +184,10 @@ class ProcessApprovalController extends Controller
             }
         }
 
-        if ($process->status !== 'draft') {
+        if (!in_array($process->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只有草稿状态才能上传附件'
+                'message' => '只有草稿或已驳回状态才能上传附件'
             ], 400);
         }
 
@@ -247,10 +247,10 @@ class ProcessApprovalController extends Controller
         }
         $process = ProcessApproval::findOrFail($id);
 
-        if ($process->status !== 'draft') {
+        if (!in_array($process->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只有草稿状态才能删除附件'
+                'message' => '只有草稿或已驳回状态才能删除附件'
             ], 400);
         }
 
@@ -383,10 +383,10 @@ class ProcessApprovalController extends Controller
             }
         }
 
-        if ($process->status !== 'draft') {
+        if (!in_array($process->status, ['draft', 'rejected'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => '只有草稿状态才能提交'
+                'message' => '只有草稿或已驳回状态才能提交'
             ], 400);
         }
 

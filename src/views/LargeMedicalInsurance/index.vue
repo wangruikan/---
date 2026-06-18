@@ -1,15 +1,19 @@
 <template>
-  <div class="large-medical-insurance-container">
+  <div class="large-medical-insurance-container" :class="{ embedded }">
     <el-card>
-      <template #header>
+      <template v-if="!embedded" #header>
         <div class="card-header">
           <span>大额医疗保险管理</span>
           <el-button type="primary" @click="showCreateDialog">新建配置</el-button>
         </div>
       </template>
 
+      <div v-else-if="canCreateForCurrentRegion" class="embedded-actions">
+        <el-button type="primary" @click="showCreateDialog">新建配置</el-button>
+      </div>
+
       <!-- 筛选条件 -->
-      <el-form :inline="true" :model="filterForm" class="filter-form">
+      <el-form v-if="!embedded" :inline="true" :model="filterForm" class="filter-form">
         <el-form-item label="地区">
           <el-input v-model="filterForm.region_name" placeholder="请输入地区名称" clearable style="width: 200px" />
         </el-form-item>
@@ -20,8 +24,8 @@
       </el-form>
 
       <!-- 配置列表 -->
-      <el-table :data="configs" border stripe v-loading="loading">
-        <el-table-column prop="region_name" label="地区名称" width="120" />
+      <el-table :data="displayConfigs" border stripe v-loading="loading">
+        <el-table-column v-if="!hideRegionDisplay" prop="region_name" label="地区名称" width="120" />
         <el-table-column label="计算方式" width="120">
           <template #default="{ row }">
             <el-tag :type="row.calculation_type === 'base' ? 'primary' : 'success'">
@@ -103,7 +107,7 @@
       @close="handleDialogClose"
     >
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="120px">
-        <el-form-item label="地区名称" prop="region_name">
+        <el-form-item v-if="!hideRegionField" label="地区名称" prop="region_name">
           <el-input v-model="formData.region_name" placeholder="请输入地区名称" :disabled="isEdit" />
         </el-form-item>
         
@@ -226,8 +230,24 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAccountSetStore } from '@/stores/accountSet'
 import request from '@/api/request'
 
+const props = defineProps({
+  embedded: {
+    type: Boolean,
+    default: false
+  },
+  fixedRegionName: {
+    type: String,
+    default: ''
+  },
+  hideRegionField: {
+    type: Boolean,
+    default: false
+  }
+})
+
 const accountSetStore = useAccountSetStore()
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
+const embedded = computed(() => props.embedded)
 
 const decimalToPercent = (value) => {
   if (value === null || value === undefined || value === '') return 0
@@ -257,6 +277,25 @@ const historyPagination = ref({ page: 1, per_page: 10, total: 0 })
 
 // 筛选条件
 const filterForm = ref({ region_name: '' })
+
+const normalizeRegionName = (value) => String(value || '').trim()
+const normalizedFixedRegionName = computed(() => normalizeRegionName(props.fixedRegionName))
+const hideRegionDisplay = computed(() => embedded.value && !!normalizedFixedRegionName.value)
+const hideRegionField = computed(() => props.hideRegionField || !!normalizedFixedRegionName.value)
+const displayConfigs = computed(() => {
+  if (!normalizedFixedRegionName.value) {
+    return configs.value
+  }
+
+  return configs.value.filter(config => normalizeRegionName(config.region_name) === normalizedFixedRegionName.value)
+})
+const canCreateForCurrentRegion = computed(() => {
+  if (!normalizedFixedRegionName.value) {
+    return true
+  }
+
+  return displayConfigs.value.length === 0
+})
 
 // 表单数据
 const formData = ref({
@@ -299,7 +338,7 @@ const loadConfigs = async () => {
     const response = await request.get('/large-medical-insurance', {
       params: { account_set_id: currentAccountSetId.value, ...filterForm.value }
     })
-    if (response.success) configs.value = response.data
+    if (response.success) configs.value = Array.isArray(response.data) ? response.data : []
   } catch (error) {
     ElMessage.error('加载配置失败')
   } finally {
@@ -371,7 +410,7 @@ const handleDialogClose = () => { resetForm(); formRef.value?.clearValidate() }
 
 const resetForm = () => {
   formData.value = {
-    region_name: '', calculation_type: 'base', base_source: 'employee',
+    region_name: normalizedFixedRegionName.value, calculation_type: 'base', base_source: 'employee',
     base_amount: 0, employee_base_amount: 0, company_ratio: 0, employee_ratio: 0,
     company_amount: 0, employee_amount: 0, payment_cycle: 'month', status: 1, remarks: ''
   }
@@ -382,6 +421,10 @@ watch(() => formData.value.calculation_type, (newVal) => {
   // 按基数 -> 按月，按固定金额 -> 按年
   formData.value.payment_cycle = newVal === 'base' ? 'month' : 'year'
 })
+
+watch(() => props.fixedRegionName, () => {
+  resetForm()
+}, { immediate: true })
 
 const showConfigHistory = (row) => {
   historyTitle.value = `${row.region_name} - 历史记录`
@@ -418,7 +461,9 @@ onMounted(() => loadConfigs())
 
 <style scoped>
 .large-medical-insurance-container { padding: 20px; }
+.large-medical-insurance-container.embedded { padding: 0; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .filter-form { margin-bottom: 20px; }
+.embedded-actions { display: flex; justify-content: flex-end; margin-bottom: 16px; }
 .pagination-container { margin-top: 15px; display: flex; justify-content: flex-end; }
 </style>

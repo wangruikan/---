@@ -341,7 +341,7 @@
                 {{ row.medical_insurance_types?.length || 0 }} 种
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="440">
+            <el-table-column label="操作" width="530">
               <template #default="{ row }">
                 <el-button type="info" size="small" @click="showMedicalRegionHistory(row)">
                   历史
@@ -351,6 +351,9 @@
                 </el-button>
                 <el-button type="primary" size="small" @click="openMedicalTypesDialog(row)">
                   类型管理
+                </el-button>
+                <el-button type="primary" size="small" @click="openLargeMedicalDialog(row)">
+                  添加大额
                 </el-button>
                 <el-button type="success" size="small" @click="openMedicalLimitDialog(row)">
                   设置上下限
@@ -589,10 +592,22 @@
         </el-dialog>
       </el-tab-pane>
 
-      <el-tab-pane label="大额医疗" name="large-medical">
-        <LargeMedicalInsuranceView />
-      </el-tab-pane>
     </el-tabs>
+
+    <el-dialog
+      v-model="showLargeMedicalDialog"
+      :title="`${currentLargeMedicalRegion?.name || ''} - 大额医疗配置`"
+      width="1200px"
+      destroy-on-close
+      @closed="handleLargeMedicalDialogClose"
+    >
+      <LargeMedicalInsuranceView
+        v-if="showLargeMedicalDialog && currentLargeMedicalRegion"
+        embedded
+        hide-region-field
+        :fixed-region-name="currentLargeMedicalRegion.name"
+      />
+    </el-dialog>
 
     <el-dialog
       v-model="showRegionHistoryDialog"
@@ -741,7 +756,7 @@ const copyTargetRegionOptions = computed(() => {
 // 标签页
 const tabRouteMap = {
   '/social-security': 'social',
-  '/large-medical-insurance': 'large-medical'
+  '/large-medical-insurance': 'medical'
 }
 
 const activeTab = ref(tabRouteMap[route.path] || 'social')
@@ -1040,10 +1055,12 @@ const showCreateMedicalDialog = ref(false)
 const showMedicalLimitDialog = ref(false)
 const showMedicalTypesDialog = ref(false)
 const showAddMedicalTypeDialog = ref(false)
+const showLargeMedicalDialog = ref(false)
 const editingMedicalRegion = ref(null)
 const editingMedicalType = ref(null)
 const currentMedicalRegion = ref(null)
 const currentMedicalLimitRegion = ref(null)
+const currentLargeMedicalRegion = ref(null)
 const MAX_MEDICAL_INSURANCE_TYPES = 2
 
 // 表单数据
@@ -1392,6 +1409,15 @@ const openMedicalTypesDialog = async (region) => {
   }
 }
 
+const openLargeMedicalDialog = (region) => {
+  currentLargeMedicalRegion.value = region
+  showLargeMedicalDialog.value = true
+}
+
+const handleLargeMedicalDialogClose = () => {
+  currentLargeMedicalRegion.value = null
+}
+
 const openCreateMedicalTypeDialog = async () => {
   if ((currentMedicalRegion.value?.medical_insurance_types?.length || 0) >= MAX_MEDICAL_INSURANCE_TYPES) {
     ElMessage.warning(`一个地区最多只能配置${MAX_MEDICAL_INSURANCE_TYPES}种医保类型`)
@@ -1519,7 +1545,7 @@ watch(
 )
 
 watch(activeTab, (tab) => {
-  const targetPath = tab === 'large-medical' ? '/large-medical-insurance' : '/social-security'
+  const targetPath = tab === 'social' ? '/social-security' : '/large-medical-insurance'
   if (route.path !== targetPath) {
     router.replace(targetPath)
   }

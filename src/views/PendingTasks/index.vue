@@ -251,7 +251,7 @@ const handleViewTask = (task) => {
       ? JSON.parse(task.route_params)
       : (task.route_params || {})
     router.push({
-      path: '/special-deductions',
+      path: '/employee-special-deductions',
       query: params
     })
   } else if (task.task_type === 'tax_declaration') {

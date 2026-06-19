@@ -1013,7 +1013,7 @@ class EmployeeContractController extends Controller
                         'id_number' => $employee->id_number,
                         'phone' => $employee->phone,
                         'address' => $employee->address,
-                        'gender' => $employee->gender,
+                        'gender' => $this->formatEmployeeGender($employee->gender),
                         'birth_date' => $employee->birth_date?->format('Y-m-d'),
                         'nationality' => $employee->nationality,
                         'education' => $employee->education,
@@ -1030,8 +1030,8 @@ class EmployeeContractController extends Controller
                         'signing_location' => $employee->signing_location,
                         'household_type' => $employee->household_type,
                         // 条件性打勾字段
-                        'gender_male_check' => $employee->gender === 'male' ? '√' : '',
-                        'gender_female_check' => $employee->gender === 'female' ? '√' : '',
+                        'gender_male_check' => $this->isMaleGender($employee->gender) ? '√' : '',
+                        'gender_female_check' => $this->isFemaleGender($employee->gender) ? '√' : '',
                         'household_agricultural_check' => $employee->household_type === 'agricultural' ? '√' : '',
                         'household_non_agricultural_check' => $employee->household_type === 'non_agricultural' ? '√' : '',
                         'hire_date' => $employee->hire_date?->format('Y-m-d'),
@@ -1079,6 +1079,31 @@ class EmployeeContractController extends Controller
         }
 
         return null;
+    }
+
+    private function formatEmployeeGender($gender): string
+    {
+        if ($this->isMaleGender($gender)) {
+            return '男';
+        }
+
+        if ($this->isFemaleGender($gender)) {
+            return '女';
+        }
+
+        return trim((string)($gender ?? ''));
+    }
+
+    private function isMaleGender($gender): bool
+    {
+        $value = strtolower(trim((string)($gender ?? '')));
+        return in_array($value, ['male', 'm', '1', '男'], true);
+    }
+
+    private function isFemaleGender($gender): bool
+    {
+        $value = strtolower(trim((string)($gender ?? '')));
+        return in_array($value, ['female', 'f', '2', '女'], true);
     }
 
     /**

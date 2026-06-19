@@ -99,6 +99,12 @@ const routes = [
         meta: { title: '专项扣除管理' }
       },
       {
+        path: '/employee-special-deductions',
+        name: 'EmployeeSpecialDeductions',
+        component: () => import('@/views/EmployeeSpecialDeductions/index.vue'),
+        meta: { title: '人员专项管理' }
+      },
+      {
         path: '/insurance',
         name: 'Insurance',
         component: () => import('@/views/Insurance/index.vue'),

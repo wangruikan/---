@@ -682,8 +682,8 @@ class PendingTaskService
                 'handler_id' => $operator->id,
                 'handler_name' => $operator->name,
                 'status' => 'pending',
-                'route_name' => 'special-deductions',
-                'route_params' => json_encode(['month' => $month, 'tab' => 'employees']),
+                'route_name' => 'employee-special-deductions',
+                'route_params' => json_encode(['month' => $month]),
             ]);
         } catch (\Exception $e) {
             Log::error('创建专项扣除待办任务失败', [

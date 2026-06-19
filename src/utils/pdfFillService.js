@@ -66,7 +66,7 @@ export class PdfFillService {
         'id_card': employeeData.id_number,  // 兼容旧字段名
         'phone': employeeData.phone,
         'address': employeeData.address,
-        'gender': employeeData.gender,
+        'gender': this.formatGender(employeeData.gender),
         'birth_date': employeeData.birth_date,
         'nationality': employeeData.nationality,
         'education': employeeData.education,
@@ -131,6 +131,10 @@ export class PdfFillService {
         
         // 获取字段值
         let fieldValue = employeeData[fieldName] ?? fieldMapping[fieldName]
+
+        if (fieldName === 'gender') {
+          fieldValue = this.formatGender(fieldValue)
+        }
 
         // 合同占位符中的金额/数值字段统一渲染为整数（去掉小数）
         if (integerFieldSet.has(fieldName)) {
@@ -403,6 +407,18 @@ export class PdfFillService {
     const mm = String(now.getMonth() + 1).padStart(2, '0')
     const dd = String(now.getDate()).padStart(2, '0')
     return `${yyyy}-${mm}-${dd}`
+  }
+
+  static formatGender(gender) {
+    const value = String(gender ?? '').trim()
+    const normalized = value.toLowerCase()
+    if (['male', 'm', '1', '男'].includes(normalized)) {
+      return '男'
+    }
+    if (['female', 'f', '2', '女'].includes(normalized)) {
+      return '女'
+    }
+    return value
   }
 
   static calculateSafeFontSize(boxHeight, preferredSize = 14) {

@@ -178,6 +178,14 @@ class InvoiceApplication extends Model
     }
 
     /**
+     * 关联开票内容明细
+     */
+    public function contentItems()
+    {
+        return $this->hasMany(InvoiceContentItem::class, 'application_id');
+    }
+
+    /**
      * 关联发票汇总
      */
     public function invoiceSummary()
@@ -254,8 +262,7 @@ class InvoiceApplication extends Model
         $needsItems = $this->invoice_method === 'full' || $this->invoice_method === 'diff';
 
         return (!$this->approval_status || $this->approval_status === self::APPROVAL_STATUS_REJECTED) && 
-               (!$needsItems || $this->items()->count() > 0) &&
-               !empty($this->attachments);
+               (!$needsItems || $this->items()->count() > 0);
     }
 
     /**

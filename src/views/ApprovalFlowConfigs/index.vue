@@ -24,7 +24,18 @@
         <template #header>
           <div class="card-header">
             <span>当前账套审批路线</span>
-            <span class="account-name">{{ currentAccountSetName }}</span>
+            <div class="card-actions">
+              <span class="account-name">{{ currentAccountSetName }}</span>
+              <el-button
+                type="primary"
+                size="small"
+                :loading="savingAll"
+                :disabled="approvalLevels.length === 0 || configs.length === 0"
+                @click="saveAll"
+              >
+                一键保存
+              </el-button>
+            </div>
           </div>
         </template>
 
@@ -52,7 +63,7 @@
             <template #default="{ row }">
               <el-switch
                 v-model="row.level_map[level.level]"
-                :disabled="savingMap[row.business_type]"
+                :disabled="savingAll"
                 active-text="启用"
                 inactive-text="跳过"
               />
@@ -66,20 +77,6 @@
               </el-tag>
             </template>
           </el-table-column>
-
-          <el-table-column label="操作" width="120" fixed="right" align="center">
-            <template #default="{ row }">
-              <el-button
-                type="primary"
-                size="small"
-                :loading="savingMap[row.business_type]"
-                :disabled="approvalLevels.length === 0"
-                @click="saveRow(row)"
-              >
-                保存
-              </el-button>
-            </template>
-          </el-table-column>
         </el-table>
       </el-card>
     </template>
@@ -87,7 +84,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getApprovalFlowConfigs, saveApprovalFlowConfig } from '@/api/approvalFlowConfigs'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -99,7 +96,7 @@ const currentAccountSetName = computed(() => accountSetStore.currentAccountSet?.
 const loading = ref(false)
 const approvalLevels = ref([])
 const configs = ref([])
-const savingMap = reactive({})
+const savingAll = ref(false)
 
 const buildLevelMap = (enabledLevels) => {
   const enabledSet = new Set((enabledLevels || []).map((level) => Number(level)))
@@ -149,29 +146,42 @@ const getEnabledLevels = (row) => {
     .sort((a, b) => a - b)
 }
 
-const saveRow = async (row) => {
-  const enabledLevels = getEnabledLevels(row)
-  if (enabledLevels.length === 0) {
-    ElMessage.warning('请至少启用一个审批节点')
+const saveAll = async () => {
+  const payloads = configs.value.map((row) => ({
+    row,
+    enabledLevels: getEnabledLevels(row)
+  }))
+  const invalidPayload = payloads.find((item) => item.enabledLevels.length === 0)
+
+  if (invalidPayload) {
+    ElMessage.warning(`${getBusinessTypeDisplay(invalidPayload.row)} 请至少启用一个审批节点`)
     return
   }
 
-  savingMap[row.business_type] = true
+  savingAll.value = true
   try {
-    const res = await saveApprovalFlowConfig({
-      business_type: row.business_type,
-      enabled_levels: enabledLevels
-    })
+    const results = await Promise.all(payloads.map((item) => {
+      return saveApprovalFlowConfig({
+        business_type: item.row.business_type,
+        enabled_levels: item.enabledLevels
+      })
+    }))
 
-    if (res.success) {
+    const failedResult = results.find((res) => !res?.success)
+    if (failedResult) {
+      ElMessage.error(failedResult.message || '保存失败')
+      return
+    }
+
+    payloads.forEach(({ row, enabledLevels }) => {
       row.enabled_levels = enabledLevels
       row.is_default = false
-      ElMessage.success('保存成功')
-    }
+    })
+    ElMessage.success('保存成功')
   } catch (error) {
     ElMessage.error(error?.response?.data?.message || '保存失败')
   } finally {
-    savingMap[row.business_type] = false
+    savingAll.value = false
   }
 }
 
@@ -218,6 +228,13 @@ watch(accountSetId, () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .account-name {

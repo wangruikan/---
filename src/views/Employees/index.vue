@@ -5144,10 +5144,9 @@
               >
                 下载
               </el-button>
-              <el-button 
-                v-if="row.status === 'draft'" 
-                type="danger" 
-                size="small" 
+              <el-button
+                type="danger"
+                size="small"
                 @click="handleDeleteContract(row)"
               >
                 删除

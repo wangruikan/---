@@ -30,6 +30,7 @@ use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PayrollRemarkController;
 use App\Http\Controllers\BidProjectController;
 use App\Http\Controllers\InvoiceProjectController;
+use App\Http\Controllers\InvoiceContentConfigController;
 use App\Http\Controllers\InvoiceApplicationController;
 use App\Http\Controllers\ReimbursementController;
 use App\Http\Controllers\ReimbursementPaymentRequestController;
@@ -1142,6 +1143,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [InvoiceProjectController::class, 'store']);                         // 创建项目
         Route::put('/{id}', [InvoiceProjectController::class, 'update']);                     // 更新项目
         Route::delete('/{id}', [InvoiceProjectController::class, 'destroy']);                 // 删除项目
+    });
+
+    // 开票内容配置项目
+    Route::prefix('invoice-content-configs')->group(function () {
+        Route::get('/', [InvoiceContentConfigController::class, 'index']);                    // 获取列表
+        Route::get('/all', [InvoiceContentConfigController::class, 'all']);                   // 获取所有（下拉选择）
+        Route::post('/', [InvoiceContentConfigController::class, 'store']);                   // 创建项目
+        Route::put('/{id}', [InvoiceContentConfigController::class, 'update']);               // 更新项目
+        Route::delete('/{id}', [InvoiceContentConfigController::class, 'destroy']);           // 删除项目
     });
 
     // 发票申请管理

@@ -135,6 +135,12 @@ const routes = [
         meta: { title: '发票项目配置' }
       },
       {
+        path: '/invoice-content-configs',
+        name: 'InvoiceContentConfigs',
+        component: () => import('@/views/InvoiceContentConfigs/index.vue'),
+        meta: { title: '开票内容配置项目' }
+      },
+      {
         path: '/invoice-applications',
         name: 'InvoiceApplications',
         component: () => import('@/views/InvoiceApplications/index.vue'),

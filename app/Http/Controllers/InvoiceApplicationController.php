@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\InvoiceApplication;
+use App\Models\InvoiceContentConfig;
+use App\Models\InvoiceContentItem;
 use App\Models\InvoiceItem;
 use App\Models\InvoiceProject;
 use App\Models\ProcessApproval;
@@ -41,7 +43,7 @@ class InvoiceApplicationController extends Controller
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
         $query = InvoiceApplication::where('account_set_id', $accountSetId)
-            ->with(['submitter:id,name', 'creator:id,name', 'items', 'approvalInstance']);
+            ->with(['submitter:id,name', 'creator:id,name', 'items', 'contentItems', 'approvalInstance']);
 
         // 按年份筛选
         if ($request->has('year')) {
@@ -146,6 +148,7 @@ class InvoiceApplicationController extends Controller
             'invoice_number' => 'sometimes|required|string|max:100',
             'invoice_remark' => 'nullable|string',
             'items' => 'nullable|string',
+            'content_items' => 'nullable|string',
             'attachments' => 'nullable|array',
             'attachments.*' => 'file|max:10240',
         ], [
@@ -217,12 +220,6 @@ class InvoiceApplicationController extends Controller
             ], 422);
         }
 
-        $calculatedAmounts = $this->calculateInvoiceAmounts(
-            $request->input('invoice_amount', 0),
-            $deductionAmount,
-            $request->input('tax_rate', 0)
-        );
-
         $items = json_decode($request->input('items', '[]'), true);
         if (!is_array($items)) {
             return response()->json([
@@ -231,12 +228,24 @@ class InvoiceApplicationController extends Controller
             ], 422);
         }
 
-        if (!$request->hasFile('attachments')) {
+        $contentItems = json_decode($request->input('content_items', '[]'), true);
+        if (!is_array($contentItems)) {
             return response()->json([
                 'success' => false,
-                'message' => '请至少上传1个附件'
+                'message' => '开票内容明细格式不正确'
             ], 422);
         }
+
+        $contentTotals = $this->sumInvoiceContentItems($contentItems);
+        $invoiceAmount = $contentTotals['invoice_amount'] > 0
+            ? $contentTotals['invoice_amount']
+            : (float) $request->input('invoice_amount', 0);
+        $taxRate = $contentTotals['tax_rate'] > 0
+            ? $contentTotals['tax_rate']
+            : (float) $request->input('tax_rate', 0);
+        $deductionAmount = $contentTotals['deduction_amount'] > 0
+            ? $contentTotals['deduction_amount']
+            : $deductionAmount;
 
         if (($normalizedInvoiceMethod === 'full' || $normalizedInvoiceMethod === 'diff') && empty($items)) {
             return response()->json([
@@ -249,7 +258,7 @@ class InvoiceApplicationController extends Controller
             return (float) ($item['amount'] ?? 0);
         }, $items)), 2);
 
-        if (($normalizedInvoiceMethod === 'full' || $normalizedInvoiceMethod === 'diff') && $itemsAmount > (float) $request->input('invoice_amount', 0)) {
+        if (($normalizedInvoiceMethod === 'full' || $normalizedInvoiceMethod === 'diff') && $itemsAmount > $invoiceAmount) {
             return response()->json([
                 'success' => false,
                 'message' => '验证失败',
@@ -259,6 +268,24 @@ class InvoiceApplicationController extends Controller
             ], 422);
         }
 
+        $calculatedAmounts = [
+            'amount_excluding_tax' => $contentTotals['amount_excluding_tax'],
+            'invoice_tax_amount' => $contentTotals['invoice_tax_amount'],
+            'tax_amount' => $contentTotals['tax_amount'],
+        ];
+
+        if (
+            $contentTotals['amount_excluding_tax'] <= 0 &&
+            $contentTotals['invoice_tax_amount'] <= 0 &&
+            $contentTotals['tax_amount'] <= 0
+        ) {
+            $calculatedAmounts = $this->calculateInvoiceAmounts(
+                $invoiceAmount,
+                $deductionAmount,
+                $taxRate
+            );
+        }
+
         $application = DB::transaction(function () use (
             $request,
             $accountSetId,
@@ -266,9 +293,12 @@ class InvoiceApplicationController extends Controller
             $projectName,
             $normalizedInvoiceMethod,
             $deductionAmount,
+            $invoiceAmount,
+            $taxRate,
             $calculatedAmounts,
             $user,
-            $items
+            $items,
+            $contentItems
         ) {
             $application = InvoiceApplication::create([
                 'account_set_id' => $accountSetId,
@@ -287,10 +317,10 @@ class InvoiceApplicationController extends Controller
                 'invoice_method' => $normalizedInvoiceMethod,
                 'invoice_type' => $request->input('invoice_type', ''),
                 'deduction_amount' => $deductionAmount,
-                'tax_rate' => $request->input('tax_rate', 0),
+                'tax_rate' => $taxRate,
                 'amount_excluding_tax' => $calculatedAmounts['amount_excluding_tax'],
                 'invoice_tax_amount' => $calculatedAmounts['invoice_tax_amount'],
-                'invoice_amount' => $request->input('invoice_amount', 0),
+                'invoice_amount' => $invoiceAmount,
                 'tax_amount' => $calculatedAmounts['tax_amount'],
                 'invoice_date' => $request->input('invoice_date'),
                 'earliest_invoice_date' => $request->input('earliest_invoice_date'),
@@ -325,6 +355,33 @@ class InvoiceApplicationController extends Controller
                 ]);
             }
 
+            foreach ($contentItems as $index => $contentItem) {
+                $projectName = trim((string) ($contentItem['project_name'] ?? ''));
+                if ($projectName === '') {
+                    continue;
+                }
+
+                $configId = $contentItem['invoice_content_config_id'] ?? null;
+                $config = $configId
+                    ? InvoiceContentConfig::where('account_set_id', $accountSetId)->find($configId)
+                    : null;
+
+                InvoiceContentItem::create([
+                    'application_id' => $application->id,
+                    'invoice_content_config_id' => $config?->id,
+                    'sequence' => $index + 1,
+                    'project_name' => $config?->project_name ?: $projectName,
+                    'remark' => $config?->remark ?? ($contentItem['remark'] ?? null),
+                    'deduction_info' => $config?->deduction_info ?? ($contentItem['deduction_info'] ?? null),
+                    'invoice_amount' => round((float) ($contentItem['invoice_amount'] ?? 0), 2),
+                    'tax_rate' => min(1, max(0, (float) ($contentItem['tax_rate'] ?? 0))),
+                    'deduction_amount' => round((float) ($contentItem['deduction_amount'] ?? 0), 2),
+                    'invoice_tax_amount' => round((float) ($contentItem['invoice_tax_amount'] ?? 0), 2),
+                    'amount_excluding_tax' => round((float) ($contentItem['amount_excluding_tax'] ?? 0), 2),
+                    'tax_amount' => round((float) ($contentItem['tax_amount'] ?? 0), 2),
+                ]);
+            }
+
             $attachments = [];
             foreach ($request->file('attachments', []) as $file) {
                 $filename = time() . '_' . $file->getClientOriginalName();
@@ -351,7 +408,7 @@ class InvoiceApplicationController extends Controller
         return response()->json([
             'success' => true,
             'message' => '创建成功，已生成发票信息填写待办',
-            'data' => $application->load('items')
+            'data' => $application->load(['items', 'contentItems'])
         ]);
     }
 
@@ -364,6 +421,7 @@ class InvoiceApplicationController extends Controller
             'submitter:id,name',
             'creator:id,name',
             'items.invoiceProject',
+            'contentItems.config',
             'approvalInstance'
         ])->find($id);
 
@@ -955,7 +1013,7 @@ class InvoiceApplicationController extends Controller
             $needsItems = $application->invoice_method === 'full' || $application->invoice_method === 'diff';
             return response()->json([
                 'success' => false,
-                'message' => $needsItems ? '请先添加明细项和上传附件' : '请先上传附件'
+                'message' => $needsItems ? '请先添加明细项' : '当前状态不允许提交'
             ], 400);
         }
 
@@ -1092,6 +1150,7 @@ class InvoiceApplicationController extends Controller
 
         // 删除明细项
         $application->items()->delete();
+        $application->contentItems()->delete();
 
         // 删除申请
         $application->delete();
@@ -1412,6 +1471,43 @@ class InvoiceApplicationController extends Controller
         return round($amount * $taxRate, 2);
     }
 
+    private function sumInvoiceContentItems(array $contentItems): array
+    {
+        $totals = [
+            'invoice_amount' => 0,
+            'tax_rate' => 0,
+            'deduction_amount' => 0,
+            'invoice_tax_amount' => 0,
+            'amount_excluding_tax' => 0,
+            'tax_amount' => 0,
+        ];
+
+        foreach ($contentItems as $contentItem) {
+            if (!is_array($contentItem)) {
+                continue;
+            }
+
+            $totals['invoice_amount'] += (float) ($contentItem['invoice_amount'] ?? 0);
+            $totals['deduction_amount'] += (float) ($contentItem['deduction_amount'] ?? 0);
+            $totals['invoice_tax_amount'] += (float) ($contentItem['invoice_tax_amount'] ?? 0);
+            $totals['amount_excluding_tax'] += (float) ($contentItem['amount_excluding_tax'] ?? 0);
+            $totals['tax_amount'] += (float) ($contentItem['tax_amount'] ?? 0);
+
+            if ($totals['tax_rate'] <= 0) {
+                $totals['tax_rate'] = min(1, max(0, (float) ($contentItem['tax_rate'] ?? 0)));
+            }
+        }
+
+        return [
+            'invoice_amount' => round($totals['invoice_amount'], 2),
+            'tax_rate' => $totals['tax_rate'],
+            'deduction_amount' => round($totals['deduction_amount'], 2),
+            'invoice_tax_amount' => round($totals['invoice_tax_amount'], 2),
+            'amount_excluding_tax' => round($totals['amount_excluding_tax'], 2),
+            'tax_amount' => round($totals['tax_amount'], 2),
+        ];
+    }
+
     private function syncAmountsFromItems(InvoiceApplication $application)
     {
         if (!$application->exists) {
@@ -1546,8 +1642,6 @@ class InvoiceApplicationController extends Controller
             'application_date' => '请选择申请日期',
             'invoice_method' => '请选择开票方式',
             'invoice_type' => '请选择开票种类',
-            'tax_rate' => '请选择税率',
-            'invoice_amount' => '请输入开票金额',
             'invoice_date' => '请选择开票日期',
             'invoice_number' => '请输入发票号码',
         ];

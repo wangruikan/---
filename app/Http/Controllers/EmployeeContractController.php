@@ -4,8 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\EmployeeContract;
 use App\Models\Employee;
+use App\Models\Approval;
+use App\Models\ApprovalAttachment;
+use App\Models\ApprovalCCUser;
+use App\Models\ApprovalInstance;
+use App\Models\ApprovalRecord;
+use App\Models\PendingTask;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -760,26 +767,85 @@ class EmployeeContractController extends Controller
     public function destroy(Request $request, $id)
     {
         $contract = EmployeeContract::findOrFail($id);
+        $filesToDelete = array_filter([
+            $contract->contract_file,
+            $contract->signature_image,
+        ]);
 
-        // 只能删除草稿状态的合同
-        if ($contract->status !== 'draft') {
-            return response()->json([
-                'success' => false,
-                'message' => '只能删除草稿状态的合同'
-            ], 422);
+        foreach (($contract->notice_signed_files ?? []) as $noticeFile) {
+            if (is_array($noticeFile) && !empty($noticeFile['signed_path'])) {
+                $filesToDelete[] = $noticeFile['signed_path'];
+            }
         }
 
-        // 删除文件
-        if ($contract->contract_file) {
-            Storage::disk('public')->delete($contract->contract_file);
+        $approvalInstanceIds = ApprovalInstance::where('business_type', 'employee_contract')
+            ->where('business_id', $contract->id)
+            ->pluck('id')
+            ->all();
+
+        if ($contract->approval_instance_id) {
+            $approvalInstanceIds[] = (int) $contract->approval_instance_id;
         }
 
-        $contract->delete();
+        $approvalInstanceIds = array_values(array_unique(array_filter($approvalInstanceIds)));
+
+        if (!empty($approvalInstanceIds)) {
+            $filesToDelete = array_merge(
+                $filesToDelete,
+                ApprovalAttachment::whereIn('instance_id', $approvalInstanceIds)
+                    ->pluck('file_path')
+                    ->filter()
+                    ->all()
+            );
+        }
+
+        DB::transaction(function () use ($contract, $approvalInstanceIds) {
+            if (!empty($approvalInstanceIds)) {
+                ApprovalAttachment::whereIn('instance_id', $approvalInstanceIds)->delete();
+                ApprovalCCUser::whereIn('instance_id', $approvalInstanceIds)->delete();
+                ApprovalRecord::whereIn('instance_id', $approvalInstanceIds)->delete();
+
+                PendingTask::where(function ($query) use ($approvalInstanceIds) {
+                    $query->where('related_type', 'ApprovalInstance')
+                        ->whereIn('related_id', $approvalInstanceIds);
+                })->delete();
+            }
+
+            PendingTask::where('related_type', 'EmployeeContract')
+                ->where('related_id', $contract->id)
+                ->delete();
+
+            Approval::whereIn('type', ['employee_contract', 'contract'])
+                ->where('related_id', $contract->id)
+                ->delete();
+
+            $contract->delete();
+
+            if (!empty($approvalInstanceIds)) {
+                ApprovalInstance::whereIn('id', $approvalInstanceIds)->delete();
+            }
+        });
+
+        foreach (array_unique(array_filter($filesToDelete)) as $filePath) {
+            $this->deleteContractFile($filePath);
+        }
 
         return response()->json([
             'success' => true,
             'message' => '合同删除成功'
         ]);
+    }
+
+    private function deleteContractFile(string $filePath): void
+    {
+        $filePath = ltrim($filePath, '/');
+        Storage::disk('public')->delete($filePath);
+
+        foreach ([public_path('storage/' . $filePath), public_path($filePath)] as $absolutePath) {
+            if (is_file($absolutePath)) {
+                @unlink($absolutePath);
+            }
+        }
     }
 
     /**

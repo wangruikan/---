@@ -198,6 +198,129 @@
           </el-col>
         </el-row>
 
+        <el-divider content-position="left">开票内容明细</el-divider>
+        <div class="section-header">
+          <span>开票内容明细项</span>
+          <el-button type="primary" link @click="addCreateContentItem">增行</el-button>
+        </div>
+        <el-table
+          :data="createContentItems"
+          border
+          size="small"
+          class="invoice-content-items-table"
+          style="margin-top: 10px"
+        >
+          <el-table-column type="index" label="序号" width="70" align="center" />
+          <el-table-column label="项目名称" min-width="220">
+            <template #default="{ row }">
+              <el-select
+                v-model="row.invoice_content_config_id"
+                placeholder="请选择配置项目"
+                clearable
+                filterable
+                style="width: 100%"
+                @change="value => handleInvoiceContentConfigSelect(row, value)"
+              >
+                <el-option
+                  v-for="item in invoiceContentConfigs"
+                  :key="item.id"
+                  :label="item.project_name"
+                  :value="item.id"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="备注" min-width="220">
+            <template #default="{ row }">
+              <el-input v-model="row.remark" disabled placeholder="选择项目后自动带出" />
+            </template>
+          </el-table-column>
+          <el-table-column label="维护扣除信息" min-width="260">
+            <template #default="{ row }">
+              <el-input v-model="row.deduction_info" disabled placeholder="选择项目后自动带出" />
+            </template>
+          </el-table-column>
+          <el-table-column label="开票金额" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.invoice_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="税率" width="140">
+            <template #default="{ row }">
+              <el-select v-model="row.tax_rate" placeholder="税率" style="width: 100%">
+                <el-option
+                  v-for="option in invoiceItemTaxRateOptions"
+                  :key="'content-tax-rate-' + option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="扣除额" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.deduction_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="开票税额" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.invoice_tax_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="不含税金额" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.amount_excluding_tax"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="税金" width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.tax_amount"
+                :precision="2"
+                :min="0"
+                :controls="false"
+                style="width: 100%"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" align="center" fixed="right">
+            <template #default="{ $index }">
+              <el-button
+                type="danger"
+                link
+                @click="removeCreateContentItem($index)"
+                :disabled="createContentItems.length <= 1"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
         <el-divider content-position="left">开票详情</el-divider>
 
         <el-row :gutter="20">
@@ -264,84 +387,6 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="开票金额" prop="invoice_amount">
-              <el-input-number
-                v-model="createForm.invoice_amount"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="税率" prop="tax_rate">
-              <el-select v-model="createForm.tax_rate" placeholder="请选择税率" style="width: 100%">
-                <el-option label="1%" :value="0.01" />
-                <el-option label="2%" :value="0.02" />
-                <el-option label="3%" :value="0.03" />
-                <el-option label="4%" :value="0.04" />
-                <el-option label="5%" :value="0.05" />
-                <el-option label="6%" :value="0.06" />
-                <el-option label="7%" :value="0.07" />
-                <el-option label="8%" :value="0.08" />
-                <el-option label="9%" :value="0.09" />
-                <el-option label="10%" :value="0.10" />
-                <el-option label="11%" :value="0.11" />
-                <el-option label="12%" :value="0.12" />
-                <el-option label="13%" :value="0.13" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="扣除额" prop="deduction_amount">
-              <el-input-number
-                v-model="createForm.deduction_amount"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                disabled
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="开票税额" prop="invoice_tax_amount">
-              <el-input-number
-                v-model="createForm.invoice_tax_amount"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                disabled
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="不含税金额" prop="amount_excluding_tax">
-              <el-input-number
-                v-model="createForm.amount_excluding_tax"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                disabled
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="税金" prop="tax_amount">
-              <el-input-number
-                v-model="createForm.tax_amount"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                disabled
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
             <el-form-item label="开票日期" prop="invoice_date">
               <el-date-picker
                 v-model="createForm.invoice_date"
@@ -391,7 +436,7 @@
             </el-form-item>
           </el-col>
         </el-row>
-      
+
         <div v-if="createNeedsDeductionAmount" ref="createDeductionSectionRef">
           <el-divider content-position="left">扣除明细</el-divider>
           <div class="section-header">
@@ -500,22 +545,6 @@
           </el-table>
         </div>
 
-        <el-divider content-position="left">附件上传</el-divider>
-        <el-upload
-          v-model:file-list="createAttachmentFileList"
-          action="#"
-          multiple
-          :auto-upload="false"
-          :before-upload="beforeCreateAttachmentUpload"
-        >
-          <el-button type="primary">
-            <el-icon><Upload /></el-icon>
-            选择附件
-          </el-button>
-          <template #tip>
-            <div class="el-upload__tip">可上传多个文件，单个文件不超过10MB</div>
-          </template>
-        </el-upload>
       </el-form>
 
       <template #footer>
@@ -611,6 +640,56 @@
               合计金额：<span>¥{{ totalAmount.toFixed(2) }}</span>
             </div>
 
+          </div>
+        </el-tab-pane>
+
+        <!-- 开票内容明细 -->
+        <el-tab-pane label="开票内容明细" name="content_items">
+          <div class="invoice-content-items-section">
+            <div class="section-header">
+              <span>开票内容明细项</span>
+            </div>
+            <el-table
+              :data="currentApplication.content_items || []"
+              border
+              class="invoice-content-items-table"
+              style="margin-top: 10px"
+            >
+              <el-table-column prop="sequence" label="序号" width="70" align="center" />
+              <el-table-column prop="project_name" label="项目名称" width="180" show-overflow-tooltip />
+              <el-table-column prop="remark" label="备注" width="220" show-overflow-tooltip />
+              <el-table-column prop="deduction_info" label="维护扣除信息" width="260" show-overflow-tooltip />
+              <el-table-column prop="invoice_amount" label="开票金额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.invoice_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="tax_rate" label="税率" width="100" align="center">
+                <template #default="{ row }">
+                  {{ formatInvoiceItemRate(row.tax_rate) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="deduction_amount" label="扣除额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.deduction_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="invoice_tax_amount" label="开票税额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.invoice_tax_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="amount_excluding_tax" label="不含税金额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.amount_excluding_tax || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="tax_amount" label="税金" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
         </el-tab-pane>
 
@@ -1126,6 +1205,7 @@ import {
   submitInvoiceApplication
 } from '@/api/invoiceApplication'
 import { getAllInvoiceProjects } from '@/api/invoiceProject'
+import { getAllInvoiceContentConfigs } from '@/api/invoiceContentConfig'
 import request from '@/api/request'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
@@ -1240,8 +1320,6 @@ const createFormRules = {
   application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
   invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
   invoice_type: [{ required: true, message: '请选择开票种类', trigger: 'change' }],
-  tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
-  invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
   invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }]
 }
 
@@ -1259,9 +1337,103 @@ const createItems = ref([
     remark: ''
   }
 ])
-const createAttachmentFileList = ref([])
+const invoiceContentConfigs = ref([])
+const createContentItems = ref([])
 const createDeductionSectionRef = ref(null)
 const lastCreateDuplicateWarnKey = ref('')
+
+const buildInvoiceContentItemFromConfig = (config = null) => {
+  return {
+    invoice_content_config_id: config?.id || null,
+    project_name: config?.project_name || '',
+    remark: config?.remark || '',
+    deduction_info: config?.deduction_info || '',
+    invoice_amount: 0,
+    tax_rate: 0,
+    deduction_amount: 0,
+    invoice_tax_amount: 0,
+    amount_excluding_tax: 0,
+    tax_amount: 0
+  }
+}
+
+const resetCreateContentItems = () => {
+  createContentItems.value = [buildInvoiceContentItemFromConfig()]
+}
+
+const addCreateContentItem = () => {
+  createContentItems.value.push(buildInvoiceContentItemFromConfig())
+}
+
+const removeCreateContentItem = (index) => {
+  if (createContentItems.value.length <= 1) return
+  createContentItems.value.splice(index, 1)
+}
+
+const handleInvoiceContentConfigSelect = (targetItem, configId) => {
+  const config = invoiceContentConfigs.value.find(item => item.id === configId)
+  Object.assign(targetItem, buildInvoiceContentItemFromConfig(config || null))
+}
+
+const hasCreateContentItemValue = (item) => {
+  if (!item) return false
+  return Boolean(
+    item.invoice_content_config_id ||
+    String(item.project_name || '').trim() ||
+    Number(item.invoice_amount || 0) > 0 ||
+    Number(item.tax_rate || 0) > 0 ||
+    Number(item.deduction_amount || 0) > 0 ||
+    Number(item.invoice_tax_amount || 0) > 0 ||
+    Number(item.amount_excluding_tax || 0) > 0 ||
+    Number(item.tax_amount || 0) > 0
+  )
+}
+
+const normalizeCreateContentItems = () => {
+  return createContentItems.value
+    .filter(item => hasCreateContentItemValue(item))
+    .map(item => ({
+      invoice_content_config_id: item.invoice_content_config_id || null,
+      project_name: String(item.project_name || '').trim(),
+      remark: item.remark || '',
+      deduction_info: item.deduction_info || '',
+      invoice_amount: Number(item.invoice_amount || 0),
+      tax_rate: Number(item.tax_rate || 0),
+      deduction_amount: Number(item.deduction_amount || 0),
+      invoice_tax_amount: Number(item.invoice_tax_amount || 0),
+      amount_excluding_tax: Number(item.amount_excluding_tax || 0),
+      tax_amount: Number(item.tax_amount || 0)
+    }))
+}
+
+const sumCreateContentItems = (items = []) => {
+  const total = items.reduce((result, item) => {
+    result.invoice_amount += Number(item.invoice_amount || 0)
+    result.deduction_amount += Number(item.deduction_amount || 0)
+    result.invoice_tax_amount += Number(item.invoice_tax_amount || 0)
+    result.amount_excluding_tax += Number(item.amount_excluding_tax || 0)
+    result.tax_amount += Number(item.tax_amount || 0)
+    return result
+  }, {
+    invoice_amount: 0,
+    tax_rate: 0,
+    deduction_amount: 0,
+    invoice_tax_amount: 0,
+    amount_excluding_tax: 0,
+    tax_amount: 0
+  })
+
+  total.tax_rate = items.length ? Number(items[0].tax_rate || 0) : 0
+
+  return {
+    invoice_amount: roundAmount(total.invoice_amount),
+    tax_rate: total.tax_rate,
+    deduction_amount: roundAmount(total.deduction_amount),
+    invoice_tax_amount: roundAmount(total.invoice_tax_amount),
+    amount_excluding_tax: roundAmount(total.amount_excluding_tax),
+    tax_amount: roundAmount(total.tax_amount)
+  }
+}
 
 const addCreateItem = () => {
   createItems.value.push(buildInvoiceItemFromProject(null))
@@ -1272,15 +1444,16 @@ const removeCreateItem = (index) => {
   createItems.value.splice(index, 1)
 }
 
-const beforeCreateAttachmentUpload = (file) => {
-  const isLt10M = file.size / 1024 / 1024 < 10
-  if (!isLt10M) {
-    ElMessage.error('\u6587\u4ef6\u5927\u5c0f\u4e0d\u80fd\u8d85\u8fc7 10MB')
-  }
-  return isLt10M
-}
-
 const validateCreateExtraData = () => {
+  const invalidContentIndex = createContentItems.value.findIndex(item => {
+    return hasCreateContentItemValue(item) && !String(item.project_name || '').trim()
+  })
+
+  if (invalidContentIndex !== -1) {
+    ElMessage.warning('请先选择开票内容明细第 ' + (invalidContentIndex + 1) + ' 行的项目名称')
+    return false
+  }
+
   if (createNeedsDeductionAmount.value) {
     if (!createItems.value.length) {
       ElMessage.warning('\u8bf7\u81f3\u5c11\u6dfb\u52a01\u6761\u6263\u9664\u660e\u7ec6')
@@ -1296,25 +1469,10 @@ const validateCreateExtraData = () => {
       return false
     }
 
-    if (Number(createForm.deduction_amount || 0) > Number(createForm.invoice_amount || 0)) {
+    if (sumDeductionItems(createItems.value) > Number(createForm.invoice_amount || 0)) {
       ElMessage.warning('扣除额不能大于开票金额')
       return false
     }
-  }
-
-  if (!createAttachmentFileList.value.length) {
-    ElMessage.warning('\u8bf7\u81f3\u5c11\u4e0a\u4f201\u4e2a\u9644\u4ef6')
-    return false
-  }
-
-  const oversizeFile = createAttachmentFileList.value.find(file => {
-    const size = file.size || file.raw?.size || 0
-    return size / 1024 / 1024 >= 10
-  })
-
-  if (oversizeFile) {
-    ElMessage.error('\u6587\u4ef6\u5927\u5c0f\u4e0d\u80fd\u8d85\u8fc7 10MB')
-    return false
   }
 
   return true
@@ -1547,16 +1705,6 @@ const sumDeductionItems = (items = []) => {
 
 const syncCreateCalculatedAmounts = () => {
   createForm.deduction_amount = createNeedsDeductionAmount.value ? sumDeductionItems(createItems.value) : 0
-
-  const { amountExcludingTax, invoiceTaxAmount, taxAmount } = calculateInvoiceDerivedAmounts(
-    createForm.invoice_amount,
-    createForm.deduction_amount,
-    createForm.tax_rate
-  )
-
-  createForm.amount_excluding_tax = amountExcludingTax
-  createForm.invoice_tax_amount = invoiceTaxAmount
-  createForm.tax_amount = taxAmount
 }
 
 const syncInvoiceDetailsCalculatedAmounts = () => {
@@ -1709,6 +1857,18 @@ const loadInvoiceProjects = async () => {
     }
   } catch (error) {
     console.error('加载项目失败', error)
+  }
+}
+
+// 加载开票内容配置项目
+const loadInvoiceContentConfigs = async () => {
+  try {
+    const response = await getAllInvoiceContentConfigs()
+    if (response.success) {
+      invoiceContentConfigs.value = response.data || []
+    }
+  } catch (error) {
+    console.error('加载开票内容配置失败', error)
   }
 }
 
@@ -1887,7 +2047,7 @@ const resetCreateForm = () => {
   createForm.invoice_number = ''
   createForm.invoice_remark = ''
   resetCreateItems()
-  createAttachmentFileList.value = []
+  resetCreateContentItems()
   lastCreateDuplicateWarnKey.value = ''
   createFormRef.value?.clearValidate()
 }
@@ -1904,7 +2064,9 @@ const handleConfirmCreate = async () => {
     const taskName = (projectName || '开票') + `${createForm.year}年${createForm.month}月`
 
     await createFormRef.value.validate()
-    syncCreateCalculatedAmounts()
+    const normalizedContentItems = normalizeCreateContentItems()
+    const contentTotals = sumCreateContentItems(normalizedContentItems)
+    Object.assign(createForm, contentTotals)
     if (!validateCreateExtraData()) {
       return
     }
@@ -1940,9 +2102,7 @@ const handleConfirmCreate = async () => {
       }
     })
     createPayload.append('items', JSON.stringify(createNeedsDeductionAmount.value ? createItems.value : []))
-    createAttachmentFileList.value.forEach(fileItem => {
-      createPayload.append('attachments[]', fileItem.raw || fileItem)
-    })
+    createPayload.append('content_items', JSON.stringify(normalizedContentItems))
 
     const response = await createInvoiceApplication(createPayload)
 
@@ -2639,6 +2799,8 @@ watch(
 onMounted(() => {
   loadData()
   loadInvoiceProjects()
+  loadInvoiceContentConfigs()
+  resetCreateContentItems()
   syncCreateCalculatedAmounts()
 })
 </script>
@@ -2664,9 +2826,14 @@ onMounted(() => {
 }
 
 .items-section,
+.invoice-content-items-section,
 .attachments-section,
 .approval-section {
   padding: 20px;
+}
+
+.invoice-content-items-table {
+  width: 100%;
 }
 
 .section-header {

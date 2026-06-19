@@ -95,6 +95,7 @@ export const menuConfig = [
       { title: '专项扣除管理', path: '/special-deductions', icon: 'DocumentChecked' },
       { title: '人员专项管理', path: '/employee-special-deductions', icon: 'UserFilled', permission: 'special_deductions.view' },
       { title: '发票项目配置', path: '/invoice-projects', icon: 'Setting', requireInvoice: true },
+      { title: '开票内容配置项目', path: '/invoice-content-configs', icon: 'Setting', requireInvoice: true },
       { title: '考勤依据', path: '/attendance-basis', icon: 'Tickets', notForLevel1: true },
       { title: '工资依据', path: '/salary-basis', icon: 'Money', notForLevel1: true },
       { title: '交付配置', path: '/delivery-configs', icon: 'Setting', requireDelivery: true },

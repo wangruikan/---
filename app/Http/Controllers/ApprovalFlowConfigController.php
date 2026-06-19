@@ -213,7 +213,7 @@ class ApprovalFlowConfigController extends Controller
             ->distinct()
             ->pluck('business_type')
             ->map(fn($type) => (string) $type)
-            ->reject(fn($type) => $type === '发票申请（重新提交）')
+            ->reject(fn($type) => in_array($type, ['发票申请（重新提交）', 'reimbursement'], true))
             ->all();
     }
 

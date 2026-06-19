@@ -1495,7 +1495,6 @@ const getBusinessTypeText = (row) => {
     '保险付款申请': '保险付款',
     '报销申请': '报销申请',
     '报销付款申请': '报销付款',
-    'reimbursement': '报销申请',
     'travel_application': '差旅申请',
     'invoice_application': '发票申请',
     'material_request': '资料申请'

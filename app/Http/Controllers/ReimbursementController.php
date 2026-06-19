@@ -344,7 +344,7 @@ class ReimbursementController extends Controller
                 if (
                     $existingInstance &&
                     (int) $existingInstance->business_id === (int) $reimbursement->id &&
-                    in_array($existingInstance->business_type, ['报销申请', 'reimbursement'], true) &&
+                    $existingInstance->business_type === '报销申请' &&
                     in_array($existingInstance->status, ['pending', 'approved'], true)
                 ) {
                     return response()->json([

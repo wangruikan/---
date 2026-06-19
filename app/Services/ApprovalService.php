@@ -1090,7 +1090,6 @@ class ApprovalService
                 break;
             
             case '报销申请':
-            case 'reimbursement':  // 兼容英文类型
                 // 更新报销申请的状态
                 $reimbursement = \App\Models\Reimbursement::find($businessId);
                 if ($reimbursement) {
@@ -2588,7 +2587,6 @@ class ApprovalService
             '付款申请' => '付款申请',
             '考勤申请' => '考勤申请',
             '报销申请' => '报销申请',
-            'reimbursement' => '报销申请',  // 兼容英文类型
         ];
         
         $typeName = $businessTypeMap[$instance->business_type] ?? $instance->business_type;

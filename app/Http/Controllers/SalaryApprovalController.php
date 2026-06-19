@@ -90,6 +90,7 @@ class SalaryApprovalController extends Controller
             'project_id' => 'required|exists:projects,id',
             'month' => 'required|date_format:Y-m',
             'draft_batch_id' => 'nullable|integer|min:1',
+            'salary_approval_id' => 'nullable|integer|exists:salary_approvals,id',
             'approval_type' => 'required|in:online,offline',
             'remarks' => 'nullable|string',
         ]);
@@ -110,15 +111,39 @@ class SalaryApprovalController extends Controller
             ], 422);
         }
 
+        $sourceApproval = null;
+        if ($request->filled('salary_approval_id')) {
+            $sourceApproval = SalaryApproval::where('id', intval($request->salary_approval_id))
+                ->where('account_set_id', $currentAccountSetId)
+                ->where('project_id', $request->project_id)
+                ->where('month', $request->month)
+                ->where('status', 'rejected')
+                ->first();
+
+            if (!$sourceApproval) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该工资表不是可提交状态'
+                ], 422);
+            }
+        }
+
+        $salaryQuery = Salary::where('project_id', $request->project_id)
+                               ->where('month', $request->month)
+                               ->where('account_set_id', $currentAccountSetId)
+                               ->where('status', 'draft');
+
+        if ($sourceApproval) {
+            $salaryQuery->where('salary_approval_id', $sourceApproval->id);
+        } else {
+            $salaryQuery->whereNull('salary_approval_id')
+                ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                    $query->where('seq_number', intval($request->draft_batch_id));
+                });
+        }
+
         // 检查该项目该月份的工资表是否存在
-        $salariesCount = Salary::where('project_id', $request->project_id)
-                              ->where('month', $request->month)
-                              ->where('account_set_id', $currentAccountSetId)
-                              ->whereNull('salary_approval_id')
-                              ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
-                                  $query->where('seq_number', intval($request->draft_batch_id));
-                              })
-                              ->count();
+        $salariesCount = $salaryQuery->count();
 
         if ($salariesCount === 0) {
             return response()->json([
@@ -187,9 +212,7 @@ class SalaryApprovalController extends Controller
                 'remarks' => $request->remarks,
             ]);
 
-            // 更新工资记录的审批ID
-            // 只更新那些还没有关联审批的工资记录（salary_approval_id = NULL）
-            // 已经关联到其他审批的工资记录（包括被驳回的）保持不变
+            // 更新当前可提交工资批次的审批ID。
             
             \Log::info('🔄 准备更新工资记录的审批ID', [
                 'new_approval_id' => $approval->id,
@@ -197,14 +220,21 @@ class SalaryApprovalController extends Controller
                 'month' => $request->month,
             ]);
             
-            $affectedRows = Salary::where('project_id', $request->project_id)
-                 ->where('month', $request->month)
-                 ->where('account_set_id', $currentAccountSetId)
-                 ->whereNull('salary_approval_id')  // 只更新没有审批ID的记录
-                 ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
-                     $query->where('seq_number', intval($request->draft_batch_id));
-                 })
-                 ->update(['salary_approval_id' => $approval->id]);
+            $updateSalaryQuery = Salary::where('project_id', $request->project_id)
+                  ->where('month', $request->month)
+                  ->where('account_set_id', $currentAccountSetId)
+                  ->where('status', 'draft');
+
+            if ($sourceApproval) {
+                $updateSalaryQuery->where('salary_approval_id', $sourceApproval->id);
+            } else {
+                $updateSalaryQuery->whereNull('salary_approval_id')
+                    ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                        $query->where('seq_number', intval($request->draft_batch_id));
+                    });
+            }
+
+            $affectedRows = $updateSalaryQuery->update(['salary_approval_id' => $approval->id]);
             
             \Log::info('✅ 工资记录审批ID更新完成', [
                 'affected_rows' => $affectedRows,

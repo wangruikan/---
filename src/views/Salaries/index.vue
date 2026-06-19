@@ -99,8 +99,8 @@
               </el-table-column>
               <el-table-column label="状态" width="100">
                 <template #default="scope">
-                  <el-tag :type="getStatusType(scope.row.has_approval ? scope.row.approval_status : 'draft')">
-                    {{ getStatusText(scope.row.has_approval ? scope.row.approval_status : 'draft') }}
+                  <el-tag :type="getStatusType(getSalarySheetDisplayStatus(scope.row))">
+                    {{ getStatusText(getSalarySheetDisplayStatus(scope.row)) }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -123,7 +123,7 @@
                   </el-button>
 
                   <el-button
-                    v-if="!scope.row.has_approval"
+                    v-if="isSalaryDraftLike(scope.row)"
                     link
                     type="success"
                     size="small"
@@ -148,7 +148,7 @@
                       size="small"
                       @click="handleCreatePayment(scope.row)"
                     >
-                      发起付款
+                      {{ scope.row.payment_request_status === 'rejected' ? '重新发起付款' : '发起付款' }}
                     </el-button>
 
                     <el-tag
@@ -166,7 +166,7 @@
                       付款已批准
                     </el-tag>
                     <el-tag
-                      v-if="scope.row.has_payment_request && scope.row.payment_request_status === 'rejected'"
+                      v-if="scope.row.payment_request_status === 'rejected'"
                       type="danger"
                       size="small"
                     >
@@ -181,21 +181,8 @@
                     </el-tag>
                   </template>
 
-                  <template v-if="scope.row.has_approval && scope.row.approval_status === 'rejected'">
-                    <el-tag type="danger" size="small" style="margin-right: 8px">
-                      已拒绝
-                    </el-tag>
-                    <ResubmitButton
-                      :record="scope.row"
-                      :business-id="scope.row.salary_approval_id"
-                      :can-resubmit="scope.row.approval_status === 'rejected'"
-                      business-type="工资表审批"
-                      @success="handleSearch"
-                    />
-                  </template>
-
                   <el-button
-                    v-if="!scope.row.has_approval"
+                    v-if="isSalaryDraftLike(scope.row)"
                     link
                     type="danger"
                     size="small"
@@ -587,8 +574,8 @@
             </el-descriptions-item>
             <el-descriptions-item label="员工人数">{{ currentSheet.employee_count }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-              <el-tag :type="getStatusType(currentSheet.status)">
-                {{ getStatusText(currentSheet.status) }}
+              <el-tag :type="getStatusType(getSalarySheetDisplayStatus(currentSheet))">
+                {{ getStatusText(getSalarySheetDisplayStatus(currentSheet)) }}
               </el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="应发合计">
@@ -621,7 +608,7 @@
           </div>
 
           <!-- 导入应发工资 -->
-          <div v-if="!currentSheet?.has_approval" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+          <div v-if="isSalaryDraftLike(currentSheet)" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
             <div>
               <el-upload
                 ref="grossSalaryUploadRef"
@@ -1062,20 +1049,12 @@
       <template #footer>
           <el-button @click="detailDialogVisible = false">关闭</el-button>
         <el-button
-          v-if="currentSheet && !currentSheet.has_approval"
+          v-if="isSalaryDraftLike(currentSheet)"
           type="primary"
             @click="handleSubmit(currentSheet)"
         >
           提交审批
         </el-button>
-        <ResubmitButton
-          v-if="currentSheet && currentSheet.has_approval && currentSheet.approval_status === 'rejected'"
-          :record="currentSheet"
-          :business-id="currentSheet.salary_approval_id"
-          :can-resubmit="currentSheet.approval_status === 'rejected'"
-          business-type="工资表审批"
-          @success="handleSalaryResubmitSuccess"
-        />
         <el-button
           v-if="currentSheet && currentSheet.status === 'submitted' && isApprover"
           type="success"
@@ -1095,7 +1074,7 @@
           type="success"
           @click="handleCreatePaymentFromDetail"
         >
-          发起付款
+          {{ currentSheet.payment_request_status === 'rejected' ? '重新发起付款' : '发起付款' }}
         </el-button>
       </template>
     </el-dialog>
@@ -1186,7 +1165,6 @@ import FormulaHeader from '@/components/FormulaHeader.vue'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
 import PaymentFormFields from '@/components/PaymentFormFields.vue'
 import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
-import ResubmitButton from '@/components/ResubmitButton.vue'
 import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
   getProjectsWithApprovalStatus,
@@ -1446,6 +1424,16 @@ const getStatusText = (status) => {
     rejected: '已拒绝'
   }
   return map[status] || '未知'
+}
+
+const isSalaryDraftLike = (row) => {
+  if (!row) return false
+  return !row.has_approval || row.approval_status === 'rejected'
+}
+
+const getSalarySheetDisplayStatus = (row) => {
+  if (isSalaryDraftLike(row)) return 'draft'
+  return row?.has_approval ? row.approval_status : 'draft'
 }
 
 // 格式化金额
@@ -2071,11 +2059,6 @@ const handleView = (row) => {
   loadSalaryDetails(row)
 }
 
-const handleSalaryResubmitSuccess = () => {
-  detailDialogVisible.value = false
-  handleSearch()
-}
-
 // 查看备注事项
 // 查看工资依据
 const handleViewSalaryBasis = async (row) => {
@@ -2205,6 +2188,9 @@ const handleGrossSalaryFileChange = async (file) => {
     formData.append('project_id', currentSheet.value.project_id)
     formData.append('month', currentSheet.value.month)
     formData.append('current_account_set_id', accountSetStore.currentAccountSetId)
+    if (currentSheet.value.salary_approval_id) {
+      formData.append('salary_approval_id', currentSheet.value.salary_approval_id)
+    }
     if (currentSheet.value.draft_batch_id) {
       formData.append('draft_batch_id', currentSheet.value.draft_batch_id)
     }
@@ -2276,6 +2262,7 @@ const submitApprovalForm = reactive({
   project_name: '',
   month: null,
   draft_batch_id: null,
+  salary_approval_id: null,
   approval_type: 'online',
   remarks: '',
   stamp_selection: getDefaultStampSelection(),
@@ -2341,6 +2328,7 @@ const handleSubmit = async (row) => {
     const validateResponse = await validateBeforeSubmit({
       project_id: row.project_id,
       month: row.month,
+      salary_approval_id: row.salary_approval_id || null,
       draft_batch_id: row.draft_batch_id
     })
 
@@ -2440,6 +2428,7 @@ const handleSubmit = async (row) => {
   submitApprovalForm.project_name = row.project_name
   submitApprovalForm.month = row.month
   submitApprovalForm.draft_batch_id = row.draft_batch_id || null
+  submitApprovalForm.salary_approval_id = row.salary_approval_id || null
   submitApprovalForm.approval_type = 'online'
   submitApprovalForm.remarks = ''
   submitApprovalForm.stamp_selection = getDefaultStampSelection()
@@ -2522,6 +2511,7 @@ const handleConfirmSubmitApproval = async () => {
       project_id: submitApprovalForm.project_id,
       month: submitApprovalForm.month,
       draft_batch_id: submitApprovalForm.draft_batch_id,
+      salary_approval_id: submitApprovalForm.salary_approval_id,
       approval_type: 'online',
       remarks: submitApprovalForm.remarks
     })
@@ -2924,6 +2914,7 @@ const handleDelete = (row) => {
       await deleteSalary({
         project_id: row.project_id,
         month: row.month,
+        salary_approval_id: row.salary_approval_id,
         draft_batch_id: row.draft_batch_id
       })
       ElMessage.success('删除成功')

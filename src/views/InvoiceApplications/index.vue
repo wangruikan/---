@@ -198,7 +198,6 @@
           </el-col>
         </el-row>
 
-        <template v-if="false">
         <el-divider content-position="left">开票详情</el-divider>
 
         <el-row :gutter="20">
@@ -517,7 +516,6 @@
             <div class="el-upload__tip">可上传多个文件，单个文件不超过10MB</div>
           </template>
         </el-upload>
-        </template>
       </el-form>
 
       <template #footer>
@@ -674,7 +672,7 @@
                 <!-- 所属期-年份 -->
                 <el-col :span="12">
                   <el-form-item label="所属期-年份" prop="period_year">
-                    <el-select v-model="invoiceDetailsForm.period_year" placeholder="请选择年份" style="width: 100%">
+                    <el-select v-model="invoiceDetailsForm.period_year" placeholder="请选择年份" style="width: 100%" disabled>
                       <el-option
                         v-for="year in years"
                         :key="year"
@@ -688,7 +686,7 @@
                 <!-- 所属期-月份 -->
                 <el-col :span="12">
                   <el-form-item label="所属期-月份" prop="period_month">
-                    <el-select v-model="invoiceDetailsForm.period_month" placeholder="请选择月份" style="width: 100%">
+                    <el-select v-model="invoiceDetailsForm.period_month" placeholder="请选择月份" style="width: 100%" disabled>
                       <el-option
                         v-for="month in 12"
                         :key="month"
@@ -702,7 +700,7 @@
                 <!-- 单位名称 -->
                 <el-col :span="12">
                   <el-form-item label="单位名称" prop="company_name">
-                    <el-input v-model="invoiceDetailsForm.company_name" placeholder="请输入单位名称" />
+                    <el-input v-model="invoiceDetailsForm.company_name" placeholder="请输入单位名称" disabled />
                   </el-form-item>
                 </el-col>
 
@@ -716,6 +714,7 @@
                       format="YYYY-MM-DD"
                       value-format="YYYY-MM-DD"
                       style="width: 100%"
+                      disabled
                     />
                   </el-form-item>
                 </el-col>
@@ -727,6 +726,7 @@
                       v-model="invoiceDetailsForm.invoice_method"
                       placeholder="请选择"
                       style="width: 100%"
+                      disabled
                     >
                       <el-option label="差额征税-全额开票" value="full" />
                       <el-option label="差额征税-差额开票" value="diff" />
@@ -738,7 +738,7 @@
                 <!-- 开票种类 -->
                 <el-col :span="12">
                   <el-form-item label="开票种类" prop="invoice_type">
-                    <el-select v-model="invoiceDetailsForm.invoice_type" placeholder="请选择开票种类" style="width: 100%">
+                    <el-select v-model="invoiceDetailsForm.invoice_type" placeholder="请选择开票种类" style="width: 100%" disabled>
                       <el-option
                         v-for="option in invoiceTypeOptions"
                         :key="'detail-invoice-type-' + option.value"
@@ -758,6 +758,7 @@
                       :min="0"
                       :controls="false"
                       style="width: 100%"
+                      disabled
                     />
                   </el-form-item>
                 </el-col>
@@ -769,6 +770,7 @@
                       v-model="invoiceDetailsForm.tax_rate"
                       placeholder="请选择税率"
                       style="width: 100%"
+                      disabled
                     >
                       <el-option label="1%" :value="0.01" />
                       <el-option label="2%" :value="0.02" />
@@ -853,6 +855,7 @@
                       format="YYYY-MM-DD"
                       value-format="YYYY-MM-DD"
                       style="width: 100%"
+                      disabled
                     />
                   </el-form-item>
                 </el-col>
@@ -860,14 +863,14 @@
                 <!-- 开票人 -->
               <el-col :span="12">
                 <el-form-item label="开票人">
-                    <el-input v-model="invoiceDetailsForm.invoicer" placeholder="提交审批后自动带出" disabled />
+                    <el-input v-model="invoiceDetailsForm.invoicer" placeholder="保存发票号码后自动带出当前账号" disabled />
                   </el-form-item>
                 </el-col>
 
                 <!-- 发票号码 -->
                 <el-col :span="12">
-                  <el-form-item label="发票号码">
-                    <el-input v-model="invoiceDetailsForm.invoice_number" placeholder="提交审批后填写" disabled />
+                  <el-form-item label="发票号码" prop="invoice_number">
+                    <el-input v-model="invoiceDetailsForm.invoice_number" placeholder="请输入发票号码" />
                   </el-form-item>
                 </el-col>
 
@@ -880,6 +883,7 @@
                       placeholder="选填，限制最早开票时间"
                       value-format="YYYY-MM-DD"
                       style="width: 100%"
+                      disabled
                     />
                   </el-form-item>
                 </el-col>
@@ -902,6 +906,7 @@
                       type="textarea"
                       :rows="3"
                       placeholder="请输入备注信息"
+                      disabled
                     />
                   </el-form-item>
                 </el-col>
@@ -909,8 +914,7 @@
 
               <el-row v-if="canEdit">
                 <el-col :span="24" style="text-align: right">
-                  <el-button type="warning" @click="fillInvoiceTestData">一键填写测试数据</el-button>
-                  <el-button type="primary" @click="handleSaveInvoiceDetails">保存开票详情</el-button>
+                  <el-button type="primary" @click="handleSaveInvoiceDetails">保存发票号码</el-button>
                   <el-button type="success" @click="openSubmitStampDialog">提交审批</el-button>
                 </el-col>
               </el-row>
@@ -972,6 +976,35 @@
         <el-button @click="submitStampDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleConfirmSubmitStamp" :loading="submitting">
           确认提交
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 填写发票号码对话框 -->
+    <el-dialog
+      v-model="invoiceNumberDialogVisible"
+      title="填写发票号码"
+      width="420px"
+      @close="handleInvoiceNumberDialogClose"
+    >
+      <el-form
+        ref="invoiceNumberFormRef"
+        :model="invoiceNumberForm"
+        :rules="invoiceNumberFormRules"
+        label-width="90px"
+      >
+        <el-form-item label="发票号码" prop="invoice_number">
+          <el-input
+            v-model="invoiceNumberForm.invoice_number"
+            placeholder="请输入发票号码"
+            clearable
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="invoiceNumberDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleConfirmInvoiceNumber" :loading="invoiceNumberSubmitting">
+          确定
         </el-button>
       </template>
     </el-dialog>
@@ -1090,8 +1123,7 @@ import {
   generateExcel,
   uploadAttachment,
   deleteAttachment,
-  submitInvoiceApplication,
-  resubmitInvoiceApplication
+  submitInvoiceApplication
 } from '@/api/invoiceApplication'
 import { getAllInvoiceProjects } from '@/api/invoiceProject'
 import request from '@/api/request'
@@ -1201,7 +1233,16 @@ const createForm = reactive({
 })
 
 const createFormRules = {
-  project_name: [{ required: true, message: '请输入商品名称/项目', trigger: 'blur' }]
+  project_name: [{ required: true, message: '请输入商品名称/项目', trigger: 'blur' }],
+  period_year: [{ required: true, message: '请选择年份', trigger: 'change' }],
+  period_month: [{ required: true, message: '请选择月份', trigger: 'change' }],
+  company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
+  application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
+  invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
+  invoice_type: [{ required: true, message: '请选择开票种类', trigger: 'change' }],
+  tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
+  invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
+  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }]
 }
 
 const createItems = ref([
@@ -1286,6 +1327,19 @@ const currentApplication = ref({})
 const isEditMode = ref(false)
 const submitting = ref(false)
 
+// 填写发票号码对话框
+const invoiceNumberDialogVisible = ref(false)
+const invoiceNumberFormRef = ref(null)
+const invoiceNumberSubmitting = ref(false)
+const invoiceNumberForm = reactive({
+  id: null,
+  application_no: '',
+  invoice_number: ''
+})
+const invoiceNumberFormRules = {
+  invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
+}
+
 // 盖章方式选择对话框
 const submitStampDialogVisible = ref(false)
 const submitStampSelectorRef = ref(null)
@@ -1346,18 +1400,7 @@ const invoiceDetailsForm = reactive({
 
 // 开票详情表单验证规则
 const invoiceDetailsFormRules = {
-  period_year: [{ required: true, message: '请选择年份', trigger: 'change' }],
-  period_month: [{ required: true, message: '请选择月份', trigger: 'change' }],
-  company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
-  application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
-  invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
-  invoice_type: [{ required: true, message: '请选择开票种类', trigger: 'change' }],
-  tax_rate: [{ required: true, message: '请选择税率', trigger: 'change' }],
-  amount_excluding_tax: [{ required: true, message: '请输入不含税金额', trigger: 'blur' }],
-  invoice_tax_amount: [{ required: true, message: '请输入开票税额', trigger: 'blur' }],
-  invoice_amount: [{ required: true, message: '请输入开票金额', trigger: 'blur' }],
-  tax_amount: [{ required: true, message: '请输入税金', trigger: 'blur' }],
-  invoice_date: [{ required: true, message: '请选择开票日期', trigger: 'change' }]
+  invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
 }
 
 // 开票详情表单ref
@@ -1861,17 +1904,47 @@ const handleConfirmCreate = async () => {
     const taskName = (projectName || '开票') + `${createForm.year}年${createForm.month}月`
 
     await createFormRef.value.validate()
+    syncCreateCalculatedAmounts()
+    if (!validateCreateExtraData()) {
+      return
+    }
 
     creating.value = true
-    const response = await createInvoiceApplication({
+    const createPayload = new FormData()
+    const createFields = {
       task_name: taskName,
       year: createForm.year,
       month: createForm.month,
-      project_id: null,
       project_name: projectName,
       remark: createForm.remark,
+      period_year: createForm.period_year,
+      period_month: createForm.period_month,
+      company_name: createForm.company_name,
+      application_date: createForm.application_date,
+      invoice_method: createForm.invoice_method,
+      invoice_type: createForm.invoice_type,
+      deduction_amount: createForm.deduction_amount,
+      tax_rate: createForm.tax_rate,
+      amount_excluding_tax: createForm.amount_excluding_tax,
+      invoice_tax_amount: createForm.invoice_tax_amount,
+      invoice_amount: createForm.invoice_amount,
+      tax_amount: createForm.tax_amount,
+      invoice_date: createForm.invoice_date,
+      earliest_invoice_date: createForm.earliest_invoice_date,
+      invoice_remark: createForm.invoice_remark,
       current_account_set_id: accountSetStore.currentAccountSetId
+    }
+    Object.entries(createFields).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        createPayload.append(key, value)
+      }
     })
+    createPayload.append('items', JSON.stringify(createNeedsDeductionAmount.value ? createItems.value : []))
+    createAttachmentFileList.value.forEach(fileItem => {
+      createPayload.append('attachments[]', fileItem.raw || fileItem)
+    })
+
+    const response = await createInvoiceApplication(createPayload)
 
     if (!response?.success) {
       ElMessage.error(response?.message || '创建失败')
@@ -1946,11 +2019,13 @@ const loadApplicationDetail = async (id) => {
       currentApplication.value = response.data
       // 填充开票详情表单
       loadInvoiceDetailsForm(response.data)
+      return true
     }
   } catch (error) {
     console.error('加载详情失败', error)
     ElMessage.error('加载详情失败')
   }
+  return false
 }
 
 // 填充开票详情表单
@@ -1979,7 +2054,6 @@ const loadInvoiceDetailsForm = (data) => {
 // 保存开票详情
 const handleSaveInvoiceDetails = async () => {
   try {
-    syncInvoiceDetailsCalculatedAmounts()
     // 校验表单
     if (invoiceDetailsFormRef.value) {
       await invoiceDetailsFormRef.value.validate()
@@ -1988,39 +2062,22 @@ const handleSaveInvoiceDetails = async () => {
     const response = await request({
       url: `/invoice-applications/${currentApplication.value.id}/update-invoice-details`,
       method: 'put',
-      data: invoiceDetailsForm
+      data: {
+        invoice_number: invoiceDetailsForm.invoice_number
+      }
     })
 
     if (response.success) {
       ElMessage.success('保存成功')
       await loadApplicationDetail(currentApplication.value.id)
+      return true
     }
   } catch (error) {
     if (error === 'cancel') return
     console.error('保存失败', error)
     ElMessage.error(error.response?.data?.message || '保存失败')
   }
-}
-
-// 一键填写开票详情测试数据
-const fillInvoiceTestData = () => {
-  const today = new Date().toISOString().split('T')[0]
-  const currentYear = new Date().getFullYear()
-  const currentMonth = new Date().getMonth() + 1
-  
-  invoiceDetailsForm.period_year = currentYear
-  invoiceDetailsForm.period_month = currentMonth
-  invoiceDetailsForm.company_name = '鄂尔多斯市汇邦人力资源有限责任公司'
-  invoiceDetailsForm.application_date = today
-  invoiceDetailsForm.invoice_method = 'full'
-  invoiceDetailsForm.invoice_type = '普通发票'
-  invoiceDetailsForm.tax_rate = 0.06
-  invoiceDetailsForm.invoice_amount = 5000.00
-  invoiceDetailsForm.invoice_date = today
-  invoiceDetailsForm.invoice_remark = '人力资源服务费'
-  syncInvoiceDetailsCalculatedAmounts()
-  
-  ElMessage.success('开票详情测试数据已填充')
+  return false
 }
 
 // 详情对话框关闭
@@ -2029,12 +2086,63 @@ const handleDetailDialogClose = () => {
   activeTab.value = 'items'
 }
 
+const openInvoiceNumberDialog = (application) => {
+  invoiceNumberForm.id = application.id
+  invoiceNumberForm.application_no = application.application_no || ''
+  invoiceNumberForm.invoice_number = application.invoice_number || ''
+  invoiceNumberDialogVisible.value = true
+  nextTick(() => {
+    invoiceNumberFormRef.value?.clearValidate()
+  })
+}
+
+const handleInvoiceNumberDialogClose = () => {
+  invoiceNumberForm.id = null
+  invoiceNumberForm.application_no = ''
+  invoiceNumberForm.invoice_number = ''
+  invoiceNumberFormRef.value?.clearValidate()
+}
+
 const handleOpenInvoiceFill = async (row) => {
-  isEditMode.value = true
-  await loadApplicationDetail(row.id)
-  detailDialogTitle.value = `填写发票信息 - ${currentApplication.value.application_no}`
-  activeTab.value = 'invoice_details'
-  detailDialogVisible.value = true
+  const loaded = await loadApplicationDetail(row.id)
+  if (!loaded) return
+  openInvoiceNumberDialog(currentApplication.value)
+}
+
+const handleConfirmInvoiceNumber = async () => {
+  try {
+    await invoiceNumberFormRef.value?.validate()
+    const invoiceNumber = String(invoiceNumberForm.invoice_number || '').trim()
+    const applicationId = invoiceNumberForm.id
+
+    invoiceNumberSubmitting.value = true
+    const response = await request({
+      url: `/invoice-applications/${applicationId}/update-invoice-details`,
+      method: 'put',
+      data: {
+        invoice_number: invoiceNumber
+      }
+    })
+
+    if (response.success) {
+      ElMessage.success(response.message || '保存成功')
+      invoiceNumberDialogVisible.value = false
+      invoiceDetailsForm.invoice_number = invoiceNumber
+      if (currentApplication.value.id === applicationId) {
+        currentApplication.value.invoice_number = invoiceNumber
+      }
+      await loadData()
+      return true
+    }
+    ElMessage.error(response?.message || '保存失败')
+  } catch (error) {
+    if (!error?.response) return false
+    console.error('保存发票号码失败', error)
+    ElMessage.error(error.response?.data?.message || '保存失败')
+  } finally {
+    invoiceNumberSubmitting.value = false
+  }
+  return false
 }
 
 // 删除申请
@@ -2299,22 +2407,11 @@ const handleDeleteAttachment = async (attachment) => {
 
 // 打开盖章方式选择对话框
 const openSubmitStampDialog = () => {
-  // 先进行验证
-  // 1. 验证开票详情是否填写
-  const hasInvoiceDetails = invoiceDetailsForm.period_year && 
-                             invoiceDetailsForm.period_month && 
-                             invoiceDetailsForm.company_name
-  
-  if (!hasInvoiceDetails) {
-    ElMessage.warning('请先填写开票详情（所属期-年份、所属期-月份、单位名称）')
-    return
-  }
-  
-  // 2. 检查开票方式是否选择
-  const invoiceMethod = invoiceDetailsForm.invoice_method
-  
-  if (!invoiceMethod) {
-    ElMessage.warning('请选择开票方式')
+  if (!String(invoiceDetailsForm.invoice_number || '').trim()) {
+    ElMessage.warning('请先填写发票号码')
+    if (currentApplication.value?.id) {
+      openInvoiceNumberDialog(currentApplication.value)
+    }
     return
   }
   
@@ -2326,24 +2423,11 @@ const openSubmitStampDialog = () => {
 // 提交审批
 const handleSubmit = async () => {
   try {
-    // 1. 验证开票详情是否填写
-    const hasInvoiceDetails = invoiceDetailsForm.period_year && 
-                               invoiceDetailsForm.period_month && 
-                               invoiceDetailsForm.company_name
-    
-    if (!hasInvoiceDetails) {
-      ElMessage.warning('请先填写开票详情（所属期-年份、所属期-月份、单位名称）')
+    if (!String(invoiceDetailsForm.invoice_number || '').trim()) {
+      ElMessage.warning('请先填写发票号码')
       return
     }
-    
-    // 2. 检查开票方式是否选择
-    const invoiceMethod = invoiceDetailsForm.invoice_method
-    
-    if (!invoiceMethod) {
-      ElMessage.warning('请选择开票方式')
-      return
-    }
-    
+
     await autoGenerateDeductionExcelIfNeeded()
 
     const stampResult = submitStampSelectorRef.value?.validate?.()
@@ -2353,11 +2437,7 @@ const handleSubmit = async () => {
     }
 
     submitting.value = true
-    const submitApi = currentApplication.value.approval_status === 'rejected'
-      ? resubmitInvoiceApplication
-      : submitInvoiceApplication
-
-    const response = await submitApi(currentApplication.value.id, {
+    const response = await submitInvoiceApplication(currentApplication.value.id, {
       stamp_method: submitStampForm.stamp_method,
       ...(stampResult?.value || submitStampForm.stamp_selection)
     })
@@ -2386,10 +2466,15 @@ const handleConfirmSubmitStamp = async () => {
 
 const handleSubmitFromList = async (row) => {
   isEditMode.value = true
-  await loadApplicationDetail(row.id)
-  detailDialogTitle.value = `填写发票信息 - ${currentApplication.value.application_no}`
-  activeTab.value = 'invoice_details'
-  detailDialogVisible.value = true
+  const loaded = await loadApplicationDetail(row.id)
+  if (!loaded) return
+
+  if (!String(invoiceDetailsForm.invoice_number || '').trim()) {
+    ElMessage.warning('请先填写发票号码')
+    openInvoiceNumberDialog(currentApplication.value)
+    return
+  }
+
   openSubmitStampDialog()
 }
 
@@ -2441,10 +2526,9 @@ const handleRouteInvoiceFill = async () => {
 
   try {
     isEditMode.value = true
-    await loadApplicationDetail(invoiceId)
-    detailDialogTitle.value = `填写发票信息 - ${currentApplication.value.application_no}`
-    activeTab.value = 'invoice_details'
-    detailDialogVisible.value = true
+    const loaded = await loadApplicationDetail(invoiceId)
+    if (!loaded) return
+    openInvoiceNumberDialog(currentApplication.value)
   } finally {
     const nextQuery = { ...route.query }
     delete nextQuery.id

@@ -123,11 +123,12 @@ class SalaryPaymentRequestController extends Controller
                 ], 422);
             }
 
-            // 付款申请被驳回后，应在付款申请列表重新发起审批，工资源头只允许首次发起。
+            // 付款申请被驳回后，从工资管理重新发起；未驳回的付款申请仍然禁止重复提交。
             $existingRequest = PaymentRequest::where('salary_approval_id', $salaryApproval->id)
+                ->where('payment_type', 'salary')
                 ->orderByDesc('id')
                 ->first();
-            if ($existingRequest) {
+            if ($existingRequest && $existingRequest->status !== 'rejected') {
                 return response()->json([
                     'success' => false,
                     'message' => '该工资表已发起过付款申请'
@@ -198,10 +199,31 @@ class SalaryPaymentRequestController extends Controller
                 'invoice_date' => $formData['invoiceDate'] ?? null,
                 'accounted' => $formData['accounted'] ?? true,
                 'company' => $formData['company'] ?? null,
+                'approval_instance_id' => null,
+                'invoice_approval_instance_id' => null,
+                'invoice_status' => null,
+                'invoice_uploaded_at' => null,
+                'invoice_uploaded_by' => null,
+                'approved_by' => null,
+                'approved_at' => null,
+                'paid_by' => null,
+                'paid_at' => null,
+                'rejection_reason' => null,
             ];
 
-            // 创建付款申请记录
-            $paymentRequest = PaymentRequest::create($paymentRequestData);
+            if ($existingRequest && $existingRequest->status === 'rejected') {
+                \App\Models\PendingTask::where('related_type', 'PaymentRequest')
+                    ->where('related_id', $existingRequest->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'completed', 'completed_at' => now()]);
+                \App\Models\PaymentRequestAttachment::where('payment_request_id', $existingRequest->id)->delete();
+                \App\Models\PaymentRequestInvoiceAttachment::where('payment_request_id', $existingRequest->id)->delete();
+                $existingRequest->update($paymentRequestData);
+                $paymentRequest = $existingRequest->fresh();
+            } else {
+                // 创建付款申请记录
+                $paymentRequest = PaymentRequest::create($paymentRequestData);
+            }
 
             // 开启候补资料时，给发起人生成待办
             PendingTaskService::createPaymentSupplementTask($paymentRequest);

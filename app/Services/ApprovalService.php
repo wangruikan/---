@@ -81,10 +81,17 @@ class ApprovalService
             // 2.5. 创建附件记录
             if (!empty($attachments)) {
                 foreach ($attachments as $attachment) {
+                    $filePath = $attachment['path'] ?? $attachment['file_path'] ?? null;
+                    $fileName = $attachment['name']
+                        ?? $attachment['file_name']
+                        ?? $attachment['filename']
+                        ?? $attachment['original_name']
+                        ?? ($filePath ? basename($filePath) : null);
+
                     \App\Models\ApprovalAttachment::create([
                         'instance_id' => $instance->id,
-                        'file_path' => $attachment['path'],
-                        'file_name' => $attachment['name'],
+                        'file_path' => $filePath,
+                        'file_name' => $fileName,
                         'file_size' => $attachment['size'] ?? null,
                         'file_type' => $attachment['type'] ?? null,
                         'uploaded_by' => null, // 系统自动添加
@@ -964,15 +971,16 @@ class ApprovalService
                             'business_status' => $invoiceApplication->status  // 业务状态不变
                         ]);
                     } elseif ($status === 'rejected') {
-                        // 驳回：审批状态=已驳回，业务状态=红冲
+                        // 驳回后保留红冲业务状态，同时恢复为待提交审批状态。
                         $invoiceApplication->update([
-                            'approval_status' => 'rejected',
-                            'status' => 'red_flushed',  // 业务状态改为红冲
+                            'status' => 'red_flushed',
+                            'approval_status' => null,
+                            'approval_instance_id' => null,
                         ]);
                         Log::info('发票申请被驳回', [
                             'invoice_application_id' => $businessId,
                             'business_status' => 'red_flushed',
-                            'approval_status' => 'rejected'
+                            'approval_status' => null,
                         ]);
                     } elseif ($status === 'in_approval') {
                         // 审批中：审批状态=审批中，业务状态保持不变

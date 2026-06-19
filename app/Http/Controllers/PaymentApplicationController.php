@@ -823,6 +823,13 @@ class PaymentApplicationController extends Controller
                 ], 404);
             }
 
+            if (in_array($application->payment_type, ['salary', 'insurance'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '工资或汇总付款申请请回原模块重新发起'
+                ], 400);
+            }
+
             if (!$application->approvalInstance || $application->approvalInstance->status !== 'rejected') {
                 return response()->json([
                     'success' => false,

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\AttendanceSheet;
 use App\Models\Salary;
 use App\Models\SalaryApproval;
+use App\Models\ApprovalInstance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -125,7 +126,8 @@ class PayrollController extends Controller
         ?AttendanceSheet $attendanceSheet,
         ?BasisRecord $salaryBasis,
         ?SalaryApproval $salaryApproval,
-        bool $hasSalaryDraft
+        bool $hasSalaryDraft,
+        array $approvalFlowMap = []
     ): array {
         $requiresAttendance = $this->projectRequiresAttendance($project);
         $requiresAttendanceBasis = (bool) $project->requires_attendance_basis;
@@ -163,14 +165,20 @@ class PayrollController extends Controller
                 'attendance_submitted',
                 '考勤表待审核',
                 false,
-                ['attendance_sheet_id' => $attendanceSheet->id]
+                [
+                    'attendance_sheet_id' => $attendanceSheet->id,
+                    'approval_flow' => $approvalFlowMap['考勤申请:' . $attendanceSheet->id] ?? null,
+                ]
             );
         } elseif ($requiresAttendance && $attendanceStatus === AttendanceSheet::STATUS_REJECTED) {
             $step = $this->buildProgressStep(
                 'attendance_draft',
                 '考勤表已驳回，待处理',
                 false,
-                ['attendance_sheet_id' => $attendanceSheet->id]
+                [
+                    'attendance_sheet_id' => $attendanceSheet->id,
+                    'approval_flow' => $approvalFlowMap['考勤申请:' . $attendanceSheet->id] ?? null,
+                ]
             );
         } elseif (!$salaryBasisReady) {
             $step = $this->buildProgressStep(
@@ -188,21 +196,30 @@ class PayrollController extends Controller
                 'salary_approval_pending',
                 '工资表待审核',
                 false,
-                ['salary_approval_id' => $salaryApproval->id]
+                [
+                    'salary_approval_id' => $salaryApproval->id,
+                    'approval_flow' => $approvalFlowMap['工资表审批:' . $salaryApproval->id] ?? null,
+                ]
             );
         } elseif ($salaryApprovalStatus === 'rejected') {
             $step = $this->buildProgressStep(
                 'salary_approval_rejected',
                 '工资表已驳回，待处理',
                 false,
-                ['salary_approval_id' => $salaryApproval->id]
+                [
+                    'salary_approval_id' => $salaryApproval->id,
+                    'approval_flow' => $approvalFlowMap['工资表审批:' . $salaryApproval->id] ?? null,
+                ]
             );
         } else {
             $step = $this->buildProgressStep(
                 'completed',
                 '已完成',
                 true,
-                ['salary_approval_id' => $salaryApproval?->id]
+                [
+                    'salary_approval_id' => $salaryApproval?->id,
+                    'approval_flow' => $salaryApproval ? ($approvalFlowMap['工资表审批:' . $salaryApproval->id] ?? null) : null,
+                ]
             );
             $progressGroup = self::PROGRESS_STATUS_COMPLETED;
         }
@@ -226,6 +243,66 @@ class PayrollController extends Controller
             'has_salary_draft' => $hasSalaryDraft,
             'progress_status' => $progressGroup,
             'current_step' => $step,
+        ];
+    }
+
+    private function buildApprovalFlowMap($attendanceSheets, $salaryApprovals): array
+    {
+        $attendanceSheetIds = $attendanceSheets->pluck('id')->filter()->values()->all();
+        $salaryApprovalIds = $salaryApprovals->pluck('id')->filter()->values()->all();
+        $instances = collect();
+
+        if (!empty($attendanceSheetIds)) {
+            $instances = $instances->merge(
+                ApprovalInstance::with('records')
+                    ->where('business_type', '考勤申请')
+                    ->whereIn('business_id', $attendanceSheetIds)
+                    ->orderByDesc('id')
+                    ->get()
+            );
+        }
+
+        if (!empty($salaryApprovalIds)) {
+            $instances = $instances->merge(
+                ApprovalInstance::with('records')
+                    ->where('business_type', '工资表审批')
+                    ->whereIn('business_id', $salaryApprovalIds)
+                    ->orderByDesc('id')
+                    ->get()
+            );
+        }
+
+        return $instances
+            ->unique(fn (ApprovalInstance $instance) => $instance->business_type . ':' . $instance->business_id)
+            ->mapWithKeys(function (ApprovalInstance $instance) {
+                return [$instance->business_type . ':' . $instance->business_id => $this->formatApprovalFlow($instance)];
+            })
+            ->all();
+    }
+
+    private function formatApprovalFlow(ApprovalInstance $instance): array
+    {
+        $records = $instance->records->values();
+        $rejectedIndex = $records->search(fn ($record) => $record->status === 'rejected');
+        if ($rejectedIndex !== false) {
+            $records = $records->slice(0, $rejectedIndex + 1)->values();
+        }
+
+        return [
+            'instance_id' => $instance->id,
+            'business_type' => $instance->business_type,
+            'status' => $instance->status,
+            'current_step' => $instance->current_step,
+            'total_steps' => $instance->total_steps,
+            'nodes' => $records->map(fn ($record) => [
+                'id' => $record->id,
+                'step_order' => $record->step_order,
+                'step_name' => $record->step_name,
+                'approver_name' => $record->approver_name,
+                'status' => $record->status,
+                'approved_at' => optional($record->approved_at)->format('Y-m-d H:i:s'),
+                'comment' => $record->comment,
+            ])->values()->all(),
         ];
     }
 
@@ -316,6 +393,8 @@ class PayrollController extends Controller
                 ->unique()
                 ->toArray();
 
+            $approvalFlowMap = $this->buildApprovalFlowMap($attendanceSheets, $salaryApprovals);
+
             $rows = $projects
                 ->filter(function (Project $project) use ($month, $salaryHistoryProjectIds) {
                     $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
@@ -328,7 +407,8 @@ class PayrollController extends Controller
                     $attendanceSheets,
                     $salaryBases,
                     $salaryApprovals,
-                    $salaryDraftProjectIds
+                    $salaryDraftProjectIds,
+                    $approvalFlowMap
                 ) {
                     $hasSalaryHistory = in_array(intval($project->id), $salaryHistoryProjectIds, true);
 
@@ -340,7 +420,8 @@ class PayrollController extends Controller
                         $attendanceSheets->get($project->id),
                         $salaryBases->get($project->id),
                         $salaryApprovals->get($project->id),
-                        in_array(intval($project->id), $salaryDraftProjectIds, true)
+                        in_array(intval($project->id), $salaryDraftProjectIds, true),
+                        $approvalFlowMap
                     );
                 })
                 ->filter(function (array $row) use ($progressStatus) {

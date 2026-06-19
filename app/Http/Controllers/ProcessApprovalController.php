@@ -68,9 +68,13 @@ class ProcessApprovalController extends Controller
         
         // 添加 has_payment_request 字段
         $processes->getCollection()->transform(function ($process) {
-            // 付款申请驳回后在付款申请页重提，汇总页只负责首次发起。
-            $process->has_payment_request = \App\Models\PaymentRequest::where('insurance_summary_id', $process->id)
-                ->exists();
+            // 已驳回的付款申请不占用“发起付款”入口，允许从汇总申请重新发起。
+            $paymentRequest = \App\Models\PaymentRequest::where('insurance_summary_id', $process->id)
+                ->where('payment_type', 'insurance')
+                ->orderByDesc('id')
+                ->first();
+            $process->has_payment_request = $paymentRequest && $paymentRequest->status !== 'rejected';
+            $process->payment_request_status = $paymentRequest?->status;
 
             $pendingRecord = $process->approvalInstance?->records?->firstWhere('status', 'pending');
             $process->current_approver_name = $pendingRecord?->approver_name

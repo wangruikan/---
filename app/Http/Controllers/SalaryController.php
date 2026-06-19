@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\AttendanceSheet;
 use App\Models\InsurancePersonnel;
 use App\Models\InsuranceCompensationRecord;
+use App\Models\PaymentRequest;
 use App\Models\SocialSecurityType;
 use App\Models\HousingFundConfig;
 use App\Models\PersonnelChangeRequest;
@@ -174,12 +175,13 @@ class SalaryController extends Controller
                     $item->approval_type = $approval->approval_type;
                     $item->attachments = $approval->attachments;
                     
-                    // 检查是否已经发起过付款申请
+                    // 已驳回的付款申请不占用“发起付款”入口，允许从工资管理重新发起。
                     $paymentRequest = \App\Models\PaymentRequest::where('salary_approval_id', $approval->id)
                                                                 ->where('payment_type', 'salary')
+                                                                ->orderByDesc('id')
                                                                 ->first();
                     if ($paymentRequest) {
-                        $item->has_payment_request = true;
+                        $item->has_payment_request = $paymentRequest->status !== 'rejected';
                         $item->payment_request_status = $paymentRequest->status;
                     } else {
                         $item->has_payment_request = false;
@@ -1817,6 +1819,8 @@ class SalaryController extends Controller
         $validator = Validator::make($request->all(), [
             'month' => 'required|date_format:Y-m',
             'project_id' => 'required|exists:projects,id',
+            'salary_approval_id' => 'nullable|integer|exists:salary_approvals,id',
+            'draft_batch_id' => 'nullable|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -1832,17 +1836,30 @@ class SalaryController extends Controller
         $projectId = $request->project_id;
         $month = $request->month;
 
-        // 获取该项目该月的所有工资记录
-        $salaries = Salary::with('employee:id,name,id_number')
+        $salaryQuery = Salary::with('employee:id,name,id_number')
             ->where('project_id', $projectId)
             ->where('account_set_id', $accountSetId)
             ->where('month', $month)
-            ->where('status', 'draft')
-            ->whereNull('salary_approval_id')
-            ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
-                $query->where('seq_number', intval($request->draft_batch_id));
-            })
-            ->orderByDesc('id')
+            ->where('status', 'draft');
+
+        if ($request->filled('salary_approval_id')) {
+            $approvalId = intval($request->salary_approval_id);
+            if (!$this->isRejectedSalaryApproval($approvalId, $accountSetId, $projectId, $month)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该工资表不是可提交状态'
+                ], 422);
+            }
+            $salaryQuery->where('salary_approval_id', $approvalId);
+        } else {
+            $salaryQuery->whereNull('salary_approval_id')
+                ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                    $query->where('seq_number', intval($request->draft_batch_id));
+                });
+        }
+
+        // 获取该项目该月的所有工资记录
+        $salaries = $salaryQuery->orderByDesc('id')
             ->get()
             ->unique('employee_id')
             ->values();
@@ -1947,6 +1964,7 @@ class SalaryController extends Controller
         $validator = Validator::make($request->all(), [
             'month' => 'required|date_format:Y-m',
             'project_id' => 'required|exists:projects,id',
+            'salary_approval_id' => 'nullable|integer|exists:salary_approvals,id',
             'draft_batch_id' => 'nullable|integer|min:1',
         ]);
 
@@ -1961,15 +1979,28 @@ class SalaryController extends Controller
         $user = Auth::user();
         $accountSetId = $user->account_set_id;
 
-        $deleted = Salary::where('project_id', $request->project_id)
+        $deleteQuery = Salary::where('project_id', $request->project_id)
             ->where('account_set_id', $accountSetId)
             ->where('month', $request->month)
-            ->where('status', 'draft')
-            ->whereNull('salary_approval_id')
-            ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
-                $query->where('seq_number', intval($request->draft_batch_id));
-            })
-            ->delete();
+            ->where('status', 'draft');
+
+        if ($request->filled('salary_approval_id')) {
+            $approvalId = intval($request->salary_approval_id);
+            if (!$this->isRejectedSalaryApproval($approvalId, $accountSetId, $request->project_id, $request->month)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该工资表不是可删除状态'
+                ], 422);
+            }
+            $deleteQuery->where('salary_approval_id', $approvalId);
+        } else {
+            $deleteQuery->whereNull('salary_approval_id')
+                ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                    $query->where('seq_number', intval($request->draft_batch_id));
+                });
+        }
+
+        $deleted = $deleteQuery->delete();
 
         if ($deleted === 0) {
             return response()->json([
@@ -2705,9 +2736,12 @@ class SalaryController extends Controller
                 ], 404);
             }
 
-            // 2. 检查是否已经发起过付款申请
-            $existingRequest = PaymentRequest::where('salary_approval_id', $salaryApproval->id)->first();
-            if ($existingRequest) {
+            // 2. 检查是否已经发起过未驳回的付款申请
+            $existingRequest = PaymentRequest::where('salary_approval_id', $salaryApproval->id)
+                ->where('payment_type', 'salary')
+                ->orderByDesc('id')
+                ->first();
+            if ($existingRequest && $existingRequest->status !== 'rejected') {
                 return response()->json([
                     'success' => false,
                     'message' => '该工资表已发起过付款申请'
@@ -2721,8 +2755,7 @@ class SalaryController extends Controller
                                 ->where('salary_approval_id', $salaryApproval->id)
                                 ->sum('net_salary');
 
-            // 4. 创建付款申请
-            $paymentRequest = PaymentRequest::create([
+            $paymentRequestData = [
                 'payment_type' => 'salary',
                 'account_set_id' => $currentAccountSetId,
                 'salary_approval_id' => $salaryApproval->id,
@@ -2731,7 +2764,31 @@ class SalaryController extends Controller
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
                 'remarks' => '工资付款申请 - ' . $salaryApproval->month,
-            ]);
+                'approval_instance_id' => null,
+                'invoice_approval_instance_id' => null,
+                'invoice_status' => null,
+                'invoice_uploaded_at' => null,
+                'invoice_uploaded_by' => null,
+                'approved_by' => null,
+                'approved_at' => null,
+                'paid_by' => null,
+                'paid_at' => null,
+                'rejection_reason' => null,
+            ];
+
+            if ($existingRequest && $existingRequest->status === 'rejected') {
+                \App\Models\PendingTask::where('related_type', 'PaymentRequest')
+                    ->where('related_id', $existingRequest->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'completed', 'completed_at' => now()]);
+                \App\Models\PaymentRequestAttachment::where('payment_request_id', $existingRequest->id)->delete();
+                \App\Models\PaymentRequestInvoiceAttachment::where('payment_request_id', $existingRequest->id)->delete();
+                $existingRequest->update($paymentRequestData);
+                $paymentRequest = $existingRequest->fresh();
+            } else {
+                // 4. 创建付款申请
+                $paymentRequest = PaymentRequest::create($paymentRequestData);
+            }
 
             DB::commit();
 
@@ -2767,6 +2824,7 @@ class SalaryController extends Controller
             'project_id' => 'required|exists:projects,id',
             'month' => 'required|date_format:Y-m',
             'current_account_set_id' => 'required|exists:account_sets,id',
+            'salary_approval_id' => 'nullable|integer|exists:salary_approvals,id',
             'draft_batch_id' => 'nullable|integer|min:1',
         ]);
 
@@ -2833,16 +2891,29 @@ class SalaryController extends Controller
             // 使用识别到的项目ID
             $projectId = $detectedProjectId;
             
-            // 获取该项目该月的所有工资记录
-            $salaries = Salary::where('project_id', $projectId)
+            $salaryQuery = Salary::where('project_id', $projectId)
                 ->where('month', $month)
                 ->where('account_set_id', $accountSetId)
-                ->where('status', 'draft')
-                ->whereNull('salary_approval_id')
-                ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
-                    $query->where('seq_number', intval($request->draft_batch_id));
-                })
-                ->orderByDesc('id')
+                ->where('status', 'draft');
+
+            if ($request->filled('salary_approval_id')) {
+                $approvalId = intval($request->salary_approval_id);
+                if (!$this->isRejectedSalaryApproval($approvalId, $accountSetId, $projectId, $month)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => '该工资表不是可导入状态'
+                    ], 422);
+                }
+                $salaryQuery->where('salary_approval_id', $approvalId);
+            } else {
+                $salaryQuery->whereNull('salary_approval_id')
+                    ->when($request->filled('draft_batch_id'), function ($query) use ($request) {
+                        $query->where('seq_number', intval($request->draft_batch_id));
+                    });
+            }
+
+            // 获取该项目该月的所有工资记录
+            $salaries = $salaryQuery->orderByDesc('id')
                 ->get()
                 ->unique('employee_id')
                 ->values();
@@ -3041,6 +3112,16 @@ class SalaryController extends Controller
                 'message' => '导入失败：' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function isRejectedSalaryApproval($approvalId, $accountSetId, $projectId, $month): bool
+    {
+        return \App\Models\SalaryApproval::where('id', $approvalId)
+            ->where('account_set_id', $accountSetId)
+            ->where('project_id', $projectId)
+            ->where('month', $month)
+            ->where('status', 'rejected')
+            ->exists();
     }
 
     /**

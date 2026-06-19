@@ -143,8 +143,11 @@ class InvoiceApplicationController extends Controller
             'earliest_invoice_date' => 'nullable|date',
             'is_completed' => 'nullable|boolean',
             'invoicer' => 'nullable|string|max:100',
-            'invoice_number' => 'nullable|string|max:100',
+            'invoice_number' => 'sometimes|required|string|max:100',
             'invoice_remark' => 'nullable|string',
+            'items' => 'nullable|string',
+            'attachments' => 'nullable|array',
+            'attachments.*' => 'file|max:10240',
         ], [
             'task_name.required' => '任务名称不能为空',
             'task_name.max' => '任务名称不能超过100个字符',
@@ -220,39 +223,130 @@ class InvoiceApplicationController extends Controller
             $request->input('tax_rate', 0)
         );
 
-        $application = InvoiceApplication::create([
-            'account_set_id' => $accountSetId,
-            'application_no' => $applicationNo,
-            'task_name' => $request->input('task_name'),
-            'year' => $request->input('year'),
-            'month' => $request->input('month'),
-            'project_name' => $projectName,
-            'remark' => $request->input('remark'),
-            'status' => InvoiceApplication::STATUS_NORMAL,
-            'approval_status' => null,
-            'period_year' => $request->input('period_year'),
-            'period_month' => $request->input('period_month'),
-            'company_name' => $request->input('company_name'),
-            'application_date' => $request->input('application_date'),
-            'invoice_method' => $normalizedInvoiceMethod,
-            'invoice_type' => $request->input('invoice_type', ''),
-            'deduction_amount' => $deductionAmount,
-            'tax_rate' => $request->input('tax_rate', 0),
-            'amount_excluding_tax' => $calculatedAmounts['amount_excluding_tax'],
-            'invoice_tax_amount' => $calculatedAmounts['invoice_tax_amount'],
-            'invoice_amount' => $request->input('invoice_amount', 0),
-            'tax_amount' => $calculatedAmounts['tax_amount'],
-            'invoice_date' => $request->input('invoice_date'),
-            'earliest_invoice_date' => $request->input('earliest_invoice_date'),
-            'is_completed' => false,
-            'invoicer' => null,
-            'invoice_number' => null,
-            'invoice_remark' => $request->input('invoice_remark'),
-            'submitter_id' => $user->id,
-            'created_by' => $user->id,
-        ]);
+        $items = json_decode($request->input('items', '[]'), true);
+        if (!is_array($items)) {
+            return response()->json([
+                'success' => false,
+                'message' => '扣除明细格式不正确'
+            ], 422);
+        }
 
-        PendingTaskService::createInvoiceFillTask($application->fresh());
+        if (!$request->hasFile('attachments')) {
+            return response()->json([
+                'success' => false,
+                'message' => '请至少上传1个附件'
+            ], 422);
+        }
+
+        if (($normalizedInvoiceMethod === 'full' || $normalizedInvoiceMethod === 'diff') && empty($items)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请至少添加1条扣除明细'
+            ], 422);
+        }
+
+        $itemsAmount = round(array_sum(array_map(function ($item) {
+            return (float) ($item['amount'] ?? 0);
+        }, $items)), 2);
+
+        if (($normalizedInvoiceMethod === 'full' || $normalizedInvoiceMethod === 'diff') && $itemsAmount > (float) $request->input('invoice_amount', 0)) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => [
+                    'deduction_amount' => ['扣除额不能大于开票金额']
+                ]
+            ], 422);
+        }
+
+        $application = DB::transaction(function () use (
+            $request,
+            $accountSetId,
+            $applicationNo,
+            $projectName,
+            $normalizedInvoiceMethod,
+            $deductionAmount,
+            $calculatedAmounts,
+            $user,
+            $items
+        ) {
+            $application = InvoiceApplication::create([
+                'account_set_id' => $accountSetId,
+                'application_no' => $applicationNo,
+                'task_name' => $request->input('task_name'),
+                'year' => $request->input('year'),
+                'month' => $request->input('month'),
+                'project_name' => $projectName,
+                'remark' => $request->input('remark'),
+                'status' => InvoiceApplication::STATUS_NORMAL,
+                'approval_status' => null,
+                'period_year' => $request->input('period_year'),
+                'period_month' => $request->input('period_month'),
+                'company_name' => $request->input('company_name'),
+                'application_date' => $request->input('application_date'),
+                'invoice_method' => $normalizedInvoiceMethod,
+                'invoice_type' => $request->input('invoice_type', ''),
+                'deduction_amount' => $deductionAmount,
+                'tax_rate' => $request->input('tax_rate', 0),
+                'amount_excluding_tax' => $calculatedAmounts['amount_excluding_tax'],
+                'invoice_tax_amount' => $calculatedAmounts['invoice_tax_amount'],
+                'invoice_amount' => $request->input('invoice_amount', 0),
+                'tax_amount' => $calculatedAmounts['tax_amount'],
+                'invoice_date' => $request->input('invoice_date'),
+                'earliest_invoice_date' => $request->input('earliest_invoice_date'),
+                'is_completed' => false,
+                'invoicer' => null,
+                'invoice_number' => null,
+                'invoice_remark' => $request->input('invoice_remark'),
+                'submitter_id' => $user->id,
+                'created_by' => $user->id,
+            ]);
+
+            foreach ($items as $index => $item) {
+                $amount = round((float) ($item['amount'] ?? 0), 2);
+                $taxRate = max(0, (float) ($item['tax_rate'] ?? 0));
+                $invoiceProjectId = $item['invoice_project_id'] ?? null;
+                $invoiceProject = $invoiceProjectId ? InvoiceProject::find($invoiceProjectId) : null;
+
+                InvoiceItem::create([
+                    'application_id' => $application->id,
+                    'invoice_project_id' => $invoiceProjectId,
+                    'project_name' => $invoiceProject?->project_name ?: ($item['item_name'] ?? ''),
+                    'sequence' => $index + 1,
+                    'item_name' => $item['item_name'] ?? '',
+                    'spec_model' => $item['spec_model'] ?? '',
+                    'unit' => $item['unit'] ?? '',
+                    'quantity' => $item['quantity'] ?? null,
+                    'unit_price' => $item['unit_price'] ?? null,
+                    'amount' => $amount,
+                    'tax_rate' => $taxRate,
+                    'tax_amount' => $this->calculateItemTaxAmount($amount, $taxRate),
+                    'remark' => $item['remark'] ?? null,
+                ]);
+            }
+
+            $attachments = [];
+            foreach ($request->file('attachments', []) as $file) {
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('invoice_attachments', $filename, 'public');
+                $attachments[] = [
+                    'filename' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'url' => Storage::disk('public')->url($path),
+                    'size' => $file->getSize(),
+                    'attachment_type' => 'supporting',
+                    'uploaded_at' => now()->toDateTimeString(),
+                ];
+            }
+
+            if (!empty($attachments)) {
+                $application->update(['attachments' => $attachments]);
+            }
+
+            PendingTaskService::createInvoiceFillTask($application->fresh());
+
+            return $application;
+        });
 
         return response()->json([
             'success' => true,
@@ -858,9 +952,10 @@ class InvoiceApplicationController extends Controller
         }
 
         if (!$application->canSubmit()) {
+            $needsItems = $application->invoice_method === 'full' || $application->invoice_method === 'diff';
             return response()->json([
                 'success' => false,
-                'message' => '请先添加明细项和上传附件'
+                'message' => $needsItems ? '请先添加明细项和上传附件' : '请先上传附件'
             ], 400);
         }
 
@@ -953,112 +1048,11 @@ class InvoiceApplicationController extends Controller
     }
 
     /**
-     * 重新发起（红冲后）
+     * 兼容旧的重新提交入口，驳回后按普通待提交状态重新提交。
      */
     public function resubmit(Request $request, $id)
     {
-        $application = InvoiceApplication::with('items')->find($id);
-
-        if (!$application) {
-            return response()->json([
-                'success' => false,
-                'message' => '申请不存在'
-            ], 404);
-        }
-
-        if (!$application->canResubmit()) {
-            return response()->json([
-                'success' => false,
-                'message' => '只有红冲状态的申请才能重新发起'
-            ], 400);
-        }
-
-        if (!$this->canFillInvoiceInfo($application, Auth::user())) {
-            return response()->json([
-                'success' => false,
-                'message' => '只有第一个有效审批节点人员才能填写并提交审批'
-            ], 403);
-        }
-
-        if ($application->items->count() === 0 || empty($application->attachments)) {
-            return response()->json([
-                'success' => false,
-                'message' => '请先添加明细项和上传附件'
-            ], 400);
-        }
-
-        $user = Auth::user();
-        $accountSetId = $application->account_set_id;
-        $stampMethod = $request->input('stamp_method', 'online');
-        $stampOptions = $this->resolveApprovalStampOptions($request, $accountSetId);
-        $firstApprovalLevel = $this->getInvoiceFillApprovalLevel($accountSetId);
-        if (!$firstApprovalLevel) {
-            return response()->json([
-                'success' => false,
-                'message' => '未配置发票申请的填写节点'
-            ], 400);
-        }
-        if ($firstApprovalLevel >= ApprovalFlowConfig::MAX_APPROVAL_LEVEL) {
-            return response()->json([
-                'success' => false,
-                'message' => '发票申请流程未配置后续审批节点'
-            ], 400);
-        }
-        $approvalOptions = array_merge($stampOptions, [
-            'start_approval_level' => $firstApprovalLevel + 1,
-            'initiator_step_name' => ApprovalFlowConfig::formatLevelName($firstApprovalLevel),
-        ]);
-
-        DB::beginTransaction();
-        try {
-            $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
-                $accountSetId,
-                '发票申请（重新提交）',
-                $application->id,
-                $user->id,
-                $user->name,
-                $this->buildApprovalAttachments($application),
-                $stampMethod,
-                '经办重新提交，自动通过',
-                $approvalOptions
-            );
-
-            // 更新原申请：审批状态改为审批中，关联新审批实例
-            // 业务状态保持红冲不变
-            $application->update([
-                'approval_status' => InvoiceApplication::APPROVAL_STATUS_PENDING,  // 审批状态：审批中
-                'approval_instance_id' => $instance->id,
-                'submitter_id' => $user->id,
-                'submitted_at' => now(),
-                // status 业务状态保持 red_flushed 不变
-            ]);
-
-            PendingTaskService::completeInvoiceFillTask($application->fresh());
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => '重新发起成功，已提交审批',
-                'data' => $application->load(['items', 'approvalInstance'])
-            ]);
-
-        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
-            DB::rollBack();
-            throw $e;
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            \Log::error('重新提交失败', [
-                'application_id' => $id,
-                'error' => $e->getMessage()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => '重新提交失败：' . $e->getMessage()
-            ], 500);
-        }
+        return $this->submit($request, $id);
     }
 
     /**
@@ -1193,6 +1187,7 @@ class InvoiceApplicationController extends Controller
             'tax_amount' => 'nullable|numeric|min:0',
             'invoice_date' => 'nullable|date',
             'earliest_invoice_date' => 'nullable|date',
+            'invoice_number' => 'nullable|string|max:100',
             'invoice_remark' => 'nullable|string',
         ], [
             'period_year.integer' => '所属期年份必须是整数',
@@ -1205,6 +1200,7 @@ class InvoiceApplicationController extends Controller
             'invoice_method.in' => '开票方式只能是：全额、差额、无',
             'tax_rate.min' => '税率不能为负',
             'tax_rate.max' => '税率不能超过100%',
+            'invoice_number.required' => '请输入发票号码',
         ]);
 
         if ($validator->fails()) {
@@ -1230,8 +1226,14 @@ class InvoiceApplicationController extends Controller
             'tax_amount',
             'invoice_date',
             'earliest_invoice_date',
+            'invoice_number',
             'invoice_remark',
         ]);
+
+        if (array_key_exists('invoice_number', $updateData)) {
+            $updateData['invoice_number'] = trim((string) $updateData['invoice_number']);
+            $updateData['invoicer'] = Auth::user()?->name;
+        }
 
         if (array_key_exists('invoice_method', $updateData)) {
             $rawInvoiceMethod = trim((string)($updateData['invoice_method'] ?? ''));
@@ -1290,8 +1292,6 @@ class InvoiceApplicationController extends Controller
         $updateData['invoice_tax_amount'] = $calculatedAmounts['invoice_tax_amount'];
         $updateData['tax_amount'] = $calculatedAmounts['tax_amount'];
         $updateData['is_completed'] = false;
-        $updateData['invoicer'] = null;
-        $updateData['invoice_number'] = null;
 
         $application->update($updateData);
         $this->syncInvoiceSummary($application->fresh());
@@ -1549,6 +1549,7 @@ class InvoiceApplicationController extends Controller
             'tax_rate' => '请选择税率',
             'invoice_amount' => '请输入开票金额',
             'invoice_date' => '请选择开票日期',
+            'invoice_number' => '请输入发票号码',
         ];
 
         foreach ($requiredFields as $field => $message) {

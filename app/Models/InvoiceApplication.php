@@ -251,19 +251,19 @@ class InvoiceApplication extends Model
      */
     public function canSubmit()
     {
+        $needsItems = $this->invoice_method === 'full' || $this->invoice_method === 'diff';
+
         return (!$this->approval_status || $this->approval_status === self::APPROVAL_STATUS_REJECTED) && 
-               $this->items()->count() > 0 &&
+               (!$needsItems || $this->items()->count() > 0) &&
                !empty($this->attachments);
     }
 
     /**
-     * 是否可以重新提交（重新发起）
+     * 驳回后恢复为普通待提交状态，不再启用单独的重新提交入口。
      */
     public function canResubmit()
     {
-        // 业务状态是红冲 且 审批状态是已驳回
-        return $this->status === self::STATUS_RED_FLUSHED && 
-               $this->approval_status === self::APPROVAL_STATUS_REJECTED;
+        return false;
     }
 
     /**
@@ -274,5 +274,3 @@ class InvoiceApplication extends Model
         return $this->canResubmit();
     }
 }
-
-

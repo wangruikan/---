@@ -110,7 +110,7 @@
               type="warning" 
               @click="openPaymentRequestDialog(row.id)"
             >
-              发起付款
+              {{ row.payment_request_status === 'rejected' ? '重新发起付款' : '发起付款' }}
             </el-button>
             <el-button 
               v-if="['draft', 'rejected'].includes(row.status)" 

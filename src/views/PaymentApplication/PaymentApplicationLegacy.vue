@@ -133,7 +133,7 @@
           <template #default="{ row }">
             <el-button link type="primary" :icon="View" @click="handleView(row)">查看</el-button>
             <el-button 
-              v-if="row.status === 'rejected'"
+              v-if="canResubmitFromPaymentList(row)"
               link 
               type="warning" 
               :icon="RefreshRight" 
@@ -875,6 +875,11 @@ const submitStampForm = reactive({
   payment_method: 'transfer', // 默认转账
   stamp_selection: getDefaultStampSelection()
 })
+
+const sourceModulePaymentTypes = ['salary', 'insurance']
+const canResubmitFromPaymentList = (row) => {
+  return row.status === 'rejected' && !sourceModulePaymentTypes.includes(row.payment_type)
+}
 const showFormToWordDialog = ref(false)
 
 // 发票上传相关

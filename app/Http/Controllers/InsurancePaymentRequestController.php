@@ -146,19 +146,43 @@ class InsurancePaymentRequestController extends Controller
                 'invoice_date' => $formData['invoiceDate'] ?? null,
                 'accounted' => $formData['accounted'] ?? true,
                 'company' => $formData['company'] ?? null,
+                'approval_instance_id' => null,
+                'invoice_approval_instance_id' => null,
+                'invoice_status' => null,
+                'invoice_uploaded_at' => null,
+                'invoice_uploaded_by' => null,
+                'approved_by' => null,
+                'approved_at' => null,
+                'paid_by' => null,
+                'paid_at' => null,
+                'rejection_reason' => null,
             ];
 
-            // 付款申请被驳回后，应在付款申请列表重新发起审批，汇总源头只允许首次发起。
-            $existingRequest = PaymentRequest::where('insurance_summary_id', $processApproval->id)->first();
-            if ($existingRequest) {
+            // 付款申请被驳回后，从汇总申请重新发起；未驳回的付款申请仍然禁止重复提交。
+            $existingRequest = PaymentRequest::where('insurance_summary_id', $processApproval->id)
+                ->where('payment_type', 'insurance')
+                ->orderByDesc('id')
+                ->first();
+            if ($existingRequest && $existingRequest->status !== 'rejected') {
                 return response()->json([
                     'success' => false,
                     'message' => '该汇总流程已发起过付款申请'
                 ], 422);
             }
 
-            // 创建付款申请记录
-            $paymentRequest = PaymentRequest::create($payload);
+            if ($existingRequest && $existingRequest->status === 'rejected') {
+                \App\Models\PendingTask::where('related_type', 'PaymentRequest')
+                    ->where('related_id', $existingRequest->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'completed', 'completed_at' => now()]);
+                \App\Models\PaymentRequestAttachment::where('payment_request_id', $existingRequest->id)->delete();
+                \App\Models\PaymentRequestInvoiceAttachment::where('payment_request_id', $existingRequest->id)->delete();
+                $existingRequest->update($payload);
+                $paymentRequest = $existingRequest->fresh();
+            } else {
+                // 创建付款申请记录
+                $paymentRequest = PaymentRequest::create($payload);
+            }
 
             DB::commit();
 

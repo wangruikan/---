@@ -38,7 +38,6 @@ class ApprovalFlowConfig extends Model
             '工资表审批' => '工资表审批',
             '考勤申请' => '考勤申请',
             '发票申请' => '发票申请',
-            '发票申请（重新提交）' => '发票申请（重新提交）',
             '付款申请' => '付款申请',
             '工资付款申请' => '工资付款申请',
             '报销付款申请' => '报销付款申请',
@@ -57,6 +56,9 @@ class ApprovalFlowConfig extends Model
 
         foreach ($extraTypes as $type) {
             $type = trim((string) $type);
+            if ($type === '发票申请（重新提交）') {
+                continue;
+            }
             if ($type !== '' && !isset($types[$type])) {
                 $types[$type] = $type;
             }

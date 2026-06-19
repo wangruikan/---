@@ -1172,7 +1172,7 @@ class ApprovalFlowController extends Controller
                         foreach ($businessModel->attachments as $att) {
                             $attachments[] = [
                                 'path' => $att->file_path,
-                                'name' => $att->file_name,
+                                'name' => $att->filename ?? $att->file_name ?? basename($att->file_path),
                                 'size' => $att->file_size,
                                 'type' => $att->file_type ?? $att->mime_type
                             ];

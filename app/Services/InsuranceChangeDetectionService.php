@@ -68,6 +68,31 @@ class InsuranceChangeDetectionService
                     ];
                 }
 
+                $project = $this->resolveProjectForEmployee($employee, $projectId);
+                $personnel = $project ? $this->findCurrentPersonnel($employee, $project) : null;
+
+                // 员工尚未形成参保记录时，资料编辑应继续沉淀到增减任务，而不是尝试同步现有参保数据。
+                if ($source === 'employee_insurance_profile_change' && !$personnel) {
+                    $record = $this->createOrUpdateInsuranceChange(
+                        $employee,
+                        $changeType,
+                        (int) $year,
+                        (int) $month,
+                        $oldData,
+                        $newData,
+                        [
+                            'project_id' => $project ? $project->id : $projectId,
+                        ]
+                    );
+
+                    return [
+                        'success' => (bool) $record,
+                        'message' => $record ? '参保增减任务已生成' : '参保增减任务未生成',
+                        'imported_count' => $record ? 1 : 0,
+                        'record' => $record,
+                    ];
+                }
+
                 $mode = $this->resolveEmployeeEventMode($changeType, $oldData, $newData, $source);
 
                 if ($mode === 'noop') {

@@ -247,7 +247,6 @@ class ProcessRecordController extends Controller
             'insurance_summary' => '保险汇总审批',
             'attendance_sheet' => '考勤申请',
             'material_request' => '资料申请',
-            'travel_application' => '差旅申请',
         ];
 
         return $typeMap[$businessType] ?? ($businessType ?: '未知业务');

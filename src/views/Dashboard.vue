@@ -496,7 +496,6 @@ const getTodoBusinessTypeText = (row) => {
     attendance_sheet: '考勤申请',
     payment_application: '付款申请',
     reimbursement: '报销申请',
-    travel_application: '差旅申请',
     invoice_application: '发票申请',
     material_request: '资料申请'
   }

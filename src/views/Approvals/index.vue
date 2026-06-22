@@ -440,7 +440,7 @@
       <template #footer>
         <el-button @click="showActionDialog = false">取消</el-button>
         <el-button 
-          v-if="hasContractAttachment"
+          v-if="canShowApprovalStampButton"
           :type="approvalStampPreviewReady ? 'success' : 'warning'"
           @click="openPDFEditor"
         >
@@ -794,19 +794,30 @@ const isFirstStep = computed(() => {
 
 const isFinalApprovalStep = computed(() => {
   const currentStepOrder = Number(currentApproval.value?.step_order || 0)
-  const totalSteps = Number(currentApproval.value?.instance?.total_steps || 0)
+  const records = currentApproval.value?.instance?.records
 
+  if (Array.isArray(records) && records.length > 0) {
+    const effectiveStepOrders = records
+      .map(record => Number(record?.step_order || 0))
+      .filter(stepOrder => stepOrder > 0)
+
+    if (effectiveStepOrders.length > 0) {
+      return currentStepOrder > 0 && currentStepOrder === Math.max(...effectiveStepOrders)
+    }
+  }
+
+  const totalSteps = Number(currentApproval.value?.instance?.total_steps || 0)
   if (currentStepOrder > 0 && totalSteps > 0) {
     return currentStepOrder === totalSteps
   }
 
-  const records = currentApproval.value?.instance?.records
-  if (!Array.isArray(records) || records.length === 0) {
-    return false
-  }
+  return false
+})
 
-  const maxStepOrder = Math.max(...records.map(record => Number(record?.step_order || 0)))
-  return currentStepOrder > 0 && currentStepOrder === maxStepOrder
+const canShowApprovalStampButton = computed(() => {
+  return isFinalApprovalStep.value
+    && hasContractAttachment.value
+    && !!selectedApprovalStamp.value
 })
 
 const requiresStampPreviewBeforeApprove = computed(() => {
@@ -1310,6 +1321,11 @@ const openPDFEditor = async () => {
     ElMessage.error('审批信息加载失败')
     return
   }
+
+  if (!canShowApprovalStampButton.value) {
+    ElMessage.warning('只有最后一个审批节点可以签名盖章')
+    return
+  }
   
   const instance = currentApproval.value.instance
   if (!instance.attachments || instance.attachments.length === 0) {
@@ -1495,7 +1511,6 @@ const getBusinessTypeText = (row) => {
     '保险付款申请': '保险付款',
     '报销申请': '报销申请',
     '报销付款申请': '报销付款',
-    'travel_application': '差旅申请',
     'invoice_application': '发票申请',
     'material_request': '资料申请'
   }

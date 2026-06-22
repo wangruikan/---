@@ -1214,20 +1214,6 @@ Route::post('/{id}/fill-invoice-number', [InvoiceApplicationController::class, '
         Route::post('/complete-submission', [ReimbursementController::class, 'completeSubmission']); // 完成提交
     });
 
-    // 差旅申请管理
-    Route::prefix('travel-applications')->group(function () {
-        Route::get('/', [App\Http\Controllers\TravelApplicationController::class, 'index']);                           // 获取列表
-        Route::post('/', [App\Http\Controllers\TravelApplicationController::class, 'store']);                          // 创建申请
-        Route::get('/{id}', [App\Http\Controllers\TravelApplicationController::class, 'show']);                        // 获取详情
-        Route::delete('/{id}', [App\Http\Controllers\TravelApplicationController::class, 'destroy']);                  // 删除申请
-        
-        // 附件管理
-        Route::post('/upload-attachment', [App\Http\Controllers\TravelApplicationController::class, 'uploadAttachment']); // 上传附件
-        
-        // 完成提交（创建审批流程）
-        Route::post('/complete-submission', [App\Http\Controllers\TravelApplicationController::class, 'completeSubmission']); // 完成提交
-    });
-
     // 人员变动申请管理
     Route::prefix('personnel-change-requests')->group(function () {
         Route::get('/', [App\Http\Controllers\PersonnelChangeRequestController::class, 'index']);                      // 获取列表

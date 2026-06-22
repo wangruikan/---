@@ -33,12 +33,6 @@ return new class extends Migration
             ['module' => 'payment_applications', 'action' => 'update', 'name' => '付款申请-编辑', 'sort_order' => 807],
             ['module' => 'payment_applications', 'action' => 'submit', 'name' => '付款申请-提交', 'sort_order' => 808],
             
-            // ========== 差旅申请 ==========
-            ['module' => 'travel_application', 'action' => 'view', 'name' => '差旅申请-查看', 'sort_order' => 835],
-            ['module' => 'travel_application', 'action' => 'create', 'name' => '差旅申请-创建', 'sort_order' => 836],
-            ['module' => 'travel_application', 'action' => 'update', 'name' => '差旅申请-编辑', 'sort_order' => 837],
-            ['module' => 'travel_application', 'action' => 'delete', 'name' => '差旅申请-删除', 'sort_order' => 838],
-            
             // ========== 考勤依据 ==========
             ['module' => 'attendance_basis', 'action' => 'view', 'name' => '考勤依据-查看', 'sort_order' => 410],
             ['module' => 'attendance_basis', 'action' => 'upload', 'name' => '考勤依据-上传', 'sort_order' => 411],
@@ -116,7 +110,7 @@ return new class extends Migration
     {
         $modules = [
             'personnel_change', 'bid_projects', 'invoice_projects', 'payment_applications',
-            'travel_application', 'attendance_basis', 'salary_basis', 'salary_summaries',
+            'attendance_basis', 'salary_basis', 'salary_summaries',
             'salary_payment', 'special_deductions', 'payroll_remarks', 'process_management',
             'process_records', 'region_portals', 'delivery_configs', 'signatures', 'roles'
         ];

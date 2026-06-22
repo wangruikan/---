@@ -75,7 +75,6 @@ class Permission extends Model
             'payment_applications' => '付款申请',
             'invoice_applications' => '发票申请',
             'reimbursement' => '报销管理',
-            'travel' => '差旅申请',
             'recruitment' => '招聘管理',
             'shared_files' => '共享文件',
             'contracts' => '合同管理',

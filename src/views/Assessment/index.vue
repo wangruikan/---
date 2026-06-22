@@ -173,7 +173,6 @@ const BUSINESS_TYPE_TEXT_MAP = {
   material_request: '资料申请',
   approval_request: '审批申请',
   reimbursement_request: '报销申请',
-  travel_request: '差旅申请',
   invoice_request: '发票申请',
   payment_application: '付款申请',
   approval_rejection: '审批驳回',
@@ -188,7 +187,6 @@ const BUSINESS_TYPE_TEXT_MAP = {
   insurance_summary: '保险汇总审批',
   attendance_sheet: '考勤申请',
   invoice_application: '发票申请',
-  travel_application: '差旅申请',
   reimbursement: '报销申请'
 }
 

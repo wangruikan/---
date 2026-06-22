@@ -1195,37 +1195,6 @@ class ApprovalService
                 }
                 break;
             
-            case 'travel_application':
-            case '差旅申请':
-                // 更新差旅申请的状态
-                $travelApplication = \App\Models\TravelApplication::find($businessId);
-                if ($travelApplication) {
-                    $data = [];
-                    
-                    if ($status === 'in_approval') {
-                        $data['status'] = 'in_approval';
-                    } elseif ($status === 'completed') {
-                        $data['status'] = 'approved';
-                    } elseif ($status === 'rejected') {
-                        $data['status'] = 'rejected';
-                    } elseif ($status === 'withdrawn') {
-                        $data['status'] = 'pending';
-                    }
-                    
-                    if ($instanceId) {
-                        $data['approval_flow_id'] = $instanceId;
-                    }
-                    
-                    if (!empty($data)) {
-                        $travelApplication->update($data);
-                        Log::info('差旅申请状态已更新', [
-                            'travel_application_id' => $businessId,
-                            'new_status' => $data['status'] ?? 'unknown'
-                        ]);
-                    }
-                }
-                break;
-            
             case 'employee_deletion':
                 // 员工删除审批
                 if ($status === 'completed') {
@@ -2571,7 +2540,6 @@ class ApprovalService
             'employee_registration_form_update' => '登记表修改审批',
             'personnel_change' => '人员汇总申请',
             'material_request' => '资料申请',
-            'travel_application' => '差旅申请',
             'invoice_application' => '发票申请',
             'salary_approval' => '工资表审批',
             'payment_application' => '付款申请',

@@ -64,7 +64,6 @@ class AssessmentRecord extends Model
             'material_request' => '资料申请',
             'approval_request' => '审批申请',
             'reimbursement_request' => '报销申请',
-            'travel_request' => '差旅申请',
             'invoice_request' => '发票申请',
             'payment_application' => '付款申请',
             'employee_contract' => '员工合同审批',
@@ -77,7 +76,6 @@ class AssessmentRecord extends Model
             'insurance_summary' => '保险汇总审批',
             'attendance_sheet' => '考勤申请',
             'invoice_application' => '发票申请',
-            'travel_application' => '差旅申请',
             'reimbursement' => '报销申请'
         ];
         return $typeMap[$this->business_type] ?? $this->business_type;

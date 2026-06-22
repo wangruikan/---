@@ -48,14 +48,12 @@ class ApprovalFlowConfig extends Model
             '文件盖章' => '文件盖章',
             '报销申请' => '报销申请',
             'material_request' => '资料申请',
-            'travel_application' => '差旅申请',
-            '差旅申请' => '差旅申请（兼容）',
             'personnel_change' => '人员汇总申请',
         ];
 
         foreach ($extraTypes as $type) {
             $type = trim((string) $type);
-            if ($type === '发票申请（重新提交）') {
+            if (in_array($type, ['发票申请（重新提交）', 'travel_application', '差旅申请'], true)) {
                 continue;
             }
             if ($type !== '' && !isset($types[$type])) {

@@ -316,8 +316,6 @@ class RoleController extends Controller
             'reimbursements' => '报销管理',
             'reimbursement' => '报销管理',
             'reimbursement_payment_requests' => '报销付款申请',
-            'travel_application' => '差旅申请',
-            'travel' => '差旅申请',
             'recruitment' => '招聘管理',
             'recruitment_demand' => '招聘需求',
             'shared_files' => '共享文件',

@@ -92,12 +92,6 @@ class PermissionSeeder extends Seeder
             ['module' => 'reimbursement', 'action' => 'edit', 'name' => '编辑', 'sort_order' => 122],
             ['module' => 'reimbursement', 'action' => 'delete', 'name' => '删除', 'sort_order' => 123],
             
-            // 差旅申请
-            ['module' => 'travel', 'action' => 'view', 'name' => '查看', 'sort_order' => 130],
-            ['module' => 'travel', 'action' => 'create', 'name' => '新增', 'sort_order' => 131],
-            ['module' => 'travel', 'action' => 'edit', 'name' => '编辑', 'sort_order' => 132],
-            ['module' => 'travel', 'action' => 'delete', 'name' => '删除', 'sort_order' => 133],
-            
             // 招聘管理
             ['module' => 'recruitment', 'action' => 'view', 'name' => '查看', 'sort_order' => 140],
             ['module' => 'recruitment', 'action' => 'create', 'name' => '新增', 'sort_order' => 141],

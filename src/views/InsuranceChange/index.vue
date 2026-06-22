@@ -51,6 +51,17 @@
                   />
                 </el-select>
               </el-form-item>
+              <el-form-item label="项目">
+                <el-select v-model="selectedProjectName" placeholder="请选择项目" clearable style="width: 200px">
+                  <el-option label="全部" value="" />
+                  <el-option
+                    v-for="project in projectOptions"
+                    :key="project"
+                    :label="project"
+                    :value="project"
+                  />
+                </el-select>
+              </el-form-item>
               <el-form-item>
                 <el-button type="primary" @click="loadChanges">查询</el-button>
                 <el-button @click="resetFilter">重置</el-button>
@@ -65,6 +76,8 @@
                 <span>参保人员列表</span>
                 <div class="header-actions">
                   <span class="total-count">共 {{ filteredChanges.length }} / {{ changes.length }} 条记录</span>
+                  <span class="summary-count increase-count">新增 {{ changeStats.increase }} 人</span>
+                  <span class="summary-count decrease-count">减少 {{ changeStats.decrease }} 人</span>
                   <!-- 生成参保登记表按钮 - 已隐藏 -->
                   <!--
                   <el-button 
@@ -85,12 +98,9 @@
               </div>
             </template>
 
-            <el-tabs v-model="changeCategoryTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
-              <el-tab-pane label="社保" name="social_security" />
-              <el-tab-pane label="医保" name="medical_insurance" />
-              <el-tab-pane label="公积金" name="housing_fund" />
-              <el-tab-pane label="大额医保" name="large_medical_insurance" />
-              <el-tab-pane label="其他保险" name="other_insurance" />
+            <el-tabs v-model="changeStatusTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
+              <el-tab-pane label="未完成" name="unfinished" />
+              <el-tab-pane label="已完成" name="completed" />
             </el-tabs>
 
             <el-table 
@@ -2665,7 +2675,8 @@ const housingFundCompensationDetails = computed(() => {
 
 // 响应式数据
 const activeTab = ref('changes')
-const changeCategoryTab = ref('social_security')
+const changeStatusTab = ref('unfinished')
+const selectedProjectName = ref('')
 const detailScopedCategory = ref('')
 const detailActiveTab = ref('social') // 明细分类标签页
 const loading = ref(false)
@@ -2772,17 +2783,63 @@ const changeHasCategory = (change, category) => {
   return getChangeCategories(change).has(category)
 }
 
+const getChangeProjectName = (change) => {
+  return change?.project?.name || change?.project_name || '未分配项目'
+}
+
+const isCompletedChangeStatus = (status) => {
+  return ['completed', 'processing', 'approved', 'finished'].includes(status)
+}
+
+const projectOptions = computed(() => {
+  return Array.from(new Set(
+    changes.value
+      .map(change => getChangeProjectName(change))
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+})
+
 const filteredChanges = computed(() => {
-  return changes.value.filter(change => changeHasCategory(change, changeCategoryTab.value))
+  return changes.value.filter((change) => {
+    if (selectedProjectName.value && getChangeProjectName(change) !== selectedProjectName.value) {
+      return false
+    }
+
+    if (changeStatusTab.value === 'completed') {
+      return isCompletedChangeStatus(change.status)
+    }
+
+    return !isCompletedChangeStatus(change.status)
+  })
+})
+
+const changeStats = computed(() => {
+  const increaseEmployees = new Set()
+  const decreaseEmployees = new Set()
+
+  filteredChanges.value.forEach((change) => {
+    if (change.change_summary) {
+      return
+    }
+
+    const employeeKey = change.employee?.id || change.employee_id || `change-${change.id}`
+
+    if (change.change_type === 'decrease') {
+      decreaseEmployees.add(employeeKey)
+      return
+    }
+
+    increaseEmployees.add(employeeKey)
+  })
+
+  return {
+    increase: increaseEmployees.size,
+    decrease: decreaseEmployees.size
+  }
 })
 
 const resolveDetailCategory = (change) => {
-  if (changeCategoryTab.value && changeHasCategory(change, changeCategoryTab.value)) {
-    return changeCategoryTab.value
-  }
-
-  const categories = Array.from(getChangeCategories(change))
-  return categories[0] || ''
+  return ''
 }
 
 const shouldShowDetailCategory = (category) => {
@@ -4751,6 +4808,7 @@ const resetFilter = () => {
     status: '',
     region_name: ''
   }
+  selectedProjectName.value = ''
   loadChanges()
 }
 
@@ -6245,7 +6303,13 @@ watch(showDetailDialogFlag, (visible) => {
   }
 })
 
-watch(changeCategoryTab, () => {
+watch(projectOptions, (options) => {
+  if (selectedProjectName.value && !options.includes(selectedProjectName.value)) {
+    selectedProjectName.value = ''
+  }
+})
+
+watch(changeStatusTab, () => {
   selectedTasks.value = []
 })
 
@@ -6423,7 +6487,22 @@ watch(showExportDialog, (newVal) => {
 
 .header-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.summary-count {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.increase-count {
+  color: #67c23a;
+}
+
+.decrease-count {
+  color: #f56c6c;
 }
 
 /* 表格内标题样式 */

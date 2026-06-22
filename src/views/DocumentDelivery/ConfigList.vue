@@ -39,9 +39,9 @@
     <!-- 列表 -->
     <el-card class="table-card">
       <el-table :data="configList" v-loading="loading" border stripe>
-        <el-table-column label="ID" width="60">
-          <template #default="{ row }">
-            {{ row.config_exists ? row.id : '-' }}
+        <el-table-column label="ID" width="70" align="center">
+          <template #default="{ $index }">
+            {{ (pagination.current - 1) * pagination.pageSize + $index + 1 }}
           </template>
         </el-table-column>
         <el-table-column label="项目名称" width="180">

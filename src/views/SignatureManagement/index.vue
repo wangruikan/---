@@ -3,9 +3,45 @@
     <div class="page-header">
       <h1>签名印章管理</h1>
     </div>
+
+    <div class="section">
+      <el-card>
+        <template #header>
+          <div class="section-header">
+            <div>
+              <span class="section-title">📝 我的签名</span>
+              <span class="section-desc">审批签字时使用的个人签名</span>
+            </div>
+            <el-button type="primary" size="small" @click="showUploadSignature = true">
+              <el-icon><Plus /></el-icon>
+              {{ mySignature ? '重新上传' : '上传签名' }}
+            </el-button>
+          </div>
+        </template>
+
+        <div class="signature-content">
+          <div v-if="mySignature" class="signature-card">
+            <img :src="mySignature.image_url" alt="签名" class="signature-image" />
+            <div class="signature-actions">
+              <el-button type="primary" size="small" @click="showUploadSignature = true">
+                重新上传
+              </el-button>
+              <el-button type="danger" size="small" @click="handleDeleteSignature">
+                删除
+              </el-button>
+            </div>
+          </div>
+          <el-empty v-else description="还未上传签名">
+            <el-button type="primary" @click="showUploadSignature = true">
+              上传签名
+            </el-button>
+          </el-empty>
+        </div>
+      </el-card>
+    </div>
     
     <!-- 我的印章 -->
-    <div class="section">
+    <div v-if="isAdmin" class="section">
       <el-card>
         <template #header>
           <div class="section-header">
@@ -65,7 +101,7 @@
       </el-card>
     </div>
     
-    <div class="section">
+    <div v-if="isAdmin" class="section">
       <el-card>
         <template #header>
           <div class="section-header">
@@ -211,6 +247,40 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="showUploadSignature"
+      title="上传签名"
+      width="500px"
+    >
+      <el-upload
+        ref="signatureUploadRef"
+        :file-list="signatureFileList"
+        :auto-upload="false"
+        :limit="1"
+        :on-change="handleSignatureFileChange"
+        :on-exceed="handleSignatureExceed"
+        accept=".png,.jpg,.jpeg"
+        drag
+      >
+        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+        <div class="el-upload__text">
+          将签名图片拖到此处，或<em>点击上传</em>
+        </div>
+        <template #tip>
+          <div class="el-upload__tip">
+            建议使用PNG透明背景图片，文件大小不超过2MB
+          </div>
+        </template>
+      </el-upload>
+
+      <template #footer>
+        <el-button @click="handleSignatureDialogClose">取消</el-button>
+        <el-button type="primary" @click="handleSignatureUpload" :loading="uploading">
+          确认上传
+        </el-button>
+      </template>
+    </el-dialog>
     
     <el-dialog
       v-model="showTypedStampUpload"
@@ -321,10 +391,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, UploadFilled } from '@element-plus/icons-vue'
 import {
+  getMySignature,
+  uploadSignature,
+  deleteSignature,
   getMySeals,
   uploadSeal,
   updateSeal,
@@ -335,7 +408,11 @@ import {
   updateBankStampPosition,
   deleteTypedStamp
 } from '@/api/signatures'
+import { useUserStore } from '@/stores/user'
 
+const userStore = useUserStore()
+const isAdmin = computed(() => ['admin', 'super_admin'].includes(userStore.userInfo?.role))
+const mySignature = ref(null)
 const mySeals = ref([])
 const typedStamps = ref([])
 const uploading = ref(false)
@@ -350,6 +427,10 @@ const fixedStampTypes = [
   { type: 'business', title: '业务专用章' },
   { type: 'hr', title: '人事部专用章' }
 ]
+
+const showUploadSignature = ref(false)
+const signatureUploadRef = ref()
+const signatureFileList = ref([])
 
 // 印章上传
 const showUploadSeal = ref(false)
@@ -382,6 +463,83 @@ const typedStampPositionForm = reactive({
   width: 100,
   height: 50
 })
+
+const loadMySignature = async () => {
+  try {
+    const response = await getMySignature()
+    if (response.success) {
+      mySignature.value = response.data || null
+    }
+  } catch (error) {
+    console.error('加载签名失败:', error)
+  }
+}
+
+const handleSignatureFileChange = (file, fileList) => {
+  signatureFileList.value = fileList
+}
+
+const handleSignatureExceed = () => {
+  ElMessage.warning('只能上传一个签名图片')
+}
+
+const resetSignatureForm = () => {
+  signatureFileList.value = []
+  signatureUploadRef.value?.clearFiles?.()
+}
+
+const handleSignatureDialogClose = () => {
+  showUploadSignature.value = false
+  resetSignatureForm()
+}
+
+const handleSignatureUpload = async () => {
+  if (signatureFileList.value.length === 0) {
+    ElMessage.warning('请选择签名图片')
+    return
+  }
+
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('signature_image', signatureFileList.value[0].raw)
+
+    const response = await uploadSignature(formData)
+    if (response.success) {
+      ElMessage.success('签名上传成功')
+      showUploadSignature.value = false
+      resetSignatureForm()
+      await loadMySignature()
+    }
+  } catch (error) {
+    console.error('上传签名失败:', error)
+    ElMessage.error(error.response?.data?.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+const handleDeleteSignature = async () => {
+  try {
+    await ElMessageBox.confirm('确定要删除当前签名吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    const response = await deleteSignature()
+    if (response.success) {
+      ElMessage.success('签名删除成功')
+      mySignature.value = null
+      resetSignatureForm()
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除签名失败:', error)
+      ElMessage.error(error.response?.data?.message || '删除失败')
+    }
+  }
+}
 
 // 加载我的印章
 const loadMySeals = async () => {
@@ -697,9 +855,19 @@ const formatDateTime = (dateTimeStr) => {
 }
 
 onMounted(() => {
-  loadMySeals()
-  loadAllTypedStamps()
+  loadMySignature()
 })
+
+watch(isAdmin, (value) => {
+  if (value) {
+    loadMySeals()
+    loadAllTypedStamps()
+    return
+  }
+
+  mySeals.value = []
+  typedStamps.value = []
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -736,6 +904,33 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   margin-left: 10px;
+}
+
+.signature-content {
+  min-height: 180px;
+}
+
+.signature-card {
+  max-width: 360px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.signature-image {
+  max-width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.signature-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
 }
 
 .seals-content {

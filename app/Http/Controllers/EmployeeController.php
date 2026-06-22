@@ -133,6 +133,8 @@ class EmployeeController extends ApiController
     protected function applyProjectDisplayFields(Employee $employee, $selectedProjectId = null): void
     {
         $employee->display_contract_status = $employee->contract_status;
+        $employee->display_personnel_status = $this->resolveEmployeePersonnelStatus($employee);
+        $employee->display_labor_contract_status = $this->resolveEmployeeLaborContractStatus($employee);
 
         if (!$selectedProjectId) {
             $activeProject = $employee->projects->first(function ($project) {
@@ -156,10 +158,129 @@ class EmployeeController extends ApiController
             $employee->employee_number = $selectedProject->pivot->employee_number;
         }
 
-        $employee->display_contract_status = optional($selectedProject->pivot)->status === 'active'
+        $displayStatus = optional($selectedProject->pivot)->status === 'active'
             ? $employee->contract_status
             : 'transferred_out';
+        $employee->display_contract_status = $displayStatus;
+        $employee->display_personnel_status = $displayStatus === 'transferred_out'
+            ? 'transferred_out'
+            : $this->resolveEmployeePersonnelStatus($employee);
         $employee->display_projects = [$selectedProject];
+    }
+
+    protected function resolveEmployeePersonnelStatus(Employee $employee): string
+    {
+        $personnelStatus = $employee->personnel_status;
+
+        if (in_array($personnelStatus, ['retired', '退休'], true) || $employee->is_retired) {
+            return 'retired';
+        }
+
+        if (in_array($personnelStatus, ['resigned', '离职'], true)) {
+            return 'resigned';
+        }
+
+        if (in_array($personnelStatus, ['active', '在职'], true)) {
+            return 'active';
+        }
+
+        return $employee->contract_status === 'terminated' ? 'resigned' : 'active';
+    }
+
+    protected function resolveEmployeeLaborContractStatus(Employee $employee): string
+    {
+        $latestLaborContract = $employee->latestLaborContract;
+
+        if (!$latestLaborContract) {
+            return 'pending_signature';
+        }
+
+        if (!in_array($latestLaborContract->status, ['employee_signed', 'completed'], true)) {
+            return 'pending_signature';
+        }
+
+        $sourceType = $latestLaborContract->source_type;
+
+        if (!in_array($sourceType, ['online', 'offline'], true) && $latestLaborContract->approvalInstance) {
+            $approvalStampMethod = $latestLaborContract->approvalInstance->stamp_method;
+            if (in_array($approvalStampMethod, ['online', 'offline'], true)) {
+                $sourceType = $approvalStampMethod;
+            }
+        }
+
+        if (!in_array($sourceType, ['online', 'offline'], true)) {
+            $sourceType = $latestLaborContract->stamp_method;
+        }
+
+        return $sourceType === 'offline' ? 'offline' : 'online';
+    }
+
+    protected function applyPersonnelStatusFilter($query, ?string $personnelStatus): void
+    {
+        if (!$personnelStatus) {
+            return;
+        }
+
+        if ($personnelStatus === 'active') {
+            $this->applyActivePersonnelFilter($query);
+            return;
+        }
+
+        if ($personnelStatus === 'resigned') {
+            $this->applyResignedPersonnelFilter($query);
+            return;
+        }
+
+        if ($personnelStatus === 'retired') {
+            $query->where(function ($q) {
+                $q->whereIn('personnel_status', ['retired', '退休'])
+                    ->orWhere('is_retired', true);
+            });
+            return;
+        }
+
+        if ($personnelStatus === 'terminated') {
+            $query->where('contract_status', 'terminated');
+            return;
+        }
+
+        $query->where('personnel_status', $personnelStatus);
+    }
+
+    protected function applyActivePersonnelFilter($query): void
+    {
+        $query->where(function ($q) {
+            $q->whereIn('personnel_status', ['active', '在职'])
+                ->orWhere(function ($fallback) {
+                    $fallback->whereNull('personnel_status')
+                        ->where(function ($retireQuery) {
+                            $retireQuery->whereNull('is_retired')
+                                ->orWhere('is_retired', false);
+                        })
+                        ->where(function ($legacy) {
+                            $legacy->whereNull('termination_date')
+                                ->where(function ($statusQuery) {
+                                    $statusQuery->whereNull('contract_status')
+                                        ->orWhereIn('contract_status', ['active', 'expired', 'unsigned']);
+                                });
+                        });
+                });
+        });
+    }
+
+    protected function applyResignedPersonnelFilter($query): void
+    {
+        $query->where(function ($q) {
+            $q->whereIn('personnel_status', ['resigned', '离职'])
+                ->orWhere(function ($fallback) {
+                    $fallback->whereNull('personnel_status')
+                        ->where('contract_status', 'terminated')
+                        ->where(function ($legacy) {
+                            $legacy->whereNull('is_retired')
+                                ->orWhere('is_retired', false);
+                        });
+                });
+        });
     }
 
     /**
@@ -308,7 +429,8 @@ class EmployeeController extends ApiController
                         'largeMedicalInsuranceConfig',
                         'onboardingForm',
                         'registrationForm',
-                        'documents'
+                        'documents',
+                        'latestLaborContract.approvalInstance'
                     ]);
                     
                     // 【账套过滤】根据当前账套过滤员工
@@ -329,15 +451,8 @@ class EmployeeController extends ApiController
                         });
                     }
                     
-                    // 按合同状态筛选
-                    if ($request->has('contract_status') && $request->contract_status) {
-                        // 如果是搜索退休状态，需要特殊处理（因为retired是通过is_retired字段判断的）
-                        if ($request->contract_status === 'retired') {
-                            $query->where('is_retired', true);
-                        } else {
-                            $query->where('contract_status', $request->contract_status);
-                        }
-                    }
+                    $personnelStatus = $request->input('personnel_status', $request->input('contract_status'));
+                    $this->applyPersonnelStatusFilter($query, $personnelStatus);
                     
                     // 搜索
                     if ($request->has('search') && $request->search) {
@@ -617,8 +732,11 @@ class EmployeeController extends ApiController
             'other_notes'
         ]);
         
-        // 新建员工时，合同状态默认为"未签署"
+        // 新建员工时，合同流程状态默认为待签署，人员状态默认为在职
         $employeeData['contract_status'] = 'unsigned';
+        if (empty($employeeData['personnel_status'])) {
+            $employeeData['personnel_status'] = 'active';
+        }
         
         // 为布尔字段设置默认值（防止NOT NULL约束错误）
         $booleanFields = ['is_disabled', 'is_martyr_family', 'is_elderly_alone', 'skip_form_filling', 'deduct_expense'];
@@ -3925,15 +4043,17 @@ class EmployeeController extends ApiController
         
         $today = Carbon::today();
         
-        // 在职人数（合同状态为 active）
-        $active = (clone $query)->where('contract_status', 'active')->count();
-        
-        // 离职人数（合同状态为 resigned）
-        $resigned = (clone $query)->where('contract_status', 'resigned')->count();
-        
-        // 试用期人数（有试用期结束日期且未过期）
-        $probation = (clone $query)
-            ->where('contract_status', 'active')
+        $activeQuery = clone $query;
+        $this->applyActivePersonnelFilter($activeQuery);
+        $active = $activeQuery->count();
+
+        $resignedQuery = clone $query;
+        $this->applyResignedPersonnelFilter($resignedQuery);
+        $resigned = $resignedQuery->count();
+
+        $probationQuery = clone $query;
+        $this->applyActivePersonnelFilter($probationQuery);
+        $probation = $probationQuery
             ->whereNotNull('probation_end_date')
             ->where('probation_end_date', '>=', $today)
             ->count();
@@ -3965,10 +4085,12 @@ class EmployeeController extends ApiController
             }
             
             $expiredEmployees = Employee::where('account_set_id', $accountSetId)
-                ->where('contract_status', 'active')
-                ->where('is_retired', false)
                 ->whereNotNull('id_card_valid_until')
-                ->where('id_card_valid_until', '<', now()->toDateString())
+                ->where('id_card_valid_until', '<', now()->toDateString());
+
+            $this->applyActivePersonnelFilter($expiredEmployees);
+
+            $expiredEmployees = $expiredEmployees
                 ->select('id', 'name', 'employee_number', 'id_number', 'id_card_valid_until')
                 ->get()
                 ->map(function ($employee) {
@@ -4622,6 +4744,7 @@ class EmployeeController extends ApiController
                         'signing_location' => $signingLocation,
                         'household_type' => $householdTypeValue,
                         'contract_status' => 'unsigned',
+                        'personnel_status' => 'active',
                         // 保险地区
                         'social_security_region_id' => $socialSecurityRegionId,
                         'medical_insurance_region_id' => $medicalInsuranceRegionId,

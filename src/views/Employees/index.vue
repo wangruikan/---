@@ -108,16 +108,15 @@
             </el-select>
           </el-form-item>
           
-          <el-form-item label="合同状态">
+          <el-form-item label="人员状态">
             <el-select
-              v-model="searchForm.contract_status"
-              placeholder="请选择合同状态"
+              v-model="searchForm.personnel_status"
+              placeholder="请选择人员状态"
               clearable
               style="width: 200px"
             >
               <el-option label="在职" value="active" />
-              <el-option label="已过期" value="expired" />
-              <el-option label="已终止" value="terminated" />
+              <el-option label="离职" value="resigned" />
               <el-option label="退休" value="retired" />
             </el-select>
           </el-form-item>
@@ -194,10 +193,17 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="contract_status" label="合同状态" width="100">
+          <el-table-column prop="display_personnel_status" label="人员状态" width="100">
             <template #default="{ row }">
-              <el-tag :type="getEmployeeContractStatusType(getDisplayContractStatus(row))">
-                {{ getEmployeeContractStatusText(getDisplayContractStatus(row)) }}
+              <el-tag :type="getEmployeePersonnelStatusType(getDisplayPersonnelStatus(row))">
+                {{ getEmployeePersonnelStatusText(getDisplayPersonnelStatus(row)) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="display_labor_contract_status" label="合同状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="getLaborContractStatusType(getDisplayLaborContractStatus(row))">
+                {{ getLaborContractStatusText(getDisplayLaborContractStatus(row)) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -6461,7 +6467,7 @@ const projectOtherInsurancePolicies = ref([])
 const searchForm = reactive({
   search: '',
   project_id: '',
-  contract_status: ''
+  personnel_status: ''
 })
 
 const pagination = reactive({
@@ -6530,7 +6536,7 @@ const form = reactive({
   other_id_number: '',
   
   // 二、从业任职信息
-  personnel_status: '',
+  personnel_status: 'active',
   employment_type: '',
   employment_date: '',
   resignation_date: '',
@@ -7222,7 +7228,7 @@ const handleReset = () => {
   Object.assign(searchForm, {
     search: '',
     project_id: '',
-    contract_status: ''
+    personnel_status: ''
   })
   handleSearch()
 }
@@ -9015,7 +9021,7 @@ const fillSampleData = () => {
       other_id_number: 'G12345678',
       
       // 二、从业任职信息
-      personnel_status: '在职',
+      personnel_status: 'active',
       employment_type: '雇员',
       employment_date: '2024-01-01',
       resignation_date: '',
@@ -9202,7 +9208,7 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
     other_id_number: '',
     
     // 二、从业任职信息
-    personnel_status: '',
+    personnel_status: 'active',
     employment_type: '',
     employment_date: '',
     resignation_date: '',
@@ -9261,29 +9267,25 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
   }
 }
 
-const getEmployeeContractStatusType = (status) => {
+const getEmployeePersonnelStatusType = (status) => {
   const types = {
     active: 'success',
-    expired: 'warning',
-    terminated: 'danger',
+    resigned: 'danger',
     retired: 'info',
-    unsigned: 'info',
     transferred_out: 'warning'
   }
   return types[status] || 'info'
 }
 
-const getEmployeeContractStatusText = (status) => {
+const getEmployeePersonnelStatusText = (status) => {
   const texts = {
     active: '在职',
-    expired: '已过期',
-    terminated: '已终止',
+    resigned: '离职',
     retired: '退休',
-    unsigned: '未签署',
     transferred_out: '调出',
-    null: '未签署'
+    null: '在职'
   }
-  return texts[status] || '未签署'
+  return texts[status] || '在职'
 }
 
 const getDisplayProjects = (row) => {
@@ -9294,8 +9296,30 @@ const getDisplayProjects = (row) => {
   return (row.projects || []).filter(project => project.pivot?.status === 'active')
 }
 
-const getDisplayContractStatus = (row) => {
-  return row.display_contract_status || row.contract_status
+const getDisplayPersonnelStatus = (row) => {
+  return row.display_personnel_status || row.personnel_status || row.display_contract_status || row.contract_status
+}
+
+const getLaborContractStatusType = (status) => {
+  const types = {
+    pending_signature: 'warning',
+    online: 'success',
+    offline: 'info'
+  }
+  return types[status] || 'warning'
+}
+
+const getLaborContractStatusText = (status) => {
+  const texts = {
+    pending_signature: '待签署',
+    online: '线上',
+    offline: '线下'
+  }
+  return texts[status] || '待签署'
+}
+
+const getDisplayLaborContractStatus = (row) => {
+  return row.display_labor_contract_status || 'pending_signature'
 }
 
 // ========== 合同管理相关 ==========
@@ -11064,6 +11088,10 @@ const handleNewEmployee = async () => {
         form[key] = ''
       }
     })
+  }
+
+  if (!form.personnel_status) {
+    form.personnel_status = 'active'
   }
 
   // 工号字段清空，由后端根据项目自动生成（如：AA001, AB001）

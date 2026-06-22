@@ -1049,6 +1049,7 @@
         <ApprovalStampSelector
           ref="submitStampSelectorRef"
           v-model="submitStampForm.stamp_selection"
+          :disabled="true"
         />
       </el-form>
       <template #footer>

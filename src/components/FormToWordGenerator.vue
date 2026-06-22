@@ -132,8 +132,8 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item prop="amountLarge">
-                <el-input v-model="paymentForm.amountLarge" placeholder="大写金额">
+              <el-form-item>
+                <el-input v-model="paymentForm.amountLarge" placeholder="自动转换" readonly>
                   <template #prepend>大写：</template>
                 </el-input>
               </el-form-item>
@@ -1418,9 +1418,6 @@ const paymentRules = {
   amountSmall: [
     { required: true, message: '请输入小写金额', trigger: 'blur' }
   ],
-  amountLarge: [
-    { required: true, message: '请输入大写金额', trigger: 'blur' }
-  ],
   paymentMethod: [
     { required: true, message: '请选择付款方式', trigger: 'change' }
   ]
@@ -2002,6 +1999,9 @@ const getChineseDigit = (amount, position) => {
 // 数字转中文大写金额
 const convertToChinese = (money) => {
   if (!money && money !== 0) return ''
+
+  const normalizedMoney = String(money).replace(/[^\d.-]/g, '')
+  if (!normalizedMoney || normalizedMoney === '-' || normalizedMoney === '.') return ''
   
   const cnNums = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
   const cnIntRadice = ['', '拾', '佰', '仟']
@@ -2019,8 +2019,8 @@ const convertToChinese = (money) => {
   if (money === '') {
     return ''
   }
-  money = parseFloat(money)
-  if (money >= maxNum) {
+  money = parseFloat(normalizedMoney)
+  if (Number.isNaN(money) || money >= maxNum) {
     return ''
   }
   if (money === 0) {
@@ -2558,6 +2558,10 @@ watch(() => travelApplicationForm.advanceAmountSmall, (amount) => {
   } else {
     travelApplicationForm.advanceAmountLarge = ''
   }
+})
+
+watch(() => paymentForm.amountSmall, (amount) => {
+  paymentForm.amountLarge = convertToChinese(amount)
 })
 
 // 监听差旅费表单items的变化，自动计算每行的金额

@@ -779,6 +779,31 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-row :gutter="30">
+          <el-col :span="12">
+            <el-form-item label="资料方案" prop="project_document_set_id">
+              <el-select
+                v-model="form.project_document_set_id"
+                :placeholder="form.project_ids[0] ? '请选择资料方案' : '请先选择所属项目'"
+                style="width: 100%"
+                clearable
+                filterable
+                :loading="loadingProjectDocumentSets"
+                :disabled="isViewMode || !form.project_ids[0]"
+              >
+                <el-option
+                  v-for="item in availableProjectDocumentSets"
+                  :key="item.id"
+                  :label="item.is_default ? `${item.set_name}（默认）` : item.set_name"
+                  :value="item.id"
+                />
+              </el-select>
+              <div class="form-tip" style="color: #909399; font-size: 12px; margin-top: 4px;">
+                选择后，人员档案和小程序都按这套资料上传
+              </div>
+            </el-form-item>
+          </el-col>
+        </el-row>
         
         <!-- 示例填充按钮 -->
         <el-row style="margin-bottom: 20px;">
@@ -3327,6 +3352,27 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="资料方案" prop="project_document_set_id">
+              <el-select
+                v-model="form.project_document_set_id"
+                :placeholder="form.project_ids[0] ? '请选择资料方案' : '请先选择所属项目'"
+                style="width: 100%"
+                clearable
+                filterable
+                :loading="loadingProjectDocumentSets"
+                :disabled="isViewMode || !form.project_ids[0]"
+              >
+                <el-option
+                  v-for="item in availableProjectDocumentSets"
+                  :key="item.id"
+                  :label="item.is_default ? `${item.set_name}（默认）` : item.set_name"
+                  :value="item.id"
+                />
+              </el-select>
+              <div class="form-tip">选择后，人员档案和小程序都按这套资料上传</div>
+            </el-form-item>
+          </el-col>
         </el-row>
         
         <!-- 示例填充按钮 -->
@@ -5677,6 +5723,7 @@ import { getProjects } from '@/api/projects'
 import { getEmployeeContracts, uploadContract, submitContract, completeContract, deleteContract, downloadContract, uploadSignedContract } from '@/api/employeeContracts'
 import { getDefaultTemplates, getContractTemplates } from '@/api/contractTemplates'
 import { getProjectSocialSecurityRegions, getProjectHousingFundRegions } from '@/api/employeeSocialSecurity'
+import { getProjectDocumentConfigs } from '@/api/projectDocuments'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
 import NoAccountSetTip from '@/components/NoAccountSetTip.vue'
@@ -6161,6 +6208,14 @@ const normalizeInsuranceRegionIdForSubmit = (value) => {
   return value
 }
 
+const normalizeNullableId = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : value
+}
+
 const normalizeDateKey = (value) => {
   if (!value) return ''
   if (value instanceof Date) {
@@ -6334,6 +6389,7 @@ const buildEmployeeSubmitPayload = (source) => {
   const payload = {
     ...source,
     basic_salary: normalizeNullableNumber(source.basic_salary),
+    project_document_set_id: normalizeNullableId(source.project_document_set_id),
     skip_form_filling: !!source.skip_form_filling,
     social_security_region_id: normalizeInsuranceRegionIdForSubmit(source.social_security_region_id),
     medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(source.medical_insurance_region_id),
@@ -6392,6 +6448,7 @@ const availableMedicalInsuranceRegions = ref([])
 const availableHousingFundRegions = ref([])
 const availableHousingFundConfigs = ref([])
 const availableLargeMedicalInsuranceConfigs = ref([])
+const availableProjectDocumentSets = ref([])
 const selectedSocialSecurityRegion = ref(null)
 const selectedMedicalInsuranceRegion = ref(null)
 const selectedHousingFundRegion = ref(null)
@@ -6462,6 +6519,7 @@ const loadingSocialSecurityRegions = ref(false)
 const loadingMedicalInsuranceRegions = ref(false)
 const loadingHousingFundRegions = ref(false)
 const loadingHousingFundConfigs = ref(false)
+const loadingProjectDocumentSets = ref(false)
 const projectOtherInsurancePolicies = ref([])
 
 const searchForm = reactive({
@@ -6495,6 +6553,7 @@ const form = reactive({
   contract_months: null, // 签订月份
   address: '',
   project_ids: [],
+  project_document_set_id: null,
   // 工资信息
   basic_salary: null,
   comprehensive_salary: null,
@@ -7627,8 +7686,43 @@ const handleSingleProjectChange = async (projectId) => {
   await handleProjectIdsChange(form.project_ids)
 }
 
+const loadProjectDocumentSets = async (projectId, preferredSetId = null) => {
+  if (!projectId) {
+    availableProjectDocumentSets.value = []
+    form.project_document_set_id = null
+    return null
+  }
+
+  loadingProjectDocumentSets.value = true
+  try {
+    const response = await getProjectDocumentConfigs(projectId)
+    const data = response?.data || {}
+    const sets = Array.isArray(data.sets) ? data.sets : []
+    availableProjectDocumentSets.value = sets
+
+    const preferredId = normalizeNullableId(preferredSetId)
+    const matchedPreferred = preferredId
+      ? sets.find((item) => Number(item.id) === Number(preferredId))
+      : null
+    const defaultSetId = data.default_set_id || sets[0]?.id || null
+    const nextSetId = matchedPreferred?.id || defaultSetId || null
+
+    form.project_document_set_id = nextSetId
+    return nextSetId
+  } catch (error) {
+    console.error('加载项目资料方案失败:', error)
+    availableProjectDocumentSets.value = []
+    form.project_document_set_id = null
+    return null
+  } finally {
+    loadingProjectDocumentSets.value = false
+  }
+}
+
 // 处理项目选择变化
-const handleProjectIdsChange = async (projectIds) => {
+const handleProjectIdsChange = async (projectIds, { preserveDocumentSet = false } = {}) => {
+  await loadProjectDocumentSets(projectIds?.[0], preserveDocumentSet ? form.project_document_set_id : null)
+
   // 加载社保、医保和公积金地区
   await loadProjectSocialSecurityRegions(projectIds)
   await loadProjectMedicalInsuranceRegions(projectIds)
@@ -7876,6 +7970,8 @@ const handleView = async (row) => {
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      availableProjectDocumentSets.value = data.document_sets || []
+      form.project_document_set_id = data.current_document_set_id ?? data.employee.project_document_set_id ?? null
       applySalaryStateToForm(employeeData)
       
       // 2. 设置项目相关的地区信息
@@ -7955,6 +8051,8 @@ const handleView = async (row) => {
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      availableProjectDocumentSets.value = []
+      form.project_document_set_id = null
       applySalaryStateToForm(rowData)
       onboardingForm.value = null
       onboardingFormLoading.value = false
@@ -7974,6 +8072,8 @@ const handleView = async (row) => {
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
+    availableProjectDocumentSets.value = []
+    form.project_document_set_id = null
     applySalaryStateToForm(rowData)
     onboardingForm.value = null
     onboardingFormLoading.value = false
@@ -8015,6 +8115,8 @@ const handleEdit = async (row) => {
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      availableProjectDocumentSets.value = data.document_sets || []
+      form.project_document_set_id = data.current_document_set_id ?? data.employee.project_document_set_id ?? null
       applySalaryStateToForm(employeeData)
       
       // 2. 设置项目相关的地区信息
@@ -8097,6 +8199,8 @@ const handleEdit = async (row) => {
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      availableProjectDocumentSets.value = []
+      form.project_document_set_id = null
       applySalaryStateToForm(rowData)
       onboardingForm.value = null
       onboardingFormLoading.value = false
@@ -8117,6 +8221,8 @@ const handleEdit = async (row) => {
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
+    availableProjectDocumentSets.value = []
+    form.project_document_set_id = null
     applySalaryStateToForm(rowData)
     onboardingForm.value = null
     onboardingFormLoading.value = false
@@ -9151,7 +9257,9 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
   selectedLargeMedicalInsuranceConfig.value = null
   availableHousingFundConfigs.value = []
   availableLargeMedicalInsuranceConfigs.value = []
+  availableProjectDocumentSets.value = []
   projectOtherInsurancePolicies.value = []
+  currentEditingEmployeeId.value = null
   Object.assign(form, {
     name: '',
     employee_number: '',
@@ -9171,6 +9279,7 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
     contract_months: null, // 签订月份重置
     address: '',
     project_ids: [],
+    project_document_set_id: null,
     basic_salary: null,
     comprehensive_salary: null,
     probation_salary: null,
@@ -11103,12 +11212,16 @@ const handleNewEmployee = async () => {
   selectedHousingFundRegion.value = null
   selectedHousingFundConfig.value = null
   availableHousingFundConfigs.value = []
+  availableProjectDocumentSets.value = []
   projectOtherInsurancePolicies.value = []
   selectedLargeMedicalInsuranceConfig.value = null
   availableLargeMedicalInsuranceConfigs.value = []
 
   if (!restored) {
     formRef.value?.resetFields()
+  }
+  if (form.project_ids?.[0]) {
+    await loadProjectDocumentSets(form.project_ids[0], form.project_document_set_id)
   }
   pendingSalaryAdjustment.value = null
   currentSalarySnapshot.value = {

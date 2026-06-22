@@ -11,6 +11,38 @@ export function getProjectDocumentConfigs(projectId) {
 }
 
 /**
+ * 创建资料方案
+ */
+export function createProjectDocumentSet(projectId, data) {
+  return request({
+    url: `/projects/${projectId}/document-config-sets`,
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 更新资料方案
+ */
+export function updateProjectDocumentSet(projectId, setId, data) {
+  return request({
+    url: `/projects/${projectId}/document-config-sets/${setId}`,
+    method: 'put',
+    data
+  })
+}
+
+/**
+ * 删除资料方案
+ */
+export function deleteProjectDocumentSet(projectId, setId) {
+  return request({
+    url: `/projects/${projectId}/document-config-sets/${setId}`,
+    method: 'delete'
+  })
+}
+
+/**
  * 创建项目资料配置
  */
 export function createProjectDocumentConfig(projectId, data) {
@@ -49,7 +81,7 @@ export function updateDocumentConfigsSort(projectId, configs) {
   return request({
     url: `/projects/${projectId}/document-configs/sort`,
     method: 'post',
-    data: { configs }
+    data: configs
   })
 }
 

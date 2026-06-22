@@ -11,15 +11,20 @@ class ProjectDocumentConfig extends Model
 
     protected $fillable = [
         'project_id',
+        'document_set_id',
         'document_name',
+        'document_type',
         'is_required',
         'sort_order',
     ];
 
     protected $casts = [
+        'document_set_id' => 'integer',
         'is_required' => 'boolean',
         'sort_order' => 'integer',
     ];
+
+    protected $appends = ['document_type_text'];
 
     /**
      * 关联项目
@@ -35,6 +40,26 @@ class ProjectDocumentConfig extends Model
     public function employeeDocuments()
     {
         return $this->hasMany(EmployeeDocument::class, 'document_config_id');
+    }
+
+    public function documentSet()
+    {
+        return $this->belongsTo(ProjectDocumentSet::class, 'document_set_id');
+    }
+
+    public function getDocumentTypeAttribute($value)
+    {
+        return $value ?: 'all';
+    }
+
+    public function getDocumentTypeTextAttribute()
+    {
+        return match ($this->document_type) {
+            'image' => '仅图片',
+            'pdf' => '仅PDF',
+            'document' => '文档',
+            default => '所有类型',
+        };
     }
 }
 

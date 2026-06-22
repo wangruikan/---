@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use App\Traits\Auditable;
 
 class Project extends Model
@@ -276,8 +277,13 @@ class Project extends Model
 
     public function employees()
     {
+        $pivotFields = ['start_date', 'end_date', 'status'];
+        if (Schema::hasColumn('employee_projects', 'document_set_id')) {
+            $pivotFields[] = 'document_set_id';
+        }
+
         return $this->belongsToMany(Employee::class, 'employee_projects')
-                    ->withPivot(['start_date', 'end_date', 'status'])
+                    ->withPivot($pivotFields)
                     ->withTimestamps();
     }
 
@@ -366,6 +372,13 @@ class Project extends Model
     public function documentConfigs()
     {
         return $this->hasMany(ProjectDocumentConfig::class);
+    }
+
+    public function documentSets()
+    {
+        return $this->hasMany(ProjectDocumentSet::class)
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc');
     }
 
     /**

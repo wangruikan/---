@@ -450,6 +450,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{projectId}/document-configs/{id}', [App\Http\Controllers\ProjectDocumentConfigController::class, 'update']);
         Route::delete('/{projectId}/document-configs/{id}', [App\Http\Controllers\ProjectDocumentConfigController::class, 'destroy']);
         Route::post('/{projectId}/document-configs/sort', [App\Http\Controllers\ProjectDocumentConfigController::class, 'updateSort']);
+        Route::post('/{projectId}/document-config-sets', [App\Http\Controllers\ProjectDocumentConfigController::class, 'storeSet']);
+        Route::put('/{projectId}/document-config-sets/{id}', [App\Http\Controllers\ProjectDocumentConfigController::class, 'updateSet']);
+        Route::delete('/{projectId}/document-config-sets/{id}', [App\Http\Controllers\ProjectDocumentConfigController::class, 'destroySet']);
         
         // 社保和公积金地区管理 - 先定义具体路径，再定义参数路径
         Route::get('/available/social-security-regions', [ProjectController::class, 'getAvailableSocialSecurityRegions']);

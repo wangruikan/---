@@ -8,6 +8,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
 use App\Traits\Auditable;
+use App\Models\ProjectDocumentSet;
 
 class Employee extends Model
 {
@@ -270,6 +271,9 @@ class Employee extends Model
     public function projects()
     {
         $pivotFields = ['start_date', 'end_date', 'status'];
+        if (Schema::hasColumn('employee_projects', 'document_set_id')) {
+            $pivotFields[] = 'document_set_id';
+        }
         if (Schema::hasColumn('employee_projects', 'employee_number')) {
             $pivotFields[] = 'employee_number';
         }
@@ -282,6 +286,57 @@ class Employee extends Model
     public function activeProjects()
     {
         return $this->projects()->wherePivot('status', 'active');
+    }
+
+    public function getCurrentProject()
+    {
+        if ($this->relationLoaded('projects') && $this->projects) {
+            $activeProject = $this->projects->first(function ($project) {
+                return $project->pivot && $project->pivot->status === 'active';
+            });
+
+            return $activeProject ?: $this->projects->first();
+        }
+
+        return $this->projects()->wherePivot('status', 'active')->first()
+            ?: $this->projects()->first();
+    }
+
+    public function getCurrentProjectDocumentSetId(): ?int
+    {
+        $project = $this->getCurrentProject();
+
+        if (!$project) {
+            return null;
+        }
+
+        if ($project->pivot && $project->pivot->document_set_id) {
+            return (int) $project->pivot->document_set_id;
+        }
+
+        if (!Schema::hasTable('project_document_sets')) {
+            return null;
+        }
+
+        return ProjectDocumentSet::where('project_id', $project->id)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc')
+            ->value('id');
+    }
+
+    public function getCurrentProjectDocumentSet(): ?ProjectDocumentSet
+    {
+        $project = $this->getCurrentProject();
+        $documentSetId = $this->getCurrentProjectDocumentSetId();
+
+        if (!$project || !$documentSetId) {
+            return null;
+        }
+
+        return ProjectDocumentSet::with('configs')
+            ->where('project_id', $project->id)
+            ->find($documentSetId);
     }
 
     public function attendance()

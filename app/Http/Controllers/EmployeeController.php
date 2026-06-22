@@ -108,11 +108,59 @@ class EmployeeController extends ApiController
 
     protected function withProjectEmployeeNumber(array $pivotData, ?string $employeeNumber): array
     {
-        if ($this->hasProjectEmployeeNumberColumn()) {
+        if ($this->hasProjectEmployeeNumberColumn() && $employeeNumber !== null) {
             $pivotData['employee_number'] = $employeeNumber;
         }
 
         return $pivotData;
+    }
+
+    protected function hasProjectDocumentSetColumn(): bool
+    {
+        return Schema::hasColumn('employee_projects', 'document_set_id');
+    }
+
+    protected function withProjectBindingData(
+        array $pivotData,
+        ?string $employeeNumber,
+        ?int $documentSetId = null,
+        bool $forceDocumentSet = false
+    ): array {
+        $pivotData = $this->withProjectEmployeeNumber($pivotData, $employeeNumber);
+
+        if ($this->hasProjectDocumentSetColumn() && ($documentSetId !== null || $forceDocumentSet)) {
+            $pivotData['document_set_id'] = $documentSetId;
+        }
+
+        return $pivotData;
+    }
+
+    protected function resolveProjectDocumentSetId(?int $projectId, $requestedDocumentSetId = null): ?int
+    {
+        if (!$projectId || !$this->hasProjectDocumentSetColumn() || !Schema::hasTable('project_document_sets')) {
+            return null;
+        }
+
+        $query = \App\Models\ProjectDocumentSet::where('project_id', $projectId)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc');
+
+        if ($requestedDocumentSetId !== null && $requestedDocumentSetId !== '') {
+            $documentSet = (clone $query)
+                ->where('id', (int) $requestedDocumentSetId)
+                ->first();
+
+            if (!$documentSet) {
+                throw new \InvalidArgumentException('所选资料方案不属于当前项目');
+            }
+
+            return (int) $documentSet->id;
+        }
+
+        $defaultSet = (clone $query)->first();
+
+        return $defaultSet ? (int) $defaultSet->id : null;
     }
 
     protected function syncActiveProjectEmployeeNumber(Employee $employee): void
@@ -580,6 +628,7 @@ class EmployeeController extends ApiController
             'contract_end_date' => 'nullable|date|after:contract_start_date',
             'project_ids' => 'nullable|array',
             'project_ids.*' => 'exists:projects,id',
+            'project_document_set_id' => 'nullable|integer',
             'remittance_remark' => 'nullable|string|max:255',
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
@@ -669,6 +718,21 @@ class EmployeeController extends ApiController
                 return response()->json([
                     'success' => false,
                     'message' => $insuranceDateError
+                ], 422);
+            }
+        }
+
+        $resolvedDocumentSetId = null;
+        if ($request->has('project_ids') && is_array($request->project_ids) && !empty($request->project_ids)) {
+            try {
+                $resolvedDocumentSetId = $this->resolveProjectDocumentSetId(
+                    (int) $request->project_ids[0],
+                    $request->input('project_document_set_id')
+                );
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage()
                 ], 422);
             }
         }
@@ -847,10 +911,10 @@ class EmployeeController extends ApiController
                 $startDate = date('Y-m-d', strtotime($startDate));
             }
             
-            $employee->projects()->attach($request->project_ids, $this->withProjectEmployeeNumber([
+            $employee->projects()->attach($request->project_ids, $this->withProjectBindingData([
                 'start_date' => $startDate,
                 'status' => 'active'
-            ], $employee->employee_number));
+            ], $employee->employee_number, $resolvedDocumentSetId, true));
         }
 
         return response()->json([
@@ -901,6 +965,7 @@ class EmployeeController extends ApiController
             'contract_start_date' => 'sometimes|required|date',
             'contract_end_date' => 'nullable|date|after:contract_start_date',
             'transfer_date' => 'nullable|date',
+            'project_document_set_id' => 'nullable|integer',
             'remittance_remark' => 'nullable|string|max:255',
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
@@ -1074,6 +1139,22 @@ class EmployeeController extends ApiController
             $newProjectId = $request->project_ids[0] ?? null;
         }
         $employeeNumberBeforeUpdate = $employee->employee_number;
+        $targetProjectId = $newProjectId ?: $oldActiveProjectId;
+        $resolvedDocumentSetId = null;
+
+        if (($request->has('project_document_set_id') || ($newProjectId && $newProjectId != $oldActiveProjectId)) && $targetProjectId) {
+            try {
+                $resolvedDocumentSetId = $this->resolveProjectDocumentSetId(
+                    (int) $targetProjectId,
+                    $request->input('project_document_set_id')
+                );
+            } catch (\InvalidArgumentException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage()
+                ], 422);
+            }
+        }
 
         try {
             \Log::info('开始更新员工数据', [
@@ -1119,16 +1200,16 @@ class EmployeeController extends ApiController
                         ->first();
 
                     if ($existing) {
-                        $employee->projects()->updateExistingPivot($newProjectId, $this->withProjectEmployeeNumber([
+                        $employee->projects()->updateExistingPivot($newProjectId, $this->withProjectBindingData([
                             'status' => 'active',
                             'end_date' => null,
                             'start_date' => $transferDate,
-                        ], $newEmployeeNumber));
+                        ], $newEmployeeNumber, $resolvedDocumentSetId, true));
                     } else {
-                        $employee->projects()->attach($newProjectId, $this->withProjectEmployeeNumber([
+                        $employee->projects()->attach($newProjectId, $this->withProjectBindingData([
                             'status' => 'active',
                             'start_date' => $transferDate,
-                        ], $newEmployeeNumber));
+                        ], $newEmployeeNumber, $resolvedDocumentSetId, true));
                     }
 
                     // 同步 employees.project_ids 为单项目
@@ -1157,6 +1238,14 @@ class EmployeeController extends ApiController
                         'error' => $te->getMessage(),
                     ]);
                 }
+            } elseif ($request->has('project_document_set_id') && $oldActiveProjectId) {
+                $employee->projects()->updateExistingPivot($oldActiveProjectId, $this->withProjectBindingData(
+                    [],
+                    null,
+                    $resolvedDocumentSetId,
+                    true
+                ));
+                $this->syncActiveProjectEmployeeNumber($employee);
             } else {
                 $this->syncActiveProjectEmployeeNumber($employee);
             }
@@ -2570,6 +2659,8 @@ class EmployeeController extends ApiController
             $result = [
                 'employee' => $employee->toArray(),
                 'project_regions' => [],
+                'document_sets' => [],
+                'current_document_set_id' => null,
                 'housing_fund_configs' => [],
                 'other_insurance_policies' => [],
                 'large_medical_insurance_configs' => [],
@@ -2590,6 +2681,26 @@ class EmployeeController extends ApiController
                 $project = Project::find($projectId);
 
                 if ($project) {
+                    $projectRelation = $employee->projects->first(function ($item) use ($projectId) {
+                        return (int) $item->id === (int) $projectId;
+                    });
+
+                    if (Schema::hasTable('project_document_sets')) {
+                        $documentSets = $project->documentSets()->get(['id', 'project_id', 'set_name', 'sort_order', 'is_default']);
+                        $currentDocumentSetId = null;
+                        if ($projectRelation && $projectRelation->pivot && isset($projectRelation->pivot->document_set_id) && $projectRelation->pivot->document_set_id) {
+                            $currentDocumentSetId = (int) $projectRelation->pivot->document_set_id;
+                        }
+                        if (!$currentDocumentSetId) {
+                            $currentDocumentSetId = optional($documentSets->firstWhere('is_default', true))->id
+                                ?: optional($documentSets->first())->id;
+                        }
+
+                        $result['document_sets'] = $documentSets->toArray();
+                        $result['current_document_set_id'] = $currentDocumentSetId;
+                        $result['employee']['project_document_set_id'] = $currentDocumentSetId;
+                    }
+
                     // 获取项目的登记表类型设置
                     $result['registration_form_type'] = $project->registration_form_type ?? 'onboarding';
                     
@@ -4777,10 +4888,10 @@ class EmployeeController extends ApiController
                     $employee = Employee::create($employeeData);
 
                     // 关联项目
-                    $employee->projects()->attach($project->id, $this->withProjectEmployeeNumber([
+                    $employee->projects()->attach($project->id, $this->withProjectBindingData([
                         'start_date' => $hireDate,
                         'status' => 'active'
-                    ], $employee->employee_number));
+                    ], $employee->employee_number, $this->resolveProjectDocumentSetId((int) $project->id), true));
 
                     $successCount++;
                 }

@@ -1787,7 +1787,8 @@ const loadDocumentConfigs = async () => {
   try {
     const response = await getProjectDocumentConfigs(currentProject.value.id)
     if (response.success) {
-      documentConfigs.value = response.data || []
+      const payload = response.data || []
+      documentConfigs.value = Array.isArray(payload) ? payload : (payload.flat_configs || [])
     }
   } catch (error) {
     console.error('加载资料配置失败:', error)

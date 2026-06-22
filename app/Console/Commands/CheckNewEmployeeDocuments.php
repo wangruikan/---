@@ -89,7 +89,7 @@ class CheckNewEmployeeDocuments extends Command
         $assessments = 0;
         
         // 查找本月入职的员工
-        $newEmployees = Employee::where('account_set_id', $accountSet->id)
+        $newEmployees = Employee::with('projects')->where('account_set_id', $accountSet->id)
             ->whereBetween('hire_date', [$startOfMonth, $endOfMonth])
             ->get();
             
@@ -136,46 +136,35 @@ class CheckNewEmployeeDocuments extends Command
     private function checkEmployeeDocuments($employee)
     {
         $missingDocuments = [];
-        
-        // 获取员工关联的项目（假设员工有project_id字段，或通过其他方式关联）
-        // 如果员工没有直接关联项目，可能需要通过其他方式获取应该上传的资料配置
-        
-        // 方法1：如果员工表有project_id字段
-        if (isset($employee->project_id) && $employee->project_id) {
-            $requiredDocuments = ProjectDocumentConfig::where('project_id', $employee->project_id)
-                ->where('is_required', true)
-                ->get();
-        } else {
-            // 方法2：获取默认的必需资料配置（可以是某个默认项目或全局配置）
-            $requiredDocuments = ProjectDocumentConfig::where('is_required', true)
-                ->get();
+
+        $project = $employee->getCurrentProject();
+        $documentSetId = $employee->getCurrentProjectDocumentSetId();
+
+        if (!$project || !$documentSetId) {
+            return $missingDocuments;
         }
-        
-        // 检查每个必需资料是否已上传
+
+        $requiredDocuments = ProjectDocumentConfig::where('project_id', $project->id)
+            ->where('document_set_id', $documentSetId)
+            ->where('is_required', true)
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc')
+            ->get();
+
+        if ($requiredDocuments->isEmpty()) {
+            return $missingDocuments;
+        }
+
+        $uploadedConfigIds = EmployeeDocument::where('employee_id', $employee->id)
+            ->pluck('document_config_id')
+            ->all();
+
         foreach ($requiredDocuments as $requiredDoc) {
-            $hasUploaded = EmployeeDocument::where('employee_id', $employee->id)
-                ->where('document_config_id', $requiredDoc->id)
-                ->exists();
-                
-            if (!$hasUploaded) {
+            if (!in_array($requiredDoc->id, $uploadedConfigIds, true)) {
                 $missingDocuments[] = $requiredDoc->document_name;
             }
         }
-        
-        // 如果没有找到任何必需资料配置，使用默认检查（为了演示）
-        if ($requiredDocuments->isEmpty()) {
-            $this->warn("      未找到必需资料配置，使用默认检查");
-            
-            // 模拟检查逻辑（为了演示功能）
-            if (strpos($employee->name, '张三') !== false) {
-                $missingDocuments = ['学历证明', '证件照片', '银行卡', '劳动合同'];
-            } elseif (strpos($employee->name, '李四') !== false) {
-                $missingDocuments = [];
-            } elseif (strpos($employee->name, '王五') !== false) {
-                $missingDocuments = ['身份证', '学历证明', '个人简历', '证件照片', '银行卡', '劳动合同'];
-            }
-        }
-        
+
         return $missingDocuments;
     }
     

@@ -15,6 +15,21 @@ use Illuminate\Support\Facades\Schema;
 
 class MiniController extends Controller
 {
+    private function getEmployeeDocumentContext(Employee $employee): array
+    {
+        if (!$employee->relationLoaded('projects')) {
+            $employee->load('projects');
+        }
+
+        $project = $employee->getCurrentProject();
+        $documentSetId = $employee->getCurrentProjectDocumentSetId();
+
+        return [
+            'project' => $project,
+            'document_set_id' => $documentSetId,
+        ];
+    }
+
     /**
      * 按数据库真实列过滤员工更新字段
      */
@@ -1116,10 +1131,11 @@ class MiniController extends Controller
                 ], 404);
             }
 
-            // 获取员工所属项目的资料配置
-            $projectIds = $employee->projects->pluck('id')->toArray();
+            $context = $this->getEmployeeDocumentContext($employee);
+            $project = $context['project'];
+            $documentSetId = $context['document_set_id'];
 
-            if (empty($projectIds)) {
+            if (!$project) {
                 return response()->json([
                     'success' => true,
                     'data' => [],
@@ -1127,8 +1143,16 @@ class MiniController extends Controller
                 ]);
             }
 
-            // 获取所有相关项目的资料配置
-            $configs = \App\Models\ProjectDocumentConfig::whereIn('project_id', $projectIds)
+            if (!$documentSetId) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => '当前项目未配置资料方案'
+                ]);
+            }
+
+            $configs = \App\Models\ProjectDocumentConfig::where('project_id', $project->id)
+                ->where('document_set_id', $documentSetId)
                 ->with('project:id,name')
                 ->orderBy('sort_order', 'asc')
                 ->get();
@@ -1141,7 +1165,7 @@ class MiniController extends Controller
 
             // 合并配置和上传状态
             $host = $request->getSchemeAndHttpHost();
-            $result = $configs->map(function ($config) use ($uploadedDocuments, $employee, $host) {
+            $result = $configs->map(function ($config) use ($uploadedDocuments, $host) {
                 $uploadedFiles = $uploadedDocuments->get($config->id, collect());
                 $fileCount = $uploadedFiles->count();
 
@@ -1213,8 +1237,30 @@ class MiniController extends Controller
         }
 
         try {
-            $employee = Employee::find($request->user()->id);
+            $employee = Employee::with('projects')->find($request->user()->id);
+            if (!$employee) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '员工信息不存在'
+                ], 404);
+            }
+
+            $context = $this->getEmployeeDocumentContext($employee);
+            $project = $context['project'];
+            $documentSetId = $context['document_set_id'];
             $config = \App\Models\ProjectDocumentConfig::findOrFail($request->document_config_id);
+
+            if (
+                !$project ||
+                !$documentSetId ||
+                (int) $config->project_id !== (int) $project->id ||
+                (int) $config->document_set_id !== (int) $documentSetId
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料项不属于当前资料方案'
+                ], 422);
+            }
 
             // 验证文件类型
             $file = $request->file('file');

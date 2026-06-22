@@ -98,8 +98,8 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="大写金额" prop="amountLarge">
-              <el-input v-model="paymentForm.amountLarge" />
+            <el-form-item label="大写金额">
+              <el-input v-model="paymentForm.amountLarge" readonly placeholder="自动转换" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -127,7 +127,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="24">
-            <el-form-item label="备注" prop="remarks">
+            <el-form-item label="备注">
               <el-input v-model="paymentForm.remarks" type="textarea" :rows="2" />
             </el-form-item>
           </el-col>
@@ -516,12 +516,10 @@ const paymentRules = {
   applyDate: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
   payee: [{ required: true, message: '请输入支付对象', trigger: 'blur' }],
   amountSmall: [{ required: true, message: '请输入小写金额', trigger: 'blur' }],
-  amountLarge: [{ required: true, message: '请输入大写金额', trigger: 'blur' }],
   paymentMethod: [{ required: true, message: '请选择付款方式', trigger: 'change' }],
   bank: [{ required: true, message: '请输入开户行', trigger: 'blur' }],
   bankAccount: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  purpose: [{ required: true, message: '请输入用途', trigger: 'blur' }],
-  remarks: [{ required: true, message: '请输入备注', trigger: 'blur' }]
+  purpose: [{ required: true, message: '请输入用途', trigger: 'blur' }]
 }
 
 const reimbursementRules = {
@@ -577,6 +575,86 @@ const removeTravelItem = (index) => {
 
 const formatAmount = (val) => {
   return Number(val || 0).toFixed(2)
+}
+
+const convertToChinese = (money) => {
+  if (money === null || money === undefined || money === '') return ''
+
+  const normalizedMoney = String(money).replace(/[^\d.-]/g, '')
+  if (!normalizedMoney || normalizedMoney === '-' || normalizedMoney === '.') return ''
+
+  const cnNums = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
+  const cnIntRadice = ['', '拾', '佰', '仟']
+  const cnIntUnits = ['', '万', '亿', '兆']
+  const cnDecUnits = ['角', '分', '毫', '厘']
+  const cnInteger = '整'
+  const cnIntLast = '元'
+  const maxNum = 999999999999.9999
+
+  let integerNum
+  let decimalNum
+  let chineseStr = ''
+  let parts
+
+  const parsedMoney = parseFloat(normalizedMoney)
+  if (Number.isNaN(parsedMoney) || parsedMoney >= maxNum) {
+    return ''
+  }
+  if (parsedMoney === 0) {
+    return cnNums[0] + cnIntLast + cnInteger
+  }
+
+  const moneyStr = parsedMoney.toString()
+  if (moneyStr.indexOf('.') === -1) {
+    integerNum = moneyStr
+    decimalNum = ''
+  } else {
+    parts = moneyStr.split('.')
+    integerNum = parts[0]
+    decimalNum = parts[1].substr(0, 4)
+  }
+
+  if (parseInt(integerNum, 10) > 0) {
+    let zeroCount = 0
+    const intLen = integerNum.length
+    for (let i = 0; i < intLen; i++) {
+      const n = integerNum.substr(i, 1)
+      const p = intLen - i - 1
+      const q = Math.floor(p / 4)
+      const m = p % 4
+      if (n === '0') {
+        zeroCount++
+      } else {
+        if (zeroCount > 0) {
+          chineseStr += cnNums[0]
+        }
+        zeroCount = 0
+        chineseStr += cnNums[parseInt(n, 10)] + cnIntRadice[m]
+      }
+      if (m === 0 && zeroCount < 4) {
+        chineseStr += cnIntUnits[q]
+      }
+    }
+    chineseStr += cnIntLast
+  }
+
+  if (decimalNum) {
+    const decLen = decimalNum.length
+    for (let i = 0; i < decLen; i++) {
+      const n = decimalNum.substr(i, 1)
+      if (n !== '0') {
+        chineseStr += cnNums[Number(n)] + cnDecUnits[i]
+      }
+    }
+  }
+
+  if (!chineseStr) {
+    chineseStr += cnNums[0] + cnIntLast + cnInteger
+  } else if (!decimalNum) {
+    chineseStr += cnInteger
+  }
+
+  return chineseStr
 }
 
 const situationPrintRef = ref(null)
@@ -808,6 +886,13 @@ watch(
     if (hasUploaded) {
       situationFormRef.value?.clearValidate()
     }
+  }
+)
+
+watch(
+  () => paymentForm.amountSmall,
+  (amount) => {
+    paymentForm.amountLarge = convertToChinese(amount)
   }
 )
 

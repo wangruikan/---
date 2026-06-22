@@ -11,6 +11,21 @@ use Illuminate\Support\Facades\Validator;
 
 class EmployeeDocumentController extends Controller
 {
+    private function getEmployeeDocumentContext(Employee $employee): array
+    {
+        if (!$employee->relationLoaded('projects')) {
+            $employee->load('projects');
+        }
+
+        $project = $employee->getCurrentProject();
+        $documentSetId = $employee->getCurrentProjectDocumentSetId();
+
+        return [
+            'project' => $project,
+            'document_set_id' => $documentSetId,
+        ];
+    }
+
     /**
      * 获取员工的资料上传列表（包含配置和上传状态，支持多文件）
      */
@@ -18,11 +33,11 @@ class EmployeeDocumentController extends Controller
     {
         try {
             $employee = Employee::with('projects')->findOrFail($employeeId);
+            $context = $this->getEmployeeDocumentContext($employee);
+            $project = $context['project'];
+            $documentSetId = $context['document_set_id'];
 
-            // 获取员工所属项目的资料配置
-            $projectIds = $employee->projects->pluck('id')->toArray();
-
-            if (empty($projectIds)) {
+            if (!$project) {
                 return response()->json([
                     'success' => true,
                     'data' => [],
@@ -30,19 +45,25 @@ class EmployeeDocumentController extends Controller
                 ]);
             }
 
-            // 获取所有相关项目的资料配置
-            $configs = ProjectDocumentConfig::whereIn('project_id', $projectIds)
+            if (!$documentSetId) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => '当前项目未配置资料方案'
+                ]);
+            }
+
+            $configs = ProjectDocumentConfig::where('project_id', $project->id)
+                ->where('document_set_id', $documentSetId)
                 ->orderBy('sort_order', 'asc')
                 ->get();
 
-            // 获取员工已上传的资料（按config_id分组，支持多文件）
             $uploadedDocuments = EmployeeDocument::where('employee_id', $employeeId)
                 ->orderBy('uploaded_at', 'desc')
                 ->get()
                 ->groupBy('document_config_id');
 
-            // 合并配置和上传状态
-            $result = $configs->map(function ($config) use ($uploadedDocuments, $employee) {
+            $result = $configs->map(function ($config) use ($uploadedDocuments) {
                 $uploadedFiles = $uploadedDocuments->get($config->id, collect());
                 $fileCount = $uploadedFiles->count();
 
@@ -114,8 +135,23 @@ class EmployeeDocumentController extends Controller
         }
 
         try {
-            $employee = Employee::findOrFail($employeeId);
+            $employee = Employee::with('projects')->findOrFail($employeeId);
+            $context = $this->getEmployeeDocumentContext($employee);
+            $project = $context['project'];
+            $documentSetId = $context['document_set_id'];
             $config = ProjectDocumentConfig::findOrFail($request->document_config_id);
+
+            if (
+                !$project ||
+                !$documentSetId ||
+                (int) $config->project_id !== (int) $project->id ||
+                (int) $config->document_set_id !== (int) $documentSetId
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料项不属于员工当前选择的资料方案'
+                ], 422);
+            }
 
             // 验证文件类型
             $file = $request->file('file');

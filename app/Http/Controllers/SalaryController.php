@@ -693,6 +693,10 @@ class SalaryController extends Controller
             ->where('project_id', $project->id)
             ->exists();
 
+        if (!$project->canCreateSalaryForMonth($month, $hasSalaryHistory)) {
+            return "项目「{$project->name}」设置为次月发放，{$month} 工资需到下个月才可生成";
+        }
+
         if ($projectStartDate && !$hasSalaryHistory && $month !== $projectStartDate->format('Y-m')) {
             return "项目「{$project->name}」首次工资表的工资期间必须是 {$projectStartDate->format('Y-m')}";
         }

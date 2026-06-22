@@ -1069,11 +1069,19 @@ class PendingTaskService
      * 为工资表创建待办任务
      * 每月1日检查上个月的工资表是否已提交
      */
-    public static function createSalarySheetTask($accountSetId, $projectId, $month)
+    public static function createSalarySheetTask($accountSetId, $projectId, $month, $referenceMonth = null)
     {
         try {
             $project = \App\Models\Project::find($projectId);
             if (!$project) {
+                return null;
+            }
+
+            $hasSalaryHistory = \App\Models\Salary::where('account_set_id', $accountSetId)
+                ->where('project_id', $projectId)
+                ->exists();
+
+            if (!$project->canCreateSalaryForMonth($month, $hasSalaryHistory, $referenceMonth)) {
                 return null;
             }
 

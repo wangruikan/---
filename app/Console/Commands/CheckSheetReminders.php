@@ -96,15 +96,17 @@ class CheckSheetReminders extends Command
                 }
                 
                 // 检查工资表（所有进行中的项目都需要）
+                $salaryMonth = $project->resolveSalaryTaskMonth($currentMonth);
                 $task = PendingTaskService::createSalarySheetTask(
                     $accountSet->id,
                     $project->id,
+                    $salaryMonth,
                     $currentMonth
                 );
                 
                 if ($task) {
                     $totalSalaryTasks++;
-                    $this->info("    项目 {$project->name}: 创建了工资表待办任务");
+                    $this->info("    项目 {$project->name}: 创建了 {$salaryMonth} 工资表待办任务");
                 } else {
                     $this->comment("    项目 {$project->name}: 工资表已提交或无需创建任务");
                 }

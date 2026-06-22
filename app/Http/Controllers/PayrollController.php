@@ -45,22 +45,7 @@ class PayrollController extends Controller
 
     private function projectCanCreateSalaryForMonth(Project $project, string $month, bool $hasSalaryHistory): bool
     {
-        $startMonth = !empty($project->start_date) ? substr((string) $project->start_date, 0, 7) : null;
-        $endMonth = !empty($project->end_date) ? substr((string) $project->end_date, 0, 7) : null;
-
-        if (!$hasSalaryHistory) {
-            return !$startMonth || $month === $startMonth;
-        }
-
-        if ($startMonth && $month < $startMonth) {
-            return false;
-        }
-
-        if ($endMonth && $month > $endMonth) {
-            return false;
-        }
-
-        return true;
+        return $project->canCreateSalaryForMonth($month, $hasSalaryHistory);
     }
 
     private function projectRequiresSalaryBasis(Project $project): bool
@@ -88,8 +73,12 @@ class PayrollController extends Controller
 
     private function shouldIncludeProjectForProgress(Project $project, string $month, bool $hasSalaryHistory): bool
     {
-        $startMonth = !empty($project->start_date) ? substr((string) $project->start_date, 0, 7) : null;
-        $endMonth = !empty($project->end_date) ? substr((string) $project->end_date, 0, 7) : null;
+        $startMonth = $project->getSalaryStartMonth();
+        $endMonth = $project->getSalaryEndMonth();
+
+        if (!$project->isSalaryPeriodReleased($month)) {
+            return false;
+        }
 
         if ($startMonth && $month < $startMonth) {
             return false;
@@ -355,6 +344,7 @@ class PayrollController extends Controller
                     'status',
                     'start_date',
                     'end_date',
+                    'salary_payment_month',
                     'require_attendance',
                     'requires_attendance',
                     'requires_attendance_basis',
@@ -505,7 +495,7 @@ class PayrollController extends Controller
 
             $projects = Project::where('account_set_id', $accountSetId)
                 ->where('status', 'active')
-                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'require_attendance', 'requires_attendance', 'requires_salary_basis')
+                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'salary_payment_month', 'require_attendance', 'requires_attendance', 'requires_salary_basis')
                 ->orderBy('name')
                 ->get()
                 ->filter(function (Project $project) use ($generatedProjectIds, $salaryHistoryProjectIds, $month) {
@@ -664,7 +654,7 @@ class PayrollController extends Controller
             
             // 获取所有项目（包含是否需要考勤字段）
             $allProjects = Project::where('account_set_id', $accountSetId)
-                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'require_attendance', 'requires_attendance')
+                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'salary_payment_month', 'require_attendance', 'requires_attendance')
                 ->get();
             
             \Log::info('查询到的项目数量', ['count' => $allProjects->count()]);

@@ -22,7 +22,7 @@ class DynamicScheduledTaskService
         $accountSetId = (int) $accountSetId;
 
         $this->syncBasisTasks($accountSetId, $month);
-        $this->syncSheetTasks($accountSetId, $month);
+        $this->syncSheetTasksForReferenceMonth($accountSetId, $month);
         $this->syncDocumentDeliveries($accountSetId, $month);
         $this->syncSpecialDeductions($accountSetId, $month);
     }
@@ -88,18 +88,63 @@ class DynamicScheduledTaskService
         }
 
         $accountSetId = (int) $accountSetId;
+        $salaryHistoryProjectIds = \App\Models\Salary::where('account_set_id', $accountSetId)
+            ->distinct()
+            ->pluck('project_id')
+            ->map(fn ($projectId) => intval($projectId))
+            ->toArray();
 
         Project::where('account_set_id', $accountSetId)
             ->where('status', 'active')
             ->get()
-            ->each(function (Project $project) use ($accountSetId, $month) {
+            ->each(function (Project $project) use ($accountSetId, $month, $salaryHistoryProjectIds) {
                 if ($project->require_attendance) {
                     PendingTaskService::createAttendanceSheetTask($accountSetId, $project->id, $month);
                 }
 
-                if (!$this->hasSubmittedSalaryApproval($accountSetId, (int) $project->id, $month)) {
+                $hasSalaryHistory = in_array((int) $project->id, $salaryHistoryProjectIds, true);
+                if (
+                    $project->canCreateSalaryForMonth($month, $hasSalaryHistory)
+                    && !$this->hasSubmittedSalaryApproval($accountSetId, (int) $project->id, $month)
+                ) {
                     PendingTaskService::createSalarySheetTask($accountSetId, $project->id, $month);
                 }
+            });
+    }
+
+    public function syncSheetTasksForReferenceMonth($accountSetId, ?string $month = null): void
+    {
+        $month = $this->normalizeMonth($month);
+        if (!$accountSetId || !$month || $this->isFutureMonth($month)) {
+            return;
+        }
+
+        $accountSetId = (int) $accountSetId;
+        $salaryHistoryProjectIds = \App\Models\Salary::where('account_set_id', $accountSetId)
+            ->distinct()
+            ->pluck('project_id')
+            ->map(fn ($projectId) => intval($projectId))
+            ->toArray();
+
+        Project::where('account_set_id', $accountSetId)
+            ->where('status', 'active')
+            ->get()
+            ->each(function (Project $project) use ($accountSetId, $month, $salaryHistoryProjectIds) {
+                if ($project->require_attendance) {
+                    PendingTaskService::createAttendanceSheetTask($accountSetId, $project->id, $month);
+                }
+
+                $salaryMonth = $project->resolveSalaryTaskMonth($month);
+                $hasSalaryHistory = in_array((int) $project->id, $salaryHistoryProjectIds, true);
+
+                if (
+                    !$project->canCreateSalaryForMonth($salaryMonth, $hasSalaryHistory, $month)
+                    || $this->hasSubmittedSalaryApproval($accountSetId, (int) $project->id, $salaryMonth)
+                ) {
+                    return;
+                }
+
+                PendingTaskService::createSalarySheetTask($accountSetId, $project->id, $salaryMonth, $month);
             });
     }
 

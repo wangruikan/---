@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 use App\Traits\Auditable;
 
@@ -186,6 +187,68 @@ class Project extends Model
         $legacyInfo = static::buildLegacyInvoiceInfoFromAttributes($fallbackAttributes);
 
         return $legacyInfo ? [$legacyInfo] : [];
+    }
+
+    public function getSalaryStartMonth(): ?string
+    {
+        return $this->start_date ? Carbon::parse($this->start_date)->format('Y-m') : null;
+    }
+
+    public function getSalaryEndMonth(): ?string
+    {
+        return $this->end_date ? Carbon::parse($this->end_date)->format('Y-m') : null;
+    }
+
+    public function usesNextMonthSalary(): bool
+    {
+        return ($this->salary_payment_month ?? 'current') === 'next';
+    }
+
+    public function isSalaryPeriodReleased(string $salaryMonth, ?string $referenceMonth = null): bool
+    {
+        if (!$this->usesNextMonthSalary()) {
+            return true;
+        }
+
+        $referenceMonth = $referenceMonth ?: Carbon::now('Asia/Shanghai')->format('Y-m');
+        return $salaryMonth < $referenceMonth;
+    }
+
+    public function canCreateSalaryForMonth(string $salaryMonth, bool $hasSalaryHistory, ?string $referenceMonth = null): bool
+    {
+        $startMonth = $this->getSalaryStartMonth();
+        $endMonth = $this->getSalaryEndMonth();
+
+        if (!$this->isSalaryPeriodReleased($salaryMonth, $referenceMonth)) {
+            return false;
+        }
+
+        if (!$hasSalaryHistory) {
+            return !$startMonth || $salaryMonth === $startMonth;
+        }
+
+        if ($startMonth && $salaryMonth < $startMonth) {
+            return false;
+        }
+
+        if ($endMonth && $salaryMonth > $endMonth) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function resolveSalaryTaskMonth(?string $referenceMonth = null): string
+    {
+        $referenceMonth = $referenceMonth ?: Carbon::now('Asia/Shanghai')->format('Y-m');
+
+        if (!$this->usesNextMonthSalary()) {
+            return $referenceMonth;
+        }
+
+        return Carbon::createFromFormat('Y-m', $referenceMonth, 'Asia/Shanghai')
+            ->subMonth()
+            ->format('Y-m');
     }
 
     public static function syncLegacyInvoiceFields(array &$data, array $invoiceInfos): void

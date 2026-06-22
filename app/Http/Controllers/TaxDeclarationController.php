@@ -394,7 +394,7 @@ class TaxDeclarationController extends Controller
         }
 
         $configs = TaxDeclarationConfig::where('account_set_id', $accountSetId)->get();
-        $configIds = $configs->pluck('id')->all();
+        $visibleConfigIds = [];
 
         foreach ($configs as $config) {
             $declarationDates = $this->buildDeclarationDates($year, $config);
@@ -402,14 +402,22 @@ class TaxDeclarationController extends Controller
                 continue;
             }
 
+            $hasVisibleTargetMonth = false;
+
             foreach ($declarationDates as $declarationDate) {
+                if ($visibleUntilDate !== null && $declarationDate > $visibleUntilDate) {
+                    continue;
+                }
+
+                if (!$this->isDeclarationDateAvailable($config, $declarationDate)) {
+                    continue;
+                }
+
                 if ($targetMonth !== null && substr($declarationDate, 0, 7) !== $targetMonth) {
                     continue;
                 }
 
-                if ($visibleUntilDate !== null && $declarationDate > $visibleUntilDate) {
-                    continue;
-                }
+                $hasVisibleTargetMonth = true;
 
                 $task = $this->findExistingTaskForMonth($config->id, $year, $declarationDate);
 
@@ -464,9 +472,13 @@ class TaxDeclarationController extends Controller
                     ]);
                 }
             }
+
+            if ($hasVisibleTargetMonth) {
+                $visibleConfigIds[] = $config->id;
+            }
         }
 
-        return $configIds;
+        return $targetMonth === null ? $configs->pluck('id')->all() : $visibleConfigIds;
     }
 
     private function resolveTaskMonth(Request $request): array
@@ -528,6 +540,10 @@ class TaxDeclarationController extends Controller
             return '01-01';
         }
 
+        if ($periodType === 'quarterly') {
+            return '01-01';
+        }
+
         $month = $this->extractMonth($value);
         return sprintf('%02d-01', $month > 0 ? $month : 1);
     }
@@ -547,12 +563,8 @@ class TaxDeclarationController extends Controller
         }
 
         if ($config->period_type === 'quarterly') {
-            if ($month < 1 || $month > 3) {
-                return [];
-            }
-
-            return array_map(function ($quarterStartMonth) use ($year, $month) {
-                return sprintf('%d-%02d-01', $year, $quarterStartMonth + $month - 1);
+            return array_map(function ($quarterStartMonth) use ($year) {
+                return sprintf('%d-%02d-01', $year, $quarterStartMonth);
             }, [1, 4, 7, 10]);
         }
 
@@ -561,6 +573,34 @@ class TaxDeclarationController extends Controller
         }
 
         return [sprintf('%d-%02d-01', $year, $month)];
+    }
+
+    private function isDeclarationDateAvailable(TaxDeclarationConfig $config, string $declarationDate): bool
+    {
+        $firstAvailableDate = $this->getFirstAvailableDeclarationDate($config);
+
+        if ($firstAvailableDate === null) {
+            return true;
+        }
+
+        return $declarationDate >= $firstAvailableDate;
+    }
+
+    private function getFirstAvailableDeclarationDate(TaxDeclarationConfig $config): ?string
+    {
+        if (!$config->created_at) {
+            return null;
+        }
+
+        if ($config->period_type === 'monthly') {
+            return $config->created_at->copy()->startOfMonth()->addMonth()->format('Y-m-01');
+        }
+
+        if ($config->period_type === 'quarterly') {
+            return $config->created_at->copy()->startOfQuarter()->addQuarter()->format('Y-m-01');
+        }
+
+        return null;
     }
 
     private function extractMonth(?string $value): int

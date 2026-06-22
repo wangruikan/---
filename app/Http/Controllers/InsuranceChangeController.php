@@ -3528,6 +3528,7 @@ class InsuranceChangeController extends ApiController
         try {
             $accountSetId = $request->input('account_set_id');
             $month = $request->input('month');
+            $regionName = $request->input('region_name');
             
             if (!$accountSetId) {
                 return response()->json([
@@ -3546,6 +3547,18 @@ class InsuranceChangeController extends ApiController
             if (!empty($month)) {
                 $query->where('compensation_start_month', '<=', $month)
                     ->where('compensation_end_month', '>=', $month);
+            }
+
+            if (!empty($regionName)) {
+                $query->where(function($regionQuery) use ($regionName) {
+                    $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                        $q->where('region_name', $regionName);
+                    });
+                });
             }
 
             $compensations = $query->get();
@@ -3609,6 +3622,7 @@ class InsuranceChangeController extends ApiController
         try {
             $accountSetId = $request->input('account_set_id');
             $month = $request->input('month');
+            $regionName = $request->input('region_name');
             
             if (!$accountSetId) {
                 return response()->json([
@@ -3627,6 +3641,18 @@ class InsuranceChangeController extends ApiController
             if (!empty($month)) {
                 $query->where('compensation_start_month', '<=', $month)
                     ->where('compensation_end_month', '>=', $month);
+            }
+
+            if (!empty($regionName)) {
+                $query->where(function($regionQuery) use ($regionName) {
+                    $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                        $q->where('region_name', $regionName);
+                    });
+                });
             }
 
             $compensations = $query->get();

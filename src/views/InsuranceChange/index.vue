@@ -242,9 +242,8 @@
                   style="width: 200px"
                 />
               </el-form-item>
-              <el-form-item label="地区">
-                <el-select v-model="detailFilterForm.region_name" placeholder="请选择地区" clearable style="width: 200px">
-                  <el-option label="全部" value="" />
+              <el-form-item v-if="detailTabNeedsRegionFilter()" label="地区">
+                <el-select v-model="detailFilterForm.region_name" placeholder="请选择地区" style="width: 200px">
                   <el-option 
                     v-for="region in regions" 
                     :key="region" 
@@ -254,7 +253,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item>
-                <el-button type="primary" @click="loadDetails">查询</el-button>
+                <el-button type="primary" @click="loadActiveDetailData">查询</el-button>
                 <el-button @click="resetDetailFilter">重置</el-button>
               </el-form-item>
             </el-form>
@@ -1635,6 +1634,7 @@ import {
   getHousingFundCompensationList
 } from '@/api/insuranceChange'
 import { getSocialSecurityRegions } from '@/api/socialSecurity'
+import { getMedicalInsuranceRegions } from '@/api/medicalInsurance'
 import { exportSocialSecurityToExcelHTML, exportToExcelHTML, exportHousingFundSummaryToExcel } from '@/utils/excelExportHTML'
 
 const accountSetStore = useAccountSetStore()
@@ -1745,97 +1745,140 @@ const groupedDetails = computed(() => {
   }))
 })
 
-// 动态列配置
-const dynamicCompanyColumns = computed(() => {
-  if (!details.value || details.value.length === 0) {
+const parseJsonArray = (value) => {
+  if (!hasSnapshotValue(value)) {
     return []
   }
-  
-  const columns = []
-  const firstDetail = details.value[0]
-  const insurancePersonnel = firstDetail.insurance_personnel || {}
-  
-  // 从社保类型快照数据中生成列
-  if (insurancePersonnel.social_security_types) {
+
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
     try {
-      const socialSecurityTypes = JSON.parse(insurancePersonnel.social_security_types)
-      if (Array.isArray(socialSecurityTypes) && socialSecurityTypes.length > 0) {
-        socialSecurityTypes.forEach(type => {
-          columns.push({
-            name: type.name,
-            type: 'social_security',
-            fieldPrefix: '社保_'
-          })
-        })
-      } else {
-        // 如果没有社保类型数据，添加默认的社保列
-        columns.push({
-          name: '社保',
-          type: 'social_security',
-          fieldPrefix: '社保_'
-        })
-      }
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
     } catch (e) {
-      console.error('解析social_security_types失败:', e)
-      // 解析失败时也添加默认社保列
+      console.error('解析数组配置失败:', e)
+      return []
+    }
+  }
+
+  return []
+}
+
+const getCurrentSocialSecurityRegion = () => {
+  return socialSecurityRegions.value.find(region => region.name === detailFilterForm.value.region_name) || null
+}
+
+const getCurrentMedicalInsuranceRegion = () => {
+  return medicalInsuranceRegions.value.find(region => region.name === detailFilterForm.value.region_name) || null
+}
+
+const getCurrentLargeMedicalConfig = () => {
+  return largeMedicalConfigs.value.find(config => config.region_name === detailFilterForm.value.region_name) || null
+}
+
+// 动态列配置
+const dynamicCompanyColumns = computed(() => {
+  const columns = []
+  const socialRegion = getCurrentSocialSecurityRegion()
+  const medicalRegion = getCurrentMedicalInsuranceRegion()
+  const largeMedicalConfig = getCurrentLargeMedicalConfig()
+
+  const socialSecurityTypes = parseJsonArray(socialRegion?.socialSecurityTypes || socialRegion?.social_security_types)
+  if (socialSecurityTypes.length > 0) {
+    socialSecurityTypes.forEach(type => {
       columns.push({
-        name: '社保',
+        name: type.name,
         type: 'social_security',
         fieldPrefix: '社保_'
       })
-    }
-  } else {
-    // 如果没有社保类型数据，添加默认的社保列
-    columns.push({
-      name: '社保',
-      type: 'social_security',
-      fieldPrefix: '社保_'
     })
   }
-  
-  // 从医保类型快照数据中生成列
-  if (insurancePersonnel.medical_insurance_types) {
-    try {
-      const medicalInsuranceTypes = JSON.parse(insurancePersonnel.medical_insurance_types)
-      if (Array.isArray(medicalInsuranceTypes)) {
-        medicalInsuranceTypes.forEach(type => {
-          columns.push({
-            name: type.name,
-            type: 'medical_insurance',
-            fieldPrefix: '医保_'
-          })
-        })
-      }
-    } catch (e) {
-      console.error('解析medical_insurance_types失败:', e)
-    }
+
+  const medicalInsuranceTypes = parseJsonArray(medicalRegion?.medicalInsuranceTypes || medicalRegion?.medical_insurance_types)
+  if (medicalInsuranceTypes.length > 0) {
+    medicalInsuranceTypes.forEach(type => {
+      columns.push({
+        name: type.name,
+        type: 'medical_insurance',
+        fieldPrefix: '医保_'
+      })
+    })
   }
-  
-  // 添加大额医疗列（始终显示，如果未启用则显示0）
-  // 检查是否启用了大额医疗保险
-  const isLargeMedicalEnabled = insurancePersonnel.large_medical_insurance_config ? 
-    (() => {
-      try {
-        const config = JSON.parse(insurancePersonnel.large_medical_insurance_config)
-        return config.is_enabled || false
-      } catch (e) {
-        return false
-      }
-    })() : false
-  
-  if (isLargeMedicalEnabled) {
+
+  if (largeMedicalConfig && Number(largeMedicalConfig.status) === 1) {
     columns.push({
       name: '大额医疗',
       type: 'large_medical'
     })
   }
-  
+
   return columns
 })
 
 const dynamicEmployeeColumns = computed(() => {
   return dynamicCompanyColumns.value // 员工列和公司列使用相同的配置
 })
+
+const buildSocialSecurityDetailRow = (detail, serialNumber, typeLabel) => {
+  const employee = detail.employee || {}
+  const project = detail.project || {}
+  const socialRegion = getCurrentSocialSecurityRegion()
+  const medicalRegion = getCurrentMedicalInsuranceRegion()
+  const largeMedicalConfig = getCurrentLargeMedicalConfig()
+  const socialSecurityTypes = parseJsonArray(socialRegion?.socialSecurityTypes || socialRegion?.social_security_types)
+  const medicalInsuranceTypes = parseJsonArray(medicalRegion?.medicalInsuranceTypes || medicalRegion?.medical_insurance_types)
+
+  const medicalCompanyAmount = parseFloat(detail.medical_insurance_company_amount || 0)
+  const medicalEmployeeAmount = parseFloat(detail.medical_insurance_employee_amount || 0)
+  const socialCompanyAmount = parseFloat(detail.social_security_company_amount || 0)
+  const socialEmployeeAmount = parseFloat(detail.social_security_employee_amount || 0)
+  const largeMedicalCompanyAmount = parseFloat(detail.large_medical_company_amount || 0)
+  const largeMedicalEmployeeAmount = parseFloat(detail.large_medical_employee_amount || 0)
+
+  const companyTotal = medicalCompanyAmount + socialCompanyAmount + largeMedicalCompanyAmount
+  const employeeTotal = medicalEmployeeAmount + socialEmployeeAmount + largeMedicalEmployeeAmount
+  const socialSecurityTotal = companyTotal + employeeTotal
+  const socialBaseAmount = parseFloat(detail.employee_social_security_base || 0)
+  const medicalBaseAmount = parseFloat(detail.employee_medical_insurance_base || 0)
+
+  const rowData = {
+    serial_number: serialNumber,
+    employee_name: detail.employee_name || employee.name || '小计',
+    id_number: detail.employee_id_number || employee.id_number || '',
+    project_name: detail.project_name || (project ? project.name : ''),
+    enrollment_date: formatEnrollmentDate(detail.social_insurance_enrollment_date || employee.social_insurance_enrollment_date || detail.created_at),
+    type: typeLabel,
+    period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
+    medical_base: detail.employee_medical_insurance_base || '0.00',
+    social_security_base: detail.employee_social_security_base || '0.00',
+    social_security_total: socialSecurityTotal.toFixed(2),
+    remarks: ''
+  }
+
+  socialSecurityTypes.forEach(type => {
+    rowData['company_社保_' + type.name] = (socialBaseAmount * parseFloat(type.company_ratio || 0)).toFixed(2)
+    rowData['employee_社保_' + type.name] = (socialBaseAmount * parseFloat(type.employee_ratio || 0)).toFixed(2)
+  })
+
+  medicalInsuranceTypes.forEach(type => {
+    rowData['company_医保_' + type.name] = (medicalBaseAmount * parseFloat(type.company_ratio || 0)).toFixed(2)
+    rowData['employee_医保_' + type.name] = (medicalBaseAmount * parseFloat(type.employee_ratio || 0)).toFixed(2)
+  })
+
+  if (largeMedicalConfig && Number(largeMedicalConfig.status) === 1) {
+    rowData['company_大额医疗'] = largeMedicalCompanyAmount.toFixed(2)
+    rowData['employee_大额医疗'] = largeMedicalEmployeeAmount.toFixed(2)
+  }
+
+  rowData.company_total = companyTotal.toFixed(2)
+  rowData.employee_total = employeeTotal.toFixed(2)
+  rowData.social_security_total = socialSecurityTotal.toFixed(2)
+
+  return rowData
+}
 
 // 社保明细数据（包括医保、社保、大额医疗保险）
 const socialSecurityDetails = computed(() => {
@@ -1858,196 +1901,10 @@ const socialSecurityDetails = computed(() => {
   })
   
   // 处理正常员工数据
-  const normalData = normalEmployees.map((detail, index) => {
-    const employee = detail.employee || {}
-    const project = detail.project || {}
-    const insurancePersonnel = detail.insurance_personnel || {}
-    
-    // 从快照数据中解析保险类型
-    let socialSecurityTypes = []
-    let medicalInsuranceTypes = []
-    
-    if (insurancePersonnel.social_security_types) {
-      try {
-        socialSecurityTypes = JSON.parse(insurancePersonnel.social_security_types)
-      } catch (e) {
-        console.error('解析social_security_types失败:', e)
-      }
-    }
-    
-    if (insurancePersonnel.medical_insurance_types) {
-      try {
-        medicalInsuranceTypes = JSON.parse(insurancePersonnel.medical_insurance_types)
-      } catch (e) {
-        console.error('解析medical_insurance_types失败:', e)
-      }
-    }
-    
-    // 计算各项金额
-    const medicalCompanyAmount = parseFloat(detail.medical_insurance_company_amount || 0)
-    const medicalEmployeeAmount = parseFloat(detail.medical_insurance_employee_amount || 0)
-    const socialCompanyAmount = parseFloat(detail.social_security_company_amount || 0)
-    const socialEmployeeAmount = parseFloat(detail.social_security_employee_amount || 0)
-    const largeMedicalCompanyAmount = parseFloat(detail.large_medical_company_amount || 0)
-    const largeMedicalEmployeeAmount = parseFloat(detail.large_medical_employee_amount || 0)
-    
-    // 计算合计
-    const companyTotal = medicalCompanyAmount + socialCompanyAmount + largeMedicalCompanyAmount
-    const employeeTotal = medicalEmployeeAmount + socialEmployeeAmount + largeMedicalEmployeeAmount
-    const socialSecurityTotal = companyTotal + employeeTotal
-    
-    const rowData = {
-      serial_number: index + 1,
-      employee_name: detail.employee_name || employee.name || '小计',
-      id_number: detail.employee_id_number || employee.id_number || '',
-      project_name: detail.project_name || (project ? project.name : ''),
-      // 社保明细使用社保参保日期（优先使用后端返回的，其次从employee对象获取）
-      enrollment_date: formatEnrollmentDate(detail.social_insurance_enrollment_date || employee.social_insurance_enrollment_date || detail.created_at),
-      type: '正常',
-      period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
-      medical_base: detail.employee_medical_insurance_base || '0.00',
-      social_security_base: detail.employee_social_security_base || '0.00',
-      
-      // 社保合计
-      social_security_total: socialSecurityTotal.toFixed(2),
-      remarks: ''
-    }
-    
-    // 动态添加社保类型列
-    if (Array.isArray(socialSecurityTypes)) {
-      socialSecurityTypes.forEach(type => {
-        const baseAmount = parseFloat(detail.employee_social_security_base || 0)
-        const companyAmount = baseAmount * (parseFloat(type.company_ratio || 0))
-        const employeeAmount = baseAmount * (parseFloat(type.employee_ratio || 0))
-        
-        // 使用类型前缀避免字段名冲突
-        rowData['company_社保_' + type.name] = companyAmount.toFixed(2)
-        rowData['employee_社保_' + type.name] = employeeAmount.toFixed(2)
-      })
-    }
-    
-    // 动态添加医保类型列
-    if (Array.isArray(medicalInsuranceTypes)) {
-      medicalInsuranceTypes.forEach(type => {
-        const baseAmount = parseFloat(detail.employee_medical_insurance_base || 0)
-        const companyAmount = baseAmount * (parseFloat(type.company_ratio || 0))
-        const employeeAmount = baseAmount * (parseFloat(type.employee_ratio || 0))
-        
-        // 使用类型前缀避免字段名冲突
-        rowData['company_医保_' + type.name] = companyAmount.toFixed(2)
-        rowData['employee_医保_' + type.name] = employeeAmount.toFixed(2)
-      })
-    }
-    
-    // 添加大额医疗列（如果启用）
-    if (detail.large_medical_company_amount > 0 || detail.large_medical_employee_amount > 0) {
-      rowData['company_大额医疗'] = largeMedicalCompanyAmount.toFixed(2)
-      rowData['employee_大额医疗'] = largeMedicalEmployeeAmount.toFixed(2)
-    }
-    
-    // 直接使用后端计算的合计金额，避免前端重复计算
-    rowData.company_total = companyTotal.toFixed(2)
-    rowData.employee_total = employeeTotal.toFixed(2)
-    rowData.social_security_total = socialSecurityTotal.toFixed(2)
-    
-    return rowData
-  })
+  const normalData = normalEmployees.map((detail, index) => buildSocialSecurityDetailRow(detail, index + 1, '正常'))
   
   // 处理补交员工数据
-  const supplementaryData = supplementaryEmployees.map((detail, index) => {
-    const employee = detail.employee || {}
-    const project = detail.project || {}
-    const insurancePersonnel = detail.insurance_personnel || {}
-    
-    // 从快照数据中解析保险类型
-    let socialSecurityTypes = []
-    let medicalInsuranceTypes = []
-    
-    if (insurancePersonnel.social_security_types) {
-      try {
-        socialSecurityTypes = JSON.parse(insurancePersonnel.social_security_types)
-      } catch (e) {
-        console.error('解析social_security_types失败:', e)
-      }
-    }
-    
-    if (insurancePersonnel.medical_insurance_types) {
-      try {
-        medicalInsuranceTypes = JSON.parse(insurancePersonnel.medical_insurance_types)
-      } catch (e) {
-        console.error('解析medical_insurance_types失败:', e)
-      }
-    }
-    
-    // 计算各项金额
-    const medicalCompanyAmount = parseFloat(detail.medical_insurance_company_amount || 0)
-    const medicalEmployeeAmount = parseFloat(detail.medical_insurance_employee_amount || 0)
-    const socialCompanyAmount = parseFloat(detail.social_security_company_amount || 0)
-    const socialEmployeeAmount = parseFloat(detail.social_security_employee_amount || 0)
-    const largeMedicalCompanyAmount = parseFloat(detail.large_medical_company_amount || 0)
-    const largeMedicalEmployeeAmount = parseFloat(detail.large_medical_employee_amount || 0)
-    
-    // 计算合计
-    const companyTotal = medicalCompanyAmount + socialCompanyAmount + largeMedicalCompanyAmount
-    const employeeTotal = medicalEmployeeAmount + socialEmployeeAmount + largeMedicalEmployeeAmount
-    const socialSecurityTotal = companyTotal + employeeTotal
-    
-    const rowData = {
-      serial_number: normalData.length + index + 1, // 序号从正常员工后面开始
-      employee_name: detail.employee_name || employee.name || '小计',
-      id_number: detail.employee_id_number || employee.id_number || '',
-      project_name: detail.project_name || (project ? project.name : ''),
-      // 社保明细补交也使用社保参保日期
-      enrollment_date: formatEnrollmentDate(detail.social_insurance_enrollment_date || employee.social_insurance_enrollment_date || detail.created_at),
-      type: '补交', // 设置为补交类型
-      period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
-      medical_base: detail.employee_medical_insurance_base || '0.00',
-      social_security_base: detail.employee_social_security_base || '0.00',
-      
-      // 社保合计
-      social_security_total: socialSecurityTotal.toFixed(2),
-      remarks: ''
-    }
-    
-    // 动态添加社保类型列
-    if (Array.isArray(socialSecurityTypes)) {
-      socialSecurityTypes.forEach(type => {
-        const baseAmount = parseFloat(detail.employee_social_security_base || 0)
-        const companyAmount = baseAmount * (parseFloat(type.company_ratio || 0))
-        const employeeAmount = baseAmount * (parseFloat(type.employee_ratio || 0))
-        
-        // 使用类型前缀避免字段名冲突
-        rowData['company_社保_' + type.name] = companyAmount.toFixed(2)
-        rowData['employee_社保_' + type.name] = employeeAmount.toFixed(2)
-      })
-    }
-    
-    // 动态添加医保类型列
-    if (Array.isArray(medicalInsuranceTypes)) {
-      medicalInsuranceTypes.forEach(type => {
-        const baseAmount = parseFloat(detail.employee_medical_insurance_base || 0)
-        const companyAmount = baseAmount * (parseFloat(type.company_ratio || 0))
-        const employeeAmount = baseAmount * (parseFloat(type.employee_ratio || 0))
-        
-        // 使用类型前缀避免字段名冲突
-        rowData['company_医保_' + type.name] = companyAmount.toFixed(2)
-        rowData['employee_医保_' + type.name] = employeeAmount.toFixed(2)
-      })
-    }
-    
-    // 添加大额医疗列（如果启用）
-    if (detail.large_medical_company_amount > 0 || detail.large_medical_employee_amount > 0) {
-      rowData['company_大额医疗'] = largeMedicalCompanyAmount.toFixed(2)
-      rowData['employee_大额医疗'] = largeMedicalEmployeeAmount.toFixed(2)
-    }
-    
-    // 直接使用后端计算的合计金额，避免前端重复计算
-    rowData.company_total = companyTotal.toFixed(2)
-    rowData.employee_total = employeeTotal.toFixed(2)
-    rowData.social_security_total = socialSecurityTotal.toFixed(2)
-    
-    return rowData
-  })
+  const supplementaryData = supplementaryEmployees.map((detail, index) => buildSocialSecurityDetailRow(detail, normalData.length + index + 1, '补交'))
   
   // 构建结果数组：正常员工 + 正常小计 + 补交员工 + 补交小计 + 合计
   const result = []
@@ -2715,6 +2572,8 @@ const summaries = ref([])
 const regions = ref([])
 const rawCompensationData = ref([])
 const socialSecurityRegions = ref([])
+const medicalInsuranceRegions = ref([])
+const largeMedicalConfigs = ref([])
 
 
 const hasSnapshotValue = (value) => {
@@ -3292,6 +3151,18 @@ const housingFundSpanMethod = ({ row, column, rowIndex, columnIndex }) => {
 }
 
 // 加载社保地区列表
+const syncAvailableRegions = () => {
+  regions.value = Array.from(new Set([
+    ...socialSecurityRegions.value.map(region => region.name),
+    ...medicalInsuranceRegions.value.map(region => region.name),
+    ...largeMedicalConfigs.value.map(config => config.region_name)
+  ].filter(Boolean)))
+
+  if (!regions.value.includes(detailFilterForm.value.region_name)) {
+    detailFilterForm.value.region_name = getDefaultDetailRegion()
+  }
+}
+
 const loadSocialSecurityRegions = async () => {
   if (!currentAccountSetId.value) {
     return
@@ -3304,15 +3175,68 @@ const loadSocialSecurityRegions = async () => {
     
     if (response.success) {
       socialSecurityRegions.value = response.data || []
-      // 将社保地区名称提取到regions数组中
-      regions.value = socialSecurityRegions.value.map(region => region.name)
+      syncAvailableRegions()
     } else {
       console.warn('加载社保地区失败:', response.message)
-      regions.value = []
+      socialSecurityRegions.value = []
+      syncAvailableRegions()
     }
   } catch (error) {
     console.error('加载社保地区失败:', error)
-    regions.value = []
+    socialSecurityRegions.value = []
+    syncAvailableRegions()
+  }
+}
+
+const loadMedicalInsuranceRegions = async () => {
+  if (!currentAccountSetId.value) {
+    return
+  }
+
+  try {
+    const response = await getMedicalInsuranceRegions({
+      account_set_id: currentAccountSetId.value
+    })
+
+    if (response.success) {
+      medicalInsuranceRegions.value = response.data || []
+      syncAvailableRegions()
+    } else {
+      console.warn('加载医保地区失败:', response.message)
+      medicalInsuranceRegions.value = []
+      syncAvailableRegions()
+    }
+  } catch (error) {
+    console.error('加载医保地区失败:', error)
+    medicalInsuranceRegions.value = []
+    syncAvailableRegions()
+  }
+}
+
+const loadLargeMedicalConfigs = async () => {
+  if (!currentAccountSetId.value) {
+    return
+  }
+
+  try {
+    const response = await request.get('/large-medical-insurance', {
+      params: {
+        account_set_id: currentAccountSetId.value
+      }
+    })
+
+    if (response.success) {
+      largeMedicalConfigs.value = response.data || []
+      syncAvailableRegions()
+    } else {
+      console.warn('加载大额医疗配置失败:', response.message)
+      largeMedicalConfigs.value = []
+      syncAvailableRegions()
+    }
+  } catch (error) {
+    console.error('加载大额医疗配置失败:', error)
+    largeMedicalConfigs.value = []
+    syncAvailableRegions()
   }
 }
 
@@ -4067,6 +3991,42 @@ const summaryFilterForm = ref({
   region_name: ''
 })
 
+const detailTabNeedsRegionFilter = (tab = detailActiveTab.value) => {
+  return ['social', 'compensation', 'housingFundCompensation', 'housing'].includes(tab)
+}
+
+const getDefaultDetailRegion = () => {
+  return regions.value[0] || ''
+}
+
+const ensureDetailRegionSelected = (tab = detailActiveTab.value) => {
+  if (!detailTabNeedsRegionFilter(tab)) {
+    return true
+  }
+
+  if (detailFilterForm.value.region_name) {
+    return true
+  }
+
+  const defaultRegion = getDefaultDetailRegion()
+  if (!defaultRegion) {
+    return false
+  }
+
+  detailFilterForm.value.region_name = defaultRegion
+  return true
+}
+
+const loadActiveDetailData = () => {
+  if (detailActiveTab.value === 'compensation') {
+    loadCompensationDetails()
+  } else if (detailActiveTab.value === 'housingFundCompensation') {
+    loadHousingFundCompensationDetails()
+  } else {
+    loadDetails()
+  }
+}
+
 // 对话框
 const showUploadDialogFlag = ref(false)
 const showViewFilesDialogFlag = ref(false)
@@ -4243,12 +4203,23 @@ const loadDetails = async () => {
     return
   }
 
+  if (!ensureDetailRegionSelected()) {
+    details.value = []
+    return
+  }
+
+  const params = {
+    account_set_id: currentAccountSetId.value,
+    ...detailFilterForm.value
+  }
+
+  if (!detailTabNeedsRegionFilter()) {
+    delete params.region_name
+  }
+
   detailLoading.value = true
   try {
-    const response = await getInsuranceChangeDetails({
-      account_set_id: currentAccountSetId.value,
-      ...detailFilterForm.value
-    })
+    const response = await getInsuranceChangeDetails(params)
     if (response.success) {
       details.value = response.data
       
@@ -4275,12 +4246,18 @@ const loadCompensationDetails = async () => {
     ElMessage.warning('请先选择账套')
     return
   }
+
+  if (!ensureDetailRegionSelected()) {
+    rawCompensationData.value = []
+    return
+  }
   
   detailLoading.value = true
   try {
     const response = await getSocialSecurityCompensationList({
       account_set_id: currentAccountSetId.value,
-      month: detailFilterForm.value.month  // ✅ 添加月份筛选
+      month: detailFilterForm.value.month,  // ✅ 添加月份筛选
+      region_name: detailFilterForm.value.region_name
     })
     if (response.success) {
       rawCompensationData.value = response.data || []
@@ -4302,12 +4279,18 @@ const loadHousingFundCompensationDetails = async () => {
     ElMessage.warning('请先选择账套')
     return
   }
+
+  if (!ensureDetailRegionSelected()) {
+    rawHousingFundCompensationData.value = []
+    return
+  }
   
   detailLoading.value = true
   try {
     const response = await getHousingFundCompensationList({
       account_set_id: currentAccountSetId.value,
-      month: detailFilterForm.value.month  // ✅ 添加月份筛选
+      month: detailFilterForm.value.month,  // ✅ 添加月份筛选
+      region_name: detailFilterForm.value.region_name
     })
     if (response.success) {
       rawHousingFundCompensationData.value = response.data || []
@@ -4815,9 +4798,9 @@ const resetFilter = () => {
 const resetDetailFilter = () => {
   detailFilterForm.value = {
     month: getCurrentMonth(), // 重置为当前月份
-    region_name: ''
+    region_name: getDefaultDetailRegion()
   }
-  loadDetails()
+  loadActiveDetailData()
 }
 
 const resetSummaryFilter = () => {
@@ -6263,7 +6246,7 @@ const getReplacedPersonName = (row) => {
 // 监听标签页切换
 const handleTabChange = (tab) => {
   if (tab === 'details') {
-    loadDetails()
+    loadActiveDetailData()
   } else if (tab === 'summaries') {
     loadSummaries()
   }
@@ -6271,10 +6254,8 @@ const handleTabChange = (tab) => {
 
 // 监听选项卡切换
 watch(detailActiveTab, (newTab) => {
-  if (newTab === 'compensation') {
-    loadCompensationDetails()
-  } else if (newTab === 'housingFundCompensation') {
-    loadHousingFundCompensationDetails()
+  if (activeTab.value === 'details') {
+    loadActiveDetailData()
   }
 })
 
@@ -6284,13 +6265,7 @@ watch(() => detailFilterForm.value.month, (newMonth, oldMonth) => {
   if (newMonth !== oldMonth && oldMonth !== undefined) {
     // 根据当前激活的标签页触发相应的查询
     if (activeTab.value === 'details') {
-      if (detailActiveTab.value === 'social') {
-        loadDetails()
-      } else if (detailActiveTab.value === 'compensation') {
-        loadCompensationDetails()
-      } else if (detailActiveTab.value === 'housingFundCompensation') {
-        loadHousingFundCompensationDetails()
-      }
+      loadActiveDetailData()
     } else if (activeTab.value === 'summaries') {
       loadSummaries()
     }
@@ -6318,8 +6293,10 @@ onMounted(async () => {
   isInitializing.value = true
   
   try {
-    // 先加载社保地区列表
+    // 先加载各类地区配置
     await loadSocialSecurityRegions()
+    await loadMedicalInsuranceRegions()
+    await loadLargeMedicalConfigs()
     // 再加载参保人员列表
     await loadChanges()
   } finally {

@@ -65,6 +65,14 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="任务月份" width="120">
+          <template #default="{ row }">
+            <span v-if="!row.config_exists" style="color: #999;">待配置</span>
+            <el-tag v-else :type="row.delivery_release_month === 'next' ? 'warning' : 'success'">
+              {{ row.delivery_release_month === 'next' ? '次月' : '当月' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="资料清单" min-width="200">
           <template #default="{ row }">
             <div v-if="row.config_exists && row.required_documents && row.required_documents.length > 0">
@@ -191,6 +199,16 @@
           </div>
         </el-form-item>
 
+        <el-form-item label="任务月份" prop="delivery_release_month">
+          <el-radio-group v-model="formData.delivery_release_month">
+            <el-radio value="current">当月</el-radio>
+            <el-radio value="next">次月</el-radio>
+          </el-radio-group>
+          <div style="color: #999; font-size: 12px; margin-top: 5px;">
+            次月：本月资料交付任务延后到下个月出现
+          </div>
+        </el-form-item>
+
         <el-form-item label="资料清单" prop="required_documents">
           <div style="width: 100%;">
             <el-tag
@@ -277,6 +295,7 @@ const formData = reactive({
   project_id: null,
   delivery_cycle: 'monthly',
   delivery_method: 'electronic',
+  delivery_release_month: 'current',
   required_documents: []
 })
 
@@ -294,6 +313,9 @@ const formRules = {
   ],
   delivery_method: [
     { required: true, message: '请选择交付方式', trigger: 'change' }
+  ],
+  delivery_release_month: [
+    { required: true, message: '请选择任务月份', trigger: 'change' }
   ]
 }
 
@@ -452,6 +474,7 @@ const handleEdit = (row) => {
     project_id: row.project_id,
     delivery_cycle: row.delivery_cycle,
     delivery_method: row.delivery_method,
+    delivery_release_month: row.delivery_release_month || 'current',
     required_documents: row.required_documents || []
   })
   dialogVisible.value = true
@@ -545,6 +568,7 @@ const resetForm = () => {
     project_id: null,
     delivery_cycle: 'monthly',
     delivery_method: 'electronic',
+    delivery_release_month: 'current',
     required_documents: []
   })
   showDocInput.value = false

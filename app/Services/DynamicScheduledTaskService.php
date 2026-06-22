@@ -167,8 +167,12 @@ class DynamicScheduledTaskService
             })
             ->get()
             ->each(function (ProjectDeliveryConfig $config) use ($deliveryService, $date) {
-                $period = $deliveryService->generateDeliveryPeriod($config->delivery_cycle, $date->copy());
-                $delivery = $deliveryService->createDeliveryRecord($config, $period);
+                $period = $deliveryService->resolveDeliveryPeriodForDisplayMonth($config, $date->copy());
+                if (!$period) {
+                    return;
+                }
+
+                $delivery = $deliveryService->createDeliveryRecord($config, $period, $date->format('Y-m'));
                 $operatorId = $deliveryService->getProjectOperatorId($config->project_id);
                 if ($operatorId) {
                     $deliveryService->sendNewPeriodReminder($delivery, $operatorId);

@@ -538,8 +538,9 @@ class PendingTaskService
 
             // 生成任务标题和描述
             $cycleText = $documentDelivery->delivery_cycle === 'monthly' ? '月度' : '季度';
-            $title = "{$project->name} {$documentDelivery->delivery_period} {$cycleText}资料交付待处理";
-            $description = "项目 {$project->name} 的 {$documentDelivery->delivery_period} {$cycleText}资料需要交付，请及时处理。";
+            $taskMonth = $documentDelivery->display_month ?: $documentDelivery->delivery_period;
+            $title = "{$project->name} {$taskMonth} {$cycleText}资料交付待处理";
+            $description = "项目 {$project->name} 的 {$documentDelivery->delivery_period} {$cycleText}资料需要在 {$taskMonth} 完成交付，请及时处理。";
 
             // 创建待办任务
             $task = PendingTask::create([

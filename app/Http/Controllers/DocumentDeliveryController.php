@@ -54,11 +54,12 @@ class DocumentDeliveryController extends Controller
             }
 
             if ($request->filled('delivery_period')) {
-                $query->where('delivery_period', $request->input('delivery_period'));
+                $query->where('display_month', $request->input('delivery_period'));
             }
 
-            // 按交付期间倒序，最新的在前
-            $deliveries = $query->orderBy('delivery_period', 'desc')
+            // 按任务显示月份倒序，最新的在前
+            $deliveries = $query->orderBy('display_month', 'desc')
+                               ->orderBy('delivery_period', 'desc')
                                ->orderBy('created_at', 'desc')
                                ->paginate($request->input('per_page', 15));
 
@@ -545,6 +546,7 @@ class DocumentDeliveryController extends Controller
                     // 这里可以根据实际业务逻辑筛选用户负责的项目
                     // 暂时返回所有待办
                 })
+                ->orderBy('display_month', 'desc')
                 ->orderBy('delivery_period', 'desc')
                 ->get();
 

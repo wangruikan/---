@@ -14,6 +14,7 @@ class ProjectDeliveryConfig extends Model
         'project_id',
         'delivery_cycle',
         'delivery_method',
+        'delivery_release_month',
         'required_documents',
         'is_active',
         'created_by',

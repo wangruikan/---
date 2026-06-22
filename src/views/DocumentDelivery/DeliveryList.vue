@@ -13,7 +13,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="交付期间">
+        <el-form-item label="任务月份">
           <el-date-picker
             v-model="filterForm.delivery_period"
             type="month"
@@ -47,17 +47,29 @@
     <!-- 列表 -->
     <el-card class="table-card">
       <el-table :data="deliveryList" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column label="ID" width="70" align="center">
+          <template #default="{ $index }">
+            {{ (pagination.current - 1) * pagination.pageSize + $index + 1 }}
+          </template>
+        </el-table-column>
         <el-table-column label="项目名称" width="160">
           <template #default="{ row }">
             {{ row.project?.name || '-' }}
           </template>
         </el-table-column>
+        <el-table-column prop="display_month" label="任务月份" width="120" />
         <el-table-column prop="delivery_period" label="交付期间" width="120" />
         <el-table-column label="交付周期" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="row.delivery_cycle === 'monthly' ? 'primary' : 'success'">
               {{ row.delivery_cycle === 'monthly' ? '按月' : '按季度' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="生成方式" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.delivery_release_month === 'next' ? 'warning' : 'success'">
+              {{ row.delivery_release_month === 'next' ? '次月' : '当月' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -139,12 +151,18 @@
       title="交付详情"
       width="700px"
     >
-      <el-descriptions v-if="currentDelivery" :column="2" border>
+        <el-descriptions v-if="currentDelivery" :column="2" border>
+        <el-descriptions-item label="任务月份">
+          {{ currentDelivery.display_month || '-' }}
+        </el-descriptions-item>
         <el-descriptions-item label="项目名称">
           {{ currentDelivery.project?.name }}
         </el-descriptions-item>
         <el-descriptions-item label="交付期间">
           {{ currentDelivery.delivery_period }}
+        </el-descriptions-item>
+        <el-descriptions-item label="生成方式">
+          {{ currentDelivery.delivery_release_month === 'next' ? '次月' : '当月' }}
         </el-descriptions-item>
         <el-descriptions-item label="交付周期">
           {{ currentDelivery.delivery_cycle === 'monthly' ? '按月交付' : '按季度交付' }}

@@ -13,6 +13,11 @@ use Illuminate\Support\Facades\Log;
 
 class DocumentDeliveryService
 {
+    public function normalizeDeliveryReleaseMonth(?string $releaseMonth): string
+    {
+        return $releaseMonth === 'next' ? 'next' : 'current';
+    }
+
     /**
      * 生成交付期间标识
      * @param string $cycle monthly/quarterly
@@ -32,6 +37,48 @@ class DocumentDeliveryService
         }
     }
 
+    public function resolveDeliveryPeriodForDisplayMonth(ProjectDeliveryConfig $config, Carbon $displayMonthDate): ?string
+    {
+        $releaseMonth = $this->normalizeDeliveryReleaseMonth($config->delivery_release_month ?? null);
+
+        if ($config->delivery_cycle === 'monthly') {
+            $periodDate = $releaseMonth === 'next'
+                ? $displayMonthDate->copy()->subMonth()
+                : $displayMonthDate->copy();
+
+            $period = $this->generateDeliveryPeriod('monthly', $periodDate);
+
+            return $this->isProjectPeriodAvailable($config, $period) ? $period : null;
+        }
+
+        if ($releaseMonth === 'current') {
+            if (!$this->isQuarterFirstMonth($displayMonthDate)) {
+                return null;
+            }
+
+            $period = $this->generateDeliveryPeriod('quarterly', $displayMonthDate->copy());
+            return $this->isProjectPeriodAvailable($config, $period) ? $period : null;
+        }
+
+        if (!$this->isQuarterSecondMonth($displayMonthDate)) {
+            return null;
+        }
+
+        $period = $this->generateDeliveryPeriod('quarterly', $displayMonthDate->copy()->subMonth());
+
+        return $this->isProjectPeriodAvailable($config, $period) ? $period : null;
+    }
+
+    public function resolveDisplayMonthForPeriod(ProjectDeliveryConfig $config, string $period): string
+    {
+        $periodDate = Carbon::createFromFormat('Y-m-d', $period . '-01');
+
+        if ($this->normalizeDeliveryReleaseMonth($config->delivery_release_month ?? null) === 'next') {
+            return $periodDate->addMonth()->format('Y-m');
+        }
+
+        return $periodDate->format('Y-m');
+    }
 
     /**
      * 为项目生成交付记录
@@ -39,14 +86,31 @@ class DocumentDeliveryService
      * @param string $period
      * @return DocumentDelivery
      */
-    public function createDeliveryRecord(ProjectDeliveryConfig $config, $period)
+    public function createDeliveryRecord(ProjectDeliveryConfig $config, $period, ?string $displayMonth = null)
     {
+        $displayMonth = $displayMonth ?: $this->resolveDisplayMonthForPeriod($config, $period);
+
         // 检查是否已存在
         $existing = DocumentDelivery::where('project_id', $config->project_id)
             ->where('delivery_period', $period)
             ->first();
 
         if ($existing) {
+            $updateData = [];
+
+            if (($existing->display_month ?? null) !== $displayMonth) {
+                $updateData['display_month'] = $displayMonth;
+            }
+
+            $releaseMonth = $this->normalizeDeliveryReleaseMonth($config->delivery_release_month ?? null);
+            if (($existing->delivery_release_month ?? 'current') !== $releaseMonth) {
+                $updateData['delivery_release_month'] = $releaseMonth;
+            }
+
+            if (!empty($updateData)) {
+                $existing->update($updateData);
+            }
+
             return $existing;
         }
 
@@ -59,7 +123,9 @@ class DocumentDeliveryService
             'project_id' => $config->project_id,
             'delivery_cycle' => $config->delivery_cycle,
             'delivery_method' => $config->delivery_method,
+            'delivery_release_month' => $this->normalizeDeliveryReleaseMonth($config->delivery_release_month ?? null),
             'delivery_period' => $period,
+            'display_month' => $displayMonth,
             'status' => 'pending',
             'handler_id' => $handlerId,
             'required_documents' => $config->required_documents,
@@ -158,8 +224,8 @@ class DocumentDeliveryService
         }
         
         try {
-            // 计算截止日期（交付期间的月末）
-            $deadlineDate = Carbon::parse($delivery->delivery_period)->endOfMonth();
+            // 次月任务按实际出现的月份计算截止日期
+            $deadlineDate = Carbon::parse(($delivery->display_month ?? $delivery->delivery_period) . '-01')->endOfMonth();
             
             // 获取项目名称
             $projectName = $delivery->project ? $delivery->project->name : '未知项目';
@@ -224,9 +290,9 @@ class DocumentDeliveryService
     public function generateMonthlyDeliveries()
     {
         $now = Carbon::now();
-        $currentPeriod = $this->generateDeliveryPeriod('monthly', $now);
+        $displayMonth = $now->format('Y-m');
 
-        Log::info('开始生成月度交付记录', ['period' => $currentPeriod]);
+        Log::info('开始生成月度交付记录', ['display_month' => $displayMonth]);
 
         // 获取所有启用的按月交付配置
         $monthlyConfigs = ProjectDeliveryConfig::where('delivery_cycle', 'monthly')
@@ -235,7 +301,12 @@ class DocumentDeliveryService
 
         foreach ($monthlyConfigs as $config) {
             try {
-                $delivery = $this->createDeliveryRecord($config, $currentPeriod);
+                $period = $this->resolveDeliveryPeriodForDisplayMonth($config, $now->copy()->startOfMonth());
+                if (!$period) {
+                    continue;
+                }
+
+                $delivery = $this->createDeliveryRecord($config, $period, $displayMonth);
                 $operatorId = $this->getProjectOperatorId($config->project_id);
                 
                 if ($operatorId) {
@@ -262,16 +333,8 @@ class DocumentDeliveryService
     public function generateQuarterlyDeliveries()
     {
         $now = Carbon::now();
-        
-        // 检查是否是季度第一天（1/1、4/1、7/1、10/1）
-        if (!$this->isQuarterFirstDay($now)) {
-            Log::info('今天不是季度第一天，跳过季度交付记录生成');
-            return;
-        }
-        
-        $currentPeriod = $this->generateDeliveryPeriod('quarterly', $now);
 
-        Log::info('开始生成季度交付记录', ['period' => $currentPeriod, 'date' => $now->toDateString()]);
+        Log::info('开始生成季度交付记录', ['display_month' => $now->format('Y-m'), 'date' => $now->toDateString()]);
 
         // 获取所有启用的按季度交付配置
         $quarterlyConfigs = ProjectDeliveryConfig::where('delivery_cycle', 'quarterly')
@@ -280,7 +343,12 @@ class DocumentDeliveryService
 
         foreach ($quarterlyConfigs as $config) {
             try {
-                $delivery = $this->createDeliveryRecord($config, $currentPeriod);
+                $period = $this->resolveDeliveryPeriodForDisplayMonth($config, $now->copy()->startOfMonth());
+                if (!$period) {
+                    continue;
+                }
+
+                $delivery = $this->createDeliveryRecord($config, $period, $now->format('Y-m'));
                 $operatorId = $this->getProjectOperatorId($config->project_id);
                 
                 if ($operatorId) {
@@ -290,7 +358,7 @@ class DocumentDeliveryService
                 Log::info('季度交付记录已生成', [
                     'project_id' => $config->project_id,
                     'delivery_id' => $delivery->id,
-                    'period' => $currentPeriod
+                    'period' => $period
                 ]);
             } catch (\Exception $e) {
                 Log::error('生成季度交付记录失败', [
@@ -301,20 +369,6 @@ class DocumentDeliveryService
         }
     }
     
-    /**
-     * 检查是否是季度第一天
-     * @param Carbon $date
-     * @return bool
-     */
-    private function isQuarterFirstDay(Carbon $date)
-    {
-        // 只在每个季度的第一天（1月1日、4月1日、7月1日、10月1日）返回true
-        $month = $date->month;
-        $day = $date->day;
-        
-        return $day === 1 && in_array($month, [1, 4, 7, 10]);
-    }
-
     /**
      * 每月月底执行：检查并提醒未交付
      */
@@ -336,10 +390,10 @@ class DocumentDeliveryService
      */
     private function checkMonthlyPending(Carbon $now)
     {
-        $currentPeriod = $this->generateDeliveryPeriod('monthly', $now);
+        $currentDisplayMonth = $now->format('Y-m');
 
         $pendingDeliveries = DocumentDelivery::where('delivery_cycle', 'monthly')
-            ->where('delivery_period', $currentPeriod)
+            ->where('display_month', $currentDisplayMonth)
             ->where('status', 'pending')
             ->get();
 
@@ -383,5 +437,45 @@ class DocumentDeliveryService
         }
 
         Log::info('季度未交付检查完成', ['count' => $pendingDeliveries->count()]);
+    }
+
+    private function isProjectPeriodAvailable(ProjectDeliveryConfig $config, string $period): bool
+    {
+        if (!$config->relationLoaded('project')) {
+            $config->loadMissing('project');
+        }
+
+        $project = $config->project;
+        if (!$project || !$project->start_date) {
+            return true;
+        }
+
+        $projectStartDate = Carbon::parse($project->start_date);
+        $projectStartPeriod = $this->generateDeliveryPeriod($config->delivery_cycle, $projectStartDate->copy());
+
+        if ($period < $projectStartPeriod) {
+            return false;
+        }
+
+        if (!empty($project->end_date)) {
+            $projectEndDate = Carbon::parse($project->end_date);
+            $projectEndPeriod = $this->generateDeliveryPeriod($config->delivery_cycle, $projectEndDate->copy());
+
+            if ($period > $projectEndPeriod) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function isQuarterFirstMonth(Carbon $date): bool
+    {
+        return in_array($date->month, [1, 4, 7, 10], true);
+    }
+
+    private function isQuarterSecondMonth(Carbon $date): bool
+    {
+        return in_array($date->month, [2, 5, 8, 11], true);
     }
 }

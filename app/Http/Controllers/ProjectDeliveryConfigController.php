@@ -134,6 +134,7 @@ class ProjectDeliveryConfigController extends Controller
                     'project' => $project,
                     'delivery_cycle' => null,
                     'delivery_method' => null,
+                    'delivery_release_month' => 'current',
                     'required_documents' => [],
                     'is_active' => null,
                     'created_by' => null,
@@ -249,6 +250,7 @@ class ProjectDeliveryConfigController extends Controller
                 'project_id' => 'required|exists:projects,id',
                 'delivery_cycle' => 'required|in:monthly,quarterly',
                 'delivery_method' => 'required|in:express,electronic',
+                'delivery_release_month' => 'required|in:current,next',
                 'required_documents' => 'nullable|array',
             ], [
                 'project_id.required' => '请选择项目',
@@ -257,6 +259,8 @@ class ProjectDeliveryConfigController extends Controller
                 'delivery_cycle.in' => '交付周期值无效',
                 'delivery_method.required' => '请选择交付方式',
                 'delivery_method.in' => '交付方式值无效',
+                'delivery_release_month.required' => '请选择任务生成月份',
+                'delivery_release_month.in' => '任务生成月份值无效',
             ]);
 
             if ($validator->fails()) {
@@ -290,6 +294,7 @@ class ProjectDeliveryConfigController extends Controller
                 'project_id' => $request->project_id,
                 'delivery_cycle' => $request->delivery_cycle,
                 'delivery_method' => $request->delivery_method,
+                'delivery_release_month' => $request->input('delivery_release_month', 'current'),
                 'required_documents' => $request->input('required_documents', []),
                 'is_active' => true,
                 'created_by' => $request->user()->id,
@@ -297,19 +302,23 @@ class ProjectDeliveryConfigController extends Controller
 
             // 立即生成第一条交付记录
             $deliveryService = app(\App\Services\DocumentDeliveryService::class);
-            $now = \Carbon\Carbon::now();
-            $period = $deliveryService->generateDeliveryPeriod($request->delivery_cycle, $now);
-            
-            $deliveryService->createDeliveryRecord($config, $period);
-            
-            \Log::info('配置创建并生成首条交付记录', [
-                'config_id' => $config->id,
-                'period' => $period
-            ]);
+            $displayMonthDate = \Carbon\Carbon::now()->startOfMonth();
+            $period = $deliveryService->resolveDeliveryPeriodForDisplayMonth($config->load('project'), $displayMonthDate);
+            $createdDelivery = null;
+
+            if ($period) {
+                $createdDelivery = $deliveryService->createDeliveryRecord($config, $period, $displayMonthDate->format('Y-m'));
+
+                \Log::info('配置创建并生成首条交付记录', [
+                    'config_id' => $config->id,
+                    'period' => $period,
+                    'display_month' => $displayMonthDate->format('Y-m'),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => '配置创建成功，已生成首条交付记录',
+                'message' => $createdDelivery ? '配置创建成功，已生成当前任务' : '配置创建成功',
                 'data' => $config->load(['project', 'creator'])
             ]);
 
@@ -345,6 +354,7 @@ class ProjectDeliveryConfigController extends Controller
             $validator = Validator::make($request->all(), [
                 'delivery_cycle' => 'required|in:monthly,quarterly',
                 'delivery_method' => 'required|in:express,electronic',
+                'delivery_release_month' => 'required|in:current,next',
                 'required_documents' => 'nullable|array',
                 'is_active' => 'nullable|boolean',
             ], [
@@ -352,6 +362,8 @@ class ProjectDeliveryConfigController extends Controller
                 'delivery_cycle.in' => '交付周期值无效',
                 'delivery_method.required' => '请选择交付方式',
                 'delivery_method.in' => '交付方式值无效',
+                'delivery_release_month.required' => '请选择任务生成月份',
+                'delivery_release_month.in' => '任务生成月份值无效',
             ]);
 
             if ($validator->fails()) {
@@ -374,6 +386,7 @@ class ProjectDeliveryConfigController extends Controller
             $config->update([
                 'delivery_cycle' => $request->delivery_cycle,
                 'delivery_method' => $request->delivery_method,
+                'delivery_release_month' => $request->input('delivery_release_month', 'current'),
                 'required_documents' => $request->input('required_documents', []),
                 'is_active' => $request->input('is_active', true),
                 'updated_by' => $request->user()->id,

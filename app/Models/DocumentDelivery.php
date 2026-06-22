@@ -15,7 +15,9 @@ class DocumentDelivery extends Model
     protected $auditableFields = [
         'delivery_cycle' => '交付周期',
         'delivery_method' => '交付方式',
+        'delivery_release_month' => '任务生成方式',
         'delivery_period' => '交付期间',
+        'display_month' => '任务显示月份',
         'status' => '状态',
         'express_number' => '快递单号',
         'express_date' => '快递日期',
@@ -23,11 +25,14 @@ class DocumentDelivery extends Model
     ];
 
     protected $fillable = [
+        'config_id',
         'account_set_id',
         'project_id',
         'delivery_cycle',
         'delivery_method',
+        'delivery_release_month',
         'delivery_period',
+        'display_month',
         'status',
         'handler_id',
         'required_documents',

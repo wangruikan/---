@@ -1641,6 +1641,10 @@ const accountSetStore = useAccountSetStore()
 
 // 计算属性
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
+const currentAccountSetCompanyName = computed(() => accountSetStore.currentAccountSet?.company_name || '')
+const getCompanyNameWithRegion = (regionName = detailFilterForm.value.region_name || '全部地区') => {
+  return `${currentAccountSetCompanyName.value}（${regionName}）`
+}
 
 // 判断是否是"开启大额医疗保险"任务
 const isLargeMedicalEnableTask = computed(() => {
@@ -1687,11 +1691,12 @@ const getSocialSecurityTitle = () => {
     formattedMonth = `${year}年${monthNum.padStart(2, '0')}月`
   }
   
-  return `${regionName}汇邦人力资源有限公司${formattedMonth}社保明细`
+  return `${getCompanyNameWithRegion(regionName)}${formattedMonth}社保明细`
 }
 
 // 生成公积金明细标题
 const getHousingFundTitle = () => {
+  const regionName = detailFilterForm.value.region_name || '全部地区'
   const month = detailFilterForm.value.month || getCurrentMonth()
   
   // 格式化月份显示：202507 格式
@@ -1701,7 +1706,7 @@ const getHousingFundTitle = () => {
     formattedMonth = `${year}${monthNum.padStart(2, '0')}`
   }
   
-  return `汇邦人力${formattedMonth}公积金明细`
+  return `${getCompanyNameWithRegion(regionName)}${formattedMonth}公积金明细`
 }
 
 
@@ -3546,7 +3551,7 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>汇邦人力${monthText}社保汇总表</title>
+  <title>${getCompanyNameWithRegion()}${monthText}社保汇总表</title>
   <style>
     body {
       font-family: "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
@@ -3624,7 +3629,7 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
   <table>
     <thead>
       <tr>
-        <th colspan="${5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3}" class="main-title">汇邦人力${monthText}社保汇总表</th>
+        <th colspan="${5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3}" class="main-title">${getCompanyNameWithRegion()}${monthText}社保汇总表</th>
       </tr>
       <tr>
         <th colspan="${5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3}" class="sub-title">社保编号:${socialSecurityCode || '未设置'}</th>
@@ -3709,7 +3714,7 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
   
   <div class="footer-info">
     <div class="footer-row">制表人：&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;审核人：</div>
-    <div class="footer-row" style="text-align: right;">鄂尔多斯市汇邦人力资源有限责任公司</div>
+    <div class="footer-row" style="text-align: right;">${getCompanyNameWithRegion()}</div>
     <div class="footer-row" style="text-align: right;">日期：${new Date().toLocaleDateString()}</div>
   </div>
 </body>
@@ -3723,7 +3728,7 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `汇邦人力${monthText}社保汇总表.xlsx`
+  link.download = `${getCompanyNameWithRegion()}${monthText}社保汇总表.xlsx`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -3744,7 +3749,7 @@ const exportSocialSecurityExcel = async () => {
     const regionName = detailFilterForm.value.region_name || '全部地区'
     const month = detailFilterForm.value.month || getCurrentMonth()
     const formattedMonth = month.replace('-', '年') + '月'
-    const filename = `${regionName}汇邦人力资源有限公司${formattedMonth}社保明细.xlsx`
+    const filename = `${getCompanyNameWithRegion(regionName)}${formattedMonth}社保明细.xlsx`
     
     // 准备列配置
     const columns = [
@@ -3816,7 +3821,7 @@ const exportHousingFundExcel = async () => {
     // 生成文件名
     const month = detailFilterForm.value.month || getCurrentMonth()
     const formattedMonth = month.replace('-', '')
-    const filename = `汇邦人力${formattedMonth}公积金明细.xlsx`
+    const filename = `${getCompanyNameWithRegion()}${formattedMonth}公积金明细.xlsx`
 
     // 准备列配置
     const columns = [
@@ -3869,7 +3874,7 @@ const exportHousingFundSummaryAction = async () => {
       const [year, monthNum] = month.split('-')
       formattedMonth = `${year}年${monthNum.padStart(2, '0')}月`
     }
-    const title = `汇邦人力${formattedMonth}公积金汇总表`
+    const title = `${getCompanyNameWithRegion()}${formattedMonth}公积金汇总表`
     const filename = `${title}.xlsx`
 
     // 导出汇总表

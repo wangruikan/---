@@ -56,12 +56,20 @@
       <el-card>
         <el-form :model="searchForm" inline>
           <el-form-item label="项目名称">
-            <el-input
+            <el-select
               v-model="searchForm.search"
-              placeholder="请输入项目名称或代码"
+              placeholder="请选择项目"
               clearable
-              @keyup.enter="handleSearch"
-            />
+              filterable
+              style="width: 220px"
+            >
+              <el-option
+                v-for="project in projectFilterOptions"
+                :key="project.id"
+                :label="project.code ? `${project.name} (${project.code})` : project.name"
+                :value="project.name"
+              />
+            </el-select>
           </el-form-item>
           
           <el-form-item label="状态">
@@ -1924,6 +1932,7 @@ const getDocumentTypeTagType = (type) => {
 }
 
 const projects = ref([])
+const projectFilterOptions = ref([])
 const projectStats = ref({
   total: 0,
   active: 0,
@@ -2314,6 +2323,26 @@ const handleProjectCodeInput = (value) => {
 const handleProjectCodeBlur = () => {
   form.code = normalizeProjectCode(form.code)
 }
+
+const loadProjectFilterOptions = async () => {
+  try {
+    const response = await getProjects({
+      all: true,
+      current_account_set_id: currentAccountSetId.value
+    })
+
+    if (response?.success) {
+      const projectList = Array.isArray(response.data) ? response.data : (response.data?.data || [])
+      projectFilterOptions.value = projectList
+    } else {
+      projectFilterOptions.value = []
+    }
+  } catch (error) {
+    console.error('加载项目筛选选项失败:', error)
+    projectFilterOptions.value = []
+  }
+}
+
 const loadProjects = async () => {
   loading.value = true
   try {
@@ -3574,6 +3603,7 @@ onMounted(async () => {
   await nextTick()
   initProjectTableStickyTop()
   window.addEventListener('resize', updateProjectTableStickyTop)
+  await loadProjectFilterOptions()
   // 然后加载项目
   loadProjects()
 })
@@ -3591,6 +3621,7 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
   console.log('项目页-账套变化检测:', { new: newAccountSetId, old: oldAccountSetId })
   if (newAccountSetId && oldAccountSetId && newAccountSetId !== oldAccountSetId) {
     console.log('✅ 项目页-账套切换，重新加载数据:', newAccountSetId)
+    loadProjectFilterOptions()
     loadProjects()
   }
 })

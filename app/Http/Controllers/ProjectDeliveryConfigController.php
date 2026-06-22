@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Project;
 use App\Models\ProjectDeliveryConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -101,28 +102,82 @@ class ProjectDeliveryConfigController extends Controller
                 ], 403);
             }
 
-            $query = ProjectDeliveryConfig::with(['project', 'creator', 'updater'])
+            $projectQuery = Project::query()
                 ->where('account_set_id', $accountSetId);
 
-            // 筛选条件
             if ($request->filled('project_id')) {
-                $query->where('project_id', $request->input('project_id'));
+                $projectQuery->where('id', $request->input('project_id'));
             }
 
+            $projects = $projectQuery
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            $configs = ProjectDeliveryConfig::with(['project', 'creator', 'updater'])
+                ->where('account_set_id', $accountSetId)
+                ->get()
+                ->keyBy('project_id');
+
+            $rows = $projects->map(function (Project $project) use ($configs) {
+                $config = $configs->get($project->id);
+
+                if ($config) {
+                    $data = $config->toArray();
+                    $data['config_exists'] = true;
+                    return $data;
+                }
+
+                return [
+                    'id' => null,
+                    'account_set_id' => $project->account_set_id,
+                    'project_id' => $project->id,
+                    'project' => $project,
+                    'delivery_cycle' => null,
+                    'delivery_method' => null,
+                    'required_documents' => [],
+                    'is_active' => null,
+                    'created_by' => null,
+                    'updated_by' => null,
+                    'creator' => null,
+                    'updater' => null,
+                    'created_at' => null,
+                    'updated_at' => null,
+                    'config_exists' => false,
+                ];
+            });
+
             if ($request->filled('delivery_cycle')) {
-                $query->where('delivery_cycle', $request->input('delivery_cycle'));
+                $rows = $rows->filter(fn ($row) => ($row['delivery_cycle'] ?? null) === $request->input('delivery_cycle'));
             }
 
             if ($request->filled('delivery_method')) {
-                $query->where('delivery_method', $request->input('delivery_method'));
+                $rows = $rows->filter(fn ($row) => ($row['delivery_method'] ?? null) === $request->input('delivery_method'));
             }
 
             if ($request->filled('is_active')) {
-                $query->where('is_active', $request->input('is_active'));
+                $isActive = filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                $rows = $rows->filter(fn ($row) => ($row['config_exists'] ?? false) && ($row['is_active'] ?? null) === $isActive);
             }
 
-            $configs = $query->orderBy('created_at', 'desc')
-                            ->paginate($request->input('per_page', 15));
+            $rows = $rows->sortBy([
+                ['config_exists', 'asc'],
+                [fn ($row) => $row['project']['name'] ?? '', 'asc'],
+            ])->values();
+
+            $perPage = max(1, (int) $request->input('per_page', 15));
+            $currentPage = max(1, (int) $request->input('page', 1));
+            $total = $rows->count();
+            $items = $rows->slice(($currentPage - 1) * $perPage, $perPage)->values();
+            $configs = new \Illuminate\Pagination\LengthAwarePaginator(
+                $items,
+                $total,
+                $perPage,
+                $currentPage,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
 
             return response()->json([
                 'success' => true,
@@ -441,4 +496,3 @@ class ProjectDeliveryConfigController extends Controller
         }
     }
 }
-

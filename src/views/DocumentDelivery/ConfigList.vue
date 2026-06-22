@@ -3,7 +3,7 @@
     <!-- 头部操作区 -->
     <el-card class="header-card">
       <el-row :gutter="20">
-        <el-col :span="18">
+        <el-col :span="24">
           <el-form :model="filterForm" inline>
             <el-form-item label="项目">
               <el-select v-model="filterForm.project_id" placeholder="全部项目" clearable style="width: 200px;">
@@ -33,16 +33,17 @@
             </el-form-item>
           </el-form>
         </el-col>
-        <el-col :span="6" style="text-align: right;">
-          <el-button type="primary" :icon="Plus" @click="handleCreate">添加配置</el-button>
-        </el-col>
       </el-row>
     </el-card>
 
     <!-- 列表 -->
     <el-card class="table-card">
       <el-table :data="configList" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column label="ID" width="60">
+          <template #default="{ row }">
+            {{ row.config_exists ? row.id : '-' }}
+          </template>
+        </el-table-column>
         <el-table-column label="项目名称" width="180">
           <template #default="{ row }">
             {{ row.project?.name || '-' }}
@@ -50,21 +51,23 @@
         </el-table-column>
         <el-table-column label="交付周期" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.delivery_cycle === 'monthly' ? 'primary' : 'success'">
+            <span v-if="!row.config_exists" style="color: #999;">待配置</span>
+            <el-tag v-else :type="row.delivery_cycle === 'monthly' ? 'primary' : 'success'">
               {{ row.delivery_cycle === 'monthly' ? '按月交付' : '按季度交付' }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="交付方式" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.delivery_method === 'express' ? 'warning' : 'info'">
+            <span v-if="!row.config_exists" style="color: #999;">待配置</span>
+            <el-tag v-else :type="row.delivery_method === 'express' ? 'warning' : 'info'">
               {{ row.delivery_method === 'express' ? '快递交付' : '电子推送' }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="资料清单" min-width="200">
           <template #default="{ row }">
-            <div v-if="row.required_documents && row.required_documents.length > 0">
+            <div v-if="row.config_exists && row.required_documents && row.required_documents.length > 0">
               <el-tag 
                 v-for="(doc, index) in row.required_documents.slice(0, 3)" 
                 :key="index"
@@ -75,12 +78,16 @@
               </el-tag>
               <span v-if="row.required_documents.length > 3">...</span>
             </div>
+            <span v-else-if="!row.config_exists" style="color: #E6A23C;">待配置</span>
             <span v-else style="color: #999;">未设置</span>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'info'">
+            <el-tag v-if="!row.config_exists" type="warning">
+              待配置
+            </el-tag>
+            <el-tag v-else :type="row.is_active ? 'success' : 'info'">
               {{ row.is_active ? '启用' : '禁用' }}
             </el-tag>
           </template>
@@ -97,32 +104,43 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
-            <el-button 
-              link 
-              :type="row.is_active ? 'warning' : 'success'" 
-              @click="handleToggleStatus(row)"
+            <el-button
+              v-if="!row.config_exists"
+              link
+              type="primary"
+              :icon="Edit"
+              @click="handleCreate(row)"
             >
-              {{ row.is_active ? '禁用' : '启用' }}
+              去配置
             </el-button>
-            <el-button link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
+            <template v-else>
+              <el-button link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
+              <el-button 
+                link 
+                :type="row.is_active ? 'warning' : 'success'" 
+                @click="handleToggleStatus(row)"
+              >
+                {{ row.is_active ? '禁用' : '启用' }}
+              </el-button>
+              <el-button link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
 
       <!-- 分页 -->
       <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="pagination.current"
-          v-model:page-size="pagination.pageSize"
-          :total="pagination.total"
-          :page-sizes="[15, 30, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          @current-change="loadConfigList"
-          @size-change="loadConfigList"
-        />
-      </div>
-    </el-card>
+          <el-pagination
+            v-model:current-page="pagination.current"
+            v-model:page-size="pagination.pageSize"
+            :total="pagination.total"
+            :page-sizes="[15, 30, 50]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="handlePageChange"
+            @size-change="handlePageChange"
+          />
+        </div>
+      </el-card>
 
     <!-- 新增/编辑对话框 -->
     <el-dialog
@@ -141,7 +159,7 @@
           <el-select 
             v-model="formData.project_id" 
             placeholder="请选择项目"
-            :disabled="!!editingId"
+            :disabled="true"
             style="width: 100%;"
           >
             <el-option
@@ -214,7 +232,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { getProjects } from '@/api/projects'
 import {
@@ -229,6 +247,7 @@ const accountSetStore = useAccountSetStore()
 
 // 项目列表
 const projectList = ref([])
+const rawConfigList = ref([])
 
 // 筛选表单
 const filterForm = reactive({
@@ -298,6 +317,59 @@ const formatDateTime = (datetime) => {
   return new Date(datetime).toLocaleString('zh-CN')
 }
 
+const buildMergedConfigRows = () => {
+  const configMap = new Map(rawConfigList.value.map(config => [config.project_id, config]))
+
+  let rows = projectList.value.map(project => {
+    const config = configMap.get(project.id)
+
+    if (config && config.config_exists !== false) {
+      return {
+        ...config,
+        config_exists: true
+      }
+    }
+
+    return {
+      id: `project-${project.id}`,
+      project_id: project.id,
+      project,
+      delivery_cycle: '',
+      delivery_method: '',
+      required_documents: [],
+      is_active: null,
+      creator: null,
+      created_at: null,
+      config_exists: false
+    }
+  })
+
+  if (filterForm.project_id) {
+    rows = rows.filter(row => row.project_id === filterForm.project_id)
+  }
+
+  if (filterForm.delivery_cycle) {
+    rows = rows.filter(row => row.delivery_cycle === filterForm.delivery_cycle)
+  }
+
+  if (filterForm.is_active !== null) {
+    rows = rows.filter(row => row.config_exists && row.is_active === filterForm.is_active)
+  }
+
+  rows.sort((a, b) => {
+    if (a.config_exists !== b.config_exists) {
+      return a.config_exists ? 1 : -1
+    }
+
+    return (a.project?.name || '').localeCompare(b.project?.name || '', 'zh-CN')
+  })
+
+  pagination.total = rows.length
+
+  const start = (pagination.current - 1) * pagination.pageSize
+  configList.value = rows.slice(start, start + pagination.pageSize)
+}
+
 // 加载项目列表
 const loadProjects = async () => {
   try {
@@ -313,10 +385,12 @@ const loadProjects = async () => {
       } else {
         projectList.value = []
       }
+      buildMergedConfigRows()
     }
   } catch (error) {
     console.error('Load projects error:', error)
     projectList.value = []
+    buildMergedConfigRows()
   }
 }
 
@@ -326,14 +400,14 @@ const loadConfigList = async () => {
   try {
     const res = await getDeliveryConfigs({
       current_account_set_id: accountSetStore.currentAccountSetId,
-      ...filterForm,
-      page: pagination.current,
-      per_page: pagination.pageSize
+      per_page: 1000
     })
     
     if (res.success) {
-      configList.value = res.data.data
-      pagination.total = res.data.total
+      rawConfigList.value = Array.isArray(res.data?.data)
+        ? res.data.data.filter(item => item?.config_exists !== false)
+        : []
+      buildMergedConfigRows()
     } else {
       ElMessage.error(res.message || '获取列表失败')
     }
@@ -348,7 +422,7 @@ const loadConfigList = async () => {
 // 查询
 const handleSearch = () => {
   pagination.current = 1
-  loadConfigList()
+  buildMergedConfigRows()
 }
 
 // 重置
@@ -357,14 +431,15 @@ const handleReset = () => {
   filterForm.delivery_cycle = ''
   filterForm.is_active = null
   pagination.current = 1
-  loadConfigList()
+  buildMergedConfigRows()
 }
 
 // 新增
-const handleCreate = () => {
-  dialogTitle.value = '添加交付配置'
+const handleCreate = (row) => {
+  dialogTitle.value = '配置交付要求'
   editingId.value = null
   resetForm()
+  formData.project_id = row.project_id
   dialogVisible.value = true
 }
 
@@ -372,6 +447,7 @@ const handleCreate = () => {
 const handleEdit = (row) => {
   dialogTitle.value = '编辑交付配置'
   editingId.value = row.id
+  resetForm()
   Object.assign(formData, {
     project_id: row.project_id,
     delivery_cycle: row.delivery_cycle,
@@ -405,7 +481,7 @@ const handleSubmit = async () => {
       if (res.success) {
         ElMessage.success(res.message || '操作成功')
         dialogVisible.value = false
-        loadConfigList()
+        await loadConfigList()
       } else {
         ElMessage.error(res.message || '操作失败')
       }
@@ -424,7 +500,7 @@ const handleToggleStatus = async (row) => {
     const res = await toggleConfigStatus(row.id)
     if (res.success) {
       ElMessage.success(res.message)
-      loadConfigList()
+      await loadConfigList()
     } else {
       ElMessage.error(res.message || '操作失败')
     }
@@ -449,7 +525,7 @@ const handleDelete = (row) => {
       const res = await deleteDeliveryConfig(row.id)
       if (res.success) {
         ElMessage.success('删除成功')
-        loadConfigList()
+        await loadConfigList()
       } else {
         ElMessage.error(res.message || '删除失败')
       }
@@ -473,6 +549,10 @@ const resetForm = () => {
   })
   showDocInput.value = false
   newDocument.value = ''
+}
+
+const handlePageChange = () => {
+  buildMergedConfigRows()
 }
 
 // 初始化

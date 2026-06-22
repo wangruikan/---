@@ -173,8 +173,7 @@
           </div>
         </el-form-item>
 
-        <!-- 资料清单已隐藏，暂时不需要 -->
-        <!-- <el-form-item label="资料清单" prop="required_documents">
+        <el-form-item label="资料清单" prop="required_documents">
           <div style="width: 100%;">
             <el-tag
               v-for="(doc, index) in formData.required_documents"
@@ -202,7 +201,7 @@
               + 添加资料
             </el-button>
           </div>
-        </el-form-item> -->
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

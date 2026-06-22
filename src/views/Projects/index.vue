@@ -183,17 +183,17 @@
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#31038;&#20445;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ getSocialSecurityRegionsText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20844;&#31215;&#37329;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ getHousingFundRegionsText(row) }}</template>
-          </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#21307;&#20445;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ getMedicalInsuranceRegionsText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20854;&#20182;&#20445;&#38505;&#20445;&#21333;" min-width="220" show-overflow-tooltip>
-            <template #default="{ row }">{{ getOtherInsurancePoliciesText(row) }}</template>
-          </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#22823;&#39069;&#21307;&#30103;&#37197;&#32622;" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">{{ getLargeMedicalInsuranceConfigsText(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20844;&#31215;&#37329;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ getHousingFundRegionsText(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20854;&#20182;&#20445;&#38505;&#20445;&#21333;" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ getOtherInsurancePoliciesText(row) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="350" fixed="right">
             <template #default="{ row }">

@@ -68,6 +68,15 @@ class PayrollController extends Controller
         return (bool) $project->requires_salary_basis;
     }
 
+    private function formatProjectDate($date): ?string
+    {
+        if (empty($date)) {
+            return null;
+        }
+
+        return Carbon::parse($date)->format('Y-m-d');
+    }
+
     private function normalizeProgressFilter(?string $status): string
     {
         return match ($status) {
@@ -530,8 +539,8 @@ class PayrollController extends Controller
                         'id' => $project->id,
                         'name' => $project->name,
                         'code' => $project->code,
-                        'start_date' => $project->start_date,
-                        'end_date' => $project->end_date,
+                        'start_date' => $this->formatProjectDate($project->start_date),
+                        'end_date' => $this->formatProjectDate($project->end_date),
                         'has_salary_history' => $hasSalaryHistory,
                         'month' => $month,
                         'require_attendance' => $requireAttendance,
@@ -729,8 +738,8 @@ class PayrollController extends Controller
                     'name' => $project->name,
                     'code' => $project->code,
                     'status' => $project->status,
-                    'start_date' => $project->start_date,
-                    'end_date' => $project->end_date,
+                    'start_date' => $this->formatProjectDate($project->start_date),
+                    'end_date' => $this->formatProjectDate($project->end_date),
                     'has_salary_history' => $hasSalaryHistory,
                     'period' => $period,
                     'require_attendance' => $requireAttendance,  // 是否需要考勤

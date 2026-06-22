@@ -1249,6 +1249,28 @@ const getMonthFromDate = (dateValue) => {
   return String(dateValue).slice(0, 7)
 }
 
+const normalizeProjectDate = (dateValue) => {
+  if (!dateValue) return ''
+
+  const rawValue = String(dateValue)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) {
+    return rawValue
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}[T\s]/.test(rawValue)) {
+    const parsedDate = new Date(rawValue)
+    if (!Number.isNaN(parsedDate.getTime())) {
+      const year = parsedDate.getFullYear()
+      const month = String(parsedDate.getMonth() + 1).padStart(2, '0')
+      const day = String(parsedDate.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+
+  const directMatch = rawValue.match(/^(\d{4}-\d{2}-\d{2})/)
+  return directMatch ? directMatch[1] : rawValue.slice(0, 10)
+}
+
 const compareDateStrings = (left, right) => {
   if (left === right) return 0
   return left > right ? 1 : -1
@@ -1344,8 +1366,8 @@ const getCreatePeriodBounds = (project = selectedCreateProject.value, month = cr
 
   let startDate = `${month}-01`
   let endDate = buildPeriodDate(month, getMonthMaxDay(month))
-  const projectStartDate = project.start_date ? String(project.start_date).slice(0, 10) : ''
-  const projectEndDate = project.end_date ? String(project.end_date).slice(0, 10) : ''
+  const projectStartDate = normalizeProjectDate(project.start_date)
+  const projectEndDate = normalizeProjectDate(project.end_date)
 
   if (projectStartDate && getMonthFromDate(projectStartDate) === month && compareDateStrings(projectStartDate, startDate) > 0) {
     startDate = projectStartDate
@@ -1373,12 +1395,14 @@ const createPeriodHelperText = computed(() => {
     return ''
   }
 
+  const projectStartDate = normalizeProjectDate(project.start_date)
+  const projectEndDate = normalizeProjectDate(project.end_date)
   const tips = []
-  if (isFirstSalaryForSelectedProject.value && project.start_date) {
-    tips.push(`首次工资表开始日期固定为 ${String(project.start_date).slice(0, 10)}`)
+  if (isFirstSalaryForSelectedProject.value && projectStartDate) {
+    tips.push(`首次工资表开始日期固定为 ${projectStartDate}`)
   }
-  if (project.end_date) {
-    tips.push(`工资周期不能晚于项目结束日期 ${String(project.end_date).slice(0, 10)}`)
+  if (projectEndDate) {
+    tips.push(`工资周期不能晚于项目结束日期 ${projectEndDate}`)
   }
 
   return tips.join('；')

@@ -173,27 +173,94 @@
         style="max-height: 58vh; overflow-y: auto; padding-right: 6px"
       >
         <el-row :gutter="20">
-          <el-col :span="24">
-            <el-form-item label="商品名称/项目" prop="project_name">
-              <el-input
-                v-model="createForm.project_name"
-                placeholder="请输入商品名称/项目"
-                clearable
+          <el-col :span="12">
+            <el-form-item label="业务类型" prop="status">
+              <el-select
+                v-model="createForm.status"
+                placeholder="请选择业务类型"
                 style="width: 100%"
-              />
+                @change="handleCreateStatusChange"
+              >
+                <el-option label="正常" value="normal" />
+                <el-option label="红冲" value="red_flushed" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="isCreateRedFlushed" :span="12">
+            <el-form-item label="红冲发票" prop="red_flush_source_id">
+              <el-select
+                v-model="createForm.red_flush_source_id"
+                placeholder="请选择需要红冲的历史发票"
+                clearable
+                filterable
+                :loading="redFlushCandidateLoading"
+                style="width: 100%"
+                @change="handleCreateRedFlushSourceChange"
+              >
+                <el-option
+                  v-for="item in redFlushCandidates"
+                  :key="item.id"
+                  :label="formatCreateRedFlushCandidateLabel(item)"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="项目" prop="project_id">
+              <el-select
+                v-model="createForm.project_id"
+                placeholder="请选择项目"
+                clearable
+                filterable
+                style="width: 100%"
+                @change="handleCreateProjectChange"
+              >
+                <el-option
+                  v-for="item in projectOptions"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
 
-        <el-row :gutter="20">
+        <el-row v-if="createForm.project_id" :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="开票单位">
+              <el-input :model-value="selectedProjectInvoiceInfo.company_name" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="企业税号">
+              <el-input :model-value="selectedProjectInvoiceInfo.tax_number" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="企业地址">
+              <el-input :model-value="selectedProjectInvoiceInfo.company_address" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="企业电话">
+              <el-input :model-value="selectedProjectInvoiceInfo.company_phone" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="开户银行">
+              <el-input :model-value="selectedProjectInvoiceInfo.bank_name" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="银行账户">
+              <el-input :model-value="selectedProjectInvoiceInfo.bank_account" disabled />
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
-            <el-form-item label="备注">
-              <el-input
-                v-model="createForm.remark"
-                type="textarea"
-                :rows="3"
-                placeholder="请输入任务备注（非必填）"
-              />
+            <el-form-item label="行号">
+              <el-input :model-value="selectedProjectInvoiceInfo.bank_code" disabled />
             </el-form-item>
           </el-col>
         </el-row>
@@ -230,16 +297,6 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="备注" min-width="220">
-            <template #default="{ row }">
-              <el-input v-model="row.remark" disabled placeholder="选择项目后自动带出" />
-            </template>
-          </el-table-column>
-          <el-table-column label="维护扣除信息" min-width="260">
-            <template #default="{ row }">
-              <el-input v-model="row.deduction_info" disabled placeholder="选择项目后自动带出" />
-            </template>
-          </el-table-column>
           <el-table-column label="开票金额" width="150">
             <template #default="{ row }">
               <el-input-number
@@ -253,14 +310,7 @@
           </el-table-column>
           <el-table-column label="税率" width="140">
             <template #default="{ row }">
-              <el-select v-model="row.tax_rate" placeholder="税率" style="width: 100%">
-                <el-option
-                  v-for="option in invoiceItemTaxRateOptions"
-                  :key="'content-tax-rate-' + option.value"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </el-select>
+              <el-input :model-value="formatInvoiceItemRate(row.tax_rate)" disabled />
             </template>
           </el-table-column>
           <el-table-column label="扣除额" width="150">
@@ -350,7 +400,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="单位名称" prop="company_name">
-              <el-input v-model="createForm.company_name" placeholder="请输入单位名称" />
+              <el-input v-model="createForm.company_name" placeholder="选择项目后自动带出" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -408,21 +458,6 @@
                 value-format="YYYY-MM-DD"
                 style="width: 100%"
               />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="开票人">
-              <el-input :model-value="'审批通过后自动带出当前账号'" disabled />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="发票号码">
-              <el-input :model-value="'创建时不需要填写'" disabled />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="是否完成">
-              <el-input :model-value="'提交审批后自动更新'" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -657,8 +692,6 @@
             >
               <el-table-column prop="sequence" label="序号" width="70" align="center" />
               <el-table-column prop="project_name" label="项目名称" width="180" show-overflow-tooltip />
-              <el-table-column prop="remark" label="备注" width="220" show-overflow-tooltip />
-              <el-table-column prop="deduction_info" label="维护扣除信息" width="260" show-overflow-tooltip />
               <el-table-column prop="invoice_amount" label="开票金额" width="130" align="right">
                 <template #default="{ row }">
                   ¥{{ Number(row.invoice_amount || 0).toFixed(2) }}
@@ -1196,6 +1229,7 @@ import {
   getInvoiceApplications,
   getInvoiceApplicationDetail,
   createInvoiceApplication,
+  getRedFlushCandidates,
   deleteInvoiceApplication,
   addInvoiceItem,
   updateInvoiceItem,
@@ -1207,6 +1241,7 @@ import {
 } from '@/api/invoiceApplication'
 import { getAllInvoiceProjects } from '@/api/invoiceProject'
 import { getAllInvoiceContentConfigs } from '@/api/invoiceContentConfig'
+import { getProjects } from '@/api/projects'
 import request from '@/api/request'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
@@ -1290,9 +1325,10 @@ const createForm = reactive({
   task_name: '',
   year: currentYear,
   month: currentMonth,
+  status: 'normal',
+  red_flush_source_id: null,
   project_id: null,
   project_name: '',
-  remark: '',
   period_year: currentYear,
   period_month: currentMonth,
   company_name: '',
@@ -1314,10 +1350,29 @@ const createForm = reactive({
 })
 
 const createFormRules = {
-  project_name: [{ required: true, message: '请输入商品名称/项目', trigger: 'blur' }],
+  status: [{ required: true, message: '请选择业务类型', trigger: 'change' }],
+  red_flush_source_id: [{
+    validator: (_rule, value, callback) => {
+      if (createForm.status === 'red_flushed' && !value) {
+        callback(new Error('请选择需要红冲的历史发票'))
+        return
+      }
+      callback()
+    },
+    trigger: 'change'
+  }],
+  project_id: [{
+    validator: (_rule, value, callback) => {
+      if (!value && !String(createForm.project_name || '').trim()) {
+        callback(new Error('请选择项目'))
+        return
+      }
+      callback()
+    },
+    trigger: 'change'
+  }],
   period_year: [{ required: true, message: '请选择年份', trigger: 'change' }],
   period_month: [{ required: true, message: '请选择月份', trigger: 'change' }],
-  company_name: [{ required: true, message: '请输入单位名称', trigger: 'blur' }],
   application_date: [{ required: true, message: '请选择申请日期', trigger: 'change' }],
   invoice_method: [{ required: true, message: '请选择开票方式', trigger: 'change' }],
   invoice_type: [{ required: true, message: '请选择开票种类', trigger: 'change' }],
@@ -1339,22 +1394,47 @@ const createItems = ref([
   }
 ])
 const invoiceContentConfigs = ref([])
+const projectOptions = ref([])
 const createContentItems = ref([])
 const createDeductionSectionRef = ref(null)
 const lastCreateDuplicateWarnKey = ref('')
+const redFlushCandidates = ref([])
+const redFlushCandidateLoading = ref(false)
+const createProjectInvoiceInfoDefaults = () => ({
+  company_name: '',
+  tax_number: '',
+  company_address: '',
+  company_phone: '',
+  bank_name: '',
+  bank_account: '',
+  bank_code: ''
+})
+const selectedProjectInvoiceInfo = reactive(createProjectInvoiceInfoDefaults())
+const isCreateRedFlushed = computed(() => createForm.status === 'red_flushed')
 
 const buildInvoiceContentItemFromConfig = (config = null) => {
   return {
     invoice_content_config_id: config?.id || null,
     project_name: config?.project_name || '',
-    remark: config?.remark || '',
-    deduction_info: config?.deduction_info || '',
     invoice_amount: 0,
-    tax_rate: 0,
+    tax_rate: Number(config?.tax_rate || 0),
     deduction_amount: 0,
     invoice_tax_amount: 0,
     amount_excluding_tax: 0,
     tax_amount: 0
+  }
+}
+
+const buildCreateContentItemFromSource = (item = {}) => {
+  return {
+    invoice_content_config_id: item.invoice_content_config_id || item.config?.id || null,
+    project_name: item.project_name || '',
+    invoice_amount: Number(item.invoice_amount || 0),
+    tax_rate: Number(item.tax_rate || 0),
+    deduction_amount: Number(item.deduction_amount || 0),
+    invoice_tax_amount: Number(item.invoice_tax_amount || 0),
+    amount_excluding_tax: Number(item.amount_excluding_tax || 0),
+    tax_amount: Number(item.tax_amount || 0)
   }
 }
 
@@ -1396,8 +1476,6 @@ const normalizeCreateContentItems = () => {
     .map(item => ({
       invoice_content_config_id: item.invoice_content_config_id || null,
       project_name: String(item.project_name || '').trim(),
-      remark: item.remark || '',
-      deduction_info: item.deduction_info || '',
       invoice_amount: Number(item.invoice_amount || 0),
       tax_rate: Number(item.tax_rate || 0),
       deduction_amount: Number(item.deduction_amount || 0),
@@ -1598,6 +1676,183 @@ const roundAmount = (value) => {
 
 const formatInvoiceItemRate = (value) => {
   return `${roundAmount(Number(value || 0) * 100)}%`
+}
+
+const resetSelectedProjectInvoiceInfo = () => {
+  Object.assign(selectedProjectInvoiceInfo, createProjectInvoiceInfoDefaults())
+}
+
+const getProjectInvoiceInfo = (project) => {
+  if (!project || !Array.isArray(project.invoice_infos) || !project.invoice_infos.length) {
+    return createProjectInvoiceInfoDefaults()
+  }
+
+  const invoiceInfo = project.invoice_infos[0] || {}
+  return {
+    company_name: invoiceInfo.company_name || '',
+    tax_number: invoiceInfo.tax_number || '',
+    company_address: invoiceInfo.company_address || '',
+    company_phone: invoiceInfo.company_phone || '',
+    bank_name: invoiceInfo.bank_name || '',
+    bank_account: invoiceInfo.bank_account || '',
+    bank_code: invoiceInfo.bank_code || ''
+  }
+}
+
+const syncCreateProjectByName = (projectName, fallbackCompanyName = '') => {
+  const normalizedProjectName = String(projectName || '').trim()
+  const project = projectOptions.value.find(item => String(item.name || '').trim() === normalizedProjectName) || null
+
+  if (!project) {
+    createForm.project_id = null
+    createForm.project_name = normalizedProjectName
+    resetSelectedProjectInvoiceInfo()
+    createForm.company_name = fallbackCompanyName || ''
+    return
+  }
+
+  createForm.project_id = project.id
+  createForm.project_name = project.name || normalizedProjectName
+  const invoiceInfo = getProjectInvoiceInfo(project)
+  Object.assign(selectedProjectInvoiceInfo, invoiceInfo)
+  createForm.company_name = invoiceInfo.company_name || fallbackCompanyName || ''
+}
+
+const handleCreateProjectChange = (projectId) => {
+  const project = projectOptions.value.find(item => Number(item.id) === Number(projectId)) || null
+
+  if (!project) {
+    createForm.project_name = ''
+    createForm.company_name = ''
+    resetSelectedProjectInvoiceInfo()
+    return
+  }
+
+  createForm.project_name = project.name || ''
+  const invoiceInfo = getProjectInvoiceInfo(project)
+  Object.assign(selectedProjectInvoiceInfo, invoiceInfo)
+  createForm.company_name = invoiceInfo.company_name || ''
+
+  if (!invoiceInfo.company_name) {
+    ElMessage.warning('所选项目未配置开票信息，请先到项目管理中维护')
+  }
+}
+
+const buildCreateItemFromSource = (item = {}) => {
+  return {
+    invoice_project_id: item.invoice_project_id || item.invoice_project?.id || null,
+    item_name: item.item_name || '',
+    spec_model: item.spec_model || '',
+    unit: item.unit || '',
+    quantity: item.quantity === null || item.quantity === undefined ? null : Number(item.quantity),
+    unit_price: item.unit_price === null || item.unit_price === undefined ? null : Number(item.unit_price),
+    amount: Number(item.amount || 0),
+    tax_rate: Number(item.tax_rate || 0),
+    tax_amount: Number(item.tax_amount || 0),
+    remark: item.remark || ''
+  }
+}
+
+const formatCreateRedFlushCandidateLabel = (item) => {
+  const year = item?.year || '--'
+  const month = item?.month ? String(item.month).padStart(2, '0') : '--'
+  const companyName = item?.company_name || '未填写单位名称'
+  const invoiceNumber = item?.invoice_number || '无发票号码'
+  const amount = Number(item?.invoice_amount || 0).toFixed(2)
+  return `${year}-${month} | ${companyName} | ${invoiceNumber} | ¥${amount}`
+}
+
+const loadRedFlushCandidates = async () => {
+  if (!accountSetStore.currentAccountSetId) {
+    redFlushCandidates.value = []
+    return
+  }
+
+  redFlushCandidateLoading.value = true
+  try {
+    const response = await getRedFlushCandidates({
+      current_account_set_id: accountSetStore.currentAccountSetId,
+      before_year: createForm.year,
+      before_month: createForm.month
+    })
+
+    if (response?.success) {
+      redFlushCandidates.value = Array.isArray(response.data) ? response.data : []
+      return
+    }
+
+    redFlushCandidates.value = []
+  } catch (error) {
+    console.error('加载红冲历史发票失败', error)
+    ElMessage.error('加载红冲历史发票失败')
+    redFlushCandidates.value = []
+  } finally {
+    redFlushCandidateLoading.value = false
+  }
+}
+
+const applyCreateRedFlushSource = (source) => {
+  if (!source) return
+
+  syncCreateProjectByName(source.project_name, source.company_name || '')
+  createForm.period_year = source.period_year || source.year || currentYear
+  createForm.period_month = source.period_month || source.month || currentMonth
+  createForm.application_date = source.application_date || getTodayDate()
+  createForm.invoice_method = source.invoice_method || null
+  createForm.invoice_type = source.invoice_type || '普通发票'
+  createForm.deduction_amount = Number(source.deduction_amount || 0)
+  createForm.tax_rate = Number(source.tax_rate || 0)
+  createForm.amount_excluding_tax = Number(source.amount_excluding_tax || 0)
+  createForm.invoice_tax_amount = Number(source.invoice_tax_amount || 0)
+  createForm.invoice_amount = Number(source.invoice_amount || 0)
+  createForm.tax_amount = Number(source.tax_amount || 0)
+  createForm.invoice_date = source.invoice_date || getTodayDate()
+  createForm.earliest_invoice_date = source.earliest_invoice_date || ''
+  createForm.is_completed = false
+  createForm.invoicer = ''
+  createForm.invoice_number = ''
+  createForm.invoice_remark = source.invoice_remark || ''
+
+  const sourceContentItems = Array.isArray(source.content_items) ? source.content_items : []
+  if (sourceContentItems.length) {
+    createContentItems.value = sourceContentItems.map(item => buildCreateContentItemFromSource(item))
+  } else {
+    createContentItems.value = [{
+      invoice_content_config_id: null,
+      project_name: source.project_name || '',
+      invoice_amount: Number(source.invoice_amount || 0),
+      tax_rate: Number(source.tax_rate || 0),
+      deduction_amount: Number(source.deduction_amount || 0),
+      invoice_tax_amount: Number(source.invoice_tax_amount || 0),
+      amount_excluding_tax: Number(source.amount_excluding_tax || 0),
+      tax_amount: Number(source.tax_amount || 0)
+    }]
+  }
+
+  const sourceItems = Array.isArray(source.items) ? source.items : []
+  createItems.value = sourceItems.length
+    ? sourceItems.map(item => buildCreateItemFromSource(item))
+    : [buildInvoiceItemFromProject(null)]
+
+  syncCreateCalculatedAmounts()
+}
+
+const handleCreateRedFlushSourceChange = (sourceId) => {
+  const source = redFlushCandidates.value.find(item => Number(item.id) === Number(sourceId)) || null
+  if (!source) {
+    return
+  }
+
+  applyCreateRedFlushSource(source)
+}
+
+const handleCreateStatusChange = async (status) => {
+  createForm.red_flush_source_id = null
+  redFlushCandidates.value = []
+
+  if (status === 'red_flushed') {
+    await loadRedFlushCandidates()
+  }
 }
 
 const syncInvoiceItemAmounts = (item) => {
@@ -1861,6 +2116,19 @@ const loadInvoiceProjects = async () => {
   }
 }
 
+const loadProjectOptions = async () => {
+  try {
+    const response = await getProjects({ all: true })
+    if (response.success) {
+      projectOptions.value = Array.isArray(response.data)
+        ? response.data
+        : (response.data?.data || [])
+    }
+  } catch (error) {
+    console.error('加载项目管理列表失败', error)
+  }
+}
+
 // 加载开票内容配置项目
 const loadInvoiceContentConfigs = async () => {
   try {
@@ -2026,9 +2294,10 @@ const resetCreateForm = () => {
   createForm.task_name = ''
   createForm.year = currentYear
   createForm.month = currentMonth
+  createForm.status = 'normal'
+  createForm.red_flush_source_id = null
   createForm.project_id = null
   createForm.project_name = ''
-  createForm.remark = ''
   createForm.period_year = currentYear
   createForm.period_month = currentMonth
   createForm.company_name = ''
@@ -2049,6 +2318,8 @@ const resetCreateForm = () => {
   createForm.invoice_remark = ''
   resetCreateItems()
   resetCreateContentItems()
+  resetSelectedProjectInvoiceInfo()
+  redFlushCandidates.value = []
   lastCreateDuplicateWarnKey.value = ''
   createFormRef.value?.clearValidate()
 }
@@ -2065,6 +2336,12 @@ const handleConfirmCreate = async () => {
     const taskName = (projectName || '开票') + `${createForm.year}年${createForm.month}月`
 
     await createFormRef.value.validate()
+
+    if (!String(createForm.company_name || '').trim()) {
+      ElMessage.warning('所选项目未配置开票信息，请先到项目管理中维护')
+      return
+    }
+
     const normalizedContentItems = normalizeCreateContentItems()
     const contentTotals = sumCreateContentItems(normalizedContentItems)
     Object.assign(createForm, contentTotals)
@@ -2078,8 +2355,10 @@ const handleConfirmCreate = async () => {
       task_name: taskName,
       year: createForm.year,
       month: createForm.month,
+      status: createForm.status,
+      red_flush_source_id: createForm.red_flush_source_id,
+      project_id: createForm.project_id,
       project_name: projectName,
-      remark: createForm.remark,
       period_year: createForm.period_year,
       period_month: createForm.period_month,
       company_name: createForm.company_name,
@@ -2799,6 +3078,7 @@ watch(
 // 初始化
 onMounted(() => {
   loadData()
+  loadProjectOptions()
   loadInvoiceProjects()
   loadInvoiceContentConfigs()
   resetCreateContentItems()

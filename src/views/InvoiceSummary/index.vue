@@ -71,6 +71,8 @@
         v-loading="loading"
         border
         stripe
+        show-summary
+        :summary-method="getSummaries"
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
@@ -257,12 +259,38 @@ const editForm = reactive({
   remarks: ''
 })
 
+const summaryAmountFields = new Set([
+  'invoice_amount',
+  'deduction_amount',
+  'amount_without_tax',
+  'invoice_tax',
+  'tax_amount'
+])
+
 // 格式化金额
 const formatMoney = (amount) => {
   if (!amount) return '0.00'
   return Number(amount).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
+  })
+}
+
+const getSummaries = ({ columns, data }) => {
+  return columns.map((column, index) => {
+    if (index === 0) {
+      return '合计'
+    }
+
+    if (!summaryAmountFields.has(column.property)) {
+      return '-'
+    }
+
+    const total = data.reduce((sum, row) => {
+      return sum + Number(row?.[column.property] || 0)
+    }, 0)
+
+    return formatMoney(total)
   })
 }
 

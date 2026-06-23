@@ -17,12 +17,14 @@ class InvoiceContentConfig extends Model
     protected $fillable = [
         'account_set_id',
         'project_name',
+        'tax_rate',
         'remark',
         'deduction_info',
         'created_by',
     ];
 
     protected $casts = [
+        'tax_rate' => 'decimal:4',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

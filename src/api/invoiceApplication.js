@@ -33,6 +33,17 @@ export function createInvoiceApplication(data) {
 }
 
 /**
+ * 获取可红冲的历史发票列表
+ */
+export function getRedFlushCandidates(params) {
+  return request({
+    url: '/invoice-applications/red-flush-candidates',
+    method: 'get',
+    params
+  })
+}
+
+/**
  * 删除发票申请
  */
 export function deleteInvoiceApplication(id) {

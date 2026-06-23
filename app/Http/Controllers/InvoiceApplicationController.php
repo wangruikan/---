@@ -118,6 +118,67 @@ class InvoiceApplicationController extends Controller
     }
 
     /**
+     * 获取可红冲的历史发票
+     */
+    public function redFlushCandidates(Request $request)
+    {
+        if ($response = $this->checkPermission('invoice_applications.view')) {
+            return $response;
+        }
+
+        $user = Auth::user();
+        $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
+        $beforeYear = (int) $request->input('before_year', 0);
+        $beforeMonth = (int) $request->input('before_month', 0);
+        $keyword = trim((string) $request->input('keyword', ''));
+
+        $query = InvoiceApplication::where('account_set_id', $accountSetId)
+            ->with(['items', 'contentItems'])
+            ->where('approval_status', InvoiceApplication::APPROVAL_STATUS_APPROVED)
+            ->where('is_completed', true)
+            ->whereNotNull('invoice_number')
+            ->where('invoice_number', '<>', '')
+            ->where('status', '<>', InvoiceApplication::STATUS_RED_FLUSHED);
+
+        if ($beforeYear > 0 && $beforeMonth > 0) {
+            $query->where(function ($builder) use ($beforeYear, $beforeMonth) {
+                $builder->where('year', '<', $beforeYear)
+                    ->orWhere(function ($nested) use ($beforeYear, $beforeMonth) {
+                        $nested->where('year', $beforeYear)
+                            ->where('month', '<', $beforeMonth);
+                    });
+            });
+        }
+
+        if ($keyword !== '') {
+            $query->where(function ($builder) use ($keyword) {
+                $builder->where('application_no', 'like', "%{$keyword}%")
+                    ->orWhere('company_name', 'like', "%{$keyword}%")
+                    ->orWhere('invoice_number', 'like', "%{$keyword}%")
+                    ->orWhere('project_name', 'like', "%{$keyword}%")
+                    ->orWhere('invoice_amount', 'like', "%{$keyword}%");
+            });
+        }
+
+        $candidates = $query
+            ->orderBy('year', 'desc')
+            ->orderBy('month', 'desc')
+            ->orderBy('application_date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($application) {
+                $application->total_amount = $application->items->sum('amount');
+                return $application;
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $candidates
+        ]);
+    }
+
+    /**
      * 创建申请
      */
     public function store(Request $request)
@@ -126,8 +187,10 @@ class InvoiceApplicationController extends Controller
             'task_name' => 'required|string|max:100',
             'year' => 'required|integer|min:2000|max:2100',
             'month' => 'required|integer|min:1|max:12',
+            'status' => 'nullable|in:normal,red_flushed',
+            'red_flush_source_id' => 'nullable|integer|exists:invoice_applications,id',
             'project_id' => 'nullable|exists:projects,id',
-            'project_name' => 'required|string|max:100',
+            'project_name' => 'nullable|required_without:project_id|string|max:100',
             'remark' => 'nullable|string|max:500',
             'period_year' => 'nullable|integer|min:2000|max:2100',
             'period_month' => 'nullable|integer|min:1|max:12',
@@ -157,7 +220,7 @@ class InvoiceApplicationController extends Controller
             'year.required' => '年份不能为空',
             'month.required' => '月份不能为空',
             'project_id.exists' => '项目不存在',
-            'project_name.required' => '请输入项目',
+            'project_name.required_without' => '请输入项目',
             'project_name.max' => '项目不能超过100个字符',
         ]);
 
@@ -172,8 +235,13 @@ class InvoiceApplicationController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $project = \App\Models\Project::find($request->input('project_id'));
+        $project = \App\Models\Project::where('account_set_id', $accountSetId)
+            ->find($request->input('project_id'));
+        $requestedStatus = $request->input('status', InvoiceApplication::STATUS_NORMAL);
         $projectName = trim((string) $request->input('project_name'));
+        $resolvedCompanyName = trim((string) $request->input('company_name'));
+        $redFlushSourceId = $request->input('red_flush_source_id');
+        $redFlushSourceApplication = null;
 
         if ($request->filled('project_id') && !$project) {
             return response()->json([
@@ -182,8 +250,65 @@ class InvoiceApplicationController extends Controller
             ], 404);
         }
 
+        if ($requestedStatus === InvoiceApplication::STATUS_RED_FLUSHED) {
+            if (!$redFlushSourceId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择需要红冲的发票'
+                ], 422);
+            }
+
+            $redFlushSourceApplication = InvoiceApplication::where('account_set_id', $accountSetId)
+                ->with(['items', 'contentItems'])
+                ->find($redFlushSourceId);
+
+            if (!$redFlushSourceApplication) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '红冲发票不存在'
+                ], 404);
+            }
+
+            if (
+                $redFlushSourceApplication->approval_status !== InvoiceApplication::APPROVAL_STATUS_APPROVED ||
+                !$redFlushSourceApplication->is_completed ||
+                empty($redFlushSourceApplication->invoice_number)
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只能选择已完成且已通过审批的发票进行红冲'
+                ], 422);
+            }
+
+            if ($redFlushSourceApplication->status === InvoiceApplication::STATUS_RED_FLUSHED) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该发票已经是红冲状态'
+                ], 422);
+            }
+
+            if (
+                (int) $redFlushSourceApplication->year > (int) $request->input('year') ||
+                (
+                    (int) $redFlushSourceApplication->year === (int) $request->input('year') &&
+                    (int) $redFlushSourceApplication->month >= (int) $request->input('month')
+                )
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只能选择当前月份之前的历史发票进行红冲'
+                ], 422);
+            }
+        }
+
         if ($project) {
             $projectName = $project->name;
+            $invoiceInfos = is_array($project->invoice_infos) ? $project->invoice_infos : [];
+            $primaryInvoiceInfo = $invoiceInfos[0] ?? [];
+            $projectCompanyName = trim((string) ($primaryInvoiceInfo['company_name'] ?? ''));
+            if ($projectCompanyName !== '') {
+                $resolvedCompanyName = $projectCompanyName;
+            }
         }
 
         $applicationNo = InvoiceApplication::generateApplicationNo();
@@ -235,6 +360,27 @@ class InvoiceApplicationController extends Controller
                 'message' => '开票内容明细格式不正确'
             ], 422);
         }
+
+        $contentItems = array_map(function ($contentItem) use ($accountSetId) {
+            if (!is_array($contentItem)) {
+                return $contentItem;
+            }
+
+            $configId = $contentItem['invoice_content_config_id'] ?? null;
+            if (!$configId) {
+                return $contentItem;
+            }
+
+            $config = InvoiceContentConfig::where('account_set_id', $accountSetId)->find($configId);
+            if (!$config) {
+                return $contentItem;
+            }
+
+            $contentItem['project_name'] = $config->project_name;
+            $contentItem['tax_rate'] = (float) $config->tax_rate;
+
+            return $contentItem;
+        }, $contentItems);
 
         $contentTotals = $this->sumInvoiceContentItems($contentItems);
         $invoiceAmount = $contentTotals['invoice_amount'] > 0
@@ -291,6 +437,9 @@ class InvoiceApplicationController extends Controller
             $accountSetId,
             $applicationNo,
             $projectName,
+            $resolvedCompanyName,
+            $requestedStatus,
+            $redFlushSourceApplication,
             $normalizedInvoiceMethod,
             $deductionAmount,
             $invoiceAmount,
@@ -307,12 +456,12 @@ class InvoiceApplicationController extends Controller
                 'year' => $request->input('year'),
                 'month' => $request->input('month'),
                 'project_name' => $projectName,
-                'remark' => $request->input('remark'),
-                'status' => InvoiceApplication::STATUS_NORMAL,
+                'remark' => null,
+                'status' => $requestedStatus,
                 'approval_status' => null,
                 'period_year' => $request->input('period_year'),
                 'period_month' => $request->input('period_month'),
-                'company_name' => $request->input('company_name'),
+                'company_name' => $resolvedCompanyName,
                 'application_date' => $request->input('application_date'),
                 'invoice_method' => $normalizedInvoiceMethod,
                 'invoice_type' => $request->input('invoice_type', ''),
@@ -371,10 +520,10 @@ class InvoiceApplicationController extends Controller
                     'invoice_content_config_id' => $config?->id,
                     'sequence' => $index + 1,
                     'project_name' => $config?->project_name ?: $projectName,
-                    'remark' => $config?->remark ?? ($contentItem['remark'] ?? null),
-                    'deduction_info' => $config?->deduction_info ?? ($contentItem['deduction_info'] ?? null),
+                    'remark' => null,
+                    'deduction_info' => null,
                     'invoice_amount' => round((float) ($contentItem['invoice_amount'] ?? 0), 2),
-                    'tax_rate' => min(1, max(0, (float) ($contentItem['tax_rate'] ?? 0))),
+                    'tax_rate' => min(1, max(0, (float) ($config?->tax_rate ?? $contentItem['tax_rate'] ?? 0))),
                     'deduction_amount' => round((float) ($contentItem['deduction_amount'] ?? 0), 2),
                     'invoice_tax_amount' => round((float) ($contentItem['invoice_tax_amount'] ?? 0), 2),
                     'amount_excluding_tax' => round((float) ($contentItem['amount_excluding_tax'] ?? 0), 2),
@@ -398,6 +547,12 @@ class InvoiceApplicationController extends Controller
 
             if (!empty($attachments)) {
                 $application->update(['attachments' => $attachments]);
+            }
+
+            if ($requestedStatus === InvoiceApplication::STATUS_RED_FLUSHED && $redFlushSourceApplication) {
+                $redFlushSourceApplication->update([
+                    'status' => InvoiceApplication::STATUS_RED_FLUSHED,
+                ]);
             }
 
             PendingTaskService::createInvoiceFillTask($application->fresh());

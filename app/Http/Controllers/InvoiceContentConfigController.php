@@ -22,11 +22,7 @@ class InvoiceContentConfigController extends Controller
 
         if ($request->filled('keyword')) {
             $keyword = $request->input('keyword');
-            $query->where(function ($q) use ($keyword) {
-                $q->where('project_name', 'like', "%{$keyword}%")
-                    ->orWhere('remark', 'like', "%{$keyword}%")
-                    ->orWhere('deduction_info', 'like', "%{$keyword}%");
-            });
+            $query->where('project_name', 'like', "%{$keyword}%");
         }
 
         $sortBy = $request->input('sort_by', 'created_at');
@@ -50,8 +46,7 @@ class InvoiceContentConfigController extends Controller
             ->get([
                 'id',
                 'project_name',
-                'remark',
-                'deduction_info',
+                'tax_rate',
             ]);
 
         return response()->json([
@@ -77,8 +72,7 @@ class InvoiceContentConfigController extends Controller
         $project = InvoiceContentConfig::create([
             'account_set_id' => $accountSetId,
             'project_name' => $request->input('project_name'),
-            'remark' => $request->input('remark'),
-            'deduction_info' => $request->input('deduction_info'),
+            'tax_rate' => $request->input('tax_rate', 0),
             'created_by' => $user->id,
         ]);
 
@@ -112,8 +106,7 @@ class InvoiceContentConfigController extends Controller
 
         $project->update([
             'project_name' => $request->input('project_name'),
-            'remark' => $request->input('remark'),
-            'deduction_info' => $request->input('deduction_info'),
+            'tax_rate' => $request->input('tax_rate', 0),
         ]);
 
         return response()->json([
@@ -147,11 +140,14 @@ class InvoiceContentConfigController extends Controller
     {
         return Validator::make($request->all(), [
             'project_name' => 'required|string|max:255',
-            'remark' => 'nullable|string',
-            'deduction_info' => 'nullable|string',
+            'tax_rate' => 'required|numeric|min:0|max:1',
         ], [
             'project_name.required' => '项目名称不能为空',
             'project_name.max' => '项目名称不能超过255个字符',
+            'tax_rate.required' => '税率不能为空',
+            'tax_rate.numeric' => '税率格式不正确',
+            'tax_rate.min' => '税率不能小于0',
+            'tax_rate.max' => '税率不能大于100%',
         ]);
     }
 }

@@ -15,7 +15,7 @@
         <el-form-item label="关键词">
           <el-input
             v-model="searchForm.keyword"
-            placeholder="项目名称/备注/维护扣除信息"
+            placeholder="请输入项目名称"
             clearable
             @clear="handleSearch"
             @keyup.enter="handleSearch"
@@ -30,8 +30,11 @@
       <el-table :data="tableData" v-loading="loading" border style="width: 100%">
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="project_name" label="项目名称" min-width="180" />
-        <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="deduction_info" label="维护扣除信息" min-width="260" show-overflow-tooltip />
+        <el-table-column label="税率" width="120" align="center">
+          <template #default="{ row }">
+            {{ formatTaxRate(row.tax_rate) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="creator.name" label="创建人" width="120" />
         <el-table-column prop="created_at" label="创建时间" width="180">
           <template #default="{ row }">
@@ -73,21 +76,15 @@
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="备注" prop="remark">
-          <el-input
-            v-model="form.remark"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入备注"
-          />
-        </el-form-item>
-        <el-form-item label="维护扣除信息" prop="deduction_info">
-          <el-input
-            v-model="form.deduction_info"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入维护扣除信息"
-          />
+        <el-form-item label="税率" prop="tax_rate">
+          <el-select v-model="form.tax_rate" placeholder="请选择税率" style="width: 100%">
+            <el-option
+              v-for="option in taxRateOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
 
@@ -132,16 +129,32 @@ const submitting = ref(false)
 const form = reactive({
   id: null,
   project_name: '',
-  remark: '',
-  deduction_info: ''
+  tax_rate: 0
 })
+
+const taxRateOptions = [
+  { label: '0%', value: 0 },
+  { label: '1%', value: 0.01 },
+  { label: '2%', value: 0.02 },
+  { label: '3%', value: 0.03 },
+  { label: '4%', value: 0.04 },
+  { label: '5%', value: 0.05 },
+  { label: '6%', value: 0.06 },
+  { label: '9%', value: 0.09 },
+  { label: '13%', value: 0.13 }
+]
 
 const formRules = {
   project_name: [
     { required: true, message: '请输入项目名称', trigger: 'blur' },
     { max: 255, message: '项目名称不能超过255个字符', trigger: 'blur' }
+  ],
+  tax_rate: [
+    { required: true, message: '请选择税率', trigger: 'change' }
   ]
 }
+
+const formatTaxRate = (value) => `${Number(value || 0) * 100}%`
 
 const loadData = async () => {
   loading.value = true
@@ -190,8 +203,7 @@ const handleEdit = (row) => {
   dialogTitle.value = '编辑开票内容配置'
   form.id = row.id
   form.project_name = row.project_name || ''
-  form.remark = row.remark || ''
-  form.deduction_info = row.deduction_info || ''
+  form.tax_rate = Number(row.tax_rate || 0)
   dialogVisible.value = true
 }
 
@@ -224,8 +236,7 @@ const handleSubmit = async () => {
     submitting.value = true
     const data = {
       project_name: form.project_name,
-      remark: form.remark,
-      deduction_info: form.deduction_info
+      tax_rate: Number(form.tax_rate || 0)
     }
 
     const response = isEdit.value
@@ -252,8 +263,7 @@ const handleSubmit = async () => {
 const resetForm = () => {
   form.id = null
   form.project_name = ''
-  form.remark = ''
-  form.deduction_info = ''
+  form.tax_rate = 0
   formRef.value?.clearValidate()
 }
 

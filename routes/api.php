@@ -1161,6 +1161,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('invoice-applications')->group(function () {
         // 权限检查（必须在 {id} 路由之前）
         Route::get('/check-permission/create', [InvoiceApplicationController::class, 'checkCreatePermission']); // 检查创建权限
+        Route::get('/red-flush-candidates', [InvoiceApplicationController::class, 'redFlushCandidates']); // 获取可红冲历史发票
         
         // 导出Excel
         Route::get('/export-records', [InvoiceApplicationController::class, 'exportInvoiceRecords']); // 导出发票记录

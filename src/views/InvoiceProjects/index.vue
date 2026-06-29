@@ -35,17 +35,6 @@
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="project_name" label="项目名称" min-width="180" />
-        <el-table-column prop="spec_model" label="规格型号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="90" />
-        <el-table-column prop="quantity" label="数量" width="110" align="right" />
-        <el-table-column prop="unit_price" label="单价(不含税)" width="130" align="right" />
-        <el-table-column prop="amount" label="金额(不含税)" width="130" align="right" />
-        <el-table-column label="税率/征收率" width="120" align="center">
-          <template #default="{ row }">
-            {{ formatRate(row.tax_rate) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="tax_amount" label="税额" width="120" align="right" />
         <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
         <el-table-column prop="creator.name" label="创建人" width="120" />
         <el-table-column prop="created_at" label="创建时间" width="180">
@@ -93,59 +82,6 @@
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="规格型号" prop="spec_model">
-          <el-input v-model="form.spec_model" placeholder="请输入规格型号" maxlength="255" />
-        </el-form-item>
-        <el-form-item label="单位" prop="unit">
-          <el-input v-model="form.unit" placeholder="请输入单位" maxlength="50" />
-        </el-form-item>
-        <el-form-item label="数量" prop="quantity">
-          <el-input-number
-            v-model="form.quantity"
-            :min="0"
-            :precision="4"
-            :controls="false"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="单价(不含税)" prop="unit_price">
-          <el-input-number
-            v-model="form.unit_price"
-            :min="0"
-            :precision="2"
-            :controls="false"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="金额(不含税)" prop="amount">
-          <el-input-number
-            v-model="form.amount"
-            :min="0"
-            :precision="2"
-            :controls="false"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="税率/征收率" prop="tax_rate">
-          <el-select v-model="form.tax_rate" placeholder="请选择税率/征收率" style="width: 100%">
-            <el-option
-              v-for="option in taxRateOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="税额" prop="tax_amount">
-          <el-input-number
-            v-model="form.tax_amount"
-            :min="0"
-            :precision="2"
-            :controls="false"
-            disabled
-            style="width: 100%"
-          />
-        </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input
             v-model="form.remark"
@@ -167,7 +103,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
@@ -197,28 +133,9 @@ const isEdit = ref(false)
 const formRef = ref(null)
 const submitting = ref(false)
 
-const taxRateOptions = [
-  { label: '0%', value: 0 },
-  { label: '1%', value: 0.01 },
-  { label: '2%', value: 0.02 },
-  { label: '3%', value: 0.03 },
-  { label: '4%', value: 0.04 },
-  { label: '5%', value: 0.05 },
-  { label: '6%', value: 0.06 },
-  { label: '9%', value: 0.09 },
-  { label: '13%', value: 0.13 }
-]
-
 const form = reactive({
   id: null,
   project_name: '',
-  spec_model: '',
-  unit: '',
-  quantity: null,
-  unit_price: null,
-  amount: 0,
-  tax_rate: 0,
-  tax_amount: 0,
   remark: ''
 })
 
@@ -226,22 +143,7 @@ const formRules = {
   project_name: [
     { required: true, message: '请输入项目名称', trigger: 'blur' },
     { max: 255, message: '项目名称不能超过255个字符', trigger: 'blur' }
-  ],
-  tax_rate: [
-    { required: true, message: '请选择税率/征收率', trigger: 'change' }
   ]
-}
-
-const roundAmount = (value) => {
-  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
-}
-
-const syncTaxAmount = () => {
-  form.tax_amount = roundAmount(Number(form.amount || 0) * Number(form.tax_rate || 0))
-}
-
-const formatRate = (value) => {
-  return `${roundAmount(Number(value || 0) * 100)}%`
 }
 
 const loadData = async () => {
@@ -295,13 +197,6 @@ const handleEdit = (row) => {
   dialogTitle.value = '编辑项目'
   form.id = row.id
   form.project_name = row.project_name || ''
-  form.spec_model = row.spec_model || ''
-  form.unit = row.unit || ''
-  form.quantity = row.quantity === null || row.quantity === undefined ? null : Number(row.quantity)
-  form.unit_price = row.unit_price === null || row.unit_price === undefined ? null : Number(row.unit_price)
-  form.amount = Number(row.amount || 0)
-  form.tax_rate = Number(row.tax_rate || 0)
-  form.tax_amount = Number(row.tax_amount || 0)
   form.remark = row.remark || ''
   dialogVisible.value = true
 }
@@ -340,13 +235,6 @@ const handleSubmit = async () => {
     submitting.value = true
     const data = {
       project_name: form.project_name,
-      spec_model: form.spec_model,
-      unit: form.unit,
-      quantity: form.quantity,
-      unit_price: form.unit_price,
-      amount: form.amount,
-      tax_rate: form.tax_rate,
-      tax_amount: form.tax_amount,
       remark: form.remark
     }
 
@@ -377,13 +265,6 @@ const handleSubmit = async () => {
 const resetForm = () => {
   form.id = null
   form.project_name = ''
-  form.spec_model = ''
-  form.unit = ''
-  form.quantity = null
-  form.unit_price = null
-  form.amount = 0
-  form.tax_rate = 0
-  form.tax_amount = 0
   form.remark = ''
   formRef.value?.clearValidate()
 }
@@ -391,13 +272,6 @@ const resetForm = () => {
 const handleDialogClose = () => {
   resetForm()
 }
-
-watch(
-  () => [form.amount, form.tax_rate],
-  () => {
-    syncTaxAmount()
-  }
-)
 
 onMounted(() => {
   loadData()

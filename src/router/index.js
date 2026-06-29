@@ -129,16 +129,18 @@ const routes = [
         meta: { title: '投标项目管理' }
       },
       {
+        path: '/invoice-configs',
+        name: 'InvoiceConfigs',
+        component: () => import('@/views/InvoiceConfigs/index.vue'),
+        meta: { title: '发票配置' }
+      },
+      {
         path: '/invoice-projects',
-        name: 'InvoiceProjects',
-        component: () => import('@/views/InvoiceProjects/index.vue'),
-        meta: { title: '发票项目配置' }
+        redirect: { name: 'InvoiceConfigs', query: { tab: 'projects' } }
       },
       {
         path: '/invoice-content-configs',
-        name: 'InvoiceContentConfigs',
-        component: () => import('@/views/InvoiceContentConfigs/index.vue'),
-        meta: { title: '开票内容配置项目' }
+        redirect: { name: 'InvoiceConfigs', query: { tab: 'content' } }
       },
       {
         path: '/invoice-applications',

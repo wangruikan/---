@@ -493,38 +493,6 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="规格型号" min-width="160">
-              <template #default="{ row }">
-                <el-input v-model="row.spec_model" placeholder="请输入规格型号" />
-              </template>
-            </el-table-column>
-            <el-table-column label="单位" width="100">
-              <template #default="{ row }">
-                <el-input v-model="row.unit" placeholder="单位" />
-              </template>
-            </el-table-column>
-            <el-table-column label="数量" width="130">
-              <template #default="{ row }">
-                <el-input-number
-                  v-model="row.quantity"
-                  :precision="4"
-                  :min="0"
-                  :controls="false"
-                  style="width: 100%"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="单价(不含税)" width="150">
-              <template #default="{ row }">
-                <el-input-number
-                  v-model="row.unit_price"
-                  :precision="2"
-                  :min="0"
-                  :controls="false"
-                  style="width: 100%"
-                />
-              </template>
-            </el-table-column>
             <el-table-column label="金额(不含税)" width="150">
               <template #default="{ row }">
                 <el-input-number
@@ -532,30 +500,6 @@
                   :precision="2"
                   :min="0"
                   :controls="false"
-                  style="width: 100%"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="税率/征收率" width="140">
-              <template #default="{ row }">
-                <el-select v-model="row.tax_rate" placeholder="税率" style="width: 100%">
-                  <el-option
-                    v-for="option in invoiceItemTaxRateOptions"
-                    :key="option.value"
-                    :label="option.label"
-                    :value="option.value"
-                  />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="税额" width="140">
-              <template #default="{ row }">
-                <el-input-number
-                  v-model="row.tax_amount"
-                  :precision="2"
-                  :min="0"
-                  :controls="false"
-                  disabled
                   style="width: 100%"
                 />
               </template>
@@ -639,27 +583,9 @@
               <el-table-column prop="sequence" label="序号" width="70" align="center" />
               <el-table-column prop="project_name" label="模板项目" width="150" />
               <el-table-column prop="item_name" label="项目名称" width="160" />
-              <el-table-column prop="spec_model" label="规格型号" width="150" show-overflow-tooltip />
-              <el-table-column prop="unit" label="单位" width="90" />
-              <el-table-column prop="quantity" label="数量" width="100" align="right" />
-              <el-table-column prop="unit_price" label="单价(不含税)" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.unit_price || 0).toFixed(2) }}
-                </template>
-              </el-table-column>
               <el-table-column prop="amount" label="金额(不含税)" width="130" align="right">
                 <template #default="{ row }">
                   ¥{{ Number(row.amount).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="tax_rate" label="税率/征收率" width="120" align="center">
-                <template #default="{ row }">
-                  {{ formatInvoiceItemRate(row.tax_rate) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="tax_amount" label="税额" width="120" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
                 </template>
               </el-table-column>
               <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
@@ -1146,56 +1072,12 @@
             @select="handleProjectSelect"
           />
         </el-form-item>
-        <el-form-item label="规格型号" prop="spec_model">
-          <el-input v-model="itemForm.spec_model" placeholder="请输入规格型号" />
-        </el-form-item>
-        <el-form-item label="单位" prop="unit">
-          <el-input v-model="itemForm.unit" placeholder="请输入单位" />
-        </el-form-item>
-        <el-form-item label="数量" prop="quantity">
-          <el-input-number
-            v-model="itemForm.quantity"
-            :precision="4"
-            :min="0"
-            :controls="false"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="单价(不含税)" prop="unit_price">
-          <el-input-number
-            v-model="itemForm.unit_price"
-            :precision="2"
-            :min="0"
-            :controls="false"
-            style="width: 100%"
-          />
-        </el-form-item>
         <el-form-item label="金额" prop="amount">
           <el-input-number
             v-model="itemForm.amount"
             :precision="2"
             :step="100"
             :min="0"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="税率/征收率" prop="tax_rate">
-          <el-select v-model="itemForm.tax_rate" placeholder="请选择税率/征收率" style="width: 100%">
-            <el-option
-              v-for="option in invoiceItemTaxRateOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="税额" prop="tax_amount">
-          <el-input-number
-            v-model="itemForm.tax_amount"
-            :precision="2"
-            :min="0"
-            :controls="false"
-            disabled
             style="width: 100%"
           />
         </el-form-item>
@@ -1275,18 +1157,6 @@ const canCreateTask = computed(() => {
 const invoiceTypeOptions = [
   { label: '普通发票', value: '普通发票' },
   { label: '增值税专用发票', value: '增值税专用发票' }
-]
-
-const invoiceItemTaxRateOptions = [
-  { label: '0%', value: 0 },
-  { label: '1%', value: 0.01 },
-  { label: '2%', value: 0.02 },
-  { label: '3%', value: 0.03 },
-  { label: '4%', value: 0.04 },
-  { label: '5%', value: 0.05 },
-  { label: '6%', value: 0.06 },
-  { label: '9%', value: 0.09 },
-  { label: '13%', value: 0.13 }
 ]
 
 // 年份列表
@@ -1383,13 +1253,7 @@ const createItems = ref([
   {
     invoice_project_id: null,
     item_name: '',
-    spec_model: '',
-    unit: '',
-    quantity: null,
-    unit_price: null,
     amount: 0,
-    tax_rate: 0,
-    tax_amount: 0,
     remark: ''
   }
 ])
@@ -1595,13 +1459,7 @@ const itemForm = reactive({
   id: null,
   invoice_project_id: null,
   item_name: '',
-  spec_model: '',
-  unit: '',
-  quantity: null,
-  unit_price: null,
   amount: 0,
-  tax_rate: 0,
-  tax_amount: 0,
   remark: ''
 })
 
@@ -1742,13 +1600,7 @@ const buildCreateItemFromSource = (item = {}) => {
   return {
     invoice_project_id: item.invoice_project_id || item.invoice_project?.id || null,
     item_name: item.item_name || '',
-    spec_model: item.spec_model || '',
-    unit: item.unit || '',
-    quantity: item.quantity === null || item.quantity === undefined ? null : Number(item.quantity),
-    unit_price: item.unit_price === null || item.unit_price === undefined ? null : Number(item.unit_price),
     amount: Number(item.amount || 0),
-    tax_rate: Number(item.tax_rate || 0),
-    tax_amount: Number(item.tax_amount || 0),
     remark: item.remark || ''
   }
 }
@@ -1855,25 +1707,12 @@ const handleCreateStatusChange = async (status) => {
   }
 }
 
-const syncInvoiceItemAmounts = (item) => {
-  if (!item) return
-
-  item.amount = roundAmount(item.amount)
-  item.tax_amount = roundAmount(Number(item.amount || 0) * Number(item.tax_rate || 0))
-}
-
 const buildInvoiceItemFromProject = (project) => {
   if (!project) {
     return {
       invoice_project_id: null,
       item_name: '',
-      spec_model: '',
-      unit: '',
-      quantity: null,
-      unit_price: null,
       amount: 0,
-      tax_rate: 0,
-      tax_amount: 0,
       remark: ''
     }
   }
@@ -1881,13 +1720,7 @@ const buildInvoiceItemFromProject = (project) => {
   return {
     invoice_project_id: project.id,
     item_name: project.project_name || '',
-    spec_model: project.spec_model || '',
-    unit: project.unit || '',
-    quantity: project.quantity === null || project.quantity === undefined ? null : Number(project.quantity),
-    unit_price: project.unit_price === null || project.unit_price === undefined ? null : Number(project.unit_price),
     amount: Number(project.amount || 0),
-    tax_rate: Number(project.tax_rate || 0),
-    tax_amount: Number(project.tax_amount || 0),
     remark: ''
   }
 }
@@ -1924,7 +1757,6 @@ const applyInvoiceProjectToItem = (targetItem, keyword) => {
 
   const mapped = buildInvoiceItemFromProject(project)
   Object.assign(targetItem, mapped)
-  syncInvoiceItemAmounts(targetItem)
 }
 
 const handleInvoiceProjectInput = (targetItem, keyword) => {
@@ -2626,13 +2458,7 @@ const handleEditItem = (row) => {
   itemForm.id = row.id
   itemForm.invoice_project_id = row.invoice_project_id
   itemForm.item_name = row.item_name || ''
-  itemForm.spec_model = row.spec_model || ''
-  itemForm.unit = row.unit || ''
-  itemForm.quantity = row.quantity === null || row.quantity === undefined ? null : Number(row.quantity)
-  itemForm.unit_price = row.unit_price === null || row.unit_price === undefined ? null : Number(row.unit_price)
-  itemForm.amount = row.amount
-  itemForm.tax_rate = Number(row.tax_rate || 0)
-  itemForm.tax_amount = Number(row.tax_amount || 0)
+  itemForm.amount = Number(row.amount || 0)
   itemForm.remark = row.remark
   itemDialogVisible.value = true
 }
@@ -2693,13 +2519,7 @@ const resetItemForm = () => {
   itemForm.id = null
   itemForm.invoice_project_id = null
   itemForm.item_name = ''
-  itemForm.spec_model = ''
-  itemForm.unit = ''
-  itemForm.quantity = null
-  itemForm.unit_price = null
   itemForm.amount = 0
-  itemForm.tax_rate = 0
-  itemForm.tax_amount = 0
   itemForm.remark = ''
   itemFormRef.value?.clearValidate()
 }
@@ -3039,17 +2859,9 @@ watch(
 watch(
   createItems,
   () => {
-    createItems.value.forEach(item => syncInvoiceItemAmounts(item))
     syncCreateCalculatedAmounts()
   },
   { deep: true }
-)
-
-watch(
-  () => [itemForm.quantity, itemForm.unit_price, itemForm.amount, itemForm.tax_rate],
-  () => {
-    syncInvoiceItemAmounts(itemForm)
-  }
 )
 
 watch(

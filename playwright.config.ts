@@ -7,7 +7,6 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:8000/api',
     extraHTTPHeaders: {
-      'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
   },

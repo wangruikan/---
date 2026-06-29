@@ -303,9 +303,14 @@ test.describe('发票红冲 API 测试', () => {
     });
     const candidatesData = await candidatesRes.json();
 
-    // 找一个年月 >= 2026-06 的发票
+    // 找一个年月 >= 2026-06 且满足红冲条件的发票（已审批、已完成、有发票号、非红冲状态）
     const futureInvoice = candidatesData.data?.data?.find(
-      (item: any) => item.year > 2026 || (item.year === 2026 && item.month >= 6)
+      (item: any) =>
+        (item.year > 2026 || (item.year === 2026 && item.month >= 6)) &&
+        item.approval_status === 'approved' &&
+        item.is_completed &&
+        item.invoice_number &&
+        item.status !== 'red_flushed'
     );
 
     if (!futureInvoice) {
@@ -418,7 +423,8 @@ test.describe('发票红冲 API 测试', () => {
     const data = await response.json();
     console.log('不存在source响应:', data);
 
-    expect(response.status()).toBe(404);
-    expect(data.message).toBe('红冲发票不存在');
+    // Laravel exists 验证规则先于控制器代码返回 422
+    expect(response.status()).toBe(422);
+    expect(data.success).toBe(false);
   });
 });

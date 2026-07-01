@@ -2136,7 +2136,11 @@ const form = reactive({
 })
 
 // 新增项目表单草稿暂存（仅新建模式生效，编辑/查看不污染）
-const projectCreateDraft = useFormDraft('project-create-v1', form, (f) => !f.name)
+const projectCreateDraft = useFormDraft(
+  () => `project-create-v1:${currentAccountSetId.value || 'no-account-set'}`,
+  form,
+  (f) => !f.name
+)
 
 const NO_SOCIAL_SECURITY_OPTION = '__NONE_SOCIAL_SECURITY__'
 const NO_HOUSING_FUND_OPTION = '__NONE_HOUSING_FUND__'

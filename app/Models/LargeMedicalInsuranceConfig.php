@@ -30,8 +30,8 @@ class LargeMedicalInsuranceConfig extends Model
     protected $casts = [
         'base_amount' => 'decimal:2',
         'employee_base_amount' => 'decimal:2',
-        'company_ratio' => 'decimal:2',
-        'employee_ratio' => 'decimal:2',
+        'company_ratio' => 'decimal:4',
+        'employee_ratio' => 'decimal:4',
         'company_amount' => 'decimal:2',
         'employee_amount' => 'decimal:2',
         'status' => 'boolean',

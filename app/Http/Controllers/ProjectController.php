@@ -154,6 +154,134 @@ class ProjectController extends Controller
         ];
     }
 
+    private function projectValidationMessages(): array
+    {
+        return [
+            'required' => ':attribute不能为空',
+            'string' => ':attribute格式不正确',
+            'integer' => ':attribute必须为整数',
+            'numeric' => ':attribute必须为数字',
+            'array' => ':attribute格式不正确',
+            'boolean' => ':attribute格式不正确',
+            'date' => ':attribute不是有效的日期',
+            'exists' => '所选的:attribute不存在或已失效',
+            'in' => ':attribute的选项无效',
+            'min.array' => ':attribute至少需要选择:min项',
+            'min.numeric' => ':attribute不能小于:min',
+            'max.string' => ':attribute不能超过:max个字符',
+            'max.numeric' => ':attribute不能大于:max',
+            'present' => ':attribute不能为空',
+            'name.required' => '请输入项目名称',
+            'start_date.required' => '请选择开始时间',
+            'end_date.required' => '请选择结束时间',
+            'end_date.after_or_equal' => '结束时间不能早于开始时间',
+            'salary_payment_date.required' => '请选择工资发放日期',
+            'salary_payment_date.min' => '工资发放日期必须在 1 到 31 之间',
+            'salary_payment_date.max' => '工资发放日期必须在 1 到 31 之间',
+            'salary_payment_month.required' => '请选择工资发放设置',
+            'salary_payment_month.in' => '工资发放设置无效',
+            'insurance_import_month.required' => '请选择保险导入设置',
+            'insurance_import_month.in' => '保险导入设置无效',
+            'delivery_frequency.required' => '请选择交付频率',
+            'delivery_frequency.in' => '交付频率无效',
+            'delivery_method.required' => '请选择交付方式',
+            'delivery_method.in' => '交付方式无效',
+            'registration_form_type.required' => '请选择员工登记表类型',
+            'registration_form_type.in' => '员工登记表类型无效',
+            'invoice_infos.required' => '请至少填写一组开票信息',
+            'invoice_infos.array' => '开票信息格式不正确',
+            'invoice_infos.min' => '请至少填写一组开票信息',
+            'invoice_infos.*.remark.required' => '开票信息备注不能为空',
+            'invoice_infos.*.company_name.required' => '开票信息企业名称不能为空',
+            'invoice_infos.*.tax_number.required' => '开票信息企业税号不能为空',
+            'invoice_infos.*.company_address.required' => '开票信息企业地址不能为空',
+            'invoice_infos.*.company_phone.required' => '开票信息企业电话不能为空',
+            'invoice_infos.*.bank_name.required' => '开票信息开户银行不能为空',
+            'invoice_infos.*.bank_account.required' => '开票信息银行账户不能为空',
+            'invoice_infos.*.bank_code.required' => '开票信息行号不能为空',
+        ];
+    }
+
+    private function projectValidationAttributes(): array
+    {
+        return [
+            'name' => '项目名称',
+            'code' => '项目编号',
+            'description' => '项目描述',
+            'status' => '项目状态',
+            'start_date' => '开始时间',
+            'end_date' => '结束时间',
+            'social_security_location' => '社保缴纳地',
+            'insurance_types' => '保险类型',
+            'salary_payment_date' => '工资发放日期',
+            'salary_payment_month' => '工资发放设置',
+            'insurance_import_month' => '保险导入设置',
+            'requires_attendance' => '是否需要考勤',
+            'require_attendance' => '是否需要考勤',
+            'delivery_frequency' => '交付频率',
+            'delivery_method' => '交付方式',
+            'registration_form_type' => '员工登记表类型',
+            'invoice_infos' => '开票信息',
+            'invoice_infos.*.remark' => '开票信息备注',
+            'invoice_infos.*.company_name' => '开票信息企业名称',
+            'invoice_infos.*.tax_number' => '开票信息企业税号',
+            'invoice_infos.*.company_address' => '开票信息企业地址',
+            'invoice_infos.*.company_phone' => '开票信息企业电话',
+            'invoice_infos.*.bank_name' => '开票信息开户银行',
+            'invoice_infos.*.bank_account' => '开票信息银行账户',
+            'invoice_infos.*.bank_code' => '开票信息行号',
+            'invoice_company_name' => '企业名称',
+            'invoice_tax_number' => '企业税号',
+            'invoice_company_address' => '企业地址',
+            'invoice_company_phone' => '企业电话',
+            'invoice_bank_name' => '开户银行',
+            'invoice_bank_account' => '银行账户',
+            'invoice_bank_code' => '行号',
+            'social_security_regions' => '社保地区',
+            'social_security_regions.*' => '社保地区',
+            'medical_insurance_regions' => '医保地区',
+            'medical_insurance_regions.*' => '医保地区',
+            'housing_fund_regions' => '公积金地区',
+            'housing_fund_regions.*' => '公积金地区',
+            'other_insurance_policies' => '其他保险保单',
+            'other_insurance_policies.*' => '其他保险保单',
+            'large_medical_insurance_configs' => '大额医疗保险配置',
+            'large_medical_insurance_configs.*' => '大额医疗保险配置',
+            'region_ids' => '地区列表',
+            'region_ids.*' => '地区',
+            'policy_ids' => '保单列表',
+            'policy_ids.*' => '保单',
+            'config_ids' => '大额医疗保险配置',
+            'config_ids.*' => '大额医疗保险配置',
+            'notice_file_ids' => '须知文件列表',
+            'notice_file_ids.*' => '须知文件',
+            'notice_file_id' => '须知文件',
+            'notice_placeholder_positions' => '须知占位符位置',
+            'placeholder_fields' => '占位符字段',
+            'placeholder_fields.*.key' => '占位符字段标识',
+            'placeholder_fields.*.label' => '占位符字段名称',
+        ];
+    }
+
+    private function makeProjectValidator(array $data, array $rules, array $messages = [], array $attributes = [])
+    {
+        return Validator::make(
+            $data,
+            $rules,
+            array_merge($this->projectValidationMessages(), $messages),
+            array_merge($this->projectValidationAttributes(), $attributes)
+        );
+    }
+
+    private function validationErrorResponse($validator)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $validator->errors()->first() ?: '验证失败',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
     private function attachProjectInvoiceInfoValidation($validator, array $invoiceInfos): void
     {
         $validator->after(function ($validator) use ($invoiceInfos) {
@@ -252,15 +380,11 @@ class ProjectController extends Controller
 
         $requestData = $this->buildProjectPayload($request->all());
 
-        $validator = Validator::make($requestData, $this->projectValidationRules());
+        $validator = $this->makeProjectValidator($requestData, $this->projectValidationRules());
         $this->attachProjectInvoiceInfoValidation($validator, $requestData['invoice_infos'] ?? []);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         // 【账套关联】自动关联到当前账套
@@ -302,16 +426,12 @@ class ProjectController extends Controller
             return $response;
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'name' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         return response()->json([
@@ -396,15 +516,11 @@ class ProjectController extends Controller
         
         $requestData = $this->buildProjectPayload($request->all(), $project);
 
-        $validator = Validator::make($requestData, $this->projectValidationRules());
+        $validator = $this->makeProjectValidator($requestData, $this->projectValidationRules());
         $this->attachProjectInvoiceInfoValidation($validator, $requestData['invoice_infos'] ?? []);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         // 同步 requires_attendance 和 require_attendance 字段
@@ -463,7 +579,7 @@ class ProjectController extends Controller
      */
     public function setContractNotices(Request $request, $id)
     {
-        $validator = \Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'notice_file_ids' => 'sometimes|array',
             'notice_file_ids.*' => 'integer|exists:shared_files,id',
             'notice_file_id' => 'nullable|integer|exists:shared_files,id',
@@ -471,11 +587,7 @@ class ProjectController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $project = Project::findOrFail($id);
@@ -727,17 +839,13 @@ class ProjectController extends Controller
      */
     public function setSocialSecurityRegions(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'region_ids' => 'present|array',
             'region_ids.*' => 'exists:social_security_regions,id'
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $project = Project::find($id);
@@ -780,17 +888,13 @@ class ProjectController extends Controller
      */
     public function setHousingFundRegions(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'region_ids' => 'present|array',
             'region_ids.*' => 'exists:housing_fund_regions,id'
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $project = Project::find($id);
@@ -833,17 +937,13 @@ class ProjectController extends Controller
      */
     public function setMedicalInsuranceRegions(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'region_ids' => 'present|array',
             'region_ids.*' => 'exists:medical_insurance_regions,id'
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $project = Project::find($id);
@@ -912,17 +1012,13 @@ class ProjectController extends Controller
      */
     public function setOtherInsurancePolicies(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'policy_ids' => 'nullable|array',
             'policy_ids.*' => 'exists:other_insurance_policies,id'
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $project = Project::find($id);
@@ -1025,17 +1121,13 @@ class ProjectController extends Controller
      */
     public function setLargeMedicalInsuranceConfigs(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'config_ids' => 'present|array',
             'config_ids.*' => 'exists:large_medical_insurance_configs,id'
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $project = Project::find($id);
@@ -1365,18 +1457,14 @@ class ProjectController extends Controller
         $project = Project::findOrFail($projectId);
         $this->checkProjectAccess($request, $project);
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeProjectValidator($request->all(), [
             'placeholder_fields' => 'present|array',
             'placeholder_fields.*.key' => 'required|string',
             'placeholder_fields.*.label' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         $availablePlaceholderFields = Project::getAvailablePlaceholderFields();

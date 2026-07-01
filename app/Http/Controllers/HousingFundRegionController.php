@@ -307,7 +307,7 @@ class HousingFundRegionController extends Controller
 
         $configIds = HousingFundConfig::where('region_id', $region->id)->pluck('id');
 
-        $histories = OperationLog::where('model_type', HousingFundConfig::class)
+        $appliedHistories = OperationLog::where('model_type', HousingFundConfig::class)
             ->whereIn('model_id', $configIds)
             ->where('action', 'updated')
             ->orderBy('created_at', 'desc')
@@ -317,13 +317,41 @@ class HousingFundRegionController extends Controller
                 $newValues = $log->new_values ?? [];
                 return [
                     'changed_at' => $log->created_at ? $log->created_at->format('Y-m-d H:i:s') : null,
+                    'status' => 'applied',
+                    'status_text' => '已生效',
+                    'effective_date' => null,
                     'min_base_amount' => array_key_exists('min_base_amount', $newValues) ? $newValues['min_base_amount'] : ($oldValues['min_base_amount'] ?? null),
                     'max_base_amount' => array_key_exists('max_base_amount', $newValues) ? $newValues['max_base_amount'] : ($oldValues['max_base_amount'] ?? null),
                 ];
             })
             ->filter(function ($item) {
                 return !is_null($item['min_base_amount']) || !is_null($item['max_base_amount']);
-            })
+            });
+
+        $pendingHistories = InsuranceLimitPendingChange::where('target_type', 'housing_fund_config')
+            ->whereIn('target_id', $configIds)
+            ->get()
+            ->map(function ($pending) {
+                $statusTextMap = [
+                    'pending' => '待生效',
+                    'applied' => '已生效',
+                    'failed' => '生效失败',
+                    'cancelled' => '已取消',
+                ];
+
+                return [
+                    'changed_at' => optional($pending->created_at)->format('Y-m-d H:i:s'),
+                    'status' => $pending->status,
+                    'status_text' => $statusTextMap[$pending->status] ?? $pending->status,
+                    'effective_date' => optional($pending->effective_date)->format('Y-m-d'),
+                    'min_base_amount' => $pending->pending_min_base_amount,
+                    'max_base_amount' => $pending->pending_max_base_amount,
+                ];
+            });
+
+        $histories = $appliedHistories
+            ->concat($pendingHistories)
+            ->sortByDesc('changed_at')
             ->values();
 
         return response()->json([

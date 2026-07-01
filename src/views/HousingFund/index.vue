@@ -320,6 +320,8 @@
     >
       <el-table :data="regionHistories" v-loading="historyLoading" stripe>
         <el-table-column prop="changed_at" label="修改时间" width="180" />
+        <el-table-column prop="status_text" label="状态" width="100" />
+        <el-table-column prop="effective_date" label="生效日期" width="120" />
         <el-table-column prop="min_base_amount" label="下限基数" width="180">
           <template #default="{ row }">
             {{ row.min_base_amount === null || row.min_base_amount === undefined ? '-' : `¥${Number(row.min_base_amount).toFixed(2)}` }}

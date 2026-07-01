@@ -11,6 +11,61 @@ use Illuminate\Support\Facades\Validator;
 
 class ContractTemplateController extends Controller
 {
+    private function validationMessages(): array
+    {
+        return [
+            'required' => ':attribute不能为空',
+            'string' => ':attribute格式不正确',
+            'integer' => ':attribute必须为整数',
+            'numeric' => ':attribute必须为数字',
+            'array' => ':attribute格式不正确',
+            'boolean' => ':attribute格式不正确',
+            'exists' => '所选的:attribute不存在或已失效',
+            'in' => ':attribute的选项无效',
+            'min.numeric' => ':attribute不能小于:min',
+            'present' => ':attribute不能为空',
+            'contract_type.required' => '请选择合同类型',
+            'shared_file_id.required' => '请选择模板文件',
+            'template_id.required' => '请选择模板',
+        ];
+    }
+
+    private function validationAttributes(): array
+    {
+        return [
+            'contract_type' => '合同类型',
+            'shared_file_id' => '模板文件',
+            'is_default' => '默认模板',
+            'template_id' => '模板',
+            'positions' => '占位符位置',
+            'positions.*.type' => '占位符类型',
+            'positions.*.x' => '横坐标',
+            'positions.*.y' => '纵坐标',
+            'positions.*.width' => '宽度',
+            'positions.*.height' => '高度',
+            'positions.*.page' => '页码',
+        ];
+    }
+
+    private function makeValidator(array $data, array $rules, array $messages = [], array $attributes = [])
+    {
+        return Validator::make(
+            $data,
+            $rules,
+            array_merge($this->validationMessages(), $messages),
+            array_merge($this->validationAttributes(), $attributes)
+        );
+    }
+
+    private function validationErrorResponse($validator)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $validator->errors()->first() ?: '验证失败',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
     /**
      * 获取项目的合同模板列表
      */
@@ -45,18 +100,14 @@ class ContractTemplateController extends Controller
         // 检查权限
         $this->checkProjectAccess($request, $project);
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'shared_file_id' => 'required|exists:shared_files,id',
             'is_default' => 'boolean',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         // 检查共享文件是否存在
@@ -222,7 +273,7 @@ class ContractTemplateController extends Controller
         // 允许的占位符类型（与 Project::getAvailablePlaceholderFields 保持一致）
         $allowedTypes = array_keys(Project::getAvailablePlaceholderFields());
         
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'template_id' => 'required|integer|exists:contract_templates,id',
             'positions' => 'present|array',
             'positions.*.type' => 'required|string|in:' . implode(',', $allowedTypes),
@@ -234,11 +285,7 @@ class ContractTemplateController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         try {

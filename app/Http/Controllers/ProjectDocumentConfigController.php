@@ -12,6 +12,60 @@ use Illuminate\Support\Facades\Validator;
 
 class ProjectDocumentConfigController extends Controller
 {
+    private function validationMessages(): array
+    {
+        return [
+            'required' => ':attribute不能为空',
+            'string' => ':attribute格式不正确',
+            'integer' => ':attribute必须为整数',
+            'array' => ':attribute格式不正确',
+            'boolean' => ':attribute格式不正确',
+            'exists' => '所选的:attribute不存在或已失效',
+            'in' => ':attribute的选项无效',
+            'min.numeric' => ':attribute不能小于:min',
+            'max.string' => ':attribute不能超过:max个字符',
+            'present' => ':attribute不能为空',
+            'document_set_id.required' => '请选择资料方案',
+            'document_name.required' => '请输入资料名称',
+            'set_name.required' => '请输入方案名称',
+            'configs.required' => '请传入资料配置列表',
+        ];
+    }
+
+    private function validationAttributes(): array
+    {
+        return [
+            'document_set_id' => '资料方案',
+            'document_name' => '资料名称',
+            'document_type' => '资料类型',
+            'is_required' => '是否必传',
+            'sort_order' => '排序',
+            'configs' => '资料配置列表',
+            'configs.*.id' => '资料配置',
+            'configs.*.sort_order' => '排序',
+            'set_name' => '方案名称',
+        ];
+    }
+
+    private function makeValidator(array $data, array $rules, array $messages = [], array $attributes = [])
+    {
+        return Validator::make(
+            $data,
+            $rules,
+            array_merge($this->validationMessages(), $messages),
+            array_merge($this->validationAttributes(), $attributes)
+        );
+    }
+
+    private function validationErrorResponse($validator)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $validator->errors()->first() ?: '验证失败',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
     private function buildConfigsResponse(int $projectId): array
     {
         if (!Schema::hasTable('project_document_sets')) {
@@ -72,7 +126,7 @@ class ProjectDocumentConfigController extends Controller
             ], 422);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'document_set_id' => 'required|integer|exists:project_document_sets,id',
             'document_name' => 'required|string|max:100',
             'document_type' => 'nullable|in:image,pdf,document,all',
@@ -81,11 +135,7 @@ class ProjectDocumentConfigController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         try {
@@ -136,7 +186,7 @@ class ProjectDocumentConfigController extends Controller
             ], 422);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'document_set_id' => 'sometimes|required|integer|exists:project_document_sets,id',
             'document_name' => 'sometimes|required|string|max:100',
             'document_type' => 'sometimes|nullable|in:image,pdf,document,all',
@@ -145,11 +195,7 @@ class ProjectDocumentConfigController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         try {
@@ -220,7 +266,7 @@ class ProjectDocumentConfigController extends Controller
             ], 422);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'document_set_id' => 'required|integer|exists:project_document_sets,id',
             'configs' => 'required|array',
             'configs.*.id' => 'required|integer',
@@ -228,11 +274,7 @@ class ProjectDocumentConfigController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         try {
@@ -268,17 +310,13 @@ class ProjectDocumentConfigController extends Controller
             ], 422);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'set_name' => 'required|string|max:100',
             'is_default' => 'boolean',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         try {
@@ -321,17 +359,13 @@ class ProjectDocumentConfigController extends Controller
             ], 422);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = $this->makeValidator($request->all(), [
             'set_name' => 'sometimes|required|string|max:100',
             'is_default' => 'sometimes|boolean',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => '验证失败',
-                'errors' => $validator->errors()
-            ], 422);
+            return $this->validationErrorResponse($validator);
         }
 
         try {

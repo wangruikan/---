@@ -523,6 +523,12 @@ class InvoiceApplicationController extends Controller
                 $config = $configId
                     ? InvoiceContentConfig::where('account_set_id', $accountSetId)->find($configId)
                     : null;
+                $contentTaxRate = min(1, max(0, (float) ($config?->tax_rate ?? $contentItem['tax_rate'] ?? 0)));
+                $contentCalculatedAmounts = $this->calculateInvoiceAmounts(
+                    $contentItem['invoice_amount'] ?? 0,
+                    $contentItem['deduction_amount'] ?? 0,
+                    $contentTaxRate
+                );
 
                 InvoiceContentItem::create([
                     'application_id' => $application->id,
@@ -532,11 +538,11 @@ class InvoiceApplicationController extends Controller
                     'remark' => null,
                     'deduction_info' => null,
                     'invoice_amount' => round((float) ($contentItem['invoice_amount'] ?? 0), 2),
-                    'tax_rate' => min(1, max(0, (float) ($config?->tax_rate ?? $contentItem['tax_rate'] ?? 0))),
+                    'tax_rate' => $contentTaxRate,
                     'deduction_amount' => round((float) ($contentItem['deduction_amount'] ?? 0), 2),
-                    'invoice_tax_amount' => round((float) ($contentItem['invoice_tax_amount'] ?? 0), 2),
-                    'amount_excluding_tax' => round((float) ($contentItem['amount_excluding_tax'] ?? 0), 2),
-                    'tax_amount' => round((float) ($contentItem['tax_amount'] ?? 0), 2),
+                    'invoice_tax_amount' => $contentCalculatedAmounts['invoice_tax_amount'],
+                    'amount_excluding_tax' => $contentCalculatedAmounts['amount_excluding_tax'],
+                    'tax_amount' => $contentCalculatedAmounts['tax_amount'],
                 ]);
             }
 
@@ -1615,10 +1621,10 @@ class InvoiceApplicationController extends Controller
         $taxRate = max(0, (float) $taxRate);
 
         $taxableAmount = max(0, $invoiceAmount - $deductionAmount);
-        $amountExcludingTax = $taxRate > 0
-            ? round($taxableAmount / (1 + $taxRate), 2)
-            : round($taxableAmount, 2);
-        $invoiceTaxAmount = round($taxableAmount - $amountExcludingTax, 2);
+        $invoiceTaxAmount = $taxRate > 0
+            ? round($taxableAmount / (1 + $taxRate) * $taxRate, 2)
+            : 0;
+        $amountExcludingTax = round(max(0, $invoiceAmount - $invoiceTaxAmount), 2);
 
         return [
             'amount_excluding_tax' => $amountExcludingTax,
@@ -1651,14 +1657,19 @@ class InvoiceApplicationController extends Controller
                 continue;
             }
 
-            $totals['invoice_amount'] += (float) ($contentItem['invoice_amount'] ?? 0);
-            $totals['deduction_amount'] += (float) ($contentItem['deduction_amount'] ?? 0);
-            $totals['invoice_tax_amount'] += (float) ($contentItem['invoice_tax_amount'] ?? 0);
-            $totals['amount_excluding_tax'] += (float) ($contentItem['amount_excluding_tax'] ?? 0);
-            $totals['tax_amount'] += (float) ($contentItem['tax_amount'] ?? 0);
+            $invoiceAmount = (float) ($contentItem['invoice_amount'] ?? 0);
+            $deductionAmount = (float) ($contentItem['deduction_amount'] ?? 0);
+            $taxRate = min(1, max(0, (float) ($contentItem['tax_rate'] ?? 0)));
+            $calculatedAmounts = $this->calculateInvoiceAmounts($invoiceAmount, $deductionAmount, $taxRate);
+
+            $totals['invoice_amount'] += $invoiceAmount;
+            $totals['deduction_amount'] += $deductionAmount;
+            $totals['invoice_tax_amount'] += $calculatedAmounts['invoice_tax_amount'];
+            $totals['amount_excluding_tax'] += $calculatedAmounts['amount_excluding_tax'];
+            $totals['tax_amount'] += $calculatedAmounts['tax_amount'];
 
             if ($totals['tax_rate'] <= 0) {
-                $totals['tax_rate'] = min(1, max(0, (float) ($contentItem['tax_rate'] ?? 0)));
+                $totals['tax_rate'] = $taxRate;
             }
         }
 

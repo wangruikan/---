@@ -42,9 +42,9 @@
         </div>
       </template>
 
-      <el-table :data="filteredRegions" v-loading="loading" stripe @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="55" />
-        <el-table-column prop="region_name" label="地区名称" width="200" />
+      <el-table class="sticky-region-table" :data="filteredRegions" v-loading="loading" stripe max-height="420" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" fixed="left" />
+        <el-table-column prop="region_name" label="地区名称" width="200" fixed="left" />
         <el-table-column prop="account_number" label="公积金账号" width="180" />
         <el-table-column label="配置数量" width="120">
           <template #default="{ row }">
@@ -176,7 +176,7 @@
     >
       <el-form :model="regionForm" :rules="regionRules" ref="regionFormRef" label-width="120px">
         <el-form-item label="地区名称" prop="region_name">
-          <el-input v-model="regionForm.region_name" placeholder="请输入地区名称，如：北京市" :disabled="!!editingRegion" />
+          <el-input v-model="regionForm.region_name" placeholder="请输入地区名称，如：北京市" />
         </el-form-item>
         <el-form-item label="公积金账号" prop="account_number">
           <el-input v-model="regionForm.account_number" placeholder="请输入公积金账号（可选）" />
@@ -705,6 +705,15 @@ const regionHistories = ref([])
 const historyTitle = ref('')
 const currentConfigForLimit = ref(null)
 
+const syncSelectedRegion = (regionId = selectedRegion.value?.id) => {
+  if (!regionId) return
+
+  const latestRegion = regions.value.find(region => region.id === regionId)
+  if (latestRegion) {
+    selectedRegion.value = latestRegion
+  }
+}
+
 const filteredRegions = computed(() => {
   if (!selectedFilterRegionId.value) return regions.value
   return regions.value.filter(region => region.id === selectedFilterRegionId.value)
@@ -770,6 +779,7 @@ const loadRegions = async () => {
     })
     if (response.success) {
       regions.value = response.data
+      syncSelectedRegion()
     } else {
       ElMessage.error('加载地区列表失败')
     }
@@ -933,12 +943,12 @@ const submitConfigLimit = async () => {
 
       if (response.success) {
         ElMessage.success('上下限设置成功')
+        if (selectedRegion.value) {
+          await viewConfigs(selectedRegion.value)
+        }
+        await loadRegions()
         showConfigLimitDialog.value = false
         resetConfigLimitForm()
-        if (selectedRegion.value) {
-          viewConfigs(selectedRegion.value)
-        }
-        loadRegions()
       } else {
         ElMessage.error(response.message || '设置上下限失败')
       }
@@ -997,10 +1007,10 @@ const saveConfig = async () => {
         
         if (response.success) {
           ElMessage.success(editingConfig.value ? '配置更新成功' : '配置创建成功')
+          await viewConfigs(selectedRegion.value)
+          await loadRegions()
           showCreateConfigDialog.value = false
           resetConfigForm()
-          viewConfigs(selectedRegion.value) // 重新加载配置列表
-          loadRegions() // 重新加载地区列表以更新统计信息
         } else {
           ElMessage.error(response.message || '保存失败')
         }
@@ -1030,8 +1040,8 @@ const deleteConfig = async (config) => {
     const response = await deleteHousingFundConfig(config.id)
     if (response.success) {
       ElMessage.success('配置删除成功')
-      viewConfigs(selectedRegion.value) // 重新加载配置列表
-      loadRegions() // 重新加载地区列表以更新统计信息
+      await viewConfigs(selectedRegion.value)
+      await loadRegions()
     } else {
       ElMessage.error(response.message || '删除失败')
     }
@@ -1806,6 +1816,26 @@ onMounted(() => {
 
 .region-list-card {
   margin-bottom: 20px;
+}
+
+:deep(.sticky-region-table.el-table) {
+  overflow: visible;
+}
+
+:deep(.sticky-region-table .el-table__inner-wrapper) {
+  overflow: visible;
+}
+
+:deep(.sticky-region-table .el-table__header-wrapper),
+:deep(.sticky-region-table .el-table__fixed-header-wrapper) {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+:deep(.sticky-region-table .el-table__header th.el-table__cell),
+:deep(.sticky-region-table .el-table__fixed-header-wrapper th.el-table__cell) {
+  background: #fff;
 }
 
 .config-list-card {

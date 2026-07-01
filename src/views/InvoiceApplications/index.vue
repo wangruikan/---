@@ -349,17 +349,6 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="开票税额" width="150">
-            <template #default="{ row }">
-              <el-input-number
-                v-model="row.invoice_tax_amount"
-                :precision="2"
-                :min="0"
-                :controls="false"
-                style="width: 100%"
-              />
-            </template>
-          </el-table-column>
           <el-table-column label="不含税金额" width="150">
             <template #default="{ row }">
               <el-input-number
@@ -367,6 +356,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
+                disabled
                 style="width: 100%"
               />
             </template>
@@ -378,6 +368,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
+                disabled
                 style="width: 100%"
               />
             </template>
@@ -666,11 +657,6 @@
                   ¥{{ Number(row.deduction_amount || 0).toFixed(2) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="invoice_tax_amount" label="开票税额" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.invoice_tax_amount || 0).toFixed(2) }}
-                </template>
-              </el-table-column>
               <el-table-column prop="amount_excluding_tax" label="不含税金额" width="130" align="right">
                 <template #default="{ row }">
                   ¥{{ Number(row.amount_excluding_tax || 0).toFixed(2) }}
@@ -873,20 +859,6 @@
                   />
                 </el-form-item>
               </el-col>
-
-                <!-- 开票税额 -->
-                <el-col :span="12">
-                  <el-form-item label="开票税额" prop="invoice_tax_amount">
-                    <el-input-number
-                      v-model="invoiceDetailsForm.invoice_tax_amount"
-                      :precision="2"
-                      :min="0"
-                      :controls="false"
-                      disabled
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </el-col>
 
                 <!-- 不含税金额 -->
                 <el-col :span="12">
@@ -1888,16 +1860,38 @@ const calculateInvoiceDerivedAmounts = (invoiceAmount, deductionAmount, taxRate)
   const safeDeductionAmount = roundAmount(Math.max(0, Number(deductionAmount || 0)))
   const safeTaxRate = Math.max(0, Number(taxRate || 0))
   const taxableAmount = Math.max(0, safeInvoiceAmount - safeDeductionAmount)
-  const amountExcludingTax = safeTaxRate > 0
-    ? roundAmount(taxableAmount / (1 + safeTaxRate))
-    : roundAmount(taxableAmount)
-  const invoiceTaxAmount = roundAmount(taxableAmount - amountExcludingTax)
+  const invoiceTaxAmount = safeTaxRate > 0
+    ? roundAmount(taxableAmount / (1 + safeTaxRate) * safeTaxRate)
+    : 0
+  const amountExcludingTax = roundAmount(Math.max(0, safeInvoiceAmount - invoiceTaxAmount))
 
   return {
     amountExcludingTax,
     invoiceTaxAmount,
     taxAmount: invoiceTaxAmount
   }
+}
+
+const syncCreateContentItemCalculatedAmounts = () => {
+  createContentItems.value.forEach((item) => {
+    const { amountExcludingTax, invoiceTaxAmount, taxAmount } = calculateInvoiceDerivedAmounts(
+      item.invoice_amount,
+      item.deduction_amount,
+      item.tax_rate
+    )
+
+    if (Number(item.amount_excluding_tax || 0) !== amountExcludingTax) {
+      item.amount_excluding_tax = amountExcludingTax
+    }
+
+    if (Number(item.invoice_tax_amount || 0) !== invoiceTaxAmount) {
+      item.invoice_tax_amount = invoiceTaxAmount
+    }
+
+    if (Number(item.tax_amount || 0) !== taxAmount) {
+      item.tax_amount = taxAmount
+    }
+  })
 }
 
 const sumDeductionItems = (items = []) => {
@@ -1916,6 +1910,8 @@ const syncCreateCalculatedAmounts = () => {
   if (createNeedsDeductionAmount.value && createContentItems.value.length) {
     createContentItems.value[0].deduction_amount = sumDeductionItems(createItems.value)
   }
+
+  syncCreateContentItemCalculatedAmounts()
 
   const normalizedContentItems = normalizeCreateContentItems()
   const contentTotals = sumCreateContentItems(normalizedContentItems)

@@ -578,6 +578,7 @@ class EmployeeController extends ApiController
                 $employee->pending_salary_adjustment_approval = in_array($employee->id, $pendingSalaryAdjustmentApprovals);
                 $employee->pending_registration_form_update_approval = in_array($employee->id, $pendingFormUpdateEmployeeIds);
                 $this->applyProjectDisplayFields($employee, $request->input('project_id'));
+                $employee->largeMedicalStatus = $this->buildLargeMedicalStatusData($employee);
             }
             
             // 计算人员统计数据
@@ -3876,92 +3877,9 @@ class EmployeeController extends ApiController
                 'projects'
             ])->findOrFail($id);
 
-            // 检查员工是否有大额医疗保险配置
-            if (!$employee->large_medical_insurance_config_id) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'has_config' => false,
-                        'is_enrolled' => false,
-                        'has_pending_task' => false,
-                        'can_enable' => false,
-                        'status' => 'no_config',
-                        'status_text' => '未配置大额医疗保险'
-                    ]
-                ]);
-            }
-
-            // 检查是否已经在参保人员表中有记录（已参保）
-            $insurancePersonnel = \App\Models\InsurancePersonnel::where('employee_id', $employee->id)
-                ->where('large_medical_insurance_enabled', true)
-                ->where('status', 'active')
-                ->first();
-
-            if ($insurancePersonnel) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'has_config' => true,
-                        'is_enrolled' => true,
-                        'has_pending_task' => false,
-                        'can_enable' => false,
-                        'status' => 'enrolled',
-                        'status_text' => '已启用'
-                    ]
-                ]);
-            }
-
-            // 检查是否有待处理的"开启大额医疗保险"任务
-            $pendingEnableTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                ->where('status', 'pending')
-                ->where('change_summary', '开启大额医疗保险')
-                ->first();
-
-            if ($pendingEnableTask) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'has_config' => true,
-                        'is_enrolled' => false,
-                        'has_pending_task' => true,
-                        'can_enable' => false,
-                        'status' => 'pending',
-                        'status_text' => '待处理'
-                    ]
-                ]);
-            }
-
-            // 检查是否已入职（有已完成的增减任务）
-            $completedTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                ->where('status', 'completed')
-                ->where('fully_confirmed', true)
-                ->first();
-
-            if (!$completedTask) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'has_config' => true,
-                        'is_enrolled' => false,
-                        'has_pending_task' => false,
-                        'can_enable' => false,
-                        'status' => 'not_onboarded',
-                        'status_text' => '未入职'
-                    ]
-                ]);
-            }
-
-            // 已入职但未参保大额，可以开启
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'has_config' => true,
-                    'is_enrolled' => false,
-                    'has_pending_task' => false,
-                    'can_enable' => true,
-                    'status' => 'can_enable',
-                    'status_text' => '可开启'
-                ]
+                'data' => $this->buildLargeMedicalStatusData($employee)
             ]);
 
         } catch (\Exception $e) {
@@ -4011,14 +3929,14 @@ class EmployeeController extends ApiController
 
             // 检查是否有待处理的"开启大额医疗保险"任务（无论开关状态）
             $pendingTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                ->where('status', 'pending')
-                ->where('change_summary', '开启大额医疗保险')
+                ->whereIn('status', ['pending', 'submitted'])
+                ->whereIn('change_summary', ['开启大额医疗保险', '关闭大额医疗保险'])
                 ->first();
 
             if ($pendingTask) {
                 return response()->json([
                     'success' => false,
-                    'message' => '已有待处理的大额医疗保险开启任务'
+                    'message' => '已有待处理的大额医疗保险任务'
                 ], 400);
             }
 
@@ -4122,6 +4040,212 @@ class EmployeeController extends ApiController
                 'message' => '开启失败: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * 关闭大额医疗保险
+     * 创建一条新的减保任务，待增减管理确认后正式退保
+     */
+    public function disableLargeMedical(Request $request, $id)
+    {
+        try {
+            $employee = Employee::with([
+                'largeMedicalInsuranceConfigRelation',
+                'socialSecurityRegion.socialSecurityTypes',
+                'medicalInsuranceRegion.medicalInsuranceTypes',
+                'housingFundConfig',
+                'projects'
+            ])->findOrFail($id);
+
+            if (!$employee->large_medical_insurance_config_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该员工未配置大额医疗保险'
+                ], 400);
+            }
+
+            $insurancePersonnel = \App\Models\InsurancePersonnel::where('employee_id', $employee->id)
+                ->where('large_medical_insurance_enabled', true)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$insurancePersonnel) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该员工当前未参保大额医疗保险'
+                ], 400);
+            }
+
+            $pendingTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
+                ->whereIn('status', ['pending', 'submitted'])
+                ->whereIn('change_summary', ['开启大额医疗保险', '关闭大额医疗保险'])
+                ->first();
+
+            if ($pendingTask) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '已有待处理的大额医疗保险任务'
+                ], 400);
+            }
+
+            $activeProject = $employee->projects()
+                ->wherePivot('status', 'active')
+                ->first();
+
+            if (!$activeProject) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '员工没有活跃的项目'
+                ], 400);
+            }
+
+            $accountSetId = $employee->account_set_id;
+
+            DB::beginTransaction();
+
+            $genderValue = $employee->gender === 'male' ? 1 : ($employee->gender === 'female' ? 2 : null);
+
+            $change = \App\Models\InsuranceChange::create([
+                'employee_id' => $employee->id,
+                'employee_name' => $employee->name,
+                'employee_id_number' => $employee->id_number,
+                'employee_gender' => $genderValue,
+                'employee_birth_date' => $employee->birth_date,
+                'employee_phone' => $employee->phone,
+                'employee_status' => null,
+                'project_id' => $activeProject->id,
+                'account_set_id' => $accountSetId,
+                'change_type' => 'decrease',
+                'status' => 'pending',
+                'fully_confirmed' => false,
+                'social_security_region_id' => $employee->social_security_region_id,
+                'medical_insurance_region_id' => $employee->medical_insurance_region_id,
+                'housing_fund_region_id' => $employee->housing_fund_region_id,
+                'housing_fund_config_id' => $employee->housing_fund_config_id,
+                'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id,
+                'large_medical_insurance_enabled' => false,
+                'employee_social_security_base' => $employee->social_security_base,
+                'employee_medical_insurance_base' => $employee->medical_insurance_base,
+                'employee_housing_fund_base' => $employee->housing_fund_base,
+                'employee_large_medical_base' => $employee->large_medical_base,
+                'employee_large_medical_company_base' => $employee->large_medical_company_base,
+                'change_summary' => '关闭大额医疗保险',
+                'change_details' => json_encode([
+                    [
+                        'category' => 'large_medical_insurance',
+                        'action' => 'disabled',
+                        'item' => '大额医疗保险',
+                        'description' => '关闭大额医疗保险参保'
+                    ]
+                ], JSON_UNESCAPED_UNICODE),
+                'created_by' => $request->user() ? $request->user()->id : null,
+            ]);
+
+            $change->saveCompleteInsuranceConfig();
+
+            DB::commit();
+
+            \Log::info('关闭大额医疗保险任务创建成功', [
+                'employee_id' => $employee->id,
+                'employee_name' => $employee->name,
+                'insurance_change_id' => $change->id
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => '已创建大额医疗保险退保任务，请在增减管理中确认处理',
+                'data' => [
+                    'insurance_change_id' => $change->id
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('关闭大额医疗保险失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '关闭失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function buildLargeMedicalStatusData(Employee $employee): array
+    {
+        if (!$employee->large_medical_insurance_config_id) {
+            return [
+                'has_config' => false,
+                'is_enrolled' => false,
+                'has_pending_task' => false,
+                'can_enable' => false,
+                'can_disable' => false,
+                'status' => 'no_config',
+                'status_text' => '未配置',
+            ];
+        }
+
+        $insurancePersonnel = \App\Models\InsurancePersonnel::where('employee_id', $employee->id)
+            ->where('large_medical_insurance_enabled', true)
+            ->where('status', 'active')
+            ->first();
+
+        $pendingTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
+            ->whereIn('status', ['pending', 'submitted'])
+            ->whereIn('change_summary', ['开启大额医疗保险', '关闭大额医疗保险'])
+            ->latest('id')
+            ->first();
+
+        if ($pendingTask) {
+            $isDisableTask = $pendingTask->change_summary === '关闭大额医疗保险';
+
+            return [
+                'has_config' => true,
+                'is_enrolled' => (bool) $insurancePersonnel,
+                'has_pending_task' => true,
+                'can_enable' => false,
+                'can_disable' => false,
+                'status' => $isDisableTask ? 'pending_disable' : 'pending_enable',
+                'status_text' => $isDisableTask ? '待退保' : '待开启',
+            ];
+        }
+
+        if ($insurancePersonnel) {
+            return [
+                'has_config' => true,
+                'is_enrolled' => true,
+                'has_pending_task' => false,
+                'can_enable' => false,
+                'can_disable' => true,
+                'status' => 'enrolled',
+                'status_text' => '已参保',
+            ];
+        }
+
+        $completedTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
+            ->where('status', 'completed')
+            ->where('fully_confirmed', true)
+            ->first();
+
+        if (!$completedTask) {
+            return [
+                'has_config' => true,
+                'is_enrolled' => false,
+                'has_pending_task' => false,
+                'can_enable' => false,
+                'can_disable' => false,
+                'status' => 'not_onboarded',
+                'status_text' => '未入职',
+            ];
+        }
+
+        return [
+            'has_config' => true,
+            'is_enrolled' => false,
+            'has_pending_task' => false,
+            'can_enable' => true,
+            'can_disable' => false,
+            'status' => 'can_enable',
+            'status_text' => '未参保',
+        ];
     }
     
     /**

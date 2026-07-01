@@ -257,13 +257,6 @@ class SocialSecurityController extends Controller
             }
         }
 
-        if ($request->has('name') && (string) $request->name !== (string) $region->name) {
-            return response()->json([
-                'success' => false,
-                'message' => '地区名称创建后不能修改'
-            ], 422);
-        }
-
         // 检查地区名称是否重复（兼容创建时保留的同名校验）
         if ($request->has('name')) {
             $exists = SocialSecurityRegion::where('account_set_id', $region->account_set_id)
@@ -281,7 +274,7 @@ class SocialSecurityController extends Controller
 
         // 准备更新数据
         $updateData = [];
-        if ($request->has('name') && (string) $request->name === (string) $region->name) {
+        if ($request->has('name')) {
             $updateData['name'] = $request->name;
         }
         if ($request->has('code')) {

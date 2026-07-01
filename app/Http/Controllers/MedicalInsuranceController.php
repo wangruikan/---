@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MedicalInsuranceRegion;
 use App\Models\MedicalInsuranceType;
+use App\Models\LargeMedicalInsuranceConfig;
 use App\Models\OperationLog;
 use App\Services\InsuranceChangeDetectionService;
 use App\Services\InsuranceLimitPendingService;
@@ -216,18 +217,42 @@ class MedicalInsuranceController extends Controller
             ], 403);
         }
 
-        if ((string) $request->input('name') !== (string) $region->name) {
-            return response()->json([
-                'success' => false,
-                'message' => '地区名称创建后不能修改'
-            ], 422);
+        $oldRegionName = (string) $region->name;
+        $newRegionName = (string) $request->input('name');
+
+        if ($newRegionName !== $oldRegionName) {
+            $existingRegion = MedicalInsuranceRegion::where('account_set_id', $region->account_set_id)
+                ->where('name', $newRegionName)
+                ->where('id', '!=', $region->id)
+                ->first();
+
+            if ($existingRegion) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该地区已存在'
+                ], 422);
+            }
+
+            $hasOldLargeMedicalConfig = LargeMedicalInsuranceConfig::where('account_set_id', $region->account_set_id)
+                ->where('region_name', $oldRegionName)
+                ->exists();
+            $hasTargetLargeMedicalConfig = LargeMedicalInsuranceConfig::where('account_set_id', $region->account_set_id)
+                ->where('region_name', $newRegionName)
+                ->exists();
+
+            if ($hasOldLargeMedicalConfig && $hasTargetLargeMedicalConfig) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '新地区名称下已存在大额医疗配置，请先处理该配置后再修改地区名称'
+                ], 422);
+            }
         }
 
         // 保存旧数据用于变更检测
         $oldData = $region->toArray();
 
         $updateData = [];
-        if ((string) $request->input('name') !== (string) $region->name) {
+        if ($request->has('name') && (string) $request->input('name') !== (string) $region->name) {
             $updateData['name'] = $request->input('name');
         }
         if ($request->has('code') && (string) $request->input('code') !== (string) $region->code) {
@@ -282,7 +307,17 @@ class MedicalInsuranceController extends Controller
         ]);
 
         if (!empty($updateData)) {
-            $region->update($updateData);
+            DB::transaction(function () use ($region, $updateData, $oldRegionName) {
+                $region->update($updateData);
+
+                if (array_key_exists('name', $updateData)) {
+                    LargeMedicalInsuranceConfig::where('account_set_id', $region->account_set_id)
+                        ->where('region_name', $oldRegionName)
+                        ->update(['region_name' => $region->name]);
+                }
+            });
+
+            $region->refresh();
             $shouldDetect = true;
         }
 

@@ -36,7 +36,7 @@
 
     <!-- 付款申请列表 -->
     <el-card class="table-card">
-      <el-table :data="applicationList" v-loading="loading" border stripe>
+      <el-table class="sticky-payment-table" :data="applicationList" v-loading="loading" border stripe>
         <el-table-column prop="id" label="申请ID" width="80" />
         <el-table-column label="付款类型" width="140">
           <template #default="{ row }">
@@ -1769,6 +1769,26 @@ onMounted(async () => {
 
 .table-card {
   margin-bottom: 20px;
+}
+
+:deep(.sticky-payment-table.el-table) {
+  overflow: visible;
+}
+
+:deep(.sticky-payment-table .el-table__inner-wrapper) {
+  overflow: visible;
+}
+
+:deep(.sticky-payment-table .el-table__header-wrapper),
+:deep(.sticky-payment-table .el-table__fixed-header-wrapper) {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+:deep(.sticky-payment-table .el-table__header th.el-table__cell),
+:deep(.sticky-payment-table .el-table__fixed-header-wrapper th.el-table__cell) {
+  background: #fff;
 }
 
 .pagination-container {

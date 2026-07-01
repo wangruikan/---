@@ -405,6 +405,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // 大额医疗保险管理
         Route::get('/{id}/large-medical-status', [EmployeeController::class, 'getLargeMedicalStatus']);
         Route::post('/{id}/enable-large-medical', [EmployeeController::class, 'enableLargeMedical']);
+        Route::post('/{id}/disable-large-medical', [EmployeeController::class, 'disableLargeMedical']);
     });
     
     // 批量导出入职登记表PDF

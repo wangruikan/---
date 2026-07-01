@@ -147,7 +147,7 @@ class InsurancePersonnel extends Model
             ->get();
 
         // decrease: remove all matching current records
-        if ($change->change_type === 'decrease') {
+        if ($change->change_type === 'decrease' && !self::isLargeMedicalDisableOnlyChange($change)) {
             foreach ($matchedRecords as $record) {
                 \Log::info('删除参保人员记录', [
                     'personnel_id' => $record->id,
@@ -289,6 +289,32 @@ class InsurancePersonnel extends Model
         }
 
         return $personnel;
+    }
+
+    private static function isLargeMedicalDisableOnlyChange($change): bool
+    {
+        if (($change->change_summary ?? '') === '关闭大额医疗保险') {
+            return true;
+        }
+
+        if (!method_exists($change, 'parseChangeDetails')) {
+            return false;
+        }
+
+        $details = $change->parseChangeDetails();
+        if (!is_array($details) || empty($details)) {
+            return false;
+        }
+
+        $categories = collect($details)
+            ->pluck('category')
+            ->filter(fn ($category) => is_string($category) && trim($category) !== '')
+            ->map(fn ($category) => trim($category))
+            ->unique()
+            ->values()
+            ->all();
+
+        return count($categories) === 1 && $categories[0] === 'large_medical_insurance';
     }
 
     /**

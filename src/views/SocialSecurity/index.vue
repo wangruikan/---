@@ -46,9 +46,9 @@
         </div>
       </template>
 
-      <el-table :data="filteredSocialRegions" v-loading="loading" stripe @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="55" />
-        <el-table-column prop="name" label="地区名称" width="200" />
+      <el-table class="sticky-region-table" :data="filteredSocialRegions" v-loading="loading" stripe max-height="420" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" fixed="left" />
+        <el-table-column prop="name" label="地区名称" width="200" fixed="left" />
         <el-table-column prop="code" label="社保编号" width="180" />
         <el-table-column label="进行中上下限" width="230">
           <template #default="{ row }">
@@ -119,7 +119,7 @@
     >
       <el-form :model="regionForm" :rules="regionRules" ref="regionFormRef" label-width="120px">
         <el-form-item label="地区名称" prop="name">
-          <el-input v-model="regionForm.name" placeholder="请输入地区名称" :disabled="!!editingRegion" />
+          <el-input v-model="regionForm.name" placeholder="请输入地区名称" />
         </el-form-item>
         <el-form-item label="社保编号" prop="code">
           <el-input v-model="regionForm.code" placeholder="请输入社保编号（可选）" />
@@ -351,9 +351,9 @@
             </div>
           </template>
 
-          <el-table :data="filteredMedicalRegions" v-loading="medicalLoading" stripe @selection-change="handleMedicalSelectionChange">
-            <el-table-column type="selection" width="55" />
-            <el-table-column prop="name" label="地区名称" width="200" />
+          <el-table class="sticky-region-table" :data="filteredMedicalRegions" v-loading="medicalLoading" stripe max-height="420" @selection-change="handleMedicalSelectionChange">
+            <el-table-column type="selection" width="55" fixed="left" />
+            <el-table-column prop="name" label="地区名称" width="200" fixed="left" />
             <el-table-column prop="code" label="医保编号" width="180" />
             <el-table-column label="进行中上下限" width="230">
               <template #default="{ row }">
@@ -421,7 +421,7 @@
         >
           <el-form :model="medicalRegionForm" :rules="regionRules" ref="medicalRegionFormRef" label-width="120px">
             <el-form-item label="地区名称" prop="name">
-              <el-input v-model="medicalRegionForm.name" placeholder="请输入地区名称" :disabled="!!editingMedicalRegion" />
+              <el-input v-model="medicalRegionForm.name" placeholder="请输入地区名称" />
             </el-form-item>
             <el-form-item label="医保编号" prop="code">
               <el-input v-model="medicalRegionForm.code" placeholder="请输入医保编号（可选）" />
@@ -1256,10 +1256,24 @@ const loadRegions = async () => {
   }
 }
 
+const refreshCurrentSocialRegion = async (regionId = currentRegion.value?.id) => {
+  if (!regionId) return null
+
+  const response = await getSocialSecurityRegion(regionId)
+  currentRegion.value = response.data
+  return response.data
+}
+
 // 查看类型
-const viewTypes = (region) => {
-  currentRegion.value = region
-  showTypesDialog.value = true
+const viewTypes = async (region) => {
+  try {
+    await refreshCurrentSocialRegion(region.id)
+    resetTypeForm()
+    showTypesDialog.value = true
+  } catch (error) {
+    console.error('获取社保地区详情失败:', error)
+    ElMessage.error('获取社保地区详情失败')
+  }
 }
 
 const showSocialRegionHistory = async (region) => {
@@ -1529,7 +1543,8 @@ const deleteType = async (type) => {
 
     await deleteSocialSecurityType(type.id)
     ElMessage.success('删除成功')
-    loadRegions() // 重新加载以更新类型列表
+    await loadRegions()
+    await refreshCurrentSocialRegion()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除类型失败:', error)
@@ -1561,10 +1576,9 @@ const handleSubmitType = async () => {
       ElMessage.success('添加成功')
     }
 
+    await loadRegions()
+    await refreshCurrentSocialRegion()
     showAddTypeDialog.value = false
-    showTypesDialog.value = false
-    resetTypeForm()
-    loadRegions() // 重新加载以更新类型列表
   } catch (error) {
     console.error('提交类型表单失败:', error)
     ElMessage.error(editingType.value ? '更新失败' : '添加失败')
@@ -1929,9 +1943,9 @@ const handleSubmitMedicalType = async () => {
       ElMessage.success('添加成功')
     }
 
-    showAddMedicalTypeDialog.value = false
     await loadMedicalRegions()
     await refreshCurrentMedicalRegion()
+    showAddMedicalTypeDialog.value = false
   } catch (error) {
     console.error('提交医保类型表单失败:', error)
     ElMessage.error(error?.response?.data?.message || (editingMedicalType.value ? '更新失败' : '添加失败'))
@@ -2900,6 +2914,26 @@ const saveTemplate = async () => {
 
 .region-list-card {
   margin-bottom: 20px;
+}
+
+:deep(.sticky-region-table.el-table) {
+  overflow: visible;
+}
+
+:deep(.sticky-region-table .el-table__inner-wrapper) {
+  overflow: visible;
+}
+
+:deep(.sticky-region-table .el-table__header-wrapper),
+:deep(.sticky-region-table .el-table__fixed-header-wrapper) {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+:deep(.sticky-region-table .el-table__header th.el-table__cell),
+:deep(.sticky-region-table .el-table__fixed-header-wrapper th.el-table__cell) {
+  background: #fff;
 }
 
 .card-header {

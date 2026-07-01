@@ -452,12 +452,12 @@
               <!-- 大额医疗保险按钮（仅在职状态显示） -->
               <el-button 
                 v-if="row.contract_status === 'active' && row.largeMedicalStatus && row.largeMedicalStatus.has_config"
-                :type="getLargeMedicalButtonType(row.largeMedicalStatus)"
+                :type="row.largeMedicalStatus.can_disable ? 'danger' : getLargeMedicalButtonType(row.largeMedicalStatus)"
                 size="small" 
-                :disabled="!row.largeMedicalStatus.can_enable"
-                @click="handleEnableLargeMedical(row)"
+                :disabled="!canOperateLargeMedical(row.largeMedicalStatus)"
+                @click="handleLargeMedicalAction(row)"
               >
-                {{ row.largeMedicalStatus.status_text }}
+                {{ getLargeMedicalActionText(row.largeMedicalStatus) }}
               </el-button>
               <el-button type="primary" size="small" @click="handlePrintEmployee(row)">
                 打印
@@ -1976,7 +1976,7 @@
               <div class="form-tip">只能从员工所属项目设置的大额医疗保险配置中选择</div>
             </el-form-item>
           </el-col>
-          <!-- 大额医疗保险开启按钮 -->
+          <!-- 大额医疗保险状态按钮 -->
           <el-col :span="8" v-if="isEdit && currentLargeMedicalStatus">
             <el-form-item label="大额参保状态">
               <div style="display: flex; align-items: center; gap: 10px;">
@@ -1984,17 +1984,18 @@
                   {{ currentLargeMedicalStatus.status_text }}
                 </el-tag>
                 <el-button 
-                  v-if="currentLargeMedicalStatus.can_enable"
-                  type="primary" 
+                  v-if="canOperateLargeMedical(currentLargeMedicalStatus)"
+                  :type="currentLargeMedicalStatus.can_disable ? 'danger' : 'primary'" 
                   size="small"
-                  @click="handleEnableLargeMedicalInDialog"
+                  @click="handleLargeMedicalActionInDialog"
                 >
-                  开启大额参保
+                  {{ getLargeMedicalActionText(currentLargeMedicalStatus) }}
                 </el-button>
               </div>
               <div class="form-tip">
-                <span v-if="currentLargeMedicalStatus.status === 'enrolled'">大额医疗保险已参保</span>
-                <span v-else-if="currentLargeMedicalStatus.status === 'pending'">已创建开启任务，请在增减管理中确认处理</span>
+                <span v-if="currentLargeMedicalStatus.status === 'enrolled'">大额医疗保险已参保，可发起退保任务</span>
+                <span v-else-if="currentLargeMedicalStatus.status === 'pending_enable'">已创建开启任务，请在增减管理中确认处理</span>
+                <span v-else-if="currentLargeMedicalStatus.status === 'pending_disable'">已创建退保任务，请在增减管理中确认处理</span>
                 <span v-else-if="currentLargeMedicalStatus.status === 'can_enable'">点击按钮开启大额医疗保险参保</span>
                 <span v-else-if="currentLargeMedicalStatus.status === 'not_onboarded'">员工尚未完成入职流程</span>
               </div>
@@ -6965,14 +6966,41 @@ const loadCurrentLargeMedicalStatus = async (employeeId) => {
 const getLargeMedicalButtonType = (status) => {
   if (!status) return 'info'
   switch (status.status) {
-    case 'enrolled':
-      return 'success'
-    case 'pending':
+    case 'pending_enable':
+    case 'pending_disable':
       return 'warning'
     case 'can_enable':
       return 'primary'
+    case 'enrolled':
+      return 'success'
     default:
       return 'info'
+  }
+}
+
+const canOperateLargeMedical = (status) => {
+  return Boolean(status?.can_enable || status?.can_disable)
+}
+
+const getLargeMedicalActionText = (status) => {
+  if (!status) return '大额参保'
+  if (status.can_enable) return '开启大额参保'
+  if (status.can_disable) return '关闭大额参保'
+  return status.status_text || '大额参保'
+}
+
+const handleLargeMedicalAction = async (row) => {
+  if (!row?.largeMedicalStatus) {
+    return
+  }
+
+  if (row.largeMedicalStatus.can_enable) {
+    await handleEnableLargeMedical(row)
+    return
+  }
+
+  if (row.largeMedicalStatus.can_disable) {
+    await handleDisableLargeMedical(row)
   }
 }
 
@@ -7012,6 +7040,39 @@ const handleEnableLargeMedical = async (row) => {
     if (error !== 'cancel') {
       console.error('开启大额医疗保险失败:', error)
       ElMessage.error(error.response?.data?.message || error.message || '开启失败')
+    }
+  }
+}
+
+// 在列表中关闭大额医疗保险（表格按钮）
+const handleDisableLargeMedical = async (row) => {
+  if (!row.largeMedicalStatus || !row.largeMedicalStatus.can_disable) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要为 ${row.name} 发起大额医疗保险退保吗？\n\n发起后将在增减管理中生成一条待处理任务，需要确认处理后才能正式退保。`,
+      '关闭大额医疗保险',
+      {
+        confirmButtonText: '确定退保',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const response = await request.post(`/employees/${row.id}/disable-large-medical`)
+
+    if (response.success) {
+      ElMessage.success(response.message || '已创建大额医疗保险退保任务')
+      await loadEmployees()
+    } else {
+      ElMessage.error(response.message || '退保失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('关闭大额医疗保险失败:', error)
+      ElMessage.error(error.response?.data?.message || error.message || '退保失败')
     }
   }
 }
@@ -7716,6 +7777,59 @@ const loadProjectDocumentSets = async (projectId, preferredSetId = null) => {
     return null
   } finally {
     loadingProjectDocumentSets.value = false
+  }
+}
+
+// 在编辑对话框中关闭大额医疗保险
+const handleDisableLargeMedicalInDialog = async () => {
+  if (!currentLargeMedicalStatus.value || !currentLargeMedicalStatus.value.can_disable) {
+    return
+  }
+
+  if (!currentEditingEmployeeId.value) {
+    ElMessage.error('无法获取员工信息')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确定要为该员工发起大额医疗保险退保吗？\n\n发起后将在增减管理中生成一条待处理任务，需要确认处理后才能正式退保。',
+      '关闭大额医疗保险',
+      {
+        confirmButtonText: '确定退保',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const response = await request.post(`/employees/${currentEditingEmployeeId.value}/disable-large-medical`)
+
+    if (response.success) {
+      ElMessage.success(response.message || '已创建大额医疗保险退保任务')
+      await loadCurrentLargeMedicalStatus(currentEditingEmployeeId.value)
+    } else {
+      ElMessage.error(response.message || '退保失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('关闭大额医疗保险失败:', error)
+      ElMessage.error(error.response?.data?.message || error.message || '退保失败')
+    }
+  }
+}
+
+const handleLargeMedicalActionInDialog = async () => {
+  if (!currentLargeMedicalStatus.value) {
+    return
+  }
+
+  if (currentLargeMedicalStatus.value.can_enable) {
+    await handleEnableLargeMedicalInDialog()
+    return
+  }
+
+  if (currentLargeMedicalStatus.value.can_disable) {
+    await handleDisableLargeMedicalInDialog()
   }
 }
 

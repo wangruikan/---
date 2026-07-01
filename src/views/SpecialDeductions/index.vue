@@ -137,6 +137,105 @@
             </div>
           </div>
         </el-tab-pane>
+
+        <el-tab-pane label="基础减除设置" name="basic_deduction">
+          <div class="tab-content">
+            <div class="toolbar">
+              <el-form :model="basicDeductionSearchForm" inline>
+                <el-form-item label="项目">
+                  <el-select
+                    v-model="basicDeductionSearchForm.project_id"
+                    placeholder="请选择项目"
+                    clearable
+                    style="width: 220px"
+                    @change="handleBasicDeductionSearch"
+                  >
+                    <el-option
+                      v-for="project in safeProjects"
+                      :key="project.id"
+                      :label="project.name"
+                      :value="project.id"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="员工">
+                  <el-input
+                    v-model="basicDeductionSearchForm.search"
+                    placeholder="请输入员工姓名或身份证号"
+                    clearable
+                    style="width: 240px"
+                    @keyup.enter="loadBasicDeductionEmployees"
+                  />
+                </el-form-item>
+
+                <el-form-item>
+                  <el-button type="primary" @click="loadBasicDeductionEmployees">
+                    <el-icon><Search /></el-icon>
+                    搜索
+                  </el-button>
+                  <el-button
+                    type="primary"
+                    :disabled="!basicDeductionSelection.length"
+                    @click="handleBatchSetBasicDeduction(true)"
+                  >
+                    批量设为固定6万
+                  </el-button>
+                  <el-button
+                    :disabled="!basicDeductionSelection.length"
+                    @click="handleBatchSetBasicDeduction(false)"
+                  >
+                    批量恢复按月累计
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <el-table
+              :data="safeBasicDeductionEmployees"
+              v-loading="basicDeductionLoading"
+              stripe
+              border
+              style="margin-top: 20px"
+              @selection-change="handleBasicDeductionSelectionChange"
+            >
+              <el-table-column type="selection" width="55" />
+              <el-table-column label="序号" type="index" width="70" :index="getBasicDeductionRowIndex" />
+              <el-table-column prop="employee_name" label="员工姓名" width="140" />
+              <el-table-column prop="id_number" label="身份证号" width="190" />
+              <el-table-column prop="project_name" label="所属项目" min-width="180" show-overflow-tooltip />
+              <el-table-column label="当前模式" width="160">
+                <template #default="{ row }">
+                  <el-tag :type="row.is_annual_deduction ? 'success' : 'info'">
+                    {{ row.basic_deduction_mode_text }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="基础减除开关" width="180">
+                <template #default="{ row }">
+                  <el-switch
+                    :model-value="row.is_annual_deduction"
+                    active-text="固定6万"
+                    inactive-text="按月累计"
+                    @change="value => handleSingleBasicDeductionChange(row, value)"
+                  />
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="pagination">
+              <el-pagination
+                v-model:current-page="basicDeductionPagination.currentPage"
+                v-model:page-size="basicDeductionPagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="basicDeductionPagination.total"
+                layout="total, sizes, prev, pager, next, jumper"
+                @size-change="loadBasicDeductionEmployees"
+                @current-change="loadBasicDeductionEmployees"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -193,15 +292,20 @@ import { Search, Plus } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
 import {
   getDeductionItems,
+  getBasicDeductionEmployees,
+  batchSetBasicDeduction,
   createDeductionItem,
   updateDeductionItem,
   deleteDeductionItem
 } from '@/api/specialDeductions'
+import { getProjects } from '@/api/projects'
 
 const route = useRoute()
 const accountSetStore = useAccountSetStore()
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 const activeTab = ref('items')
+const projects = ref([])
+const safeProjects = computed(() => Array.isArray(projects.value) ? projects.value : [])
 
 const deductionItems = ref([])
 const safeDeductionItems = computed(() => Array.isArray(deductionItems.value) ? deductionItems.value : [])
@@ -222,6 +326,20 @@ const otherItemSearchForm = reactive({
   search: ''
 })
 const otherItemPagination = reactive({
+  currentPage: 1,
+  pageSize: 20,
+  total: 0
+})
+
+const basicDeductionEmployees = ref([])
+const safeBasicDeductionEmployees = computed(() => Array.isArray(basicDeductionEmployees.value) ? basicDeductionEmployees.value : [])
+const basicDeductionLoading = ref(false)
+const basicDeductionSelection = ref([])
+const basicDeductionSearchForm = reactive({
+  project_id: '',
+  search: ''
+})
+const basicDeductionPagination = reactive({
   currentPage: 1,
   pageSize: 20,
   total: 0
@@ -270,6 +388,25 @@ const formatDateTime = (datetime) => {
   })
 }
 
+const getBasicDeductionRowIndex = (index) => {
+  return (basicDeductionPagination.currentPage - 1) * basicDeductionPagination.pageSize + index + 1
+}
+
+const loadProjects = async () => {
+  try {
+    const res = await getProjects({
+      per_page: 1000,
+      current_account_set_id: currentAccountSetId.value
+    })
+    if (res.success) {
+      projects.value = res.data?.data || res.data || []
+    }
+  } catch (error) {
+    console.error('加载项目失败', error)
+    projects.value = []
+  }
+}
+
 const loadDeductionItems = async () => {
   itemsLoading.value = true
   try {
@@ -316,11 +453,91 @@ const loadOtherDeductionItems = async () => {
   }
 }
 
+const loadBasicDeductionEmployees = async () => {
+  basicDeductionLoading.value = true
+  try {
+    const params = {
+      page: basicDeductionPagination.currentPage,
+      per_page: basicDeductionPagination.pageSize,
+      current_account_set_id: currentAccountSetId.value
+    }
+
+    if (basicDeductionSearchForm.project_id) {
+      params.project_id = basicDeductionSearchForm.project_id
+    }
+
+    if (basicDeductionSearchForm.search) {
+      params.search = basicDeductionSearchForm.search
+    }
+
+    const res = await getBasicDeductionEmployees(params)
+    if (res.success) {
+      basicDeductionEmployees.value = (res.data || []).filter(item => item !== null)
+      basicDeductionPagination.total = res.total || 0
+    }
+  } catch (error) {
+    ElMessage.error('加载基础减除设置失败')
+    console.error(error)
+    basicDeductionEmployees.value = []
+  } finally {
+    basicDeductionLoading.value = false
+  }
+}
+
 const loadCurrentTab = () => {
   if (activeTab.value === 'other') {
     loadOtherDeductionItems()
+  } else if (activeTab.value === 'basic_deduction') {
+    loadBasicDeductionEmployees()
   } else {
     loadDeductionItems()
+  }
+}
+
+const handleBasicDeductionSelectionChange = (rows) => {
+  basicDeductionSelection.value = rows || []
+}
+
+const handleBasicDeductionSearch = () => {
+  basicDeductionPagination.currentPage = 1
+  loadBasicDeductionEmployees()
+}
+
+const submitBasicDeductionChange = async (employeeIds, isAnnualDeduction) => {
+  const res = await batchSetBasicDeduction({
+    employee_ids: employeeIds,
+    is_annual_deduction: isAnnualDeduction,
+    current_account_set_id: currentAccountSetId.value
+  })
+
+  if (!res.success) {
+    throw new Error(res.message || '设置失败')
+  }
+
+  ElMessage.success(res.message || '设置成功')
+  await loadBasicDeductionEmployees()
+}
+
+const handleSingleBasicDeductionChange = async (row, value) => {
+  try {
+    await submitBasicDeductionChange([row.employee_id], value)
+  } catch (error) {
+    ElMessage.error(error.message || '设置失败')
+  }
+}
+
+const handleBatchSetBasicDeduction = async (isAnnualDeduction) => {
+  if (!basicDeductionSelection.value.length) {
+    ElMessage.warning('请先选择员工')
+    return
+  }
+
+  try {
+    const employeeIds = basicDeductionSelection.value.map(item => item.employee_id).filter(Boolean)
+    await submitBasicDeductionChange(employeeIds, isAnnualDeduction)
+    basicDeductionSelection.value = []
+  } catch (error) {
+    ElMessage.error(error.message || '批量设置失败')
   }
 }
 
@@ -422,6 +639,7 @@ const handleTabChange = () => {
 
 watch(currentAccountSetId, (newId, oldId) => {
   if (newId && newId !== oldId) {
+    loadProjects()
     loadCurrentTab()
   }
 })
@@ -429,12 +647,15 @@ watch(currentAccountSetId, (newId, oldId) => {
 onMounted(async () => {
   if (route.query.tab === 'other') {
     activeTab.value = 'other'
+  } else if (route.query.tab === 'basic_deduction') {
+    activeTab.value = 'basic_deduction'
   }
 
   if (!currentAccountSetId.value) {
     await accountSetStore.loadMyAccountSets()
   }
 
+  await loadProjects()
   loadCurrentTab()
 })
 </script>

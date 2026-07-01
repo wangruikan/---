@@ -190,6 +190,7 @@ class InvoiceApplicationController extends Controller
             'status' => 'nullable|in:normal,red_flushed',
             'red_flush_source_id' => 'nullable|integer|exists:invoice_applications,id',
             'project_id' => 'nullable|exists:projects,id',
+            'invoice_info_index' => 'nullable|integer|min:0',
             'project_name' => 'nullable|required_without:project_id|string|max:100',
             'remark' => 'nullable|string|max:500',
             'period_year' => 'nullable|integer|min:2000|max:2100',
@@ -303,9 +304,10 @@ class InvoiceApplicationController extends Controller
 
         if ($project) {
             $projectName = $project->name;
-            $invoiceInfos = is_array($project->invoice_infos) ? $project->invoice_infos : [];
-            $primaryInvoiceInfo = $invoiceInfos[0] ?? [];
-            $projectCompanyName = trim((string) ($primaryInvoiceInfo['company_name'] ?? ''));
+            $invoiceInfos = is_array($project->invoice_infos) ? array_values($project->invoice_infos) : [];
+            $invoiceInfoIndex = max(0, (int) $request->input('invoice_info_index', 0));
+            $selectedInvoiceInfo = $invoiceInfos[$invoiceInfoIndex] ?? ($invoiceInfos[0] ?? []);
+            $projectCompanyName = trim((string) ($selectedInvoiceInfo['company_name'] ?? ''));
             if ($projectCompanyName !== '') {
                 $resolvedCompanyName = $projectCompanyName;
             }
@@ -397,6 +399,13 @@ class InvoiceApplicationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '请至少添加1条扣除明细'
+            ], 422);
+        }
+
+        if (($normalizedInvoiceMethod === 'full' || $normalizedInvoiceMethod === 'diff') && count($contentItems) > 1) {
+            return response()->json([
+                'success' => false,
+                'message' => '差额或全额开票时，开票内容明细只支持1条'
             ], 422);
         }
 

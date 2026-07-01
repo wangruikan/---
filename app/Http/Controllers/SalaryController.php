@@ -1257,36 +1257,7 @@ class SalaryController extends Controller
                 'cumulative_special_deduction' => $cumulativeSpecialDeduction,
             ]);
             
-            // 累计减除费用 = 5000 × 实际工作月数
-            // 需要考虑员工入职时间：如果入职时间在当年1月之后，则从入职月份开始计算
-            $actualMonthCount = $monthCount; // 默认从1月开始
-            
-            if ($employee->hire_date) {
-                $hireDate = \Carbon\Carbon::parse($employee->hire_date)->timezone('Asia/Shanghai');
-                $currentYear = intval($year);
-                
-                // 如果入职年份是当年，且入职月份在1月之后
-                if ($hireDate->year == $currentYear && $hireDate->month > 1) {
-                    // 从入职月份到本月的月数
-                    $actualMonthCount = $monthCount - $hireDate->month + 1;
-                    
-                    \Log::info('累计减除费用 - 入职时间调整', [
-                        'employee_id' => $employee->id,
-                        'employee_name' => $employee->name,
-                        'hire_date' => $employee->hire_date,
-                        'hire_month' => $hireDate->month,
-                        'current_month' => $monthCount,
-                        'actual_month_count' => $actualMonthCount,
-                    ]);
-                }
-                // 如果入职年份晚于当年，则月数为0（不应该发生，但做保护）
-                elseif ($hireDate->year > $currentYear) {
-                    $actualMonthCount = 0;
-                }
-                // 如果入职年份早于当年，或入职月份是1月，则使用默认月数
-            }
-            
-            $cumulativeBasicDeduction = 5000 * $actualMonthCount;
+            $cumulativeBasicDeduction = $this->resolveCumulativeBasicDeduction($employee, intval($year), $monthCount);
             
             // 累计应纳税所得额
             $cumulativeTaxableIncome = $cumulativeIncomeWithCurrent 
@@ -2512,6 +2483,10 @@ class SalaryController extends Controller
 
     private function resolveCumulativeBasicDeduction($employee, int $year, int $monthNum): float
     {
+        if ($employee && $employee->is_annual_deduction) {
+            return 60000.0;
+        }
+
         $actualMonthCount = $monthNum;
 
         if ($employee && $employee->hire_date) {

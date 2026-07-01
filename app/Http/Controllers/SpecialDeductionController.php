@@ -639,6 +639,78 @@ class SpecialDeductionController extends Controller
         }
     }
 
+    // 获取基础减除设置员工列表
+    public function getBasicDeductionEmployees(Request $request)
+    {
+        if ($response = $this->checkPermission('special_deductions.view')) {
+            return $response;
+        }
+
+        try {
+            $accountSetId = $this->getAccountSetId($request);
+
+            $query = $this->activeEmployeesQuery($accountSetId)
+                ->select(
+                    'employees.id as employee_id',
+                    'employees.name as employee_name',
+                    'employees.id_number',
+                    'employees.is_annual_deduction'
+                );
+
+            if ($request->has('project_id') && $request->project_id !== '') {
+                $query->whereExists(function ($q) use ($request) {
+                    $q->select(DB::raw(1))
+                        ->from('employee_projects')
+                        ->whereColumn('employee_projects.employee_id', 'employees.id')
+                        ->where('employee_projects.project_id', $request->project_id);
+                });
+            }
+
+            if ($request->has('search') && $request->search) {
+                $query->where(function ($q) use ($request) {
+                    $q->where('employees.name', 'like', '%' . $request->search . '%')
+                        ->orWhere('employees.id_number', 'like', '%' . $request->search . '%');
+                });
+            }
+
+            $employees = $query
+                ->orderBy('employees.name', 'asc')
+                ->paginate($request->get('per_page', 20));
+
+            $employeeIds = collect($employees->items())->pluck('employee_id')->filter()->values()->all();
+            $projectNamesByEmployeeId = $this->getProjectNamesByEmployeeIds($employeeIds);
+
+            $result = [];
+            foreach ($employees->items() as $employee) {
+                $isAnnualDeduction = (bool) $employee->is_annual_deduction;
+
+                $result[] = [
+                    'employee_id' => $employee->employee_id,
+                    'employee_name' => $employee->employee_name,
+                    'id_number' => $employee->id_number,
+                    'project_name' => $projectNamesByEmployeeId[$employee->employee_id] ?? '未分配项目',
+                    'is_annual_deduction' => $isAnnualDeduction,
+                    'basic_deduction_mode' => $isAnnualDeduction ? 'fixed_annual' : 'monthly_cumulative',
+                    'basic_deduction_mode_text' => $isAnnualDeduction ? '固定6万' : '按月累计5000',
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+                'total' => $employees->total(),
+                'current_page' => $employees->currentPage(),
+                'per_page' => $employees->perPage(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('获取基础减除设置员工列表失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '获取失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     // 获取项目下的员工（用于批量设置）
     public function getProjectEmployees(Request $request)
     {
@@ -847,6 +919,57 @@ class SpecialDeductionController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('批量设置员工专项扣除失败: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => '批量设置失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // 批量设置基础减除开关
+    public function batchSetBasicDeduction(Request $request)
+    {
+        if ($response = $this->checkPermission('special_deductions.edit')) {
+            return $response;
+        }
+
+        try {
+            $accountSetId = $this->getAccountSetId($request);
+
+            $validated = $request->validate([
+                'employee_ids' => 'required|array|min:1',
+                'employee_ids.*' => 'exists:employees,id',
+                'is_annual_deduction' => 'required|boolean',
+            ]);
+
+            $employeeIds = array_values(array_unique(array_map('intval', $validated['employee_ids'])));
+            $isAnnualDeduction = (bool) $validated['is_annual_deduction'];
+
+            $query = Employee::where('account_set_id', $accountSetId)
+                ->whereIn('id', $employeeIds);
+
+            $matchedCount = (clone $query)->count();
+            if ($matchedCount !== count($employeeIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '部分员工不存在或不属于当前账套'
+                ], 422);
+            }
+
+            $query->update([
+                'is_annual_deduction' => $isAnnualDeduction
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $isAnnualDeduction ? '基础减除已批量设置为固定6万' : '基础减除已批量恢复按月累计',
+                'data' => [
+                    'success_count' => $matchedCount,
+                    'is_annual_deduction' => $isAnnualDeduction,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('批量设置基础减除失败: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => '批量设置失败: ' . $e->getMessage()

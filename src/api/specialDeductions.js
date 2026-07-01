@@ -35,6 +35,24 @@ export function deleteDeductionItem(id) {
   })
 }
 
+// 获取基础减除设置员工列表
+export function getBasicDeductionEmployees(params) {
+  return request({
+    url: '/special-deductions/basic-deduction/employees',
+    method: 'get',
+    params
+  })
+}
+
+// 批量设置基础减除
+export function batchSetBasicDeduction(data) {
+  return request({
+    url: '/special-deductions/basic-deduction/batch-set',
+    method: 'post',
+    data
+  })
+}
+
 // 获取员工专项扣除列表
 export function getEmployeeDeductions(params) {
   return request({

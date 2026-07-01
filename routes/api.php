@@ -1045,6 +1045,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/items', [SpecialDeductionController::class, 'createDeductionItem']);
         Route::put('/items/{id}', [SpecialDeductionController::class, 'updateDeductionItem']);
         Route::delete('/items/{id}', [SpecialDeductionController::class, 'deleteDeductionItem']);
+
+        // 基础减除设置
+        Route::get('/basic-deduction/employees', [SpecialDeductionController::class, 'getBasicDeductionEmployees']);
+        Route::post('/basic-deduction/batch-set', [SpecialDeductionController::class, 'batchSetBasicDeduction']);
         
         // 员工专项扣除管理
         Route::get('/employees', [SpecialDeductionController::class, 'getEmployeeDeductions']);

@@ -228,6 +228,23 @@
         </el-row>
 
         <el-row v-if="createForm.project_id" :gutter="20">
+          <el-col v-if="selectedProjectInvoiceInfos.length > 1" :span="24">
+            <el-form-item label="开票信息">
+              <el-select
+                v-model="createForm.invoice_info_index"
+                placeholder="请选择要导入的开票信息"
+                style="width: 100%"
+                @change="handleCreateInvoiceInfoChange"
+              >
+                <el-option
+                  v-for="(item, index) in selectedProjectInvoiceInfos"
+                  :key="`${createForm.project_id}-invoice-info-${index}`"
+                  :label="formatInvoiceInfoLabel(item, index)"
+                  :value="index"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
           <el-col :span="12">
             <el-form-item label="开票单位">
               <el-input :model-value="selectedProjectInvoiceInfo.company_name" disabled />
@@ -268,7 +285,14 @@
         <el-divider content-position="left">开票内容明细</el-divider>
         <div class="section-header">
           <span>开票内容明细项</span>
-          <el-button type="primary" link @click="addCreateContentItem">增行</el-button>
+          <el-button
+            type="primary"
+            link
+            :disabled="createForm.invoice_method !== 'none'"
+            @click="addCreateContentItem"
+          >
+            增行
+          </el-button>
         </div>
         <el-table
           :data="createContentItems"
@@ -320,6 +344,7 @@
                 :precision="2"
                 :min="0"
                 :controls="false"
+                :disabled="createForm.invoice_method !== 'none'"
                 style="width: 100%"
               />
             </template>
@@ -363,7 +388,7 @@
                 type="danger"
                 link
                 @click="removeCreateContentItem($index)"
-                :disabled="createContentItems.length <= 1"
+                :disabled="createContentItems.length <= 1 || createForm.invoice_method !== 'none'"
               >
                 删除
               </el-button>
@@ -568,11 +593,12 @@
 
             <div class="section-header">
               <span>扣除明细项</span>
-              <el-button 
-                v-if="canEdit" 
-                type="primary" 
-                size="small" 
+              <el-button
+                v-if="canEdit"
+                type="primary"
+                size="small"
                 @click="handleAddItem"
+                :disabled="currentApplication.invoice_method !== 'full' && currentApplication.invoice_method !== 'diff'"
               >
                 <el-icon><Plus /></el-icon>
                 添加明细
@@ -592,7 +618,14 @@
               <el-table-column v-if="canEdit" label="操作" width="150" align="center">
                 <template #default="{ row }">
                   <el-button type="primary" link @click="handleEditItem(row)">编辑</el-button>
-                  <el-button type="danger" link @click="handleDeleteItem(row)">删除</el-button>
+                  <el-button
+                    type="danger"
+                    link
+                    @click="handleDeleteItem(row)"
+                    :disabled="currentApplication.invoice_method !== 'none' && currentApplication.items.length <= 1"
+                  >
+                    删除
+                  </el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -830,16 +863,16 @@
                 <!-- 扣除额 -->
                 <el-col :span="12">
                   <el-form-item label="扣除额" prop="deduction_amount">
-                    <el-input-number
-                      v-model="invoiceDetailsForm.deduction_amount"
-                      :precision="2"
-                      :min="0"
-                      :controls="false"
-                      disabled
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </el-col>
+                  <el-input-number
+                    v-model="invoiceDetailsForm.deduction_amount"
+                    :precision="2"
+                    :min="0"
+                    :controls="false"
+                    :disabled="invoiceDetailsForm.invoice_method !== 'none'"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
 
                 <!-- 开票税额 -->
                 <el-col :span="12">
@@ -1198,6 +1231,7 @@ const createForm = reactive({
   status: 'normal',
   red_flush_source_id: null,
   project_id: null,
+  invoice_info_index: 0,
   project_name: '',
   period_year: currentYear,
   period_month: currentMonth,
@@ -1275,6 +1309,51 @@ const createProjectInvoiceInfoDefaults = () => ({
 })
 const selectedProjectInvoiceInfo = reactive(createProjectInvoiceInfoDefaults())
 const isCreateRedFlushed = computed(() => createForm.status === 'red_flushed')
+
+const hasProjectInvoiceInfoValue = (invoiceInfo = {}) => {
+  return [
+    invoiceInfo.remark,
+    invoiceInfo.company_name,
+    invoiceInfo.tax_number,
+    invoiceInfo.company_address,
+    invoiceInfo.company_phone,
+    invoiceInfo.bank_name,
+    invoiceInfo.bank_account,
+    invoiceInfo.bank_code
+  ].some(value => String(value || '').trim())
+}
+
+const normalizeProjectInvoiceInfo = (invoiceInfo = {}) => ({
+  remark: String(invoiceInfo.remark || '').trim(),
+  company_name: String(invoiceInfo.company_name || '').trim(),
+  tax_number: String(invoiceInfo.tax_number || '').trim(),
+  company_address: String(invoiceInfo.company_address || '').trim(),
+  company_phone: String(invoiceInfo.company_phone || '').trim(),
+  bank_name: String(invoiceInfo.bank_name || '').trim(),
+  bank_account: String(invoiceInfo.bank_account || '').trim(),
+  bank_code: String(invoiceInfo.bank_code || '').trim()
+})
+
+const getProjectInvoiceInfos = (project) => {
+  if (!project) return []
+
+  const invoiceInfos = Array.isArray(project.invoice_infos)
+    ? project.invoice_infos.map(item => normalizeProjectInvoiceInfo(item)).filter(item => hasProjectInvoiceInfoValue(item))
+    : []
+
+  return invoiceInfos.length ? invoiceInfos : [normalizeProjectInvoiceInfo()]
+}
+
+const selectedProjectInvoiceInfos = computed(() => {
+  const project = projectOptions.value.find(item => Number(item.id) === Number(createForm.project_id)) || null
+  return getProjectInvoiceInfos(project)
+})
+
+const formatInvoiceInfoLabel = (invoiceInfo, index) => {
+  const remark = String(invoiceInfo?.remark || '').trim() || `开票信息${index + 1}`
+  const companyName = String(invoiceInfo?.company_name || '').trim() || '未填写企业名称'
+  return `${remark} | ${companyName}`
+}
 
 const buildInvoiceContentItemFromConfig = (config = null) => {
   return {
@@ -1388,6 +1467,11 @@ const removeCreateItem = (index) => {
 }
 
 const validateCreateExtraData = () => {
+  if (createNeedsDeductionAmount.value && normalizeCreateContentItems().length > 1) {
+    ElMessage.warning('差额或全额开票时，开票内容明细只支持 1 行')
+    return false
+  }
+
   const invalidContentIndex = createContentItems.value.findIndex(item => {
     return hasCreateContentItemValue(item) && !String(item.project_name || '').trim()
   })
@@ -1540,21 +1624,43 @@ const resetSelectedProjectInvoiceInfo = () => {
   Object.assign(selectedProjectInvoiceInfo, createProjectInvoiceInfoDefaults())
 }
 
-const getProjectInvoiceInfo = (project) => {
-  if (!project || !Array.isArray(project.invoice_infos) || !project.invoice_infos.length) {
+const getProjectInvoiceInfo = (project, index = 0) => {
+  const invoiceInfos = getProjectInvoiceInfos(project)
+  if (!invoiceInfos.length) {
     return createProjectInvoiceInfoDefaults()
   }
 
-  const invoiceInfo = project.invoice_infos[0] || {}
-  return {
-    company_name: invoiceInfo.company_name || '',
-    tax_number: invoiceInfo.tax_number || '',
-    company_address: invoiceInfo.company_address || '',
-    company_phone: invoiceInfo.company_phone || '',
-    bank_name: invoiceInfo.bank_name || '',
-    bank_account: invoiceInfo.bank_account || '',
-    bank_code: invoiceInfo.bank_code || ''
+  const safeIndex = Math.min(Math.max(Number(index) || 0, 0), invoiceInfos.length - 1)
+  return invoiceInfos[safeIndex] || createProjectInvoiceInfoDefaults()
+}
+
+const findProjectInvoiceInfoIndexByCompanyName = (invoiceInfos, companyName) => {
+  const normalizedCompanyName = String(companyName || '').trim()
+  if (!normalizedCompanyName) return -1
+
+  return invoiceInfos.findIndex(item => String(item.company_name || '').trim() === normalizedCompanyName)
+}
+
+const applySelectedProjectInvoiceInfo = (project, preferredIndex = 0, preferredCompanyName = '') => {
+  const invoiceInfos = getProjectInvoiceInfos(project)
+
+  if (!invoiceInfos.length) {
+    createForm.invoice_info_index = 0
+    resetSelectedProjectInvoiceInfo()
+    createForm.company_name = preferredCompanyName || ''
+    return
   }
+
+  let nextIndex = Math.max(0, Number(preferredIndex) || 0)
+  const matchedIndex = findProjectInvoiceInfoIndexByCompanyName(invoiceInfos, preferredCompanyName)
+  if (matchedIndex !== -1) {
+    nextIndex = matchedIndex
+  }
+  nextIndex = Math.min(nextIndex, invoiceInfos.length - 1)
+
+  createForm.invoice_info_index = nextIndex
+  Object.assign(selectedProjectInvoiceInfo, getProjectInvoiceInfo(project, nextIndex))
+  createForm.company_name = selectedProjectInvoiceInfo.company_name || preferredCompanyName || ''
 }
 
 const syncCreateProjectByName = (projectName, fallbackCompanyName = '') => {
@@ -1563,6 +1669,7 @@ const syncCreateProjectByName = (projectName, fallbackCompanyName = '') => {
 
   if (!project) {
     createForm.project_id = null
+    createForm.invoice_info_index = 0
     createForm.project_name = normalizedProjectName
     resetSelectedProjectInvoiceInfo()
     createForm.company_name = fallbackCompanyName || ''
@@ -1571,15 +1678,14 @@ const syncCreateProjectByName = (projectName, fallbackCompanyName = '') => {
 
   createForm.project_id = project.id
   createForm.project_name = project.name || normalizedProjectName
-  const invoiceInfo = getProjectInvoiceInfo(project)
-  Object.assign(selectedProjectInvoiceInfo, invoiceInfo)
-  createForm.company_name = invoiceInfo.company_name || fallbackCompanyName || ''
+  applySelectedProjectInvoiceInfo(project, 0, fallbackCompanyName)
 }
 
 const handleCreateProjectChange = (projectId) => {
   const project = projectOptions.value.find(item => Number(item.id) === Number(projectId)) || null
 
   if (!project) {
+    createForm.invoice_info_index = 0
     createForm.project_name = ''
     createForm.company_name = ''
     resetSelectedProjectInvoiceInfo()
@@ -1587,13 +1693,20 @@ const handleCreateProjectChange = (projectId) => {
   }
 
   createForm.project_name = project.name || ''
-  const invoiceInfo = getProjectInvoiceInfo(project)
-  Object.assign(selectedProjectInvoiceInfo, invoiceInfo)
-  createForm.company_name = invoiceInfo.company_name || ''
+  applySelectedProjectInvoiceInfo(project)
 
-  if (!invoiceInfo.company_name) {
+  if (!selectedProjectInvoiceInfo.company_name) {
     ElMessage.warning('所选项目未配置开票信息，请先到项目管理中维护')
   }
+}
+
+const handleCreateInvoiceInfoChange = (index) => {
+  const project = projectOptions.value.find(item => Number(item.id) === Number(createForm.project_id)) || null
+  if (!project) {
+    return
+  }
+
+  applySelectedProjectInvoiceInfo(project, index)
 }
 
 const buildCreateItemFromSource = (item = {}) => {
@@ -1792,7 +1905,45 @@ const sumDeductionItems = (items = []) => {
 }
 
 const syncCreateCalculatedAmounts = () => {
-  createForm.deduction_amount = createNeedsDeductionAmount.value ? sumDeductionItems(createItems.value) : 0
+  if (!createContentItems.value.length) {
+    resetCreateContentItems()
+  }
+
+  if (createNeedsDeductionAmount.value && createContentItems.value.length > 1) {
+    createContentItems.value = [createContentItems.value[0]]
+  }
+
+  if (createNeedsDeductionAmount.value && createContentItems.value.length) {
+    createContentItems.value[0].deduction_amount = sumDeductionItems(createItems.value)
+  }
+
+  const normalizedContentItems = normalizeCreateContentItems()
+  const contentTotals = sumCreateContentItems(normalizedContentItems)
+
+  createForm.deduction_amount = contentTotals.deduction_amount
+  createForm.tax_rate = contentTotals.tax_rate
+  createForm.invoice_amount = contentTotals.invoice_amount
+
+  if (
+    contentTotals.amount_excluding_tax > 0 ||
+    contentTotals.invoice_tax_amount > 0 ||
+    contentTotals.tax_amount > 0
+  ) {
+    createForm.amount_excluding_tax = contentTotals.amount_excluding_tax
+    createForm.invoice_tax_amount = contentTotals.invoice_tax_amount
+    createForm.tax_amount = contentTotals.tax_amount
+    return
+  }
+
+  const { amountExcludingTax, invoiceTaxAmount, taxAmount } = calculateInvoiceDerivedAmounts(
+    createForm.invoice_amount,
+    createForm.deduction_amount,
+    createForm.tax_rate
+  )
+
+  createForm.amount_excluding_tax = amountExcludingTax
+  createForm.invoice_tax_amount = invoiceTaxAmount
+  createForm.tax_amount = taxAmount
 }
 
 const syncInvoiceDetailsCalculatedAmounts = () => {
@@ -2129,6 +2280,7 @@ const resetCreateForm = () => {
   createForm.status = 'normal'
   createForm.red_flush_source_id = null
   createForm.project_id = null
+  createForm.invoice_info_index = 0
   createForm.project_name = ''
   createForm.period_year = currentYear
   createForm.period_month = currentMonth
@@ -2176,7 +2328,12 @@ const handleConfirmCreate = async () => {
 
     const normalizedContentItems = normalizeCreateContentItems()
     const contentTotals = sumCreateContentItems(normalizedContentItems)
-    Object.assign(createForm, contentTotals)
+    createForm.invoice_amount = contentTotals.invoice_amount
+    createForm.tax_rate = contentTotals.tax_rate
+    createForm.deduction_amount = contentTotals.deduction_amount
+    createForm.amount_excluding_tax = contentTotals.amount_excluding_tax
+    createForm.invoice_tax_amount = contentTotals.invoice_tax_amount
+    createForm.tax_amount = contentTotals.tax_amount
     if (!validateCreateExtraData()) {
       return
     }
@@ -2190,6 +2347,7 @@ const handleConfirmCreate = async () => {
       status: createForm.status,
       red_flush_source_id: createForm.red_flush_source_id,
       project_id: createForm.project_id,
+      invoice_info_index: createForm.invoice_info_index,
       project_name: projectName,
       period_year: createForm.period_year,
       period_month: createForm.period_month,
@@ -2817,14 +2975,7 @@ const formatDateTime = (dateTime) => {
 watch(
   () => createForm.invoice_method,
   async (newMethod, oldMethod) => {
-    if (newMethod !== 'full' && newMethod !== 'diff') {
-      createForm.deduction_amount = 0
-      resetCreateItems()
-      syncCreateCalculatedAmounts()
-      return
-    }
-
-    if (oldMethod !== 'full' && oldMethod !== 'diff') {
+    if ((newMethod === 'full' || newMethod === 'diff') && oldMethod !== 'full' && oldMethod !== 'diff') {
       await scrollToCreateDeductionSection()
     }
 
@@ -2858,6 +3009,14 @@ watch(
 
 watch(
   createItems,
+  () => {
+    syncCreateCalculatedAmounts()
+  },
+  { deep: true }
+)
+
+watch(
+  createContentItems,
   () => {
     syncCreateCalculatedAmounts()
   },

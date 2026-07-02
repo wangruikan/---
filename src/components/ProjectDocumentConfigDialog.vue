@@ -153,15 +153,6 @@
         />
       </el-form-item>
 
-      <el-form-item label="文件类型" prop="document_type">
-        <el-radio-group v-model="form.document_type">
-          <el-radio label="image">仅图片</el-radio>
-          <el-radio label="pdf">仅PDF</el-radio>
-          <el-radio label="document">文档</el-radio>
-          <el-radio label="all">所有类型</el-radio>
-        </el-radio-group>
-      </el-form-item>
-
       <el-form-item label="是否必填" prop="is_required">
         <el-switch
           v-model="form.is_required"
@@ -246,9 +237,6 @@ const setFormRules = {
 const formRules = {
   document_name: [
     { required: true, message: '请输入资料名称', trigger: 'blur' }
-  ],
-  document_type: [
-    { required: true, message: '请选择文件类型', trigger: 'change' }
   ]
 }
 
@@ -389,7 +377,7 @@ const handleEdit = (row) => {
   formMode.value = 'edit'
   form.id = row.id
   form.document_name = row.document_name
-  form.document_type = row.document_type || 'all'
+  form.document_type = 'all'
   form.is_required = row.is_required
   showFormDialog.value = true
 }
@@ -402,11 +390,12 @@ const handleSubmitForm = async () => {
 
     submitting.value = true
     try {
+      const documentType = 'all'
       if (formMode.value === 'add') {
         await createProjectDocumentConfig(props.projectId, {
           document_set_id: currentSet.value.id,
           document_name: form.document_name,
-          document_type: form.document_type,
+          document_type: documentType,
           is_required: form.is_required
         })
         ElMessage.success('添加成功')
@@ -414,7 +403,7 @@ const handleSubmitForm = async () => {
         await updateProjectDocumentConfig(props.projectId, form.id, {
           document_set_id: currentSet.value.id,
           document_name: form.document_name,
-          document_type: form.document_type,
+          document_type: documentType,
           is_required: form.is_required
         })
         ElMessage.success('更新成功')

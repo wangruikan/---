@@ -68,22 +68,26 @@ class InsuranceChangeController extends ApiController
                 'attachments'  // 加载附件列表
             ]);
 
-        // 月份筛选 - 根据创建时间筛选
+        // 月份筛选 - 优先按业务月份筛选，兼容旧数据回退到创建时间
         if ($month) {
-            // 解析月份参数 (格式: YYYY-MM)
-            $year = substr($month, 0, 4);
-            $monthNum = substr($month, 5, 2);
-            
-            // 构建日期范围
-            $startDate = $year . '-' . $monthNum . '-01 00:00:00';
-            $endDate = date('Y-m-t 23:59:59', strtotime($startDate));
-            
-            $query->whereBetween('created_at', [$startDate, $endDate]);
+            if (InsuranceChange::supportsTaskMonth()) {
+                $query->where('task_month', $month);
+            } else {
+                $year = substr($month, 0, 4);
+                $monthNum = substr($month, 5, 2);
+                $startDate = $year . '-' . $monthNum . '-01 00:00:00';
+                $endDate = date('Y-m-t 23:59:59', strtotime($startDate));
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
         }
 
         // 状态筛选
         if ($status) {
-            $query->where('status', $status);
+            if ($status === 'pending') {
+                $query->whereIn('status', ['pending', 'submitted']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         // 地区筛选 - 通过员工关联的地区进行筛选
@@ -120,7 +124,10 @@ class InsuranceChangeController extends ApiController
 
             if ($this->isChangeItemsEnabled()) {
                 $this->syncChangeItems($change);
-                $change->change_items = $change->items()->orderBy('id')->get();
+                $change->change_items = $change->items()
+                    ->with(['attachments', 'processor'])
+                    ->orderBy('id')
+                    ->get();
             } else {
                 $change->change_items = [];
             }
@@ -173,7 +180,10 @@ class InsuranceChangeController extends ApiController
 
         if ($this->isChangeItemsEnabled()) {
             $this->syncChangeItems($change);
-            $change->change_items = $change->items()->orderBy('id')->get();
+            $change->change_items = $change->items()
+                ->with(['attachments', 'processor'])
+                ->orderBy('id')
+                ->get();
         } else {
             $change->change_items = [];
         }
@@ -1468,9 +1478,11 @@ class InsuranceChangeController extends ApiController
         $category = $request->input('category');
         $itemId = null;
 
+        $item = null;
         if ($this->isChangeItemsEnabled() && $category) {
             $this->syncChangeItems($change);
-            $itemId = $this->resolveChangeItemId($change, $category);
+            $item = $change->items()->where('category', $category)->first();
+            $itemId = $item ? (int) $item->id : null;
         }
         
         foreach ($files as $file) {
@@ -1498,11 +1510,22 @@ class InsuranceChangeController extends ApiController
             ]);
         }
 
-        // 更新增减记录状态
-        $change->update([
-            'status' => 'submitted',
-            'attachment_uploaded_at' => now(),
-        ]);
+        if ($item && in_array($item->status, ['pending', 'submitted'], true)) {
+            $item->update([
+                'status' => 'submitted',
+            ]);
+        }
+
+        if (in_array($change->status, ['pending', 'submitted'], true)) {
+            $change->update([
+                'status' => 'submitted',
+                'attachment_uploaded_at' => now(),
+            ]);
+        } else {
+            $change->update([
+                'attachment_uploaded_at' => now(),
+            ]);
+        }
         
         // 不再清除变更标记，保留变更记录以便后续查看
         // $change->clearChangeFlag();
@@ -1512,7 +1535,7 @@ class InsuranceChangeController extends ApiController
             'message' => '成功上传 ' . count($uploadedAttachments) . ' 个文件',
             'data' => [
                 'uploaded_files' => $uploadedAttachments,
-                'change' => $change->fresh()->load('attachments')
+                'change' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
             ]
         ]);
     }
@@ -1574,8 +1597,20 @@ class InsuranceChangeController extends ApiController
             $change = InsuranceChange::findOrFail($id);
             $user = $request->user();
             $category = $this->normalizeChangeCategory($request->input('category'));
+            $result = $this->normalizeProcessResult($request->input('result'));
 
-            if ($category !== null && $this->isChangeItemsEnabled()) {
+            if ($this->isChangeItemsEnabled()) {
+                if ($category === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => '请选择处理业务'
+                    ], 422);
+                }
+
+                if ($result === 'failed') {
+                    return $this->failProcessByCategory($change, $category, $user);
+                }
+
                 return $this->confirmProcessByCategory($change, $category, $user);
             }
 
@@ -1585,7 +1620,7 @@ class InsuranceChangeController extends ApiController
             if (!in_array($change->status, ['pending', 'submitted'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only pending/submitted records can be confirmed'
+                    'message' => '当前状态不允许处理'
                 ], 400);
             }
 
@@ -1593,7 +1628,7 @@ class InsuranceChangeController extends ApiController
             if (!$change->attachments || $change->attachments->count() === 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Please upload attachment first'
+                    'message' => '请先上传附件'
                 ], 400);
             }
 
@@ -1632,12 +1667,12 @@ class InsuranceChangeController extends ApiController
 
             return response()->json([
                 'success' => true,
-                'message' => 'Processed successfully',
-                'data' => $change->fresh()
+                'message' => '处理成功',
+                'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('纭澶勭悊澶辫触', [
+            \Log::error('确认处理失败', [
                 'change_id' => $id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -1645,9 +1680,14 @@ class InsuranceChangeController extends ApiController
 
             return response()->json([
                 'success' => false,
-                'message' => 'Process failed: ' . $e->getMessage()
+                'message' => '处理失败：' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function normalizeProcessResult($result): string
+    {
+        return $result === 'failed' ? 'failed' : 'success';
     }
 
     private function normalizeChangeCategory($category): ?string
@@ -1679,14 +1719,61 @@ class InsuranceChangeController extends ApiController
         if (!$item) {
             return response()->json([
                 'success' => false,
-                'message' => 'No processable item for this category'
+                'message' => '未找到可处理的业务项'
             ], 400);
         }
 
         if (!in_array($item->status, ['pending', 'submitted'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => 'This category item cannot be processed now'
+                'message' => '该业务项当前不能处理'
+            ], 400);
+        }
+
+        if ($category === 'other_insurance' && ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change))) {
+            return $validationResponse;
+        }
+
+        DB::transaction(function () use ($change, $category, $item, $user) {
+            $this->applyCategorySuccessToCurrentMonth($change, $category);
+
+            if ($category === 'other_insurance') {
+                $change->update([
+                    'other_insurance_processed' => 1,
+                ]);
+            }
+
+            $item->update([
+                'status' => 'completed',
+                'processed_by' => $user && $user->id ? $user->id : null,
+                'processed_at' => now(),
+            ]);
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '业务处理成功',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function failProcessByCategory(InsuranceChange $change, string $category, $user)
+    {
+        $this->syncChangeItems($change);
+        $item = $change->items()->where('category', $category)->first();
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => '未找到可处理的业务项'
+            ], 400);
+        }
+
+        if (!in_array($item->status, ['pending', 'submitted'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => '该业务项当前不能处理'
             ], 400);
         }
 
@@ -1697,67 +1784,424 @@ class InsuranceChangeController extends ApiController
         if (!$hasCategoryAttachment) {
             return response()->json([
                 'success' => false,
-                'message' => 'Please upload attachment for this category first'
-            ], 400);
-        }
-
-        if ($category === 'other_insurance' && ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change))) {
-            return $validationResponse;
+                'message' => '失败时必须上传对应业务附件'
+            ], 422);
         }
 
         DB::transaction(function () use ($change, $category, $item, $user) {
-            if ($category === 'other_insurance') {
-                $personnel = $this->syncOtherInsuranceOnly($change);
-                if ($personnel) {
-                    $currentYear = date('Y');
-                    $currentMonth = date('n');
-                    InsuranceDetailRecord::generateFromPersonnel($personnel, $currentYear, $currentMonth);
-                }
-
-                $change->update([
-                    'other_insurance_processed' => 1,
-                ]);
-                $this->applyOtherInsuranceCoverageAmountChanges($change);
-            } else {
-                $this->generateOrUpdateDetails($change);
-                if ($category === 'large_medical_insurance') {
-                    $this->setLargeMedicalPaymentStartTime($change);
-                }
-            }
+            $this->createNextMonthCarryoverChange($change, $category, $user);
 
             $item->update([
-                'status' => 'completed',
+                'status' => 'failed',
                 'processed_by' => $user && $user->id ? $user->id : null,
                 'processed_at' => now(),
             ]);
 
-            $remaining = $change->items()->where('status', '!=', 'completed')->count();
-            if ($remaining === 0) {
-                $updateData = [
-                    'status' => 'completed',
-                    'fully_confirmed' => 1,
-                    'processed_at' => now(),
-                    'completed_at' => now(),
-                ];
-                if ($user && $user->id) {
-                    $updateData['processed_by'] = $user->id;
-                }
-                $change->update($updateData);
-            } else {
-                $change->update([
-                    'status' => 'submitted',
-                    'fully_confirmed' => 0,
-                    'processed_at' => null,
-                    'completed_at' => null,
-                ]);
-            }
+            $this->syncChangeStatusFromItems($change, $user);
         });
 
         return response()->json([
             'success' => true,
-            'message' => 'Category processed successfully',
-            'data' => $change->fresh()->load(['items', 'attachments'])
+            'message' => '已标记失败，并生成下月续办任务',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
         ]);
+    }
+
+    private function syncChangeStatusFromItems(InsuranceChange $change, $user = null): void
+    {
+        $items = $change->items()->get();
+        if ($items->isEmpty()) {
+            return;
+        }
+
+        $hasPending = $items->contains(function ($item) {
+            return in_array($item->status, ['pending', 'submitted'], true);
+        });
+        $hasFailed = $items->contains(function ($item) {
+            return $item->status === 'failed';
+        });
+        $hasTerminated = $items->contains(function ($item) {
+            return $item->status === 'terminated';
+        });
+        $allCompleted = $items->every(function ($item) {
+            return $item->status === 'completed';
+        });
+
+        if ($allCompleted) {
+            $updateData = [
+                'status' => 'completed',
+                'fully_confirmed' => 1,
+                'processed_at' => now(),
+                'completed_at' => now(),
+            ];
+            if ($user && $user->id) {
+                $updateData['processed_by'] = $user->id;
+            }
+            $change->update($updateData);
+            return;
+        }
+
+        if ($hasPending) {
+            $change->update([
+                'status' => 'pending',
+                'fully_confirmed' => 0,
+                'processed_at' => null,
+                'completed_at' => null,
+            ]);
+            return;
+        }
+
+        $change->update([
+            'status' => $hasFailed ? 'failed' : ($hasTerminated ? 'terminated' : 'pending'),
+            'fully_confirmed' => 0,
+            'processed_at' => null,
+            'completed_at' => null,
+        ]);
+    }
+
+    private function applyCategorySuccessToCurrentMonth(InsuranceChange $change, string $category): void
+    {
+        if ($category === 'other_insurance' && ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change))) {
+            throw new \RuntimeException($validationResponse->getData(true)['message'] ?? '请先填写其他保险退保金额');
+        }
+
+        $currentPersonnel = $this->getCurrentPersonnelQuery($change)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $state = $this->buildPersonnelStateFromPersonnel($currentPersonnel);
+
+        if ($change->change_type === 'decrease') {
+            $this->clearCategoryState($state, $category);
+        } else {
+            $this->applyCategoryStateFromChange($state, $change, $category);
+        }
+
+        if (!$this->hasActivePersonnelState($state)) {
+            if ($currentPersonnel) {
+                $currentPersonnel->delete();
+            }
+            $this->deleteCurrentMonthDetailRecord($change);
+        } else {
+            $syntheticChange = $this->buildSyntheticChangeFromState($change, $state);
+            $personnel = InsurancePersonnel::getOrCreateFromInsuranceChange($syntheticChange);
+
+            if ($personnel) {
+                InsuranceDetailRecord::generateFromPersonnel($personnel, (int) date('Y'), (int) date('n'));
+            }
+
+            if ($category === 'large_medical_insurance' && !empty($state['large_medical_insurance_enabled'])) {
+                $this->setLargeMedicalPaymentStartTime($syntheticChange);
+            }
+        }
+
+        if ($category === 'other_insurance') {
+            $categoryChange = $this->buildCategoryOnlyChange($change, $category);
+            $this->applyOtherInsuranceCoverageAmountChanges($categoryChange);
+        }
+    }
+
+    private function buildPersonnelStateFromPersonnel($personnel): array
+    {
+        return [
+            'social_security_region_id' => $personnel->social_security_region_id ?? null,
+            'employee_social_security_base' => $personnel->employee_social_security_base ?? null,
+            'social_security_types' => $personnel->social_security_types ?? null,
+            'medical_insurance_region_id' => $personnel->medical_insurance_region_id ?? null,
+            'employee_medical_insurance_base' => $personnel->employee_medical_insurance_base ?? null,
+            'medical_insurance_types' => $personnel->medical_insurance_types ?? null,
+            'housing_fund_region_id' => $personnel->housing_fund_region_id ?? null,
+            'housing_fund_config_id' => $personnel->housing_fund_config_id ?? null,
+            'employee_housing_fund_base' => $personnel->employee_housing_fund_base ?? null,
+            'housing_fund_params' => $personnel->housing_fund_params ?? null,
+            'large_medical_insurance_config_id' => $personnel->large_medical_insurance_config_id ?? null,
+            'large_medical_insurance_enabled' => $personnel->large_medical_insurance_enabled ?? false,
+            'employee_large_medical_base' => $personnel->employee_large_medical_base ?? null,
+            'employee_large_medical_company_base' => $personnel->employee_large_medical_company_base ?? null,
+            'large_medical_insurance_config' => $personnel->large_medical_insurance_config ?? null,
+            'other_insurance_policies' => $personnel->other_insurance_policies ?? null,
+            'used_quotas' => $personnel->used_quotas ?? null,
+        ];
+    }
+
+    private function applyCategoryStateFromChange(array &$state, InsuranceChange $change, string $category): void
+    {
+        foreach ($this->getCategoryFieldMap()[$category] ?? [] as $field) {
+            $state[$field] = $change->{$field};
+        }
+    }
+
+    private function clearCategoryState(array &$state, string $category): void
+    {
+        $clearMap = [
+            'social_security' => [
+                'social_security_region_id' => null,
+                'employee_social_security_base' => null,
+                'social_security_types' => null,
+            ],
+            'medical_insurance' => [
+                'medical_insurance_region_id' => null,
+                'employee_medical_insurance_base' => null,
+                'medical_insurance_types' => null,
+            ],
+            'housing_fund' => [
+                'housing_fund_region_id' => null,
+                'housing_fund_config_id' => null,
+                'employee_housing_fund_base' => null,
+                'housing_fund_params' => null,
+            ],
+            'large_medical_insurance' => [
+                'large_medical_insurance_config_id' => null,
+                'large_medical_insurance_enabled' => false,
+                'employee_large_medical_base' => null,
+                'employee_large_medical_company_base' => null,
+                'large_medical_insurance_config' => null,
+            ],
+            'other_insurance' => [
+                'other_insurance_policies' => null,
+                'used_quotas' => null,
+            ],
+        ];
+
+        foreach ($clearMap[$category] ?? [] as $field => $value) {
+            $state[$field] = $value;
+        }
+    }
+
+    private function hasActivePersonnelState(array $state): bool
+    {
+        return
+            $this->hasNonEmptySnapshot($state['social_security_types'] ?? null) ||
+            $this->hasNonEmptySnapshot($state['medical_insurance_types'] ?? null) ||
+            $this->hasNonEmptySnapshot($state['housing_fund_params'] ?? null) ||
+            $this->hasNonEmptySnapshot($state['other_insurance_policies'] ?? null) ||
+            $this->hasNonEmptySnapshot($state['large_medical_insurance_config'] ?? null) ||
+            !empty($state['large_medical_insurance_enabled']);
+    }
+
+    private function buildSyntheticChangeFromState(InsuranceChange $change, array $state): InsuranceChange
+    {
+        $syntheticChange = clone $change;
+        $syntheticChange->change_type = 'increase';
+
+        foreach ($state as $field => $value) {
+            $syntheticChange->setAttribute($field, $value);
+        }
+
+        return $syntheticChange;
+    }
+
+    private function buildCategoryOnlyChange(InsuranceChange $change, string $category): InsuranceChange
+    {
+        $categoryChange = clone $change;
+
+        foreach ($this->getCategoryFieldMap() as $mapCategory => $fields) {
+            if ($mapCategory === $category) {
+                continue;
+            }
+
+            foreach ($fields as $field) {
+                $categoryChange->setAttribute($field, null);
+            }
+        }
+
+        return $categoryChange;
+    }
+
+    private function createNextMonthCarryoverChange(InsuranceChange $change, string $category, $user): InsuranceChange
+    {
+        $baseTaskMonth = InsuranceChange::supportsTaskMonth()
+            ? ($change->task_month ?: now()->format('Y-m'))
+            : now()->format('Y-m');
+        $nextTaskMonth = date('Y-m', strtotime($baseTaskMonth . '-01 +1 month'));
+
+        $carryoverQuery = InsuranceChange::query()
+            ->where('employee_id', $change->employee_id)
+            ->where('project_id', $change->project_id)
+            ->where('account_set_id', $change->account_set_id)
+            ->where('change_type', $change->change_type)
+            ->whereIn('status', ['pending', 'submitted']);
+
+        if (InsuranceChange::supportsTaskMonth()) {
+            $carryoverQuery->where('task_month', $nextTaskMonth);
+        }
+
+        $carryoverChange = $carryoverQuery->orderByDesc('id')->first();
+
+        if (!$carryoverChange) {
+            $payload = [
+                'employee_id' => $change->employee_id,
+                'employee_name' => $change->employee_name,
+                'employee_id_number' => $change->employee_id_number,
+                'employee_gender' => $change->employee_gender,
+                'employee_birth_date' => $change->employee_birth_date,
+                'employee_phone' => $change->employee_phone,
+                'employee_status' => $change->employee_status,
+                'project_id' => $change->project_id,
+                'account_set_id' => $change->account_set_id,
+                'change_type' => $change->change_type,
+                'status' => 'pending',
+                'created_by' => $user && $user->id ? $user->id : $change->created_by,
+                'fully_confirmed' => 0,
+                'processed_by' => null,
+                'processed_at' => null,
+                'submitted_at' => null,
+                'completed_at' => null,
+                'attachment_uploaded_at' => null,
+                'notes' => $change->notes,
+            ];
+
+            if (InsuranceChange::supportsTaskMonth()) {
+                $payload['task_month'] = $nextTaskMonth;
+            }
+
+            $carryoverChange = InsuranceChange::create($payload);
+        }
+
+        $carryoverChange->employee_name = $change->employee_name;
+        $carryoverChange->employee_id_number = $change->employee_id_number;
+        $carryoverChange->employee_gender = $change->employee_gender;
+        $carryoverChange->employee_birth_date = $change->employee_birth_date;
+        $carryoverChange->employee_phone = $change->employee_phone;
+        $carryoverChange->employee_status = $change->employee_status;
+        $carryoverChange->notes = $change->notes;
+        $this->applyCategoryStateFromChangeToChange($carryoverChange, $change, $category);
+        $carryoverChange->status = 'pending';
+        $carryoverChange->fully_confirmed = 0;
+        $carryoverChange->processed_by = null;
+        $carryoverChange->processed_at = null;
+        $carryoverChange->submitted_at = null;
+        $carryoverChange->completed_at = null;
+        $carryoverChange->attachment_uploaded_at = null;
+        $carryoverChange->change_summary = $this->buildCarryoverSummary($carryoverChange, $category);
+        $carryoverChange->change_details = $this->mergeCarryoverChangeDetails($carryoverChange, $change, $category);
+        $carryoverChange->save();
+
+        $this->syncChangeItems($carryoverChange);
+        $carryoverItem = $carryoverChange->items()->where('category', $category)->first();
+        if ($carryoverItem) {
+            $carryoverItem->update([
+                'status' => 'pending',
+                'processed_by' => null,
+                'processed_at' => null,
+            ]);
+        }
+
+        return $carryoverChange;
+    }
+
+    private function applyCategoryStateFromChangeToChange(InsuranceChange $target, InsuranceChange $source, string $category): void
+    {
+        foreach ($this->getCategoryFieldMap()[$category] ?? [] as $field) {
+            $target->setAttribute($field, $source->{$field});
+        }
+    }
+
+    private function mergeCarryoverChangeDetails(InsuranceChange $target, InsuranceChange $source, string $category): ?string
+    {
+        $details = [];
+
+        foreach ($target->parseChangeDetails() as $detail) {
+            if (!is_array($detail)) {
+                continue;
+            }
+            $detailCategory = $detail['category'] ?? null;
+            if ($detailCategory) {
+                $details[$detailCategory] = $detail;
+            }
+        }
+
+        $matched = false;
+        foreach ($source->parseChangeDetails() as $detail) {
+            if (!is_array($detail) || ($detail['category'] ?? null) !== $category) {
+                continue;
+            }
+            $details[$category] = $detail;
+            $matched = true;
+        }
+
+        if (!$matched) {
+            $details[$category] = [
+                'category' => $category,
+                'action' => $source->change_type === 'decrease' ? 'removed' : 'added',
+                'item' => $this->getCategoryDisplayText($category) . '续办'
+            ];
+        }
+
+        return empty($details)
+            ? null
+            : json_encode(array_values($details), JSON_UNESCAPED_UNICODE);
+    }
+
+    private function buildCarryoverSummary(InsuranceChange $change, string $category): string
+    {
+        $existingCategories = [];
+        foreach ($change->parseChangeDetails() as $detail) {
+            if (is_array($detail) && !empty($detail['category'])) {
+                $existingCategories[$detail['category']] = $this->getCategoryDisplayText($detail['category']);
+            }
+        }
+
+        $existingCategories[$category] = $this->getCategoryDisplayText($category);
+
+        return implode('、', array_values($existingCategories)) . '下月续办';
+    }
+
+    private function deleteCurrentMonthDetailRecord(InsuranceChange $change): void
+    {
+        InsuranceDetailRecord::where('employee_id', $change->employee_id)
+            ->where('project_id', $change->project_id)
+            ->where('account_set_id', $change->account_set_id)
+            ->where('record_year', (int) date('Y'))
+            ->where('record_month', (int) date('n'))
+            ->delete();
+    }
+
+    private function getCategoryFieldMap(): array
+    {
+        return [
+            'social_security' => [
+                'social_security_region_id',
+                'employee_social_security_base',
+                'social_security_types',
+            ],
+            'medical_insurance' => [
+                'medical_insurance_region_id',
+                'employee_medical_insurance_base',
+                'medical_insurance_types',
+            ],
+            'housing_fund' => [
+                'housing_fund_region_id',
+                'housing_fund_config_id',
+                'employee_housing_fund_base',
+                'housing_fund_params',
+            ],
+            'large_medical_insurance' => [
+                'large_medical_insurance_config_id',
+                'large_medical_insurance_enabled',
+                'employee_large_medical_base',
+                'employee_large_medical_company_base',
+                'large_medical_insurance_config',
+            ],
+            'other_insurance' => [
+                'other_insurance_policies',
+                'used_quotas',
+            ],
+        ];
+    }
+
+    private function getCategoryDisplayText(string $category): string
+    {
+        $categoryMap = [
+            'social_security' => '社保',
+            'medical_insurance' => '医保',
+            'housing_fund' => '公积金',
+            'large_medical_insurance' => '大额医疗',
+            'other_insurance' => '其他保险',
+        ];
+
+        return $categoryMap[$category] ?? $category;
     }
     /**
      * Decode the other-insurance snapshot safely.
@@ -3966,6 +4410,7 @@ class InsuranceChangeController extends ApiController
             : $categoriesToUpsert;
 
         foreach ($categoriesToUpsert as $category) {
+            $existingItem = $change->items()->where('category', $category)->first();
             $itemStatus = $this->mapChangeStatusToItemStatus($change, $category);
             $snapshot = $snapshotByCategory[$category] ?? null;
             $serializedSnapshot = is_string($snapshot)
@@ -3979,15 +4424,19 @@ class InsuranceChangeController extends ApiController
                 ],
                 [
                     'change_type' => $change->change_type ?: 'increase',
-                    'status' => $itemStatus,
+                    'status' => $existingItem ? $existingItem->status : $itemStatus,
                     'category_snapshot' => $serializedSnapshot,
                     'change_details' => is_null($change->change_details)
                         ? null
                         : (is_string($change->change_details)
                             ? $change->change_details
                             : json_encode($change->change_details, JSON_UNESCAPED_UNICODE)),
-                    'processed_by' => $itemStatus === 'completed' ? $change->processed_by : null,
-                    'processed_at' => $itemStatus === 'completed' ? $change->processed_at : null,
+                    'processed_by' => $existingItem
+                        ? $existingItem->processed_by
+                        : ($itemStatus === 'completed' ? $change->processed_by : null),
+                    'processed_at' => $existingItem
+                        ? $existingItem->processed_at
+                        : ($itemStatus === 'completed' ? $change->processed_at : null),
                 ]
             );
         }
@@ -4022,8 +4471,7 @@ class InsuranceChangeController extends ApiController
     {
         $activeCategories = [];
         foreach ($snapshotByCategory as $category => $snapshot) {
-            $hasSnapshot = !is_null($snapshot) && $snapshot !== '' && $snapshot !== '[]';
-            if ($hasSnapshot) {
+            if ($this->hasNonEmptySnapshot($snapshot)) {
                 $activeCategories[] = $category;
             }
         }
@@ -4031,10 +4479,36 @@ class InsuranceChangeController extends ApiController
         return $activeCategories;
     }
 
+    private function hasNonEmptySnapshot($snapshot): bool
+    {
+        if (is_null($snapshot)) {
+            return false;
+        }
+
+        if (is_string($snapshot)) {
+            $trimmed = trim($snapshot);
+            return $trimmed !== '' && $trimmed !== '[]' && $trimmed !== '{}';
+        }
+
+        if (is_array($snapshot)) {
+            return !empty($snapshot);
+        }
+
+        return true;
+    }
+
     private function mapChangeStatusToItemStatus(InsuranceChange $change, string $category): string
     {
         if ($change->status === 'completed') {
             return 'completed';
+        }
+
+        if ($change->status === 'failed') {
+            return 'failed';
+        }
+
+        if ($change->status === 'terminated') {
+            return 'terminated';
         }
 
         if ($category === 'other_insurance' && (int) ($change->other_insurance_processed ?? 0) === 1) {

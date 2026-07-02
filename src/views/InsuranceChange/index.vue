@@ -37,7 +37,9 @@
                 <el-select v-model="filterForm.status" placeholder="请选择状态" clearable style="width: 200px">
                   <el-option label="全部" value="" />
                   <el-option label="待处理" value="pending" />
-                  <el-option label="已处理" value="completed" />
+                  <el-option label="成功" value="completed" />
+                  <el-option label="终止" value="terminated" />
+                  <el-option label="失败" value="failed" />
                 </el-select>
               </el-form-item>
               <el-form-item label="地区">
@@ -76,8 +78,10 @@
                 <span>参保人员列表</span>
                 <div class="header-actions">
                   <span class="total-count">共 {{ filteredChanges.length }} / {{ changes.length }} 条记录</span>
-                  <span class="summary-count increase-count">新增 {{ changeStats.increase }} 人</span>
-                  <span class="summary-count decrease-count">减少 {{ changeStats.decrease }} 人</span>
+                  <span class="summary-count pending-count">待处理 {{ changeStats.pending }} 人</span>
+                  <span class="summary-count success-count">成功 {{ changeStats.success }} 人</span>
+                  <span class="summary-count terminated-count">终止 {{ changeStats.terminated }} 人</span>
+                  <span class="summary-count failed-count">失败 {{ changeStats.failed }} 人</span>
                   <!-- 生成参保登记表按钮 - 已隐藏 -->
                   <!--
                   <el-button 
@@ -186,22 +190,14 @@
                 <template #default="{ row }">
                   <!-- 按需求：仅隐藏“其他保险确认处理”按钮 -->
                   <el-button 
-                    v-if="row.status === 'pending'"
+                    v-if="hasProcessableItems(row)"
                     type="primary" 
                     size="small" 
-                    @click="showUploadDialog(row)"
+                    :loading="processing && processingChangeId === row.id"
+                    :disabled="processing && processingChangeId === row.id"
+                    @click="showProcessDialog(row)"
                   >
-                    上传附件
-                  </el-button>
-                  <el-button 
-                    v-if="(row.status === 'pending' || row.status === 'submitted') && row.attachments && row.attachments.length > 0"
-                    type="success" 
-                    size="small" 
-                    :loading="processing"
-                    :disabled="processing"
-                    @click="confirmProcess(row)"
-                  >
-                    确认处理
+                    处理业务
                   </el-button>
                   <!-- 按需求临时隐藏：其他保险确认处理 -->
                   <el-button 
@@ -873,22 +869,58 @@
       </template>
     </el-dialog>
 
-    <!-- 上传附件对话框 -->
+    <!-- 业务处理对话框 -->
     <el-dialog
       v-model="showUploadDialogFlag"
-      title="附件管理"
+      title="业务处理"
       width="800px"
     >
-      <el-form :model="uploadForm" ref="uploadFormRef" label-width="100px">
+      <el-form :model="processForm" ref="uploadFormRef" label-width="100px">
         <el-form-item label="员工姓名">
           <el-input :value="currentChange.employee ? currentChange.employee.name : ''" disabled />
         </el-form-item>
         <el-form-item label="项目名称">
           <el-input :value="currentChange.project ? currentChange.project.name : ''" disabled />
         </el-form-item>
-        <!-- 已上传的附件列表 -->
-        <el-form-item label="已上传附件" v-if="currentChange.attachments && currentChange.attachments.length > 0">
-          <el-table :data="currentChange.attachments" size="small" border style="width: 100%">
+        <el-form-item label="处理业务">
+          <el-select
+            v-model="processForm.category"
+            placeholder="请选择处理业务"
+            style="width: 100%;"
+            @change="handleProcessCategoryChange"
+          >
+            <el-option
+              v-for="item in processableItems"
+              :key="item.id"
+              :label="getCategoryText(item.category)"
+              :value="item.category"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="处理结果">
+          <el-radio-group v-model="processForm.result">
+            <el-radio-button label="success">成功</el-radio-button>
+            <el-radio-button label="failed">失败</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-alert
+          v-if="processForm.result === 'success'"
+          title="成功后会立即按所选业务更新参保数据，本次不需要上传附件。"
+          type="success"
+          :closable="false"
+          style="margin-bottom: 16px;"
+        />
+        <el-alert
+          v-else
+          title="失败时必须上传对应业务附件，当前业务会保留失败结果，并立即生成下月续办任务。"
+          type="warning"
+          :closable="false"
+          style="margin-bottom: 16px;"
+        />
+
+        <el-form-item label="已上传附件" v-if="currentProcessAttachments.length > 0">
+          <el-table :data="currentProcessAttachments" size="small" border style="width: 100%">
             <el-table-column prop="original_name" label="文件名" min-width="200" />
             <el-table-column prop="file_size_formatted" label="大小" width="100" />
             <el-table-column prop="created_at" label="上传时间" width="160">
@@ -911,9 +943,8 @@
             </el-table-column>
           </el-table>
         </el-form-item>
-        
-        <!-- 上传新附件 -->
-        <el-form-item label="上传新附件">
+
+        <el-form-item label="上传附件" v-if="processForm.result === 'failed'">
           <el-upload
             ref="uploadRef"
             :file-list="fileList"
@@ -939,12 +970,12 @@
         <div class="dialog-footer">
           <el-button @click="showUploadDialogFlag = false">关闭</el-button>
           <el-button 
-            type="primary" 
-            @click="submitUpload" 
-            :loading="uploading"
-            :disabled="!fileList || fileList.length === 0"
+            type="primary"
+            @click="submitProcess"
+            :loading="processing && processingChangeId === currentChange?.id"
+            :disabled="!processForm.category"
           >
-            上传所选文件
+            确认提交
           </el-button>
         </div>
       </template>
@@ -1626,7 +1657,6 @@ import {
   getInsuranceChanges,
   getInsuranceChangeDetails,
   getInsuranceChangeSummaries,
-  processInsuranceChange,
   generateSummary,
   exportSummary,
   updateEndorsementNumber,
@@ -2566,7 +2596,6 @@ const toggleCollapse = (employeeId) => {
   collapsedStates.value[employeeId] = !collapsedStates.value[employeeId]
 }
 const summaryLoading = ref(false)
-const uploading = ref(false)
 const processing = ref(false)
 const processingOtherInsurance = ref(false)
 
@@ -2673,28 +2702,49 @@ const filteredChanges = computed(() => {
   })
 })
 
+const normalizeRowStatus = (status) => {
+  if (status === 'submitted') {
+    return 'pending'
+  }
+
+  return status || 'pending'
+}
+
 const changeStats = computed(() => {
-  const increaseEmployees = new Set()
-  const decreaseEmployees = new Set()
+  const stats = {
+    pending: new Set(),
+    success: new Set(),
+    terminated: new Set(),
+    failed: new Set()
+  }
 
   filteredChanges.value.forEach((change) => {
-    if (change.change_summary) {
-      return
-    }
-
     const employeeKey = change.employee?.id || change.employee_id || `change-${change.id}`
+    const status = normalizeRowStatus(change.status)
 
-    if (change.change_type === 'decrease') {
-      decreaseEmployees.add(employeeKey)
+    if (status === 'completed') {
+      stats.success.add(employeeKey)
       return
     }
 
-    increaseEmployees.add(employeeKey)
+    if (status === 'failed') {
+      stats.failed.add(employeeKey)
+      return
+    }
+
+    if (status === 'terminated') {
+      stats.terminated.add(employeeKey)
+      return
+    }
+
+    stats.pending.add(employeeKey)
   })
 
   return {
-    increase: increaseEmployees.size,
-    decrease: decreaseEmployees.size
+    pending: stats.pending.size,
+    success: stats.success.size,
+    terminated: stats.terminated.size,
+    failed: stats.failed.size
   }
 })
 
@@ -4033,16 +4083,46 @@ const showUploadDialogFlag = ref(false)
 const showViewFilesDialogFlag = ref(false)
 const showDetailDialogFlag = ref(false)
 const currentChange = ref(null)
+const processingChangeId = ref(null)
 
-// 上传表单
-const uploadForm = ref({
-  attachment: null
+const processForm = ref({
+  category: '',
+  result: 'success'
 })
 
 const uploadFormRef = ref()
 const viewFilesFormRef = ref()
 const uploadRef = ref()
 const fileList = ref([])
+
+const processableItems = computed(() => {
+  if (!currentChange.value || !Array.isArray(currentChange.value.change_items)) {
+    return []
+  }
+
+  return currentChange.value.change_items.filter((item) => ['pending', 'submitted'].includes(item.status))
+})
+
+const currentProcessItem = computed(() => {
+  if (!currentChange.value || !processForm.value.category || !Array.isArray(currentChange.value.change_items)) {
+    return null
+  }
+
+  return currentChange.value.change_items.find((item) => item.category === processForm.value.category) || null
+})
+
+const currentProcessAttachments = computed(() => {
+  if (!currentChange.value) {
+    return []
+  }
+
+  const itemId = currentProcessItem.value?.id
+  if (!itemId) {
+    return []
+  }
+
+  return (currentChange.value.attachments || []).filter((attachment) => attachment.insurance_change_item_id === itemId)
+})
 
 // 查看文件表单
 const viewFilesForm = ref({})
@@ -4341,26 +4421,46 @@ const showViewFilesDialog = (change) => {
   showViewFilesDialogFlag.value = true
 }
 
-// 显示上传对话框
-const showUploadDialog = (change) => {
-  console.log('=== 打开上传对话框 ===')
-  console.log('change对象:', change)
-  console.log('attachments:', change.attachments)
-  console.log('attachments类型:', typeof change.attachments)
-  console.log('attachments长度:', change.attachments ? change.attachments.length : 'undefined')
-  
-  if (change.attachments && change.attachments.length > 0) {
-    console.log('附件详情:')
-    change.attachments.forEach((att, index) => {
-      console.log(`附件${index + 1}:`, att)
-    })
-  } else {
-    console.log('没有附件数据')
-  }
-  
-  currentChange.value = change
-  showUploadDialogFlag.value = true
+const hasProcessableItems = (change) => {
+  return Array.isArray(change?.change_items) && change.change_items.some((item) => ['pending', 'submitted'].includes(item.status))
+}
+
+const handleProcessCategoryChange = () => {
   fileList.value = []
+}
+
+const refreshCurrentChangeData = async (changeId) => {
+  const detailResponse = await request.get(`/insurance-changes/${changeId}?t=${Date.now()}`)
+  if (detailResponse.success) {
+    currentChange.value = detailResponse.data
+    return detailResponse.data
+  }
+  return null
+}
+
+const showProcessDialog = async (change) => {
+  processForm.value = {
+    category: '',
+    result: 'success'
+  }
+  fileList.value = []
+
+  try {
+    const latestChange = await refreshCurrentChangeData(change.id)
+    currentChange.value = latestChange || change
+  } catch (error) {
+    currentChange.value = change
+  }
+
+  const defaultItem = Array.isArray(currentChange.value?.change_items)
+    ? currentChange.value.change_items.find((item) => ['pending', 'submitted'].includes(item.status))
+    : null
+
+  if (defaultItem) {
+    processForm.value.category = defaultItem.category
+  }
+
+  showUploadDialogFlag.value = true
 }
 
 // 文件选择（参考 Employees 的实现）
@@ -4454,60 +4554,83 @@ const handleDeleteAttachment = async (attachment) => {
   }
 }
 
-// 提交上传（支持多文件）
-const submitUpload = async () => {
-  if (!fileList.value || fileList.value.length === 0) {
-    ElMessage.warning('请选择要上传的文件')
+const submitProcess = async () => {
+  if (!currentChange.value?.id) {
     return
   }
-  
-  uploading.value = true
+
+  if (!processForm.value.category) {
+    ElMessage.warning('请选择处理业务')
+    return
+  }
+
+  if (processing.value) {
+    return
+  }
+
+  processing.value = true
+  processingChangeId.value = currentChange.value.id
+
   try {
-    console.log('=== 开始上传附件（多文件）===')
-    console.log('fileList:', fileList.value)
-    console.log('文件数量:', fileList.value.length)
-    
-    // 创建FormData，添加所有文件
-    const formData = new FormData()
-    fileList.value.forEach((file, index) => {
-      console.log(`添加文件 ${index + 1}:`, file.raw.name)
-      formData.append('attachments[]', file.raw)  // 使用 attachments[] 支持多文件
-    })
-    
-    console.log('FormData已创建，开始请求后端...')
-    
-    // 直接使用 request 发送
-    const response = await request.post(
-      `/insurance-changes/${currentChange.value.id}/upload-attachment`,
-      formData
-    )
-    
-    console.log('上传响应:', response)
-    
-    if (response.success) {
-      ElMessage.success(`成功上传 ${fileList.value.length} 个文件，请点击"确认处理"按钮完成处理`)
-      
-      // 更新当前记录的附件列表
-      if (response.data && response.data.change) {
-        currentChange.value = response.data.change
+    if (processForm.value.result === 'failed' && fileList.value.length > 0) {
+      const formData = new FormData()
+      fileList.value.forEach((file) => {
+        formData.append('attachments[]', file.raw)
+      })
+      formData.append('category', processForm.value.category)
+
+      const uploadResponse = await request.post(
+        `/insurance-changes/${currentChange.value.id}/upload-attachment`,
+        formData
+      )
+
+      if (!uploadResponse.success) {
+        throw new Error(uploadResponse.message || '上传附件失败')
       }
-      
-      // 清空待上传列表
+
+      currentChange.value = uploadResponse.data?.change || currentChange.value
       fileList.value = []
-      
-      // 不关闭对话框，让用户可以继续查看和管理附件
-      // showUploadDialogFlag.value = false
-      
-      // 刷新列表数据
-      loadChanges()
-    } else {
-      throw new Error(response.message || '上传失败')
     }
+
+    if (processForm.value.result === 'failed' && currentProcessAttachments.value.length === 0) {
+      ElMessage.warning('失败时必须上传对应业务附件')
+      return
+    }
+
+    const response = await request.put(`/insurance-changes/${currentChange.value.id}/confirm-process`, {
+      category: processForm.value.category,
+      result: processForm.value.result
+    })
+
+    if (!response.success) {
+      throw new Error(response.message || '处理失败')
+    }
+
+    ElMessage.success(response.message || '处理成功')
+
+    await loadChanges()
+    if (activeTab.value === 'details') {
+      await loadDetails()
+    }
+    if (activeTab.value === 'summaries') {
+      await loadSummaries()
+    }
+
+    const refreshed = await refreshCurrentChangeData(currentChange.value.id).catch(() => null)
+    if (refreshed) {
+      const listChange = changes.value.find((item) => item.id === refreshed.id)
+      if (listChange) {
+        Object.assign(listChange, refreshed)
+      }
+    }
+
+    showUploadDialogFlag.value = false
   } catch (error) {
-    console.error('上传附件失败:', error)
-    ElMessage.error(error.response?.data?.message || error.message || '上传附件失败')
+    console.error('业务处理失败:', error)
+    ElMessage.error(error.response?.data?.message || error.message || '业务处理失败')
   } finally {
-    uploading.value = false
+    processing.value = false
+    processingChangeId.value = null
   }
 }
 
@@ -4555,112 +4678,6 @@ const confirmOtherInsuranceOnly = async (change) => {
     }
   } finally {
     processingOtherInsurance.value = false
-  }
-}
-
-// 确认处理（从待处理状态更新为已处理）
-const confirmProcess = async (change) => {
-  // 防止重复点击
-  if (processing.value) {
-    return
-  }
-  
-  try {
-    await ElMessageBox.confirm(
-      `确定要将"${change.employee.name}"的参保信息标记为已处理吗？\n\n处理后将：\n1. 状态更新为"已处理"\n2. 自动导入到参保明细\n3. 更新汇总统计\n4. "其他保险确认处理"按钮将不再显示`,
-      '确认处理',
-      {
-        confirmButtonText: '确定处理',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    processing.value = true
-    
-    // 调用后端API更新状态为已处理
-    const response = await request.put(`/insurance-changes/${change.id}/confirm-process`)
-    
-    if (response.success) {
-      ElMessage.success('处理完成，数据已导入参保明细')
-      loadChanges()
-      // 如果当前在明细页面，也刷新明细数据
-      if (activeTab.value === 'details') {
-        loadDetails()
-      }
-      // 如果当前在汇总页面，也刷新汇总数据
-      if (activeTab.value === 'summaries') {
-        loadSummaries()
-      }
-      
-      // 如果当前有打开的详情对话框，刷新对话框数据
-      if (showDetailDialogFlag.value && currentChange.value && currentChange.value.id === change.id) {
-        console.log('刷新详情对话框数据，ID:', change.id)
-        try {
-          const detailResponse = await request.get(`/insurance-changes/${change.id}?t=${Date.now()}`)
-          if (detailResponse.success) {
-            currentChange.value = detailResponse.data
-            // 确保大额医疗保险状态是布尔值
-            if (typeof detailResponse.data.large_medical_insurance_enabled === 'number') {
-              currentChange.value.large_medical_insurance_enabled = Boolean(detailResponse.data.large_medical_insurance_enabled)
-            }
-            console.log('详情对话框数据已刷新，新状态:', currentChange.value.status)
-          }
-        } catch (error) {
-          console.error('刷新详情对话框数据失败:', error)
-        }
-      }
-    } else {
-      throw new Error(response.message || '处理失败')
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('确认处理失败:', error)
-      
-      // 处理不同类型的错误
-      if (error.response) {
-        const status = error.response.status
-        const message = error.response.data?.message || error.message
-        
-        if (status === 401) {
-          ElMessage.error('登录已过期，请重新登录')
-          // 不自动重定向，让用户手动操作
-        } else if (status === 403) {
-          ElMessage.error('没有权限执行此操作')
-        } else if (status === 400) {
-          ElMessage.warning(message || '请求参数错误')
-        } else if (status >= 500) {
-          ElMessage.error('服务器错误，请稍后重试')
-        } else {
-          ElMessage.error(message || '操作失败')
-        }
-      } else {
-        ElMessage.error(error.message || '网络错误，请检查网络连接')
-      }
-    }
-  } finally {
-    processing.value = false
-  }
-}
-
-// 处理参保信息（原有的处理完成功能）
-const processChange = async (change) => {
-  try {
-    await ElMessageBox.confirm('确定要处理完成该参保信息吗？', '确认处理', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-
-    await processInsuranceChange(change.id)
-    ElMessage.success('处理完成')
-    loadChanges()
-    loadDetails()
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('处理参保信息失败:', error)
-      ElMessage.error('处理参保信息失败')
-    }
   }
 }
 
@@ -4816,10 +4833,12 @@ const getStatusText = (status) => {
   const statusMap = {
     'pending': '待处理',
     'submitted': '待确认',  // 已上传附件，待确认处理
-    'completed': '已处理',
-    'processing': '已处理', // 兼容旧状态
-    'approved': '已处理',   // 兼容旧状态
-    'finished': '已处理'    // 兼容旧状态
+    'completed': '成功',
+    'failed': '失败',
+    'terminated': '终止',
+    'processing': '成功', // 兼容旧状态
+    'approved': '成功',   // 兼容旧状态
+    'finished': '成功'    // 兼容旧状态
   }
   return statusMap[status] || '待处理' // 默认显示为待处理而不是未知
 }
@@ -4830,6 +4849,8 @@ const getStatusTagType = (status) => {
     'pending': 'warning',
     'submitted': 'primary',  // 已上传附件，待确认处理
     'completed': 'success',
+    'failed': 'danger',
+    'terminated': 'info',
     'processing': 'success', // 兼容旧状态
     'approved': 'success',   // 兼容旧状态
     'finished': 'success'    // 兼容旧状态
@@ -6475,11 +6496,19 @@ watch(showExportDialog, (newVal) => {
   font-weight: 500;
 }
 
-.increase-count {
+.pending-count {
+  color: #e6a23c;
+}
+
+.success-count {
   color: #67c23a;
 }
 
-.decrease-count {
+.terminated-count {
+  color: #909399;
+}
+
+.failed-count {
   color: #f56c6c;
 }
 

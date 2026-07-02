@@ -6,12 +6,15 @@ use App\Traits\Auditable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class InsuranceChange extends Model
 {
     use HasFactory, Auditable;
 
     public const OPEN_STATUSES = ['pending', 'processing', 'submitted'];
+
+    private static ?bool $supportsTaskMonthColumn = null;
 
     /**
      * 审计名称
@@ -75,6 +78,7 @@ class InsuranceChange extends Model
         'notes',
         'created_by',
         'processed_by',
+        'task_month',
         'last_snapshot',
         'change_summary',
         'change_details',
@@ -116,6 +120,30 @@ class InsuranceChange extends Model
         'medical_insurance_changed' => 'boolean',
         'housing_fund_changed' => 'boolean',
     ];
+
+    protected static function booted()
+    {
+        static::creating(function (self $change) {
+            if (self::supportsTaskMonth() && empty($change->task_month)) {
+                $change->task_month = now()->format('Y-m');
+            }
+        });
+    }
+
+    public static function supportsTaskMonth(): bool
+    {
+        if (self::$supportsTaskMonthColumn !== null) {
+            return self::$supportsTaskMonthColumn;
+        }
+
+        try {
+            self::$supportsTaskMonthColumn = Schema::hasColumn('insurance_changes', 'task_month');
+        } catch (\Throwable $e) {
+            self::$supportsTaskMonthColumn = false;
+        }
+
+        return self::$supportsTaskMonthColumn;
+    }
 
     /**
      * 获取解析后的变更详情
@@ -414,8 +442,10 @@ class InsuranceChange extends Model
         $statusMap = [
             'pending' => '待处理',
             'processing' => '处理中',
-            'submitted' => '待提交汇总审批',
-            'completed' => '已完成'
+            'submitted' => '待确认',
+            'completed' => '成功',
+            'failed' => '失败',
+            'terminated' => '终止'
         ];
 
         return $statusMap[$this->status] ?? '未知';
@@ -430,7 +460,9 @@ class InsuranceChange extends Model
             'pending' => 'warning',
             'processing' => 'info',
             'submitted' => 'primary',
-            'completed' => 'success'
+            'completed' => 'success',
+            'failed' => 'danger',
+            'terminated' => 'info'
         ];
 
         return $typeMap[$this->status] ?? 'info';
@@ -1504,15 +1536,20 @@ class InsuranceChange extends Model
         return $query->whereIn('status', self::OPEN_STATUSES);
     }
 
-    public static function findLatestOpenChange(int $employeeId, int $projectId, int $accountSetId): ?self
+    public static function findLatestOpenChange(int $employeeId, int $projectId, int $accountSetId, ?string $taskMonth = null): ?self
     {
-        return self::query()
+        $query = self::query()
             ->where('employee_id', $employeeId)
             ->where('project_id', $projectId)
             ->where('account_set_id', $accountSetId)
             ->open()
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
+
+        if (self::supportsTaskMonth()) {
+            $query->where('task_month', $taskMonth ?: now()->format('Y-m'));
+        }
+
+        return $query->first();
     }
 
     public function reopenForReprocessing(?array $categories = null, bool $resetOtherInsuranceProcessed = false): self

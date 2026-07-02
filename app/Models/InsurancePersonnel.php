@@ -183,24 +183,34 @@ class InsurancePersonnel extends Model
             'housingFundRegion'
         ])->first();
 
-        // 从员工的地区信息中获取编号和账号
-        $socialSecurityCode = $employee && $employee->socialSecurityRegion
-            ? $employee->socialSecurityRegion->code
-            : null;
-        $medicalInsuranceCode = $employee && $employee->medicalInsuranceRegion
-            ? $employee->medicalInsuranceRegion->code
-            : null;
-        $housingFundAccountNumber = $employee && $employee->housingFundRegion
-            ? $employee->housingFundRegion->account_number
-            : null;
-
         // 应用上下限约束到基数
         $constrainedBases = self::applyBaseConstraintsFromChange($change);
 
-        // 确保地区ID正确（优先从变更记录，回退到员工档案）
-        $socialSecurityRegionId = $change->social_security_region_id ?: ($employee ? $employee->social_security_region_id : null);
-        $medicalInsuranceRegionId = $change->medical_insurance_region_id ?: ($employee ? $employee->medical_insurance_region_id : null);
-        $housingFundRegionId = $change->housing_fund_region_id ?: ($employee ? $employee->housing_fund_region_id : null);
+        $hasSocialSecurityConfig = !empty($change->social_security_types) || !empty($constrainedBases['social_security']);
+        $hasMedicalInsuranceConfig = !empty($change->medical_insurance_types) || !empty($constrainedBases['medical_insurance']);
+        $hasHousingFundConfig = !empty($change->housing_fund_params) || !empty($constrainedBases['housing_fund']);
+
+        // 确保地区ID正确。对显式清空的分类，不再回退员工档案，避免减保后又被自动补回。
+        $socialSecurityRegionId = $hasSocialSecurityConfig
+            ? ($change->social_security_region_id ?: ($employee ? $employee->social_security_region_id : null))
+            : null;
+        $medicalInsuranceRegionId = $hasMedicalInsuranceConfig
+            ? ($change->medical_insurance_region_id ?: ($employee ? $employee->medical_insurance_region_id : null))
+            : null;
+        $housingFundRegionId = $hasHousingFundConfig
+            ? ($change->housing_fund_region_id ?: ($employee ? $employee->housing_fund_region_id : null))
+            : null;
+
+        // 从员工的地区信息中获取编号和账号
+        $socialSecurityCode = $socialSecurityRegionId && $employee && $employee->socialSecurityRegion
+            ? $employee->socialSecurityRegion->code
+            : null;
+        $medicalInsuranceCode = $medicalInsuranceRegionId && $employee && $employee->medicalInsuranceRegion
+            ? $employee->medicalInsuranceRegion->code
+            : null;
+        $housingFundAccountNumber = $housingFundRegionId && $employee && $employee->housingFundRegion
+            ? $employee->housingFundRegion->account_number
+            : null;
 
         if ($personnel) {
             // 更新现有记录

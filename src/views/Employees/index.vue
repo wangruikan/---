@@ -1782,12 +1782,12 @@
                 :min="0"
                 :max="9999999"
                 :precision="2"
-                placeholder="请输入大额医疗基数"
+                placeholder="自动同步医保基数"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                disabled
                 :controls="false"
               />
-              <div class="form-tip">用于大额医疗缴费计算的基数</div>
+              <div class="form-tip">自动同步医保基数，无需手动填写</div>
             </el-form-item>
           </el-col>
           <!-- 固定金额类型：不显示基数 -->
@@ -3633,11 +3633,12 @@
                 :min="0"
                 :max="9999999"
                 :precision="2"
-                placeholder="请输入大额医疗基数"
+                placeholder="自动同步医保基数"
                 style="width: 100%"
+                disabled
                 :controls="false"
               />
-              <div class="form-tip">用于大额医疗缴费计算的基数</div>
+              <div class="form-tip">自动同步医保基数，无需手动填写</div>
             </el-form-item>
           </el-col>
           <!-- 固定金额类型：不显示基数 -->
@@ -6311,6 +6312,20 @@ const validateInsurancePairCompleteness = (rule, value, callback) => {
   callback()
 }
 
+const validateMedicalInsuranceBaseForLargeMedical = (_rule, value, callback) => {
+  if (
+    selectedLargeMedicalInsuranceConfig.value &&
+    selectedLargeMedicalInsuranceConfig.value.calculation_type === 'base' &&
+    selectedLargeMedicalInsuranceConfig.value.base_source !== 'config' &&
+    normalizeNullableNumber(value) === null
+  ) {
+    callback(new Error('已选择大额医疗保险，请先填写医保基数'))
+    return
+  }
+
+  callback()
+}
+
 const triggerDateAndInsuranceValidation = async () => {
   await nextTick()
   if (!formRef.value) return
@@ -6397,6 +6412,28 @@ const buildEmployeeSubmitPayload = (source) => {
     housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(source.housing_fund_region_id),
     salary_items: buildMergedSalaryItems(source)
   }
+  const largeMedicalConfig = availableLargeMedicalInsuranceConfigs.value.find(
+    item => item.id === payload.large_medical_insurance_config_id
+  ) || (
+    selectedLargeMedicalInsuranceConfig.value?.id === payload.large_medical_insurance_config_id
+      ? selectedLargeMedicalInsuranceConfig.value
+      : null
+  )
+
+  if (!largeMedicalConfig) {
+    payload.large_medical_base = null
+    payload.large_medical_company_base = null
+  } else if (largeMedicalConfig.calculation_type !== 'base') {
+    payload.large_medical_base = null
+    payload.large_medical_company_base = null
+  } else if (largeMedicalConfig.base_source === 'config') {
+    payload.large_medical_base = normalizeNullableNumber(largeMedicalConfig.employee_base_amount ?? largeMedicalConfig.base_amount)
+    payload.large_medical_company_base = normalizeNullableNumber(largeMedicalConfig.base_amount)
+  } else {
+    payload.large_medical_base = normalizeNullableNumber(source.medical_insurance_base)
+    payload.large_medical_company_base = null
+  }
+
   if (!payload.housing_fund_region_id) {
     payload.housing_fund_config_id = null
   }
@@ -6720,6 +6757,9 @@ const formRules = {
   contract_end_date: [
     { required: true, message: '请选择合同结束日期', trigger: 'change' }
   ],
+  medical_insurance_base: [
+    { validator: validateMedicalInsuranceBaseForLargeMedical, trigger: 'change' }
+  ],
   project_ids: [
     { required: true, message: '请选择所属项目', trigger: 'change' }
   ],
@@ -6790,7 +6830,46 @@ watch(() => form.id_number, (newIdNumber) => {
   }
 })
 
-// 大额基数现在从配置自动同步，不再跟随医保基数变化
+const syncLargeMedicalBaseFromMedicalInsuranceBase = ({ warnIfMissing = false } = {}) => {
+  const config = selectedLargeMedicalInsuranceConfig.value
+
+  if (!config) {
+    form.large_medical_base = null
+    form.large_medical_company_base = null
+    return true
+  }
+
+  if (config.calculation_type !== 'base') {
+    form.large_medical_base = null
+    form.large_medical_company_base = null
+    return true
+  }
+
+  if (config.base_source === 'config') {
+    form.large_medical_base = normalizeNullableNumber(config.employee_base_amount ?? config.base_amount)
+    form.large_medical_company_base = normalizeNullableNumber(config.base_amount)
+    return true
+  }
+
+  const medicalBase = normalizeNullableNumber(form.medical_insurance_base)
+  if (medicalBase === null) {
+    form.large_medical_base = null
+    form.large_medical_company_base = null
+    if (warnIfMissing) {
+      ElMessage.warning('已选择大额医疗保险，请先填写医保基数')
+    }
+    return false
+  }
+
+  form.large_medical_base = medicalBase
+  form.large_medical_company_base = null
+  return true
+}
+
+watch(() => form.medical_insurance_base, () => {
+  syncLargeMedicalBaseFromMedicalInsuranceBase()
+  formRef.value?.validateField?.('medical_insurance_base')
+})
 
 // 工资卡验证规则
 const salaryCardRules = {
@@ -8001,27 +8080,12 @@ const handleHousingFundConfigChange = (configId) => {
 const handleLargeMedicalInsuranceConfigChange = (configId) => {
   if (configId) {
     selectedLargeMedicalInsuranceConfig.value = availableLargeMedicalInsuranceConfigs.value.find(c => c.id === configId)
-    const config = selectedLargeMedicalInsuranceConfig.value
-    
-    if (config?.calculation_type === 'base') {
-      // 根据 base_source 判断是否为特殊地区
-      if (config.base_source === 'config') {
-        // 特殊地区：从配置同步个人基数和公司基数
-        form.large_medical_base = config.employee_base_amount || config.base_amount
-        form.large_medical_company_base = config.base_amount
-      } else {
-        // 普通地区：用户可以手动输入，清空公司基数
-        form.large_medical_company_base = null
-      }
-    } else {
-      // 固定金额类型不需要基数
-      form.large_medical_base = null
-      form.large_medical_company_base = null
-    }
+    syncLargeMedicalBaseFromMedicalInsuranceBase({ warnIfMissing: true })
+    formRef.value?.validateField?.('medical_insurance_base')
   } else {
     selectedLargeMedicalInsuranceConfig.value = null
-    form.large_medical_base = null
-    form.large_medical_company_base = null
+    syncLargeMedicalBaseFromMedicalInsuranceBase()
+    formRef.value?.clearValidate?.('medical_insurance_base')
   }
 }
 
@@ -8133,6 +8197,7 @@ const handleView = async (row) => {
         availableLargeMedicalInsuranceConfigs.value = data.large_medical_insurance_configs
         if (form.large_medical_insurance_config_id) {
           selectedLargeMedicalInsuranceConfig.value = availableLargeMedicalInsuranceConfigs.value.find(c => c.id === form.large_medical_insurance_config_id)
+          syncLargeMedicalBaseFromMedicalInsuranceBase()
         }
       }
       
@@ -8278,6 +8343,7 @@ const handleEdit = async (row) => {
         availableLargeMedicalInsuranceConfigs.value = data.large_medical_insurance_configs
         if (form.large_medical_insurance_config_id) {
           selectedLargeMedicalInsuranceConfig.value = availableLargeMedicalInsuranceConfigs.value.find(c => c.id === form.large_medical_insurance_config_id)
+          syncLargeMedicalBaseFromMedicalInsuranceBase()
         }
       }
       

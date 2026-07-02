@@ -2435,6 +2435,7 @@ class EmployeeController extends ApiController
                 'company_amount' => $config->company_amount,
                 'employee_amount' => $config->employee_amount,
                 'payment_cycle' => $config->payment_cycle,
+                'annual_payment_month' => $config->annual_payment_month,
                 'payment_cycle_text' => $config->payment_cycle_text,
             ];
         });
@@ -2825,6 +2826,7 @@ class EmployeeController extends ApiController
                             'employee_amount' => $config->employee_amount,
                             'company_amount' => $config->company_amount,
                             'payment_cycle' => $config->payment_cycle,
+                            'annual_payment_month' => $config->annual_payment_month,
                             'payment_cycle_text' => $config->payment_cycle_text,
                             'effective_date' => $config->effective_date,
                             'account_set_id' => $config->account_set_id

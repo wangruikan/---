@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Models\ApprovalFlowConfig;
 use App\Models\ProjectDeliveryConfig;
 use App\Models\DocumentDelivery;
+use App\Models\DocumentDeliveryItem;
 use App\Models\DocumentDeliveryReminder;
 use App\Models\AssessmentRecord;
 use App\Services\PendingTaskService;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Log;
 
 class DocumentDeliveryService
@@ -96,22 +98,11 @@ class DocumentDeliveryService
             ->first();
 
         if ($existing) {
-            $updateData = [];
-
-            if (($existing->display_month ?? null) !== $displayMonth) {
-                $updateData['display_month'] = $displayMonth;
+            if ($this->syncPendingDeliveryFromConfig($config, $existing, $displayMonth)) {
+                return $existing->fresh();
             }
 
-            $releaseMonth = $this->normalizeDeliveryReleaseMonth($config->delivery_release_month ?? null);
-            if (($existing->delivery_release_month ?? 'current') !== $releaseMonth) {
-                $updateData['delivery_release_month'] = $releaseMonth;
-            }
-
-            if (!empty($updateData)) {
-                $existing->update($updateData);
-            }
-
-            return $existing;
+            return $existing->fresh();
         }
 
         // 获取经办人ID（第一个审批节点账号）
@@ -131,10 +122,194 @@ class DocumentDeliveryService
             'required_documents' => $config->required_documents,
         ]);
 
+        $this->syncDeliveryItems($delivery);
+
         // 创建待办任务
         PendingTaskService::createDocumentDeliveryTask($delivery);
 
         return $delivery;
+    }
+
+    public function syncPendingDeliveriesForConfig(ProjectDeliveryConfig $config): int
+    {
+        $config->loadMissing('project');
+
+        $syncedCount = 0;
+
+        DocumentDelivery::where('account_set_id', $config->account_set_id)
+            ->where('project_id', $config->project_id)
+            ->where('status', 'pending')
+            ->orderBy('delivery_period')
+            ->get()
+            ->each(function (DocumentDelivery $delivery) use ($config, &$syncedCount) {
+                if ($this->syncPendingDeliveryFromConfig($config, $delivery)) {
+                    $syncedCount++;
+                }
+            });
+
+        return $syncedCount;
+    }
+
+    public function syncDeliveryItems(DocumentDelivery $delivery): void
+    {
+        $requiredDocuments = $this->normalizeRequiredDocuments(
+            $delivery->required_documents,
+            $delivery->status !== 'pending' ? $delivery->submitted_documents : null
+        );
+
+        if (empty($requiredDocuments)) {
+            return;
+        }
+
+        $delivery->loadMissing('items');
+        $existingItems = $delivery->items->keyBy(function (DocumentDeliveryItem $item) {
+            return trim((string) $item->document_name);
+        });
+
+        foreach ($requiredDocuments as $index => $documentName) {
+            $sortOrder = $index + 1;
+            $existingItem = $existingItems->get($documentName);
+
+            if ($existingItem) {
+                if ((int) $existingItem->sort_order !== $sortOrder) {
+                    $existingItem->update(['sort_order' => $sortOrder]);
+                }
+                continue;
+            }
+
+            DocumentDeliveryItem::create(array_merge(
+                $this->buildLegacyItemAttributes($delivery),
+                [
+                    'delivery_id' => $delivery->id,
+                    'document_name' => $documentName,
+                    'sort_order' => $sortOrder,
+                ]
+            ));
+        }
+
+        $delivery->unsetRelation('items');
+    }
+
+    public function refreshDeliverySummary(DocumentDelivery $delivery): DocumentDelivery
+    {
+        $delivery->loadMissing('items');
+        $items = $delivery->items;
+
+        if ($items->isEmpty()) {
+            return $delivery;
+        }
+
+        $submittedItems = $items->filter(function (DocumentDeliveryItem $item) {
+            return in_array($item->status, ['submitted', 'completed'], true);
+        })->values();
+
+        $completedItems = $items->where('status', 'completed')->values();
+        $pendingCount = $items->where('status', 'pending')->count();
+
+        if ($pendingCount > 0) {
+            $status = 'pending';
+        } elseif ($completedItems->count() === $items->count()) {
+            $status = 'completed';
+        } else {
+            $status = 'submitted';
+        }
+
+        $submittedNames = $submittedItems->pluck('document_name')
+            ->filter()
+            ->values()
+            ->all();
+
+        $expressNumbers = $submittedItems->pluck('express_number')
+            ->filter(function ($value) {
+                return $value !== null && $value !== '';
+            })
+            ->unique()
+            ->values();
+
+        $latestSubmittedItem = $submittedItems->sortByDesc(function (DocumentDeliveryItem $item) {
+            return $item->submitted_at ? $item->submitted_at->timestamp : 0;
+        })->first();
+
+        $latestCompletedItem = $completedItems->sortByDesc(function (DocumentDeliveryItem $item) {
+            return $item->completed_at ? $item->completed_at->timestamp : 0;
+        })->first();
+
+        $latestExpressDateItem = $submittedItems->filter(function (DocumentDeliveryItem $item) {
+            return !empty($item->express_date);
+        })->sortByDesc(function (DocumentDeliveryItem $item) {
+            return $item->express_date ? $item->express_date->timestamp : 0;
+        })->first();
+
+        $latestRemark = $submittedItems->pluck('remarks')
+            ->filter(function ($value) {
+                return $value !== null && $value !== '';
+            })
+            ->last();
+
+        $updateData = [];
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'status', $status);
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'submitted_documents', empty($submittedNames) ? null : implode('、', $submittedNames));
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'express_number', $expressNumbers->count() > 1 ? '多条' : ($expressNumbers->first() ?: null));
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'express_date', $latestExpressDateItem?->express_date);
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'submitted_by', $latestSubmittedItem?->submitted_by);
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'submitted_at', $latestSubmittedItem?->submitted_at);
+        $this->setSummaryValueIfChanged($delivery, $updateData, 'remarks', $latestRemark);
+
+        if ($status === 'completed') {
+            $this->setSummaryValueIfChanged($delivery, $updateData, 'completed_by', $latestCompletedItem?->completed_by);
+            $this->setSummaryValueIfChanged($delivery, $updateData, 'completed_at', $latestCompletedItem?->completed_at);
+        } else {
+            $this->setSummaryValueIfChanged($delivery, $updateData, 'completed_by', null);
+            $this->setSummaryValueIfChanged($delivery, $updateData, 'completed_at', null);
+        }
+
+        if (!empty($updateData)) {
+            $delivery->update($updateData);
+        }
+
+        return $delivery->fresh();
+    }
+
+    public function syncPendingDeliveryFromConfig(ProjectDeliveryConfig $config, DocumentDelivery $delivery, ?string $displayMonth = null): bool
+    {
+        if (!$this->canAutoSyncPendingDelivery($delivery)) {
+            return false;
+        }
+
+        if (($delivery->delivery_cycle ?? null) !== ($config->delivery_cycle ?? null)) {
+            return false;
+        }
+
+        $displayMonth = $displayMonth ?: $this->resolveDisplayMonthForPeriod($config, $delivery->delivery_period);
+        $handlerId = $this->getProjectOperatorId($config->project_id) ?? $delivery->handler_id;
+
+        $updateData = [
+            'config_id' => $config->id,
+            'delivery_method' => $config->delivery_method,
+            'delivery_release_month' => $this->normalizeDeliveryReleaseMonth($config->delivery_release_month ?? null),
+            'display_month' => $displayMonth,
+            'handler_id' => $handlerId,
+            'required_documents' => $config->required_documents,
+            'document_period' => null,
+            'submitted_documents' => null,
+            'express_number' => null,
+            'express_date' => null,
+            'submitted_by' => null,
+            'submitted_at' => null,
+            'completed_by' => null,
+            'completed_at' => null,
+            'remarks' => null,
+        ];
+
+        $delivery->update($updateData);
+
+        $delivery->items()->delete();
+        $delivery->unsetRelation('items');
+        $this->syncDeliveryItems($delivery->fresh());
+
+        PendingTaskService::syncDocumentDeliveryTask($delivery->fresh(['project']));
+
+        return true;
     }
 
     /**
@@ -477,5 +652,150 @@ class DocumentDeliveryService
     private function isQuarterSecondMonth(Carbon $date): bool
     {
         return in_array($date->month, [2, 5, 8, 11], true);
+    }
+
+    private function canAutoSyncPendingDelivery(DocumentDelivery $delivery): bool
+    {
+        if (($delivery->status ?? null) !== 'pending') {
+            return false;
+        }
+
+        $this->syncDeliveryItems($delivery);
+        $delivery->loadMissing(['items.attachments', 'attachments']);
+
+        if (
+            $this->hasFilledValue($delivery->document_period)
+            || $this->hasFilledValue($delivery->submitted_documents)
+            || $this->hasFilledValue($delivery->express_number)
+            || !empty($delivery->express_date)
+            || !empty($delivery->submitted_by)
+            || !empty($delivery->submitted_at)
+            || !empty($delivery->completed_by)
+            || !empty($delivery->completed_at)
+            || $this->hasFilledValue($delivery->remarks)
+        ) {
+            return false;
+        }
+
+        if (($delivery->attachments ?? collect())->whereNull('delivery_item_id')->isNotEmpty()) {
+            return false;
+        }
+
+        foreach ($delivery->items as $item) {
+            if (
+                ($item->status ?? null) !== 'pending'
+                || $this->hasFilledValue($item->submitted_documents)
+                || $this->hasFilledValue($item->express_number)
+                || !empty($item->express_date)
+                || !empty($item->submitted_by)
+                || !empty($item->submitted_at)
+                || !empty($item->completed_by)
+                || !empty($item->completed_at)
+                || $this->hasFilledValue($item->remarks)
+                || ($item->attachments ?? collect())->isNotEmpty()
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normalizeRequiredDocuments($documents, ?string $fallbackDocument = null): array
+    {
+        if (is_string($documents)) {
+            $decoded = json_decode($documents, true);
+            $documents = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($documents)) {
+            $documents = [];
+        }
+
+        $normalized = [];
+
+        foreach ($documents as $document) {
+            $documentName = trim((string) $document);
+            if ($documentName === '' || in_array($documentName, $normalized, true)) {
+                continue;
+            }
+
+            $normalized[] = $documentName;
+        }
+
+        if (empty($normalized) && !empty($fallbackDocument)) {
+            $normalized[] = trim($fallbackDocument);
+        }
+
+        if (empty($normalized)) {
+            $normalized[] = '资料交付';
+        }
+
+        return array_values(array_filter($normalized, function ($value) {
+            return $value !== '';
+        }));
+    }
+
+    private function buildLegacyItemAttributes(DocumentDelivery $delivery): array
+    {
+        if ($delivery->status === 'completed') {
+            return [
+                'status' => 'completed',
+                'submitted_documents' => $delivery->submitted_documents,
+                'express_number' => $delivery->express_number,
+                'express_date' => $delivery->express_date,
+                'submitted_by' => $delivery->submitted_by,
+                'submitted_at' => $delivery->submitted_at,
+                'completed_by' => $delivery->completed_by,
+                'completed_at' => $delivery->completed_at,
+                'remarks' => $delivery->remarks,
+            ];
+        }
+
+        if ($delivery->status === 'submitted') {
+            return [
+                'status' => 'submitted',
+                'submitted_documents' => $delivery->submitted_documents,
+                'express_number' => $delivery->express_number,
+                'express_date' => $delivery->express_date,
+                'submitted_by' => $delivery->submitted_by,
+                'submitted_at' => $delivery->submitted_at,
+                'remarks' => $delivery->remarks,
+            ];
+        }
+
+        return [
+            'status' => 'pending',
+        ];
+    }
+
+    private function setSummaryValueIfChanged(DocumentDelivery $delivery, array &$updateData, string $field, $newValue): void
+    {
+        $currentValue = $this->normalizeSummaryValue($delivery->{$field});
+        $nextValue = $this->normalizeSummaryValue($newValue);
+
+        if ($currentValue !== $nextValue) {
+            $updateData[$field] = $newValue;
+        }
+    }
+
+    private function normalizeSummaryValue($value): ?string
+    {
+        if ($value instanceof CarbonInterface) {
+            return $value->format($value->isStartOfDay() && $value->format('H:i:s') === '00:00:00'
+                ? 'Y-m-d'
+                : 'Y-m-d H:i:s');
+        }
+
+        if ($value === null) {
+            return null;
+        }
+
+        return (string) $value;
+    }
+
+    private function hasFilledValue($value): bool
+    {
+        return $value !== null && trim((string) $value) !== '';
     }
 }

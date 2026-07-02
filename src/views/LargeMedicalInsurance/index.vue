@@ -84,6 +84,14 @@
             {{ row.payment_cycle === 'month' ? '按月' : '按年' }}
           </template>
         </el-table-column>
+        <el-table-column label="生成月份" width="90">
+          <template #default="{ row }">
+            <template v-if="row.payment_cycle === 'year' && row.annual_payment_month">
+              {{ row.annual_payment_month }}月
+            </template>
+            <template v-else>--</template>
+          </template>
+        </el-table-column>
         <!-- 待生效配置列（仅特殊地区显示） -->
         
         <el-table-column label="操作" width="220" fixed="right">
@@ -161,6 +169,17 @@
             <el-radio label="month">按月</el-radio>
             <el-radio label="year">按年</el-radio>
           </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="formData.payment_cycle === 'year'" label="生成月份" prop="annual_payment_month">
+          <el-select v-model="formData.annual_payment_month" placeholder="请选择生成月份" style="width: 100%">
+            <el-option
+              v-for="item in monthOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="备注">
@@ -301,16 +320,30 @@ const canCreateForCurrentRegion = computed(() => {
 const formData = ref({
   region_name: '', calculation_type: 'base', base_source: 'employee',
   base_amount: 0, employee_base_amount: 0, company_ratio: 0, employee_ratio: 0,
-  company_amount: 0, employee_amount: 0, payment_cycle: 'month', status: 1, remarks: ''
+  company_amount: 0, employee_amount: 0, payment_cycle: 'month', annual_payment_month: null, status: 1, remarks: ''
 })
+
+const validateAnnualPaymentMonth = (_rule, value, callback) => {
+  if (formData.value.payment_cycle === 'year' && !value) {
+    callback(new Error('请选择生成月份'))
+    return
+  }
+
+  callback()
+}
 
 const formRules = {
   region_name: [{ required: true, message: '请输入地区名称', trigger: 'blur' }],
   calculation_type: [{ required: true, message: '请选择计算方式', trigger: 'change' }],
-  payment_cycle: [{ required: true, message: '请选择付款周期', trigger: 'change' }]
+  payment_cycle: [{ required: true, message: '请选择付款周期', trigger: 'change' }],
+  annual_payment_month: [{ validator: validateAnnualPaymentMonth, trigger: 'change' }]
 }
 
 const dialogTitle = computed(() => isEdit.value ? '编辑大额医疗保险配置' : '新建大额医疗保险配置')
+const monthOptions = Array.from({ length: 12 }, (_, index) => ({
+  label: `${index + 1}月`,
+  value: index + 1
+}))
 
 // 禁用今天之前的日期（允许选择今天）
 const formatDate = (date, type = 'datetime') => {
@@ -365,6 +398,7 @@ const handleEdit = (row) => {
     company_amount: row.company_amount || 0,
     employee_amount: row.employee_amount || 0,
     payment_cycle: row.payment_cycle,
+    annual_payment_month: row.annual_payment_month || null,
     status: row.status,
     remarks: row.remarks || ''
   }
@@ -390,7 +424,8 @@ const handleSubmit = async () => {
       ...formData.value,
       account_set_id: currentAccountSetId.value,
       company_ratio: formData.value.calculation_type === 'base' ? percentToDecimal(formData.value.company_ratio) : formData.value.company_ratio,
-      employee_ratio: formData.value.calculation_type === 'base' ? percentToDecimal(formData.value.employee_ratio) : formData.value.employee_ratio
+      employee_ratio: formData.value.calculation_type === 'base' ? percentToDecimal(formData.value.employee_ratio) : formData.value.employee_ratio,
+      annual_payment_month: formData.value.payment_cycle === 'year' ? formData.value.annual_payment_month : null
     }
     const response = isEdit.value
       ? await request.put(`/large-medical-insurance/${editingId.value}`, data)
@@ -412,7 +447,7 @@ const resetForm = () => {
   formData.value = {
     region_name: normalizedFixedRegionName.value, calculation_type: 'base', base_source: 'employee',
     base_amount: 0, employee_base_amount: 0, company_ratio: 0, employee_ratio: 0,
-    company_amount: 0, employee_amount: 0, payment_cycle: 'month', status: 1, remarks: ''
+    company_amount: 0, employee_amount: 0, payment_cycle: 'month', annual_payment_month: null, status: 1, remarks: ''
   }
 }
 
@@ -420,6 +455,9 @@ const resetForm = () => {
 watch(() => formData.value.calculation_type, (newVal) => {
   // 按基数 -> 按月，按固定金额 -> 按年
   formData.value.payment_cycle = newVal === 'base' ? 'month' : 'year'
+  if (newVal === 'base') {
+    formData.value.annual_payment_month = null
+  }
 })
 
 watch(() => props.fixedRegionName, () => {

@@ -96,6 +96,7 @@ class LargeMedicalInsuranceController extends Controller
                 'calculation_type' => 'required|in:base,fixed',
                 'base_source' => 'nullable|in:employee,config', // employee=员工基数, config=统一基数
                 'payment_cycle' => 'required|in:month,year',
+                'annual_payment_month' => 'nullable|integer|min:1|max:12',
                 'base_amount' => 'nullable|numeric|min:0',
                 'employee_base_amount' => 'nullable|numeric|min:0',
                 'company_ratio' => 'nullable|numeric|min:0|max:1',
@@ -111,6 +112,17 @@ class LargeMedicalInsuranceController extends Controller
                     'errors' => $validator->errors()
                 ], 422);
             }
+
+            if ($request->payment_cycle === 'year' && !$request->filled('annual_payment_month')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择按年生成月份'
+                ], 422);
+            }
+
+            $annualPaymentMonth = $request->payment_cycle === 'year'
+                ? (int) $request->input('annual_payment_month')
+                : null;
 
             // 检查地区是否已存在
             $exists = LargeMedicalInsuranceConfig::byAccountSet($accountSetId)
@@ -136,6 +148,7 @@ class LargeMedicalInsuranceController extends Controller
                 'company_amount' => $request->company_amount,
                 'employee_amount' => $request->employee_amount,
                 'payment_cycle' => $request->payment_cycle,
+                'annual_payment_month' => $annualPaymentMonth,
                 'status' => $request->input('status', 1),
                 'remarks' => $request->remarks,
                 'created_by' => $user ? $user->id : 1
@@ -185,6 +198,7 @@ class LargeMedicalInsuranceController extends Controller
                 'calculation_type' => 'sometimes|required|in:base,fixed',
                 'base_source' => 'nullable|in:employee,config',
                 'payment_cycle' => 'sometimes|required|in:month,year',
+                'annual_payment_month' => 'nullable|integer|min:1|max:12',
                 'base_amount' => 'nullable|numeric|min:0',
                 'employee_base_amount' => 'nullable|numeric|min:0',
                 'company_ratio' => 'nullable|numeric|min:0|max:1',
@@ -204,7 +218,23 @@ class LargeMedicalInsuranceController extends Controller
             // 保存旧数据用于变更检测
             $oldData = $config->toArray();
 
-            $config->update($request->all());
+            $paymentCycle = $request->has('payment_cycle')
+                ? $request->input('payment_cycle')
+                : $config->payment_cycle;
+
+            if ($paymentCycle === 'year' && !$request->filled('annual_payment_month') && !$config->annual_payment_month) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择按年生成月份'
+                ], 422);
+            }
+
+            $updateData = $request->all();
+            $updateData['annual_payment_month'] = $paymentCycle === 'year'
+                ? ($request->filled('annual_payment_month') ? (int) $request->input('annual_payment_month') : $config->annual_payment_month)
+                : null;
+
+            $config->update($updateData);
 
             // 检测保险信息变更并自动导入到增减模块
             $detectionService = app(InsuranceChangeDetectionService::class);
@@ -420,6 +450,7 @@ class LargeMedicalInsuranceController extends Controller
             $validator = Validator::make($request->all(), [
                 'effective_date' => 'required|date|after_or_equal:today',
                 'changes' => 'required|array',
+                'changes.annual_payment_month' => 'nullable|integer|min:1|max:12',
                 'changes.base_amount' => 'nullable|numeric|min:0',
                 'changes.employee_base_amount' => 'nullable|numeric|min:0',
             ]);
@@ -432,8 +463,22 @@ class LargeMedicalInsuranceController extends Controller
                 ], 422);
             }
 
+            $changes = $request->input('changes', []);
+            $targetPaymentCycle = $changes['payment_cycle'] ?? $config->payment_cycle;
+
+            if ($targetPaymentCycle === 'year' && empty($changes['annual_payment_month']) && !$config->annual_payment_month) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择按年生成月份'
+                ], 422);
+            }
+
+            $changes['annual_payment_month'] = $targetPaymentCycle === 'year'
+                ? ($changes['annual_payment_month'] ?? $config->annual_payment_month)
+                : null;
+
             $config->setPendingChanges(
-                $request->input('changes'),
+                $changes,
                 $request->input('effective_date'),
                 $user ? $user->id : null,
                 $user ? $user->name : null
@@ -615,4 +660,3 @@ class LargeMedicalInsuranceController extends Controller
         }
     }
 }
-

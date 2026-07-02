@@ -1,42 +1,45 @@
 <template>
   <div class="payment-application-container">
-    <!-- 筛选区域 -->
-    <el-card class="filter-card">
-      <el-form :model="filterForm" inline>
-        <el-form-item label="付款类型">
-          <el-select v-model="filterForm.payment_type" placeholder="全部类型" clearable style="width: 150px;">
-            <el-option label="工资付款" value="salary" />
-            <el-option label="保险付款" value="insurance" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="月份">
-          <el-date-picker
-            v-model="filterForm.month"
-            type="month"
-            placeholder="选择月份"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            clearable
-          />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="filterForm.status" placeholder="全部状态" clearable style="width: 150px;">
-            <el-option label="草稿" value="draft" />
-            <el-option label="待审批" value="pending" />
-            <el-option label="已通过" value="approved" />
-            <el-option label="已驳回" value="rejected" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
-          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+    <div ref="paymentStickyPanelRef" class="payment-sticky-panel">
+      <!-- 筛选区域 -->
+      <el-card class="filter-card">
+        <el-form :model="filterForm" inline>
+          <el-form-item label="付款类型">
+            <el-select v-model="filterForm.payment_type" placeholder="全部类型" clearable style="width: 150px;">
+              <el-option label="工资付款" value="salary" />
+              <el-option label="保险付款" value="insurance" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="月份">
+            <el-date-picker
+              v-model="filterForm.month"
+              type="month"
+              placeholder="选择月份"
+              format="YYYY-MM"
+              value-format="YYYY-MM"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="filterForm.status" placeholder="全部状态" clearable style="width: 150px;">
+              <el-option label="草稿" value="draft" />
+              <el-option label="待审批" value="pending" />
+              <el-option label="已通过" value="approved" />
+              <el-option label="已驳回" value="rejected" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+          </el-form-item>
+        </el-form>
+      </el-card>
+    </div>
 
     <!-- 付款申请列表 -->
-    <el-card class="table-card">
-      <el-table class="sticky-payment-table" :data="applicationList" v-loading="loading" border stripe>
+    <div class="table-section" :style="{ '--payment-table-sticky-top': `${paymentTableStickyTop}px` }">
+      <el-card class="table-card">
+        <el-table :data="applicationList" v-loading="loading" border stripe>
         <el-table-column prop="id" label="申请ID" width="80" />
         <el-table-column label="付款类型" width="140">
           <template #default="{ row }">
@@ -162,21 +165,22 @@
             </el-button>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
 
-      <!-- 分页 -->
-      <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="pagination.current"
-          v-model:page-size="pagination.pageSize"
-          :total="pagination.total"
-          :page-sizes="[10, 15, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          @current-change="loadApplicationList"
-          @size-change="loadApplicationList"
-        />
-      </div>
-    </el-card>
+        <!-- 分页 -->
+        <div class="pagination-container">
+          <el-pagination
+            v-model:current-page="pagination.current"
+            v-model:page-size="pagination.pageSize"
+            :total="pagination.total"
+            :page-sizes="[10, 15, 20, 50]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="loadApplicationList"
+            @size-change="loadApplicationList"
+          />
+        </div>
+      </el-card>
+    </div>
 
     <!-- 编辑/查看详情对话框 -->
     <el-dialog
@@ -811,7 +815,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute } from 'vue-router'
 import {
@@ -835,6 +839,27 @@ import request from '@/api/request'
 const accountSetStore = useAccountSetStore()
 const userStore = useUserStore()
 const route = useRoute()
+const paymentStickyPanelRef = ref(null)
+const paymentTableStickyTop = ref(0)
+let paymentStickyPanelResizeObserver = null
+
+const updatePaymentTableStickyTop = () => {
+  paymentTableStickyTop.value = paymentStickyPanelRef.value?.offsetHeight || 0
+}
+
+const initPaymentTableStickyTop = () => {
+  updatePaymentTableStickyTop()
+
+  if (typeof ResizeObserver === 'undefined' || !paymentStickyPanelRef.value) {
+    return
+  }
+
+  paymentStickyPanelResizeObserver?.disconnect()
+  paymentStickyPanelResizeObserver = new ResizeObserver(() => {
+    updatePaymentTableStickyTop()
+  })
+  paymentStickyPanelResizeObserver.observe(paymentStickyPanelRef.value)
+}
 
 // 项目列表
 const projectList = ref([])
@@ -1750,11 +1775,18 @@ onMounted(async () => {
   
   // 先加载列表
   await loadApplicationList()
+  initPaymentTableStickyTop()
+  window.addEventListener('resize', updatePaymentTableStickyTop)
   
   // 如果URL中有id参数，显示成功提示，但不自动打开详情
   if (route.query.id) {
     ElMessage.success('付款申请已创建成功，可以在列表中查看')
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updatePaymentTableStickyTop)
+  paymentStickyPanelResizeObserver?.disconnect()
 })
 </script>
 
@@ -1763,32 +1795,49 @@ onMounted(async () => {
   padding: 20px;
 }
 
+.payment-sticky-panel {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding-bottom: 1px;
+  background: #f0f2f5;
+}
+
 .filter-card {
   margin-bottom: 20px;
 }
 
-.table-card {
+.table-section {
   margin-bottom: 20px;
+  --payment-table-sticky-top: 0px;
 }
 
-:deep(.sticky-payment-table.el-table) {
+.table-section :deep(.el-card),
+.table-section :deep(.el-card__body),
+.table-section :deep(.el-table),
+.table-section :deep(.el-table__inner-wrapper) {
   overflow: visible;
 }
 
-:deep(.sticky-payment-table .el-table__inner-wrapper) {
-  overflow: visible;
-}
-
-:deep(.sticky-payment-table .el-table__header-wrapper),
-:deep(.sticky-payment-table .el-table__fixed-header-wrapper) {
+.table-section :deep(.el-table__header-wrapper),
+.table-section :deep(.el-table__fixed-header-wrapper) {
   position: sticky;
-  top: 0;
-  z-index: 20;
+  top: var(--payment-table-sticky-top);
+  z-index: 12;
+  background: #fff;
 }
 
-:deep(.sticky-payment-table .el-table__header th.el-table__cell),
-:deep(.sticky-payment-table .el-table__fixed-header-wrapper th.el-table__cell) {
+.table-section :deep(.el-table__fixed-header-wrapper) {
+  z-index: 13;
+}
+
+.table-section :deep(.el-table__header th),
+.table-section :deep(.el-table__fixed-header-wrapper th) {
   background: #fff;
+}
+
+.table-card {
+  margin-bottom: 0;
 }
 
 .pagination-container {

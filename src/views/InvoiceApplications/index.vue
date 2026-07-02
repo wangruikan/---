@@ -65,15 +65,34 @@
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="application_no" label="申请单号" width="180" />
-        <el-table-column label="期间" width="120" align="center">
+        <el-table-column label="项目" min-width="220">
           <template #default="{ row }">
-            {{ row.year }}-{{ String(row.month).padStart(2, '0') }}
+            {{ formatContentProjectNames(row.contentItems) }}
           </template>
         </el-table-column>
-        <el-table-column prop="total_amount" label="总金额" width="120" align="right">
+        <el-table-column prop="invoice_amount" label="开票金额" width="120" align="right">
           <template #default="{ row }">
-            ¥{{ Number(row.total_amount || 0).toFixed(2) }}
+            ¥{{ Number(row.invoice_amount || 0).toFixed(2) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="amount_excluding_tax" label="不含税金额" width="130" align="right">
+          <template #default="{ row }">
+            ¥{{ Number(row.amount_excluding_tax || 0).toFixed(2) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="tax_amount" label="税金" width="120" align="right">
+          <template #default="{ row }">
+            ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="project_name" label="开票项目名称" min-width="180">
+          <template #default="{ row }">
+            {{ row.project_name || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="company_name" label="开票单位" min-width="220">
+          <template #default="{ row }">
+            {{ row.company_name || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="status_text" label="状态" width="100" align="center">
@@ -2965,6 +2984,22 @@ const formatDateTime = (dateTime) => {
     second: '2-digit',
     hour12: false
   })
+}
+
+const formatContentProjectNames = (contentItems = []) => {
+  if (!Array.isArray(contentItems) || contentItems.length === 0) {
+    return '-'
+  }
+
+  const projectNames = contentItems
+    .map(item => String(item?.project_name || '').trim())
+    .filter(Boolean)
+
+  if (projectNames.length === 0) {
+    return '-'
+  }
+
+  return [...new Set(projectNames)].join('、')
 }
 
 // 监听开票方式变化，自动清空扣除额（如果不是全额或差额）

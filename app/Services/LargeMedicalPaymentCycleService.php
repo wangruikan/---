@@ -26,7 +26,7 @@ class LargeMedicalPaymentCycleService
             $paymentCycle = $this->normalizePaymentCycle($config['payment_cycle'] ?? null);
 
             if ($this->isYearlyCycle($paymentCycle)) {
-                return $this->isYearlyPaymentMonth($personnel, (int) $year, (int) $month);
+                return $this->isYearlyPaymentMonth($personnel, $config, (int) $year, (int) $month);
             }
 
             return true;
@@ -189,6 +189,7 @@ class LargeMedicalPaymentCycleService
                 'enabled' => $personnel->large_medical_insurance_enabled,
                 'payment_cycle' => $paymentCycle,
                 'payment_cycle_text' => $this->isYearlyCycle($paymentCycle) ? '按年' : '按月',
+                'annual_payment_month' => $config['annual_payment_month'] ?? null,
                 'calculation_type' => $config['calculation_type'] ?? 'base',
                 'calculation_type_text' => ($config['calculation_type'] ?? 'base') === 'fixed' ? '固定金额' : '按基数',
                 'payment_start_month' => $personnel->large_medical_payment_start_month,
@@ -224,12 +225,20 @@ class LargeMedicalPaymentCycleService
             $paymentMonths = [];
 
             if ($this->isYearlyCycle($paymentCycle)) {
-                $paymentStartMonth = (int) $personnel->large_medical_payment_start_month;
+                $paymentStartMonth = $this->resolveYearlyPaymentMonth(
+                    $config,
+                    (int) $personnel->large_medical_payment_start_month
+                );
                 $paymentStartYear = (int) $personnel->large_medical_payment_start_year;
+                $firstEligibleYear = $this->resolveFirstEligibleYear(
+                    $paymentStartMonth,
+                    $paymentStartYear,
+                    (int) $personnel->large_medical_payment_start_month
+                );
 
-                if ($paymentStartMonth > 0 && $paymentStartYear > 0) {
+                if ($paymentStartMonth > 0) {
                     for ($year = (int) $startYear; $year <= (int) $endYear; $year++) {
-                        if ($year >= $paymentStartYear) {
+                        if ($firstEligibleYear === null || $year >= $firstEligibleYear) {
                             $paymentMonths[] = [
                                 'year' => $year,
                                 'month' => $paymentStartMonth,
@@ -287,21 +296,39 @@ class LargeMedicalPaymentCycleService
         return $query->orderByDesc('updated_at')->orderByDesc('id')->first();
     }
 
-    private function isYearlyPaymentMonth($personnel, $year, $month)
+    public function isConfigPaymentMonth(array $config, int $year, int $month, ?int $startYear = null, ?int $startMonth = null): bool
     {
-        $startMonth = (int) $personnel->large_medical_payment_start_month;
-        $startYear = (int) $personnel->large_medical_payment_start_year;
-
-        // 首次启用但未设置起始时间时，保持当前行为：按月可缴
-        if ($startMonth <= 0 || $startYear <= 0) {
+        $paymentCycle = $this->normalizePaymentCycle($config['payment_cycle'] ?? null);
+        if (!$this->isYearlyCycle($paymentCycle)) {
             return true;
         }
 
-        if ((int) $month !== $startMonth) {
+        $paymentMonth = $this->resolveYearlyPaymentMonth($config, $startMonth);
+        if ($paymentMonth <= 0) {
+            return true;
+        }
+
+        if ($month !== $paymentMonth) {
             return false;
         }
 
-        return (int) $year >= $startYear;
+        $firstEligibleYear = $this->resolveFirstEligibleYear($paymentMonth, $startYear, $startMonth);
+        if ($firstEligibleYear === null) {
+            return true;
+        }
+
+        return $year >= $firstEligibleYear;
+    }
+
+    private function isYearlyPaymentMonth($personnel, array $config, $year, $month)
+    {
+        return $this->isConfigPaymentMonth(
+            $config,
+            (int) $year,
+            (int) $month,
+            (int) $personnel->large_medical_payment_start_year,
+            (int) $personnel->large_medical_payment_start_month
+        );
     }
 
     private function normalizePaymentCycle($paymentCycle)
@@ -322,5 +349,31 @@ class LargeMedicalPaymentCycleService
     private function isYearlyCycle($paymentCycle)
     {
         return $this->normalizePaymentCycle($paymentCycle) === 'yearly';
+    }
+
+    private function resolveYearlyPaymentMonth(array $config, ?int $fallbackMonth = null): int
+    {
+        $configuredMonth = (int) ($config['annual_payment_month'] ?? 0);
+        if ($configuredMonth >= 1 && $configuredMonth <= 12) {
+            return $configuredMonth;
+        }
+
+        $fallback = (int) $fallbackMonth;
+        return ($fallback >= 1 && $fallback <= 12) ? $fallback : 0;
+    }
+
+    private function resolveFirstEligibleYear(int $paymentMonth, ?int $startYear = null, ?int $startMonth = null): ?int
+    {
+        $year = (int) $startYear;
+        if ($year <= 0) {
+            return null;
+        }
+
+        $month = (int) $startMonth;
+        if ($month <= 0) {
+            return $year;
+        }
+
+        return $year + ($month > $paymentMonth ? 1 : 0);
     }
 }

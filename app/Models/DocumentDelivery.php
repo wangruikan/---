@@ -18,6 +18,7 @@ class DocumentDelivery extends Model
         'delivery_release_month' => '任务生成方式',
         'delivery_period' => '交付期间',
         'display_month' => '任务显示月份',
+        'document_period' => '所属期',
         'status' => '状态',
         'express_number' => '快递单号',
         'express_date' => '快递日期',
@@ -33,6 +34,7 @@ class DocumentDelivery extends Model
         'delivery_release_month',
         'delivery_period',
         'display_month',
+        'document_period',
         'status',
         'handler_id',
         'required_documents',
@@ -91,6 +93,14 @@ class DocumentDelivery extends Model
     public function attachments()
     {
         return $this->hasMany(DocumentDeliveryAttachment::class, 'delivery_id');
+    }
+
+    // 关联交付资料项
+    public function items()
+    {
+        return $this->hasMany(DocumentDeliveryItem::class, 'delivery_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     // 关联提醒记录

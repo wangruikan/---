@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\DocumentDelivery;
 use App\Models\DocumentDeliveryAttachment;
+use App\Models\DocumentDeliveryItem;
+use App\Services\DocumentDeliveryService;
 use App\Services\DynamicScheduledTaskService;
 use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class DocumentDeliveryController extends Controller
 {
@@ -19,8 +21,8 @@ class DocumentDeliveryController extends Controller
     public function index(Request $request)
     {
         try {
-            $accountSetId = (int)$request->input('current_account_set_id');
-            
+            $accountSetId = (int) $request->input('current_account_set_id');
+
             if (!$accountSetId) {
                 return response()->json([
                     'success' => false,
@@ -33,10 +35,8 @@ class DocumentDeliveryController extends Controller
                 $request->input('delivery_period')
             );
 
-            $query = DocumentDelivery::with(['project', 'submitter', 'attachments'])
-                ->where('account_set_id', $accountSetId);
+            $query = DocumentDelivery::where('account_set_id', $accountSetId);
 
-            // 筛选条件
             if ($request->filled('project_id')) {
                 $query->where('project_id', $request->input('project_id'));
             }
@@ -57,23 +57,30 @@ class DocumentDeliveryController extends Controller
                 $query->where('display_month', $request->input('delivery_period'));
             }
 
-            // 按任务显示月份倒序，最新的在前
             $deliveries = $query->orderBy('display_month', 'desc')
-                               ->orderBy('delivery_period', 'desc')
-                               ->orderBy('created_at', 'desc')
-                               ->paginate($request->input('per_page', 15));
+                ->orderBy('delivery_period', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->paginate($request->input('per_page', 15));
+
+            $deliveries->setCollection(
+                $deliveries->getCollection()
+                    ->map(function (DocumentDelivery $delivery) {
+                        return $this->buildDeliveryResponse($delivery->id, ['project', 'submitter']);
+                    })
+                    ->filter()
+                    ->values()
+            );
 
             return response()->json([
                 'success' => true,
                 'data' => $deliveries
             ]);
-
         } catch (\Exception $e) {
             Log::error('获取交付记录列表失败', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '获取列表失败: ' . $e->getMessage()
@@ -87,12 +94,7 @@ class DocumentDeliveryController extends Controller
     public function show($id)
     {
         try {
-            $delivery = DocumentDelivery::with([
-                'project', 
-                'submitter', 
-                'completer',
-                'attachments.uploader'
-            ])->find($id);
+            $delivery = $this->buildDeliveryResponse((int) $id);
 
             if (!$delivery) {
                 return response()->json([
@@ -105,12 +107,11 @@ class DocumentDeliveryController extends Controller
                 'success' => true,
                 'data' => $delivery
             ]);
-
         } catch (\Exception $e) {
             Log::error('获取交付记录详情失败', [
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '获取详情失败: ' . $e->getMessage()
@@ -154,7 +155,6 @@ class DocumentDeliveryController extends Controller
             $fileSize = @filesize($filePath) ?: null;
             $mimeType = $attachment->mime_type ?: (mime_content_type($filePath) ?: 'application/octet-stream');
 
-            // 清空已有输出缓冲，避免下载内容前出现额外字节导致文件损坏
             if (function_exists('ob_get_level')) {
                 while (ob_get_level() > 0) {
                     @ob_end_clean();
@@ -198,14 +198,18 @@ class DocumentDeliveryController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
+                'delivery_item_id' => 'required|integer',
+                'document_period' => ['required', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
                 'express_number' => 'required|string|max:100',
                 'express_date' => 'required|date',
-                'submitted_documents' => 'required|string',
+                'submitted_documents' => 'nullable|string',
                 'remarks' => 'nullable|string',
             ], [
+                'delivery_item_id.required' => '请选择交付资料',
+                'document_period.required' => '请选择所属期',
+                'document_period.regex' => '所属期格式不正确',
                 'express_number.required' => '请输入快递单号',
                 'express_date.required' => '请选择寄出日期',
-                'submitted_documents.required' => '请填写资料说明',
             ]);
 
             if ($validator->fails()) {
@@ -225,13 +229,6 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
-            if ($delivery->status !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该记录已提交，无法重复提交'
-                ], 422);
-            }
-
             if ($delivery->delivery_method !== 'express') {
                 return response()->json([
                     'success' => false,
@@ -239,31 +236,49 @@ class DocumentDeliveryController extends Controller
                 ], 422);
             }
 
-            $delivery->update([
-                'express_number' => $request->express_number,
-                'express_date' => $request->express_date,
-                'submitted_documents' => $request->submitted_documents,
+            $item = $this->findDeliveryItem($delivery, (int) $request->input('delivery_item_id'));
+            if (!$item) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '交付资料不存在'
+                ], 404);
+            }
+
+            if ($item->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料已提交，无法重复提交'
+                ], 422);
+            }
+
+            $item->update([
+                'express_number' => $request->input('express_number'),
+                'express_date' => $request->input('express_date'),
+                'submitted_documents' => $request->input('submitted_documents') ?: $item->document_name,
                 'remarks' => $request->input('remarks'),
                 'status' => 'submitted',
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
             ]);
 
-            // 检查并完成待办任务
+            $delivery->update([
+                'document_period' => $request->input('document_period'),
+            ]);
+
+            $delivery = app(DocumentDeliveryService::class)->refreshDeliverySummary($delivery->fresh());
             PendingTaskService::checkAndCompleteDocumentDeliveryTask($delivery);
 
             return response()->json([
                 'success' => true,
-                'message' => '快递交付提交成功',
-                'data' => $delivery->load(['project', 'submitter'])
+                'message' => '资料提交成功',
+                'data' => $this->buildDeliveryResponse($delivery->id)
             ]);
-
         } catch (\Exception $e) {
             Log::error('提交快递交付失败', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '提交失败: ' . $e->getMessage()
@@ -278,8 +293,14 @@ class DocumentDeliveryController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
+                'delivery_item_id' => 'required|integer',
+                'document_period' => ['required', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
                 'submitted_documents' => 'nullable|string',
                 'remarks' => 'nullable|string',
+            ], [
+                'delivery_item_id.required' => '请选择交付资料',
+                'document_period.required' => '请选择所属期',
+                'document_period.regex' => '所属期格式不正确',
             ]);
 
             if ($validator->fails()) {
@@ -299,13 +320,6 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
-            if ($delivery->status !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => '该记录已提交，无法重复提交'
-                ], 422);
-            }
-
             if ($delivery->delivery_method !== 'electronic') {
                 return response()->json([
                     'success' => false,
@@ -313,38 +327,58 @@ class DocumentDeliveryController extends Controller
                 ], 422);
             }
 
-            // 检查是否有附件
-            $attachmentCount = $delivery->attachments()->count();
-            if ($attachmentCount === 0) {
+            $item = $this->findDeliveryItem($delivery, (int) $request->input('delivery_item_id'));
+            if (!$item) {
                 return response()->json([
                     'success' => false,
-                    'message' => '电子交付至少需要上传一个附件'
+                    'message' => '交付资料不存在'
+                ], 404);
+            }
+
+            if ($item->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料已提交，无法重复提交'
                 ], 422);
             }
 
-            $delivery->update([
-                'submitted_documents' => $request->input('submitted_documents'),
+            $attachmentCount = DocumentDeliveryAttachment::where('delivery_id', $delivery->id)
+                ->where('delivery_item_id', $item->id)
+                ->count();
+
+            if ($attachmentCount === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料至少需要上传一个附件'
+                ], 422);
+            }
+
+            $item->update([
+                'submitted_documents' => $request->input('submitted_documents') ?: $item->document_name,
                 'remarks' => $request->input('remarks'),
                 'status' => 'submitted',
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
             ]);
 
-            // 检查并完成待办任务
+            $delivery->update([
+                'document_period' => $request->input('document_period'),
+            ]);
+
+            $delivery = app(DocumentDeliveryService::class)->refreshDeliverySummary($delivery->fresh());
             PendingTaskService::checkAndCompleteDocumentDeliveryTask($delivery);
 
             return response()->json([
                 'success' => true,
-                'message' => '电子交付提交成功',
-                'data' => $delivery->load(['project', 'submitter', 'attachments'])
+                'message' => '资料提交成功',
+                'data' => $this->buildDeliveryResponse($delivery->id)
             ]);
-
         } catch (\Exception $e) {
             Log::error('提交电子交付失败', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '提交失败: ' . $e->getMessage()
@@ -359,7 +393,10 @@ class DocumentDeliveryController extends Controller
     {
         try {
             $request->validate([
-                'file' => 'required|file|max:51200', // 50MB
+                'file' => 'required|file|max:51200',
+                'delivery_item_id' => 'required|integer',
+            ], [
+                'delivery_item_id.required' => '请选择交付资料',
             ]);
 
             $delivery = DocumentDelivery::find($id);
@@ -370,20 +407,34 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
-            if ($delivery->status !== 'pending') {
+            if ($delivery->delivery_method !== 'electronic') {
                 return response()->json([
                     'success' => false,
-                    'message' => '该记录已提交，无法上传附件'
+                    'message' => '只有电子交付支持上传附件'
+                ], 422);
+            }
+
+            $item = $this->findDeliveryItem($delivery, (int) $request->input('delivery_item_id'));
+            if (!$item) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '交付资料不存在'
+                ], 404);
+            }
+
+            if ($item->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料已提交，无法继续上传附件'
                 ], 422);
             }
 
             $file = $request->file('file');
             $filename = time() . '_' . $file->getClientOriginalName();
-            
+
             $fileSize = $file->getSize();
             $mimeType = $file->getMimeType();
-            
-            // 保存文件到 public 目录
+
             $directory = public_path('document_deliveries/' . $id);
             if (!file_exists($directory)) {
                 mkdir($directory, 0755, true);
@@ -391,9 +442,9 @@ class DocumentDeliveryController extends Controller
             $file->move($directory, $filename);
             $path = 'document_deliveries/' . $id . '/' . $filename;
 
-            // 保存附件记录
             $attachment = DocumentDeliveryAttachment::create([
                 'delivery_id' => $id,
+                'delivery_item_id' => $item->id,
                 'filename' => $filename,
                 'file_path' => $path,
                 'file_size' => $fileSize,
@@ -406,12 +457,11 @@ class DocumentDeliveryController extends Controller
                 'message' => '附件上传成功',
                 'data' => $attachment
             ]);
-
         } catch (\Exception $e) {
             Log::error('附件上传失败', [
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '附件上传失败: ' . $e->getMessage()
@@ -436,34 +486,38 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
-            // 检查交付记录状态
-            $delivery = $attachment->delivery;
-            if ($delivery && $delivery->status !== 'pending') {
+            $attachment->loadMissing(['delivery', 'item']);
+
+            if ($attachment->item && $attachment->item->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该资料已提交，无法删除附件'
+                ], 422);
+            }
+
+            if (!$attachment->item && $attachment->delivery && $attachment->delivery->status !== 'pending') {
                 return response()->json([
                     'success' => false,
                     'message' => '该记录已提交，无法删除附件'
                 ], 422);
             }
 
-            // 删除物理文件
             $filePath = public_path($attachment->file_path);
             if (file_exists($filePath)) {
                 unlink($filePath);
             }
 
-            // 删除记录
             $attachment->delete();
 
             return response()->json([
                 'success' => true,
                 'message' => '附件删除成功'
             ]);
-
         } catch (\Exception $e) {
             Log::error('附件删除失败', [
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '附件删除失败: ' . $e->getMessage()
@@ -486,30 +540,50 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
-            if ($delivery->status !== 'submitted') {
+            $service = app(DocumentDeliveryService::class);
+            $service->syncDeliveryItems($delivery);
+            $delivery->load('items');
+
+            if ($delivery->items->where('status', 'pending')->count() > 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => '只有已提交的记录才能标记为完成'
+                    'message' => '还有未交付资料，不能标记完成'
                 ], 422);
             }
 
-            $delivery->update([
-                'status' => 'completed',
-                'completed_by' => $request->user()->id,
-                'completed_at' => now(),
-            ]);
+            if ($delivery->status !== 'submitted') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只有全部已提交的记录才能标记为完成'
+                ], 422);
+            }
+
+            DB::transaction(function () use ($delivery, $request, $service) {
+                foreach ($delivery->items as $item) {
+                    if ($item->status === 'completed') {
+                        continue;
+                    }
+
+                    $item->update([
+                        'status' => 'completed',
+                        'completed_by' => $request->user()->id,
+                        'completed_at' => now(),
+                    ]);
+                }
+
+                $service->refreshDeliverySummary($delivery->fresh());
+            });
 
             return response()->json([
                 'success' => true,
                 'message' => '已标记为完成',
-                'data' => $delivery
+                'data' => $this->buildDeliveryResponse((int) $id)
             ]);
-
         } catch (\Exception $e) {
             Log::error('标记完成失败', [
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '操作失败: ' . $e->getMessage()
@@ -523,9 +597,9 @@ class DocumentDeliveryController extends Controller
     public function getMyPending(Request $request)
     {
         try {
-            $accountSetId = (int)$request->input('current_account_set_id');
+            $accountSetId = (int) $request->input('current_account_set_id');
             $userId = $request->user()->id;
-            
+
             if (!$accountSetId) {
                 return response()->json([
                     'success' => false,
@@ -538,32 +612,98 @@ class DocumentDeliveryController extends Controller
                 $request->input('delivery_period')
             );
 
-            // 获取用户负责的项目的待办交付
-            $deliveries = DocumentDelivery::with(['project', 'attachments'])
-                ->where('account_set_id', $accountSetId)
+            $deliveries = DocumentDelivery::where('account_set_id', $accountSetId)
                 ->where('status', 'pending')
-                ->whereHas('project', function($query) use ($userId) {
-                    // 这里可以根据实际业务逻辑筛选用户负责的项目
-                    // 暂时返回所有待办
+                ->whereHas('project', function ($query) use ($userId) {
                 })
                 ->orderBy('display_month', 'desc')
                 ->orderBy('delivery_period', 'desc')
-                ->get();
+                ->get()
+                ->map(function (DocumentDelivery $delivery) {
+                    return $this->buildDeliveryResponse($delivery->id, ['project', 'submitter']);
+                })
+                ->filter()
+                ->values();
 
             return response()->json([
                 'success' => true,
                 'data' => $deliveries
             ]);
-
         } catch (\Exception $e) {
             Log::error('获取待办交付失败', [
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => '获取失败: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function findDeliveryItem(DocumentDelivery $delivery, int $itemId): ?DocumentDeliveryItem
+    {
+        app(DocumentDeliveryService::class)->syncDeliveryItems($delivery);
+
+        return DocumentDeliveryItem::where('delivery_id', $delivery->id)
+            ->where('id', $itemId)
+            ->first();
+    }
+
+    private function buildDeliveryResponse(int $deliveryId, array $relations = []): ?DocumentDelivery
+    {
+        $delivery = DocumentDelivery::find($deliveryId);
+        if (!$delivery) {
+            return null;
+        }
+
+        app(DocumentDeliveryService::class)->syncDeliveryItems($delivery);
+
+        $baseRelations = [
+            'project',
+            'submitter',
+            'completer',
+            'attachments.uploader',
+            'items.submitter',
+            'items.completer',
+            'items.attachments.uploader',
+        ];
+
+        $delivery = DocumentDelivery::with(array_values(array_unique(array_merge($baseRelations, $relations))))
+            ->find($deliveryId);
+
+        return $delivery ? $this->appendComputedFields($delivery) : null;
+    }
+
+    private function appendComputedFields(DocumentDelivery $delivery): DocumentDelivery
+    {
+        $items = $delivery->items ?? collect();
+
+        foreach ($items as $item) {
+            $item->attachment_count = $item->attachments ? $item->attachments->count() : 0;
+        }
+
+        $pendingItems = $items->where('status', 'pending')->values();
+        $submittedItemCount = $items->filter(function (DocumentDeliveryItem $item) {
+            return in_array($item->status, ['submitted', 'completed'], true);
+        })->count();
+
+        $legacyAttachments = ($delivery->attachments ?? collect())
+            ->whereNull('delivery_item_id')
+            ->values();
+
+        $delivery->total_item_count = $items->count();
+        $delivery->submitted_item_count = $submittedItemCount;
+        $delivery->completed_item_count = $items->where('status', 'completed')->count();
+        $delivery->pending_documents = $pendingItems->pluck('document_name')->filter()->values();
+        $delivery->pending_documents_text = $delivery->pending_documents->isEmpty()
+            ? ''
+            : $delivery->pending_documents->implode('、');
+        $delivery->attachment_count = $legacyAttachments->count() + $items->sum(function (DocumentDeliveryItem $item) {
+            return $item->attachment_count ?? 0;
+        });
+        $delivery->legacy_attachments = $legacyAttachments;
+
+        return $delivery;
     }
 }

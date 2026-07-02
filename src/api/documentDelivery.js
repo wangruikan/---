@@ -108,9 +108,10 @@ export function markDeliveryAsCompleted(id) {
 }
 
 // 上传附件
-export function uploadDeliveryAttachment(id, file) {
+export function uploadDeliveryAttachment(id, file, deliveryItemId) {
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('delivery_item_id', deliveryItemId)
   
   return request({
     url: `/document-deliveries/${id}/attachments`,

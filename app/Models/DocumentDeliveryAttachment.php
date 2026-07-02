@@ -11,6 +11,7 @@ class DocumentDeliveryAttachment extends Model
 
     protected $fillable = [
         'delivery_id',
+        'delivery_item_id',
         'filename',
         'file_path',
         'file_size',
@@ -28,6 +29,12 @@ class DocumentDeliveryAttachment extends Model
     public function delivery()
     {
         return $this->belongsTo(DocumentDelivery::class, 'delivery_id');
+    }
+
+    // 关联交付资料项
+    public function item()
+    {
+        return $this->belongsTo(DocumentDeliveryItem::class, 'delivery_item_id');
     }
 
     // 关联上传人

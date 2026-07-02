@@ -519,6 +519,7 @@ class InsuranceChangeDetectionService
                 'region_name' => $largeMedicalConfig->region_name,
                 'calculation_type' => $largeMedicalConfig->calculation_type,
                 'payment_cycle' => $largeMedicalConfig->payment_cycle,
+                'annual_payment_month' => $largeMedicalConfig->annual_payment_month,
                 'company_ratio' => $largeMedicalConfig->company_ratio,
                 'employee_ratio' => $largeMedicalConfig->employee_ratio,
                 'company_amount' => $largeMedicalConfig->company_amount,
@@ -1064,6 +1065,7 @@ class InsuranceChangeDetectionService
                         'region_name' => $config->region_name,
                         'calculation_type' => $config->calculation_type,
                         'payment_cycle' => $config->payment_cycle,
+                        'annual_payment_month' => $config->annual_payment_month,
                         'base_source' => $config->base_source,
                         'base_amount' => $config->base_amount,
                         'employee_base_amount' => $config->employee_base_amount,
@@ -1831,7 +1833,29 @@ class InsuranceChangeDetectionService
                 'new_value' => $newCycle
             ];
         }
-        
+
+        if (
+            array_key_exists('annual_payment_month', $oldData) ||
+            array_key_exists('annual_payment_month', $newData)
+        ) {
+            $oldMonth = isset($oldData['annual_payment_month']) && $oldData['annual_payment_month'] !== null
+                ? ((int) $oldData['annual_payment_month']) . '月'
+                : '未设置';
+            $newMonth = isset($newData['annual_payment_month']) && $newData['annual_payment_month'] !== null
+                ? ((int) $newData['annual_payment_month']) . '月'
+                : '未设置';
+
+            if ($oldMonth !== $newMonth) {
+                $changes[] = [
+                    'category' => 'large_medical_insurance',
+                    'action' => 'modified',
+                    'item' => '大额医疗保险按年生成月份',
+                    'old_value' => $oldMonth,
+                    'new_value' => $newMonth
+                ];
+            }
+        }
+
         // 检测公司金额变更
         if (isset($oldData['company_amount']) && isset($newData['company_amount']) && $oldData['company_amount'] != $newData['company_amount']) {
             $changes[] = [

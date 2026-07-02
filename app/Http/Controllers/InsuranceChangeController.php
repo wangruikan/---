@@ -551,6 +551,10 @@ class InsuranceChangeController extends ApiController
         $housingFundEmployeeAmount = 0;
         $largeMedicalCompanyAmount = 0;
         $largeMedicalEmployeeAmount = 0;
+        $paymentPeriod = date('Y-m'); // 当前月份，格式：YYYY-MM
+        $periodParts = explode('-', $paymentPeriod);
+        $periodYear = isset($periodParts[0]) ? (int) $periodParts[0] : (int) date('Y');
+        $periodMonth = isset($periodParts[1]) ? (int) $periodParts[1] : (int) date('n');
 
         // 计算医保金额
         if (is_array($medicalInsuranceTypes)) {
@@ -583,29 +587,14 @@ class InsuranceChangeController extends ApiController
         // 计算大额医疗金额
         $largeMedicalCompanyBase = $personnel->employee_large_medical_company_base ?? $largeMedicalBase;
         if ($personnel->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
-            // 检查大额医疗保险的付款周期
-            $paymentCycle = $largeMedicalConfig['payment_cycle'] ?? 'month';
             $calculationType = $largeMedicalConfig['calculation_type'] ?? 'base';
-            
-            // 判断是否为支付月份
-            $isPaymentMonth = true;
-            if ($paymentCycle === 'year' || $paymentCycle === 'yearly') {
-                // 按年付款：需要检查是否为支付月份
-                $currentMonth = (int) date('n');
-                $currentYear = (int) date('Y');
-                
-                if ($personnel->large_medical_payment_start_month && $personnel->large_medical_payment_start_year) {
-                    // 检查月份是否匹配
-                    if ($currentMonth != $personnel->large_medical_payment_start_month) {
-                        $isPaymentMonth = false;
-                    }
-                    // 检查年份是否有效
-                    if ($currentYear < $personnel->large_medical_payment_start_year) {
-                        $isPaymentMonth = false;
-                    }
-                }
-                // 如果没有设置支付起始月份，默认当前月份为支付月份（首次入职）
-            }
+            $isPaymentMonth = $this->isLargeMedicalPaymentMonthForConfig(
+                $largeMedicalConfig,
+                (int) date('Y'),
+                (int) date('n'),
+                (int) $personnel->large_medical_payment_start_year,
+                (int) $personnel->large_medical_payment_start_month
+            );
             
             if ($isPaymentMonth) {
                 // 是支付月份，计算金额
@@ -627,7 +616,6 @@ class InsuranceChangeController extends ApiController
 
         // 正常数据：费款所属期 = 当前月份
         $employeeType = '正常';
-        $paymentPeriod = date('Y-m'); // 当前月份，格式：YYYY-MM
         
         // ✅ 过滤其他保险：只保留在当前月份有效期内的保单
         $filteredOtherInsurancePolicies = $this->filterOtherInsurancePoliciesByDate(
@@ -779,50 +767,31 @@ class InsuranceChangeController extends ApiController
 
         // 计算大额医疗金额
         if ($personnel->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
-            // 检查大额医疗保险的付款周期
-            $paymentCycle = $largeMedicalConfig['payment_cycle'] ?? 'month';
-            
             \Log::info('大额医疗计算调试', [
                 'employee_name' => $personnel->employee_name,
                 'employee_type' => $employeeType,
                 'payment_period' => $paymentPeriod,
-                'payment_cycle' => $paymentCycle,
+                'payment_cycle' => $largeMedicalConfig['payment_cycle'] ?? 'month',
                 'large_medical_base' => $largeMedicalBase,
                 'large_medical_config' => $largeMedicalConfig,
                 'large_medical_insurance_enabled' => $personnel->large_medical_insurance_enabled,
                 'is_array_config' => is_array($largeMedicalConfig),
                 'config_not_empty' => !empty($largeMedicalConfig)
             ]);
-            
-            if ($paymentCycle === 'year') {
-                // 按年付款：如果这个月有补交情况，只有补交的第一条数据有金额
-                if ($employeeType === '补交') {
-                    // 补交数据：检查是否是补交的第一条数据（入职月份）
-                    $hireMonth = date('m', strtotime($personnel->created_at)); // 入职月份
-                    $currentMonth = date('m', strtotime($paymentPeriod . '01')); // 费款所属期月份
-                    
-                    if ($hireMonth == $currentMonth) {
-                        // 入职月份：正常计算大额医疗金额
-                        if ($largeMedicalConfig['calculation_type'] === 'base') {
-                            // 公司用公司基数，个人用个人基数
-                            $largeMedicalCompanyAmount = $largeMedicalCompanyBase * (floatval($largeMedicalConfig['company_ratio'] ?? 0));
-                            $largeMedicalEmployeeAmount = $largeMedicalBase * (floatval($largeMedicalConfig['employee_ratio'] ?? 0));
-                        } else {
-                            $largeMedicalCompanyAmount = floatval($largeMedicalConfig['company_amount'] ?? 0);
-                            $largeMedicalEmployeeAmount = floatval($largeMedicalConfig['employee_amount'] ?? 0);
-                        }
-                    } else {
-                        // 非入职月份：大额医疗金额为0
-                        $largeMedicalCompanyAmount = 0;
-                        $largeMedicalEmployeeAmount = 0;
-                    }
-                } else {
-                    // 正常数据：按年付款时正常数据的大额为0
-                    $largeMedicalCompanyAmount = 0;
-                    $largeMedicalEmployeeAmount = 0;
-                }
-            } else {
-                // 按月付款：所有月份（正常和补交）都有金额
+
+            $periodParts = explode('-', $paymentPeriod);
+            $periodYear = isset($periodParts[0]) ? (int) $periodParts[0] : (int) date('Y');
+            $periodMonth = isset($periodParts[1]) ? (int) $periodParts[1] : (int) date('n');
+            $anchorYear = (int) $personnel->large_medical_payment_start_year;
+            $anchorMonth = (int) $personnel->large_medical_payment_start_month;
+
+            if ($employeeType === '补交') {
+                [$anchorYear, $anchorMonth] = $this->extractYearMonthFromDate(
+                    $personnel->employee ? $personnel->employee->large_medical_enrollment_date : null
+                );
+            }
+
+            if ($this->isLargeMedicalPaymentMonthForConfig($largeMedicalConfig, $periodYear, $periodMonth, $anchorYear, $anchorMonth)) {
                 if ($largeMedicalConfig['calculation_type'] === 'base') {
                     // 公司用公司基数，个人用个人基数
                     $largeMedicalCompanyAmount = $largeMedicalCompanyBase * (floatval($largeMedicalConfig['company_ratio'] ?? 0));
@@ -1094,21 +1063,8 @@ class InsuranceChangeController extends ApiController
 
         // 计算大额医疗金额（只有需要补交时才计算）
         if ($needLargeMedical && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
-            $paymentCycle = $largeMedicalConfig['payment_cycle'] ?? 'month';
-            
-            if ($paymentCycle === 'year') {
-                // 按年付款：只有参保月份才计算金额
-                if ($paymentPeriod === $largeMedicalEnrollmentMonth) {
-                    if (($largeMedicalConfig['calculation_type'] ?? '') === 'base') {
-                        $largeMedicalCompanyAmount = $largeMedicalCompanyBase * (floatval($largeMedicalConfig['company_ratio'] ?? 0));
-                        $largeMedicalEmployeeAmount = $largeMedicalBase * (floatval($largeMedicalConfig['employee_ratio'] ?? 0));
-                    } else {
-                        $largeMedicalCompanyAmount = floatval($largeMedicalConfig['company_amount'] ?? 0);
-                        $largeMedicalEmployeeAmount = floatval($largeMedicalConfig['employee_amount'] ?? 0);
-                    }
-                }
-            } else {
-                // 按月付款
+            [$anchorYear, $anchorMonth] = $this->extractYearMonthFromDate($largeMedicalEnrollmentDate);
+            if ($this->isLargeMedicalPaymentMonthForConfig($largeMedicalConfig, $periodYear, $periodMonth, $anchorYear, $anchorMonth)) {
                 if (($largeMedicalConfig['calculation_type'] ?? '') === 'base') {
                     $largeMedicalCompanyAmount = $largeMedicalCompanyBase * (floatval($largeMedicalConfig['company_ratio'] ?? 0));
                     $largeMedicalEmployeeAmount = $largeMedicalBase * (floatval($largeMedicalConfig['employee_ratio'] ?? 0));
@@ -1120,9 +1076,6 @@ class InsuranceChangeController extends ApiController
         }
 
         // 构建明细数据
-        $periodParts = explode('-', $paymentPeriod);
-        $periodYear = isset($periodParts[0]) ? (int) $periodParts[0] : (int) date('Y');
-        $periodMonth = isset($periodParts[1]) ? (int) $periodParts[1] : (int) date('n');
         $filteredOtherInsurancePolicies = $this->filterOtherInsurancePoliciesByDate(
             $personnel->other_insurance_policies,
             $periodYear,
@@ -1288,13 +1241,19 @@ class InsuranceChangeController extends ApiController
 
         // 大额医疗保险费用计算
         if ($largeMedicalConfig && $change->large_medical_insurance_enabled) {
-            if ($largeMedicalConfig['calculation_type'] === 'base') {
-                // 公司用公司基数，个人用个人基数
-                $largeMedicalCompanyAmount = $largeMedicalCompanyBase * ($largeMedicalConfig['company_ratio'] ?? 0);
-                $largeMedicalEmployeeAmount = $largeMedicalBase * ($largeMedicalConfig['employee_ratio'] ?? 0);
-            } else {
-                $largeMedicalCompanyAmount = $largeMedicalConfig['company_amount'] ?? 0;
-                $largeMedicalEmployeeAmount = $largeMedicalConfig['employee_amount'] ?? 0;
+            [$anchorYear, $anchorMonth] = $this->extractYearMonthFromDate(
+                $change->employee ? $change->employee->large_medical_enrollment_date : null
+            );
+
+            if ($this->isLargeMedicalPaymentMonthForConfig($largeMedicalConfig, (int) now()->year, (int) now()->month, $anchorYear, $anchorMonth)) {
+                if ($largeMedicalConfig['calculation_type'] === 'base') {
+                    // 公司用公司基数，个人用个人基数
+                    $largeMedicalCompanyAmount = $largeMedicalCompanyBase * ($largeMedicalConfig['company_ratio'] ?? 0);
+                    $largeMedicalEmployeeAmount = $largeMedicalBase * ($largeMedicalConfig['employee_ratio'] ?? 0);
+                } else {
+                    $largeMedicalCompanyAmount = $largeMedicalConfig['company_amount'] ?? 0;
+                    $largeMedicalEmployeeAmount = $largeMedicalConfig['employee_amount'] ?? 0;
+                }
             }
         }
 
@@ -1393,6 +1352,31 @@ class InsuranceChangeController extends ApiController
         }
         
         return '正常';
+    }
+
+    private function isLargeMedicalPaymentMonthForConfig(array $config, int $year, int $month, ?int $anchorYear = null, ?int $anchorMonth = null): bool
+    {
+        return app(\App\Services\LargeMedicalPaymentCycleService::class)->isConfigPaymentMonth(
+            $config,
+            $year,
+            $month,
+            $anchorYear,
+            $anchorMonth
+        );
+    }
+
+    private function extractYearMonthFromDate($date): array
+    {
+        if (empty($date)) {
+            return [null, null];
+        }
+
+        try {
+            $parsed = \Carbon\Carbon::parse($date);
+            return [(int) $parsed->year, (int) $parsed->month];
+        } catch (\Throwable $e) {
+            return [null, null];
+        }
     }
 
     /**
@@ -2929,30 +2913,13 @@ class InsuranceChangeController extends ApiController
             }
             
             // 根据付款周期和月份决定是否计入汇总金额
-            if ($largeMedicalConfig['payment_cycle'] === 'month') {
-                // 按月付款：每个月都计入实际金额
+            [$anchorYear, $anchorMonth] = $this->extractYearMonthFromDate(
+                $change->employee ? $change->employee->large_medical_enrollment_date : null
+            );
+
+            if ($this->isLargeMedicalPaymentMonthForConfig($largeMedicalConfig, (int) now()->year, (int) now()->month, $anchorYear, $anchorMonth)) {
                 $totalCompanyAmount += $companyCost;
                 $totalEmployeeAmount += $employeeCost;
-            } else {
-                // 按年付款：需要检查是否是付款月份
-                $currentMonth = now()->month;
-                $isFirstTime = $this->isFirstTimeLargeMedicalEnrollment($change->employee_id, $largeMedicalConfig['id']);
-                
-                if ($isFirstTime) {
-                    // 首次参保：计入实际金额
-                    $totalCompanyAmount += $companyCost;
-                    $totalEmployeeAmount += $employeeCost;
-                } else {
-                    // 非首次参保：检查是否是年度缴费月份
-                    $firstEnrollmentMonth = $this->getFirstEnrollmentMonth($change->employee_id, $largeMedicalConfig['id']);
-                    
-                    if ($firstEnrollmentMonth && $currentMonth == $firstEnrollmentMonth) {
-                        // 年度缴费月份：计入实际金额
-                        $totalCompanyAmount += $companyCost;
-                        $totalEmployeeAmount += $employeeCost;
-                    }
-                    // 非年度缴费月份：不计入金额（保持0）
-                }
             }
         }
 
@@ -3130,34 +3097,14 @@ class InsuranceChangeController extends ApiController
             // 根据付款周期和月份决定是否显示金额
             $companyAmount = 0;
             $employeeAmount = 0;
-            
-            if ($largeMedicalConfig['payment_cycle'] === 'month') {
-                // 按月付款：每个月都显示实际金额
+
+            [$anchorYear, $anchorMonth] = $this->extractYearMonthFromDate(
+                $change->employee ? $change->employee->large_medical_enrollment_date : null
+            );
+
+            if ($this->isLargeMedicalPaymentMonthForConfig($largeMedicalConfig, (int) now()->year, (int) now()->month, $anchorYear, $anchorMonth)) {
                 $companyAmount = $baseCompanyAmount;
                 $employeeAmount = $baseEmployeeAmount;
-            } else {
-                // 按年付款：需要检查是否是付款月份
-                $currentMonth = now()->month;
-                $isFirstTime = $this->isFirstTimeLargeMedicalEnrollment($change->employee_id, $largeMedicalConfig['id']);
-                
-                if ($isFirstTime) {
-                    // 首次参保：显示实际金额
-                    $companyAmount = $baseCompanyAmount;
-                    $employeeAmount = $baseEmployeeAmount;
-                } else {
-                    // 非首次参保：检查是否是年度缴费月份
-                    $firstEnrollmentMonth = $this->getFirstEnrollmentMonth($change->employee_id, $largeMedicalConfig['id']);
-                    
-                    if ($firstEnrollmentMonth && $currentMonth == $firstEnrollmentMonth) {
-                        // 年度缴费月份：显示实际金额
-                        $companyAmount = $baseCompanyAmount;
-                        $employeeAmount = $baseEmployeeAmount;
-                    } else {
-                        // 非年度缴费月份：显示0
-                        $companyAmount = 0;
-                        $employeeAmount = 0;
-                    }
-                }
             }
             
             $dynamicDetails['company_contributions'][] = [

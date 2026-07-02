@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\ProjectDeliveryConfig;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
@@ -392,9 +393,25 @@ class ProjectDeliveryConfigController extends Controller
                 'updated_by' => $request->user()->id,
             ]);
 
+            $config->refresh()->load('project');
+
+            $deliveryService = app(\App\Services\DocumentDeliveryService::class);
+            $syncedCount = $deliveryService->syncPendingDeliveriesForConfig($config);
+
+            if ($config->is_active) {
+                $displayMonthDate = Carbon::now()->startOfMonth();
+                $period = $deliveryService->resolveDeliveryPeriodForDisplayMonth($config, $displayMonthDate);
+
+                if ($period) {
+                    $deliveryService->createDeliveryRecord($config, $period, $displayMonthDate->format('Y-m'));
+                }
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => '配置更新成功',
+                'message' => $syncedCount > 0
+                    ? "配置更新成功，已同步 {$syncedCount} 条待交付任务"
+                    : '配置更新成功',
                 'data' => $config->load(['project', 'creator', 'updater'])
             ]);
 

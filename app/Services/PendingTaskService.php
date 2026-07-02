@@ -505,22 +505,8 @@ class PendingTaskService
     public static function createDocumentDeliveryTask($documentDelivery)
     {
         try {
-            // 获取项目信息
-            $project = $documentDelivery->project;
-            if (!$project) {
-                Log::warning('文档交付记录缺少项目信息', [
-                    'delivery_id' => $documentDelivery->id
-                ]);
-                return null;
-            }
-
-            // 获取处理人（项目的第一个审批节点账号）
-            $handler = self::getProjectOperator($documentDelivery->project_id, $documentDelivery->account_set_id, 'document_delivery');
-            if (!$handler) {
-                Log::warning('无法确定文档交付处理人', [
-                    'delivery_id' => $documentDelivery->id,
-                    'project_id' => $documentDelivery->project_id
-                ]);
+            $payload = self::buildDocumentDeliveryTaskPayload($documentDelivery);
+            if (!$payload) {
                 return null;
             }
 
@@ -533,35 +519,37 @@ class PendingTaskService
                 ->first();
 
             if ($existingTask) {
+                $updateData = [];
+
+                foreach (['title', 'description', 'handler_id', 'handler_name'] as $field) {
+                    if (($existingTask->{$field} ?? null) !== ($payload[$field] ?? null)) {
+                        $updateData[$field] = $payload[$field];
+                    }
+                }
+
+                if (!empty($updateData)) {
+                    $existingTask->update($updateData);
+                }
+
                 return $existingTask;
             }
 
-            // 生成任务标题和描述
-            $cycleText = $documentDelivery->delivery_cycle === 'monthly' ? '月度' : '季度';
-            $taskMonth = $documentDelivery->display_month ?: $documentDelivery->delivery_period;
-            $title = "{$project->name} {$taskMonth} {$cycleText}资料交付待处理";
-            $description = "项目 {$project->name} 的 {$documentDelivery->delivery_period} {$cycleText}资料需要在 {$taskMonth} 完成交付，请及时处理。";
-
             // 创建待办任务
-            $task = PendingTask::create([
+            $task = PendingTask::create(array_merge($payload, [
                 'account_set_id' => $documentDelivery->account_set_id,
                 'task_type' => 'document_delivery',
-                'title' => $title,
-                'description' => $description,
                 'related_id' => $documentDelivery->id,
                 'related_type' => 'DocumentDelivery',
-                'handler_id' => $handler->id,
-                'handler_name' => $handler->name,
                 'status' => 'pending',
                 'route_name' => 'document-deliveries',
                 'route_params' => null,
-            ]);
+            ]));
 
             Log::info('创建文档交付待办任务', [
                 'task_id' => $task->id,
                 'delivery_id' => $documentDelivery->id,
-                'handler_id' => $handler->id,
-                'project_name' => $project->name
+                'handler_id' => $payload['handler_id'],
+                'project_name' => $documentDelivery->project->name ?? null
             ]);
 
             return $task;
@@ -599,6 +587,15 @@ class PendingTaskService
         }
     }
 
+    public static function syncDocumentDeliveryTask($documentDelivery)
+    {
+        if (($documentDelivery->status ?? null) !== 'pending') {
+            return null;
+        }
+
+        return self::createDocumentDeliveryTask($documentDelivery);
+    }
+
     /**
      * 获取项目的业务人员（第一个审批节点账号）
      */
@@ -610,6 +607,38 @@ class PendingTaskService
         );
 
         return $firstApprover ? User::find($firstApprover->id) : null;
+    }
+
+    private static function buildDocumentDeliveryTaskPayload($documentDelivery): ?array
+    {
+        $documentDelivery->loadMissing('project');
+
+        $project = $documentDelivery->project;
+        if (!$project) {
+            Log::warning('文档交付记录缺少项目信息', [
+                'delivery_id' => $documentDelivery->id
+            ]);
+            return null;
+        }
+
+        $handler = self::getProjectOperator($documentDelivery->project_id, $documentDelivery->account_set_id, 'document_delivery');
+        if (!$handler) {
+            Log::warning('无法确定文档交付处理人', [
+                'delivery_id' => $documentDelivery->id,
+                'project_id' => $documentDelivery->project_id
+            ]);
+            return null;
+        }
+
+        $cycleText = $documentDelivery->delivery_cycle === 'monthly' ? '月度' : '季度';
+        $taskMonth = $documentDelivery->display_month ?: $documentDelivery->delivery_period;
+
+        return [
+            'title' => "{$project->name} {$taskMonth} {$cycleText}资料交付待处理",
+            'description' => "项目 {$project->name} 的 {$documentDelivery->delivery_period} {$cycleText}资料需要在 {$taskMonth} 完成交付，请及时处理。",
+            'handler_id' => $handler->id,
+            'handler_name' => $handler->name,
+        ];
     }
 
     public static function createSpecialDeductionTask($accountSetId, $month)

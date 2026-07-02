@@ -173,6 +173,12 @@ const routes = [
         meta: { title: '地区网页入口' }
       },
       {
+        path: '/region-portals/display',
+        name: 'RegionPortalDisplay',
+        component: () => import('@/views/RegionPortal/Display.vue'),
+        meta: { title: '地区网站导航' }
+      },
+      {
         path: '/financial-software-links',
         name: 'FinancialSoftwareLinks',
         component: () => import('@/views/FinancialSoftwareLinks/index.vue'),

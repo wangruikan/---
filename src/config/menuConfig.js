@@ -70,7 +70,8 @@ export const menuConfig = [
       { title: '待办任务', path: '/pending-tasks', icon: 'List', skipPermissionCheck: true },
       { title: '资料交付', path: '/document-deliveries', icon: 'DocumentCopy', skipPermissionCheck: true },
       { title: '资料申请', path: '/material-requests', icon: 'Document', skipPermissionCheck: true },
-      { title: '地区网页入口', path: '/region-portals', icon: 'Link', skipPermissionCheck: true }
+      { title: '地区网页入口', path: '/region-portals', icon: 'Link', skipPermissionCheck: true },
+      { title: '地区网站导航', path: '/region-portals/display', icon: 'Link', skipPermissionCheck: true }
     ]
   },
   {

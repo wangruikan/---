@@ -99,8 +99,8 @@
             </template>
 
             <el-tabs v-model="changeStatusTab" type="card" class="detail-tabs" style="margin-bottom: 12px;">
-              <el-tab-pane label="未完成" name="unfinished" />
-              <el-tab-pane label="已完成" name="completed" />
+              <el-tab-pane label="增加" name="increase" />
+              <el-tab-pane label="减少" name="decrease" />
             </el-tabs>
 
             <el-table 
@@ -2537,7 +2537,7 @@ const housingFundCompensationDetails = computed(() => {
 
 // 响应式数据
 const activeTab = ref('changes')
-const changeStatusTab = ref('unfinished')
+const changeStatusTab = ref('increase')
 const selectedProjectName = ref('')
 const detailScopedCategory = ref('')
 const detailActiveTab = ref('social') // 明细分类标签页
@@ -2651,10 +2651,6 @@ const getChangeProjectName = (change) => {
   return change?.project?.name || change?.project_name || '未分配项目'
 }
 
-const isCompletedChangeStatus = (status) => {
-  return ['completed', 'processing', 'approved', 'finished'].includes(status)
-}
-
 const projectOptions = computed(() => {
   return Array.from(new Set(
     changes.value
@@ -2669,11 +2665,11 @@ const filteredChanges = computed(() => {
       return false
     }
 
-    if (changeStatusTab.value === 'completed') {
-      return isCompletedChangeStatus(change.status)
+    if (changeStatusTab.value === 'decrease') {
+      return change.change_type === 'decrease'
     }
 
-    return !isCompletedChangeStatus(change.status)
+    return change.change_type !== 'decrease'
   })
 })
 

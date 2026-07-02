@@ -2410,7 +2410,7 @@ class EmployeeController extends ApiController
             ], 404);
         }
 
-        $configs = $project->largeMedicalInsuranceConfigs()->get();
+        $configs = $project->getResolvedLargeMedicalInsuranceConfigs();
         
         if ($configs->isEmpty()) {
             return response()->json([
@@ -2811,7 +2811,7 @@ class EmployeeController extends ApiController
                     })->toArray();
 
                     // 5. 获取大额医疗保险配置
-                    $configs = $project->largeMedicalInsuranceConfigs()->get();
+                    $configs = $project->getResolvedLargeMedicalInsuranceConfigs();
                     $result['large_medical_insurance_configs'] = $configs->map(function ($config) {
                         return [
                             'id' => $config->id,

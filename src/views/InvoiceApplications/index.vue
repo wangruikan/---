@@ -67,7 +67,7 @@
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column label="项目" min-width="220">
           <template #default="{ row }">
-            {{ formatContentProjectNames(row.contentItems) }}
+            {{ formatContentProjectNames(row.content_items || row.contentItems) }}
           </template>
         </el-table-column>
         <el-table-column prop="invoice_amount" label="开票金额" width="120" align="right">
@@ -528,7 +528,7 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="金额(不含税)" width="150">
+            <el-table-column label="金额" width="150">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.amount"
@@ -619,7 +619,7 @@
               <el-table-column prop="sequence" label="序号" width="70" align="center" />
               <el-table-column prop="project_name" label="模板项目" width="150" />
               <el-table-column prop="item_name" label="项目名称" width="160" />
-              <el-table-column prop="amount" label="金额(不含税)" width="130" align="right">
+              <el-table-column prop="amount" label="金额" width="130" align="right">
                 <template #default="{ row }">
                   ¥{{ Number(row.amount).toFixed(2) }}
                 </template>

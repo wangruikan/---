@@ -969,12 +969,16 @@ class ProjectController extends Controller
             ], 422);
         }
 
-        // 同步关联关系，并设置account_set_id
-        $syncData = [];
-        foreach ($validRegions as $regionId) {
-            $syncData[$regionId] = ['account_set_id' => $project->account_set_id];
-        }
-        $project->medicalInsuranceRegions()->sync($syncData);
+        DB::transaction(function () use ($project, $validRegions) {
+            $syncData = [];
+            foreach ($validRegions as $regionId) {
+                $syncData[$regionId] = ['account_set_id' => $project->account_set_id];
+            }
+
+            $project->medicalInsuranceRegions()->sync($syncData);
+            $this->syncLargeMedicalInsuranceConfigsFromMedicalRegions($project);
+        });
+
         $this->logProjectInsuranceSelectionChange($project, 'medical_insurance', $validRegions);
 
         return response()->json([
@@ -1108,7 +1112,7 @@ class ProjectController extends Controller
         
         $this->checkProjectAccess($request, $project);
 
-        $configs = $project->largeMedicalInsuranceConfigs()->get();
+        $configs = $project->getResolvedLargeMedicalInsuranceConfigs();
 
         return response()->json([
             'success' => true,
@@ -1425,6 +1429,25 @@ class ProjectController extends Controller
             'insurance_type' => $insuranceType,
             'selected_ids' => array_values($selectedIds),
         ]);
+    }
+
+    private function syncLargeMedicalInsuranceConfigsFromMedicalRegions(Project $project): array
+    {
+        $configIds = $project->getResolvedLargeMedicalInsuranceConfigs()
+            ->pluck('id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $syncData = [];
+        foreach ($configIds as $configId) {
+            $syncData[$configId] = ['account_set_id' => $project->account_set_id];
+        }
+
+        $project->largeMedicalInsuranceConfigs()->sync($syncData);
+        $this->logProjectInsuranceSelectionChange($project, 'large_medical_insurance', $configIds);
+
+        return $configIds;
     }
 
     public function getAvailablePlaceholderFields()

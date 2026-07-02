@@ -457,4 +457,31 @@ class Project extends Model
         )->withTimestamps();
     }
 
+    /**
+     * 根据项目绑定的医保地区解析对应的大额医疗配置
+     */
+    public function getResolvedLargeMedicalInsuranceConfigs()
+    {
+        $medicalRegions = $this->relationLoaded('medicalInsuranceRegions')
+            ? collect($this->medicalInsuranceRegions)
+            : $this->medicalInsuranceRegions()->get();
+
+        $regionNames = $medicalRegions
+            ->map(function ($region) {
+                return trim((string) ($region->name ?? $region->region_name ?? ''));
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($regionNames->isEmpty()) {
+            return collect();
+        }
+
+        return LargeMedicalInsuranceConfig::where('account_set_id', $this->account_set_id)
+            ->where('status', 1)
+            ->whereIn('region_name', $regionNames->all())
+            ->get();
+    }
+
 }

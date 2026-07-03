@@ -211,10 +211,6 @@
                   value-format="YYYY-MM"
                   style="width: 140px"
                 />
-                <el-button type="primary" @click="openCreateSheetDialog">
-                  <el-icon><DocumentAdd /></el-icon>
-                  创建考勤表
-                </el-button>
                 <el-button type="text" @click="loadPendingAttendanceProjects">
                   <el-icon><Refresh /></el-icon>
                   刷新
@@ -1040,20 +1036,6 @@ const loadProjects = async () => {
   } catch (error) {
     console.error('Load projects error:', error)
   }
-}
-
-const openCreateSheetDialog = () => {
-  attendanceCreateLocked.value = false
-  isEditSheet.value = false
-  Object.assign(sheetForm, {
-    id: null,
-    project_id: '',
-    month: '',
-    work_days: 22,
-    notes: ''
-  })
-  sheetFormRef.value?.clearValidate?.()
-  showCreateSheetDialog.value = true
 }
 
 const loadSheetDetail = async (sheetId) => {

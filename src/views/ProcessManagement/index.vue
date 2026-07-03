@@ -827,7 +827,9 @@ const handleReset = () => {
 const loadProjects = async () => {
   try {
     const res = await getProjects({ 
-      per_page: 1000
+      per_page: 1000,
+      current_account_set_id: currentAccountSetId.value,
+      responsibility_role_type: 'insurance'
     })
     // 项目API返回的是分页数据，实际数据在 data.data 中
     projectList.value = res.data?.data || res.data || []

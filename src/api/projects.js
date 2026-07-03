@@ -59,3 +59,18 @@ export function getProjectStatistics(id) {
     method: 'get'
   })
 }
+
+export function getProjectRoleUsers(id) {
+  return request({
+    url: `/projects/${id}/role-users`,
+    method: 'get'
+  })
+}
+
+export function saveProjectRoleUsers(id, data) {
+  return request({
+    url: `/projects/${id}/role-users`,
+    method: 'post',
+    data
+  })
+}

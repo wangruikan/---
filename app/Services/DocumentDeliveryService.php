@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\ApprovalFlowConfig;
 use App\Models\ProjectDeliveryConfig;
 use App\Models\DocumentDelivery;
 use App\Models\DocumentDeliveryItem;
@@ -106,7 +105,7 @@ class DocumentDeliveryService
         }
 
         // 获取经办人ID（第一个审批节点账号）
-        $handlerId = $this->getProjectOperatorId($config->project_id) ?? $config->created_by;
+        $handlerId = $this->getProjectOperatorId($config->project_id);
 
         $delivery = DocumentDelivery::create([
             'config_id' => $config->id,
@@ -281,7 +280,7 @@ class DocumentDeliveryService
         }
 
         $displayMonth = $displayMonth ?: $this->resolveDisplayMonthForPeriod($config, $delivery->delivery_period);
-        $handlerId = $this->getProjectOperatorId($config->project_id) ?? $delivery->handler_id;
+        $handlerId = $this->getProjectOperatorId($config->project_id);
 
         $updateData = [
             'config_id' => $config->id,
@@ -354,6 +353,7 @@ class DocumentDeliveryService
         $today = Carbon::today();
         $existingReminder = DocumentDeliveryReminder::where('delivery_id', $delivery->id)
             ->where('reminder_type', 'not_submitted')
+            ->where('recipient_id', $recipientId)
             ->whereDate('created_at', $today)
             ->first();
 
@@ -389,6 +389,7 @@ class DocumentDeliveryService
         $existingAssessment = AssessmentRecord::where('account_set_id', $delivery->account_set_id)
             ->where('business_type', 'document_delivery')
             ->where('business_id', $delivery->id)
+            ->where('handler_id', $handlerId)
             ->whereMonth('created_at', Carbon::now()->month)
             ->whereYear('created_at', Carbon::now()->year)
             ->first();
@@ -445,18 +446,58 @@ class DocumentDeliveryService
      */
     public function getProjectOperatorId($projectId)
     {
+        $operatorIds = $this->getProjectOperatorIds($projectId);
+
+        return empty($operatorIds) ? null : (int) $operatorIds[0];
+    }
+
+    private function getProjectOperatorIds($projectId): array
+    {
         // 获取项目信息
         $project = \App\Models\Project::find($projectId);
         if (!$project || !$project->account_set_id) {
-            return null;
+            return [];
         }
 
-        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
+        $roleUserIds = app(ProjectRoleUserService::class)->getProjectRoleUserIds(
             (int) $project->account_set_id,
-            'document_delivery'
+            (int) $project->id,
+            ProjectRoleUserService::ROLE_DELIVERY
         );
 
-        return $firstApprover ? $firstApprover->user_id : null;
+        if (!empty($roleUserIds)) {
+            return \App\Models\User::whereIn('id', $roleUserIds)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->pluck('id')
+                ->map(fn ($userId) => (int) $userId)
+                ->values()
+                ->all();
+        }
+
+        return [];
+    }
+
+    private function sendNewPeriodReminders(DocumentDelivery $delivery, array $recipientIds): void
+    {
+        foreach (array_values(array_unique($recipientIds)) as $recipientId) {
+            if ((int) $recipientId <= 0) {
+                continue;
+            }
+
+            $this->sendNewPeriodReminder($delivery, (int) $recipientId);
+        }
+    }
+
+    private function sendNotSubmittedReminders(DocumentDelivery $delivery, array $recipientIds): void
+    {
+        foreach (array_values(array_unique($recipientIds)) as $recipientId) {
+            if ((int) $recipientId <= 0) {
+                continue;
+            }
+
+            $this->sendNotSubmittedReminder($delivery, (int) $recipientId);
+        }
     }
 
     /**
@@ -482,10 +523,10 @@ class DocumentDeliveryService
                 }
 
                 $delivery = $this->createDeliveryRecord($config, $period, $displayMonth);
-                $operatorId = $this->getProjectOperatorId($config->project_id);
-                
-                if ($operatorId) {
-                    $this->sendNewPeriodReminder($delivery, $operatorId);
+                $operatorIds = $this->getProjectOperatorIds($config->project_id);
+
+                if (!empty($operatorIds)) {
+                    $this->sendNewPeriodReminders($delivery, $operatorIds);
                 }
 
                 Log::info('月度交付记录已生成', [
@@ -524,10 +565,10 @@ class DocumentDeliveryService
                 }
 
                 $delivery = $this->createDeliveryRecord($config, $period, $now->format('Y-m'));
-                $operatorId = $this->getProjectOperatorId($config->project_id);
-                
-                if ($operatorId) {
-                    $this->sendNewPeriodReminder($delivery, $operatorId);
+                $operatorIds = $this->getProjectOperatorIds($config->project_id);
+
+                if (!empty($operatorIds)) {
+                    $this->sendNewPeriodReminders($delivery, $operatorIds);
                 }
 
                 Log::info('季度交付记录已生成', [
@@ -573,9 +614,9 @@ class DocumentDeliveryService
             ->get();
 
         foreach ($pendingDeliveries as $delivery) {
-            $operatorId = $this->getProjectOperatorId($delivery->project_id);
-            if ($operatorId) {
-                $this->sendNotSubmittedReminder($delivery, $operatorId);
+            $operatorIds = $this->getProjectOperatorIds($delivery->project_id);
+            if (!empty($operatorIds)) {
+                $this->sendNotSubmittedReminders($delivery, $operatorIds);
             }
         }
 
@@ -603,9 +644,9 @@ class DocumentDeliveryService
                 'period' => $delivery->delivery_period
             ]);
             
-            $operatorId = $this->getProjectOperatorId($delivery->project_id);
-            if ($operatorId) {
-                $this->sendNotSubmittedReminder($delivery, $operatorId);
+            $operatorIds = $this->getProjectOperatorIds($delivery->project_id);
+            if (!empty($operatorIds)) {
+                $this->sendNotSubmittedReminders($delivery, $operatorIds);
             } else {
                 Log::warning('未找到经办人', ['delivery_id' => $delivery->id]);
             }

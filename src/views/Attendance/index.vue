@@ -1028,7 +1028,8 @@ const loadPendingAttendanceProjects = async () => {
 const loadProjects = async () => {
   try {
     const response = await getProjects({
-      current_account_set_id: currentAccountSetId.value
+      current_account_set_id: currentAccountSetId.value,
+      responsibility_role_type: 'salary'
     })
     if (response && response.success) {
       projects.value = response.data.data || []

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
+use App\Services\ProjectRoleUserService;
 use App\Traits\ChecksPermission;
 
 class ProcessApprovalController extends Controller
@@ -51,6 +52,33 @@ class ProcessApprovalController extends Controller
     {
         return "{$projectName} {$month} {$categoryLabel}";
     }
+
+    private function getManagedInsuranceProjectIds(Request $request, int $accountSetId): array
+    {
+        $user = $request->user();
+        if (!$user || in_array($user->role, ['admin', 'super_admin'], true)) {
+            return [];
+        }
+
+        return app(ProjectRoleUserService::class)->getManagedProjectIds(
+            $accountSetId,
+            (int) $user->id,
+            ProjectRoleUserService::ROLE_INSURANCE
+        );
+    }
+
+    private function applyProjectIdsOverlapFilter($query, string $column, array $projectIds): void
+    {
+        if (empty($projectIds)) {
+            return;
+        }
+
+        $query->where(function ($subQuery) use ($column, $projectIds) {
+            foreach ($projectIds as $projectId) {
+                $subQuery->orWhereJsonContains($column, (int) $projectId);
+            }
+        });
+    }
     /**
      * 获取流程列表
      */
@@ -77,11 +105,24 @@ class ProcessApprovalController extends Controller
         $query = ProcessApproval::with(['initiator', 'approvalInstance.records', 'attachments'])
             ->where('account_set_id', $accountSetId);
 
+        $managedProjectIds = $this->getManagedInsuranceProjectIds($request, (int) $accountSetId);
+
         // 按类型筛选
         if ($request->has('category') && $request->category) {
             $query->where('category', $request->category);
         } else {
             $query->where('category', '!=', 'file_stamp');
+        }
+
+        if (!$isFileStampList) {
+            if (app(ProjectRoleUserService::class)->shouldRestrictToManagedProjects(
+                $request->user(),
+                ProjectRoleUserService::ROLE_INSURANCE
+            ) && empty($managedProjectIds)) {
+                $query->whereRaw('1 = 0');
+            } elseif (!empty($managedProjectIds)) {
+                $this->applyProjectIdsOverlapFilter($query, 'project_ids', $managedProjectIds);
+            }
         }
 
         // 按月份筛选
@@ -162,9 +203,20 @@ class ProcessApprovalController extends Controller
             'housing_fund' => '公积金汇总',
         ];
 
-        $projects = Project::where('account_set_id', $accountSetId)
+        $projectsQuery = Project::where('account_set_id', $accountSetId)
             ->where('status', 'active')
-            ->select('id', 'name', 'code', 'start_date', 'end_date')
+            ->select('id', 'name', 'code', 'start_date', 'end_date');
+
+        app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+            $projectsQuery,
+            'id',
+            (int) $accountSetId,
+            $request->user(),
+            ProjectRoleUserService::ROLE_INSURANCE,
+            true
+        );
+
+        $projects = $projectsQuery
             ->orderBy('name')
             ->get()
             ->filter(fn (Project $project) => $this->projectCanCreateSummaryForMonth($project, $month));
@@ -210,6 +262,23 @@ class ProcessApprovalController extends Controller
         $process = ProcessApproval::with(['initiator', 'approvalInstance.records.approver', 'attachments.uploader'])
             ->findOrFail($id);
 
+        if ($process->category !== 'file_stamp') {
+            $projectIds = is_array($process->project_ids)
+                ? $process->project_ids
+                : (json_decode($process->project_ids ?? '[]', true) ?: []);
+            if (!app(ProjectRoleUserService::class)->userCanAccessAnyProject(
+                $request->user(),
+                (int) $process->account_set_id,
+                $projectIds,
+                ProjectRoleUserService::ROLE_INSURANCE
+            )) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '无权查看该汇总申请'
+                ], 403);
+            }
+        }
+
         return response()->json([
             'success' => true,
             'data' => $process
@@ -242,6 +311,26 @@ class ProcessApprovalController extends Controller
                 'success' => false,
                 'message' => '请先选择账套'
             ], 400);
+        }
+
+        if ($request->input('category') !== 'file_stamp') {
+            $projectIds = collect($request->input('project_ids', []))
+                ->map(fn ($projectId) => (int) $projectId)
+                ->filter(fn ($projectId) => $projectId > 0)
+                ->values()
+                ->all();
+
+            if (!app(ProjectRoleUserService::class)->userCanAccessAllProjects(
+                $request->user(),
+                (int) $accountSetId,
+                $projectIds,
+                ProjectRoleUserService::ROLE_INSURANCE
+            )) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '只能为自己负责的项目创建汇总申请'
+                ], 403);
+            }
         }
 
         DB::beginTransaction();

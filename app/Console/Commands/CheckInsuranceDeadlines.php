@@ -3,10 +3,11 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Models\ApprovalFlowConfig;
 use App\Models\Employee;
 use App\Models\InsuranceChange;
 use App\Models\AssessmentRecord;
+use App\Models\User;
+use App\Services\ProjectRoleUserService;
 use Carbon\Carbon;
 
 class CheckInsuranceDeadlines extends Command
@@ -59,43 +60,42 @@ class CheckInsuranceDeadlines extends Command
 
             // 如果需要记录，检查是否已存在今天的记录
             if ($shouldRecord) {
-                // 获取经办人信息（从账套设置中获取）
-                $handler = $this->getAccountSetHandler($employee->account_set_id);
+                $handlers = $this->getInsuranceHandlers($employee, $insuranceChange);
 
-                if (!$handler) {
+                if (empty($handlers)) {
                     $this->warn("员工 {$employee->name} 的账套没有配置经办人，跳过");
                     continue;
                 }
 
-                // 检查是否已存在记录
-                $existingRecord = AssessmentRecord::where('account_set_id', $employee->account_set_id)
-                    ->where('business_type', 'insurance_enrollment')
-                    ->where('business_id', $employee->id)
-                    ->where('deadline_date', $deadlineDate)
-                    ->where('status', '!=', 'completed')
-                    ->first();
+                foreach ($handlers as $handler) {
+                    $existingRecord = AssessmentRecord::where('account_set_id', $employee->account_set_id)
+                        ->where('business_type', 'insurance_enrollment')
+                        ->where('business_id', $employee->id)
+                        ->where('handler_id', $handler['id'])
+                        ->where('deadline_date', $deadlineDate)
+                        ->where('status', '!=', 'completed')
+                        ->first();
 
-                if (!$existingRecord) {
-                    // 创建新的考核记录
-                    $record = AssessmentRecord::create([
-                        'account_set_id' => $employee->account_set_id,
-                        'business_type' => 'insurance_enrollment',
-                        'business_id' => $employee->id,
-                        'business_name' => "{$employee->name} - 参保入职",
-                        'handler_id' => $handler['id'],
-                        'handler_name' => $handler['name'],
-                        'deadline_date' => $deadlineDate,
-                        'remark' => $reason
-                    ]);
+                    if (!$existingRecord) {
+                        $record = AssessmentRecord::create([
+                            'account_set_id' => $employee->account_set_id,
+                            'business_type' => 'insurance_enrollment',
+                            'business_id' => $employee->id,
+                            'business_name' => "{$employee->name} - 参保入职",
+                            'handler_id' => $handler['id'],
+                            'handler_name' => $handler['name'],
+                            'deadline_date' => $deadlineDate,
+                            'remark' => $reason
+                        ]);
 
-                    $record->updateStatus();
-                    $recordCount++;
+                        $record->updateStatus();
+                        $recordCount++;
 
-                    $this->info("记录考核：{$employee->name}，原因：{$reason}");
-                } else {
-                    // 更新现有记录的状态
-                    $existingRecord->updateStatus();
-                    $this->info("更新记录：{$employee->name}");
+                        $this->info("记录考核：{$employee->name}，处理人：{$handler['name']}，原因：{$reason}");
+                    } else {
+                        $existingRecord->updateStatus();
+                        $this->info("更新记录：{$employee->name}，处理人：{$handler['name']}");
+                    }
                 }
             }
         }
@@ -108,21 +108,48 @@ class CheckInsuranceDeadlines extends Command
         return 0;
     }
 
-    // 获取账套的第一个审批人（即经办人）
-    private function getAccountSetHandler($accountSetId)
+    private function getInsuranceHandlers(Employee $employee, ?InsuranceChange $insuranceChange): array
     {
-        $firstApprover = ApprovalFlowConfig::getFirstEffectiveApprover(
-            (int) $accountSetId,
-            'insurance_enrollment'
-        );
+        $projectId = $insuranceChange?->project_id ?: $this->resolveEmployeeProjectId($employee);
 
-        if (!$firstApprover) {
-            return null;
+        if ($projectId) {
+            $userIds = app(ProjectRoleUserService::class)->getProjectRoleUserIds(
+                (int) $employee->account_set_id,
+                (int) $projectId,
+                ProjectRoleUserService::ROLE_INSURANCE
+            );
+
+            if (!empty($userIds)) {
+                return User::whereIn('id', $userIds)
+                    ->where('is_active', true)
+                    ->orderBy('name')
+                    ->get()
+                    ->map(function (User $user) {
+                        return [
+                            'id' => (int) $user->id,
+                            'name' => $user->name,
+                        ];
+                    })
+                    ->values()
+                    ->all();
+            }
         }
 
-        return [
-            'id' => $firstApprover->user_id,
-            'name' => $firstApprover->user_name
-        ];
+        return [];
+    }
+
+    private function resolveEmployeeProjectId(Employee $employee): ?int
+    {
+        $activeProjectId = $employee->projects()
+            ->wherePivot('status', 'active')
+            ->value('projects.id');
+
+        if ($activeProjectId) {
+            return (int) $activeProjectId;
+        }
+
+        $projectId = $employee->projects()->value('projects.id');
+
+        return $projectId ? (int) $projectId : null;
     }
 }

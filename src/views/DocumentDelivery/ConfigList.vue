@@ -396,7 +396,8 @@ const buildMergedConfigRows = () => {
 const loadProjects = async () => {
   try {
     const res = await getProjects({
-      current_account_set_id: accountSetStore.currentAccountSetId
+      current_account_set_id: accountSetStore.currentAccountSetId,
+      responsibility_role_type: 'delivery'
     })
     if (res.success) {
       // 确保 res.data 是数组，如果是分页数据则取 data 属性

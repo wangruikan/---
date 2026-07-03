@@ -20,11 +20,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Services\DynamicScheduledTaskService;
+use App\Services\ProjectRoleUserService;
 use App\Traits\ChecksPermission;
 
 class SalaryController extends Controller
 {
     use ChecksPermission;
+
     public function index(Request $request)
     {
         if ($response = $this->checkPermission('salaries.view')) {
@@ -42,7 +44,16 @@ class SalaryController extends Controller
             app(DynamicScheduledTaskService::class)->syncBasisTasks($currentAccountSetId, $request->input('month'));
             app(DynamicScheduledTaskService::class)->syncSheetTasks($currentAccountSetId, $request->input('month'));
             $query->where('account_set_id', $currentAccountSetId);
-        } elseif ($request->user()->role !== 'admin') {
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $query,
+                'project_id',
+                (int) $currentAccountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY,
+                true
+            );
+        } elseif (!in_array($request->user()->role, ['admin', 'super_admin'], true)) {
             $query->whereRaw('1 = 0');
         }
         

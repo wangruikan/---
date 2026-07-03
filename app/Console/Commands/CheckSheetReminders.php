@@ -86,8 +86,9 @@ class CheckSheetReminders extends Command
                     );
                     
                     if ($task) {
-                        $totalAttendanceTasks++;
-                        $this->info("    项目 {$project->name}: 创建了考勤表待办任务");
+                        $count = is_array($task) ? count($task) : 1;
+                        $totalAttendanceTasks += $count;
+                        $this->info("    项目 {$project->name}: 创建了 {$count} 个考勤表待办任务");
                     } else {
                         $this->comment("    项目 {$project->name}: 考勤表已提交或无需创建任务");
                     }
@@ -105,8 +106,9 @@ class CheckSheetReminders extends Command
                 );
                 
                 if ($task) {
-                    $totalSalaryTasks++;
-                    $this->info("    项目 {$project->name}: 创建了 {$salaryMonth} 工资表待办任务");
+                    $count = is_array($task) ? count($task) : 1;
+                    $totalSalaryTasks += $count;
+                    $this->info("    项目 {$project->name}: 创建了 {$count} 个 {$salaryMonth} 工资表待办任务");
                 } else {
                     $this->comment("    项目 {$project->name}: 工资表已提交或无需创建任务");
                 }

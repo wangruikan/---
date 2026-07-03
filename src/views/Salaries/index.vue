@@ -1748,7 +1748,10 @@ const getCurrentMonthLabel = (type = '单位') => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getProjects()
+    const response = await getProjects({
+      current_account_set_id: currentAccountSetId.value,
+      responsibility_role_type: 'salary'
+    })
     if (response && response.success) {
       projects.value = response.data.data || []
     }

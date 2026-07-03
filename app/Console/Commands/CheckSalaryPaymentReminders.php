@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\ApprovalFlowConfig;
 use App\Models\Project;
 use App\Models\Notification;
+use App\Services\ProjectRoleUserService;
 use Illuminate\Console\Command;
 use Carbon\Carbon;
 
@@ -63,17 +63,20 @@ class CheckSalaryPaymentReminders extends Command
                 continue;
             }
 
-            $users = ApprovalFlowConfig::getFirstEffectiveApprovers(
+            $roleUsers = app(ProjectRoleUserService::class)->getProjectRoleUsersForProjects(
                 (int) $accountSet->id,
-                '工资付款申请'
+                $projects->pluck('id')->map(fn ($projectId) => (int) $projectId)->all(),
+                ProjectRoleUserService::ROLE_SALARY
             );
 
+            $users = $roleUsers;
+
             if ($users->count() === 0) {
-                $this->warn("  → 警告：没有找到第一审批节点的用户，跳过");
+                $this->warn("  → 警告：没有配置薪资员，跳过");
                 continue;
             }
 
-            $this->info("  → 找到 {$users->count()} 个第一审批节点用户");
+            $this->info("  → 找到 {$users->count()} 个薪资员");
 
             // 构建项目列表
             $projectNames = $projects->pluck('name')->toArray();

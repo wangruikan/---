@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\ProjectRoleUserService;
 use App\Traits\ChecksPermission;
 
 class InsuranceChangeController extends ApiController
@@ -55,7 +56,6 @@ class InsuranceChangeController extends ApiController
         $status = $request->input('status');
         $regionName = $request->input('region_name');
         $month = $request->input('month'); // 新增月份筛选参数
-
         $query = InsuranceChange::where('account_set_id', $accountSetId)
             ->with([
                 'employee.socialSecurityRegion.socialSecurityTypes',
@@ -67,6 +67,15 @@ class InsuranceChangeController extends ApiController
                 'creator',
                 'attachments'  // 加载附件列表
             ]);
+
+        app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+            $query,
+            'project_id',
+            (int) $accountSetId,
+            $request->user(),
+            ProjectRoleUserService::ROLE_INSURANCE,
+            true
+        );
 
         // 月份筛选 - 优先按业务月份筛选，兼容旧数据回退到创建时间
         if ($month) {
@@ -161,6 +170,18 @@ class InsuranceChangeController extends ApiController
             'attachments'
         ])->findOrFail($id);
 
+        if (!app(ProjectRoleUserService::class)->userCanAccessProject(
+            request()->user(),
+            (int) $change->account_set_id,
+            (int) $change->project_id,
+            ProjectRoleUserService::ROLE_INSURANCE
+        )) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权查看该参保增减记录'
+            ], 403);
+        }
+
         // 使用快照数据而不是实时数据
         // $change->social_security_types = $change->getCurrentSocialSecurityConfig();
         // $change->medical_insurance_types = $change->getCurrentMedicalInsuranceConfig();
@@ -250,7 +271,6 @@ class InsuranceChangeController extends ApiController
             return $response;
         }
 
-        $user = $request->user();
         $accountSetId = $request->input('account_set_id');
         $regionName = $request->input('region_name');
         $month = $request->input('month'); // 月份筛选参数
@@ -290,6 +310,15 @@ class InsuranceChangeController extends ApiController
                 'employee.projects.otherInsurancePolicies.type',
                 'project'
             ]);
+
+        app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+            $query,
+            'project_id',
+            (int) $accountSetId,
+            $request->user(),
+            ProjectRoleUserService::ROLE_INSURANCE,
+            true
+        );
 
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName && $regionName !== '全部') {
@@ -341,6 +370,15 @@ class InsuranceChangeController extends ApiController
             ->where('record_year', $year)
             ->where('record_month', $monthNum)
             ->with(['employee', 'project']);
+
+        app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+            $query,
+            'project_id',
+            (int) $accountSetId,
+            $request->user(),
+            ProjectRoleUserService::ROLE_INSURANCE,
+            true
+        );
 
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName && $regionName !== '全部') {
@@ -463,7 +501,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->social_security_types) {
             try {
                 $socialSecurityTypes = json_decode($personnel->social_security_types, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $socialSecurityTypes = [];
             }
         }
@@ -471,7 +509,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->medical_insurance_types) {
             try {
                 $medicalInsuranceTypes = json_decode($personnel->medical_insurance_types, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $medicalInsuranceTypes = [];
             }
         }
@@ -479,7 +517,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->housing_fund_params) {
             try {
                 $housingFundConfig = json_decode($personnel->housing_fund_params, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $housingFundConfig = [];
             }
         }
@@ -493,7 +531,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->large_medical_insurance_config) {
             try {
                 $largeMedicalConfig = json_decode($personnel->large_medical_insurance_config, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $largeMedicalConfig = [];
             }
         }
@@ -709,7 +747,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->social_security_types) {
             try {
                 $socialSecurityTypes = json_decode($personnel->social_security_types, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $socialSecurityTypes = [];
             }
         }
@@ -717,7 +755,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->medical_insurance_types) {
             try {
                 $medicalInsuranceTypes = json_decode($personnel->medical_insurance_types, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $medicalInsuranceTypes = [];
             }
         }
@@ -725,7 +763,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->housing_fund_params) {
             try {
                 $housingFundConfig = json_decode($personnel->housing_fund_params, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $housingFundConfig = [];
             }
         }
@@ -733,7 +771,7 @@ class InsuranceChangeController extends ApiController
         if ($personnel->large_medical_insurance_config) {
             try {
                 $largeMedicalConfig = json_decode($personnel->large_medical_insurance_config, true) ?: [];
-            } catch (e) {
+            } catch (\Throwable $e) {
                 $largeMedicalConfig = [];
             }
         }

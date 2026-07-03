@@ -540,7 +540,8 @@ const handleDownloadAttachment = async (attachment) => {
 const loadProjects = async () => {
   try {
     const res = await getProjects({
-      current_account_set_id: accountSetStore.currentAccountSetId
+      current_account_set_id: accountSetStore.currentAccountSetId,
+      responsibility_role_type: 'delivery'
     })
     if (res.success) {
       if (Array.isArray(res.data)) {

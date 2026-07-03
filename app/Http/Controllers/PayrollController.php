@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 use App\Services\DynamicScheduledTaskService;
+use App\Services\ProjectRoleUserService;
 
 class PayrollController extends Controller
 {
@@ -51,6 +52,20 @@ class PayrollController extends Controller
     private function projectRequiresSalaryBasis(Project $project): bool
     {
         return (bool) $project->requires_salary_basis;
+    }
+
+    private function getManagedSalaryProjectIds(Request $request, int $accountSetId): array
+    {
+        $user = $request->user();
+        if (!$user || in_array($user->role, ['admin', 'super_admin'], true)) {
+            return [];
+        }
+
+        return app(ProjectRoleUserService::class)->getManagedProjectIds(
+            $accountSetId,
+            (int) $user->id,
+            ProjectRoleUserService::ROLE_SALARY
+        );
     }
 
     private function formatProjectDate($date): ?string
@@ -335,7 +350,7 @@ class PayrollController extends Controller
                 ->map(fn ($projectId) => intval($projectId))
                 ->toArray();
 
-            $projects = Project::where('account_set_id', $accountSetId)
+            $projectsQuery = Project::where('account_set_id', $accountSetId)
                 ->whereIn('status', ['active', 'completed'])
                 ->select([
                     'id',
@@ -349,7 +364,18 @@ class PayrollController extends Controller
                     'requires_attendance',
                     'requires_attendance_basis',
                     'requires_salary_basis',
-                ])
+                ]);
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $projectsQuery,
+                'id',
+                (int) $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY,
+                true
+            );
+
+            $projects = $projectsQuery
                 ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
                 ->orderBy('name')
                 ->get();
@@ -493,9 +519,20 @@ class PayrollController extends Controller
                 ->map(fn ($projectId) => intval($projectId))
                 ->toArray();
 
-            $projects = Project::where('account_set_id', $accountSetId)
+            $projectsQuery = Project::where('account_set_id', $accountSetId)
                 ->where('status', 'active')
-                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'salary_payment_month', 'require_attendance', 'requires_attendance', 'requires_salary_basis')
+                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'salary_payment_month', 'require_attendance', 'requires_attendance', 'requires_salary_basis');
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $projectsQuery,
+                'id',
+                (int) $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY,
+                true
+            );
+
+            $projects = $projectsQuery
                 ->orderBy('name')
                 ->get()
                 ->filter(function (Project $project) use ($generatedProjectIds, $salaryHistoryProjectIds, $month) {
@@ -583,6 +620,14 @@ class PayrollController extends Controller
                 ->where('status', AttendanceSheet::STATUS_APPROVED)
                 ->pluck('project_id')
                 ->toArray();
+
+            $managedProjectIds = $this->getManagedSalaryProjectIds($request, (int) $accountSetId);
+            if (app(ProjectRoleUserService::class)->shouldRestrictToManagedProjects(
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY
+            )) {
+                $approvedProjectIds = array_values(array_intersect($approvedProjectIds, $managedProjectIds));
+            }
             
             if (empty($approvedProjectIds)) {
                 return response()->json([
@@ -651,10 +696,21 @@ class PayrollController extends Controller
                 ->pluck('project_id')
                 ->map(fn ($projectId) => intval($projectId))
                 ->toArray();
-            
+
+            $allProjectsQuery = Project::where('account_set_id', $accountSetId)
+                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'salary_payment_month', 'require_attendance', 'requires_attendance');
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $allProjectsQuery,
+                'id',
+                (int) $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY,
+                true
+            );
+
             // 获取所有项目（包含是否需要考勤字段）
-            $allProjects = Project::where('account_set_id', $accountSetId)
-                ->select('id', 'name', 'code', 'status', 'start_date', 'end_date', 'salary_payment_month', 'require_attendance', 'requires_attendance')
+            $allProjects = $allProjectsQuery
                 ->get();
             
             \Log::info('查询到的项目数量', ['count' => $allProjects->count()]);

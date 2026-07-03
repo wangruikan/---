@@ -385,6 +385,11 @@ class Project extends Model
         return $this->hasMany(Recruitment::class);
     }
 
+    public function roleAssignments()
+    {
+        return $this->hasMany(ProjectRoleUser::class);
+    }
+
     // 获取项目的社保地区（Accessor）
     public function getSocialSecurityRegionsDataAttribute()
     {

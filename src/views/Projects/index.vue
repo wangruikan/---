@@ -200,10 +200,13 @@
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险数量" min-width="120" align="center">
             <template #default="{ row }">{{ getOtherInsurancePoliciesCountText(row) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="350" fixed="right">
+          <el-table-column label="操作" width="430" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
+              </el-button>
+              <el-button v-if="canManageRoleUsers(row)" type="success" size="small" @click="handleRoleUsers(row)">
+                负责人
               </el-button>
               <el-button type="success" size="small" @click="handleNoticeSettings(row)">
                 须知设置
@@ -1371,7 +1374,106 @@
         </el-button>
       </template>
     </el-dialog>
-    
+
+    <el-dialog
+      v-model="showRoleUsersDialog"
+      title="负责人设置"
+      width="640px"
+      @close="resetRoleUsersForm"
+    >
+      <div class="role-users-project-name">
+        {{ roleUsersProject?.name || '-' }}
+      </div>
+
+      <el-form
+        label-width="100px"
+        v-loading="roleUsersLoading"
+      >
+        <el-form-item label="负责人设置人">
+          <el-select
+            v-model="roleUsersForm.role_manager_user_ids"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择负责人设置人"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in roleUserOptions"
+              :key="`manager-${user.id}`"
+              :label="user.name"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="保险负责人">
+          <el-select
+            v-model="roleUsersForm.insurance_user_ids"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择保险负责人"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in roleUserOptions"
+              :key="user.id"
+              :label="user.name"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="薪资员">
+          <el-select
+            v-model="roleUsersForm.salary_user_ids"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择薪资员"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in roleUserOptions"
+              :key="`salary-${user.id}`"
+              :label="user.name"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="交付员">
+          <el-select
+            v-model="roleUsersForm.delivery_user_ids"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择交付员"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in roleUserOptions"
+              :key="`delivery-${user.id}`"
+              :label="user.name"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="showRoleUsersDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingRoleUsers" @click="submitRoleUsersForm">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     </div>
   </div>
 </template>
@@ -1381,7 +1483,8 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
-import { getProjects, createProject, updateProject, deleteProject, getProjectCodePreview } from '@/api/projects'
+import { getProjects, createProject, updateProject, deleteProject, getProjectCodePreview, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
+import { getUsers } from '@/api/user'
 import { getSharedFiles } from '@/api/sharedFiles'
 import { addContractTemplate, getDefaultTemplates, getContractTemplates, setDefaultTemplate, deleteContractTemplate } from '@/api/contractTemplates'
 import { getAvailableSocialSecurityRegions, getAvailableHousingFundRegions, setProjectSocialSecurityRegions, setProjectHousingFundRegions } from '@/api/projectSocialSecurity'
@@ -1472,6 +1575,7 @@ const selectedPoliciesSummary = computed(() => {
 const loading = ref(false)
 const submitting = ref(false)
 const showCreateDialog = ref(false)
+const showRoleUsersDialog = ref(false)
 const isEdit = ref(false)
 const formRef = ref()
 const projectStickyPanelRef = ref(null)
@@ -1480,6 +1584,16 @@ const socialSecurityRegionsSelectRef = ref()
 const housingFundRegionsSelectRef = ref()
 const medicalInsuranceRegionsSelectRef = ref()
 let projectStickyPanelResizeObserver = null
+const roleUsersLoading = ref(false)
+const savingRoleUsers = ref(false)
+const roleUsersProject = ref(null)
+const roleUserOptions = ref([])
+const roleUsersForm = reactive({
+  role_manager_user_ids: [],
+  insurance_user_ids: [],
+  salary_user_ids: [],
+  delivery_user_ids: []
+})
 
 const updateProjectTableStickyTop = () => {
   projectTableStickyTop.value = projectStickyPanelRef.value?.offsetHeight || 0
@@ -2726,6 +2840,97 @@ const handleReset = () => {
   handleSearch()
 }
 
+const canManageRoleUsers = (row) => {
+  if (isAdmin.value) {
+    return true
+  }
+
+  return !!row?.can_manage_role_users
+}
+
+const resetRoleUsersForm = () => {
+  roleUsersProject.value = null
+  roleUsersForm.role_manager_user_ids = []
+  roleUsersForm.insurance_user_ids = []
+  roleUsersForm.salary_user_ids = []
+  roleUsersForm.delivery_user_ids = []
+}
+
+const loadRoleUserOptions = async () => {
+  if (!currentAccountSetId.value) {
+    roleUserOptions.value = []
+    return
+  }
+
+  const response = await getUsers({
+    all: 'true',
+    current_account_set_only: true,
+    current_account_set_id: currentAccountSetId.value,
+    is_active: true
+  })
+
+  const rawUsers = Array.isArray(response?.data)
+    ? response.data
+    : (Array.isArray(response?.data?.data) ? response.data.data : [])
+
+  roleUserOptions.value = rawUsers
+    .filter(user => user && user.id)
+    .map(user => ({
+      id: user.id,
+      name: user.name || user.nickname || user.email || `用户${user.id}`
+    }))
+}
+
+const handleRoleUsers = async (row) => {
+  roleUsersProject.value = row
+  roleUsersLoading.value = true
+  showRoleUsersDialog.value = true
+
+  try {
+    const [, roleResponse] = await Promise.all([
+      loadRoleUserOptions(),
+      getProjectRoleUsers(row.id)
+    ])
+
+    const roles = roleResponse?.data?.roles || {}
+    roleUsersForm.role_manager_user_ids = roles.role_manager?.user_ids || []
+    roleUsersForm.insurance_user_ids = roles.insurance?.user_ids || []
+    roleUsersForm.salary_user_ids = roles.salary?.user_ids || []
+    roleUsersForm.delivery_user_ids = roles.delivery?.user_ids || []
+  } catch (error) {
+    console.error('加载项目负责人失败:', error)
+    ElMessage.error(error.response?.data?.message || '加载负责人失败')
+    showRoleUsersDialog.value = false
+    resetRoleUsersForm()
+  } finally {
+    roleUsersLoading.value = false
+  }
+}
+
+const submitRoleUsersForm = async () => {
+  if (!roleUsersProject.value) return
+
+  savingRoleUsers.value = true
+  try {
+    await saveProjectRoleUsers(roleUsersProject.value.id, {
+      role_manager_user_ids: roleUsersForm.role_manager_user_ids,
+      insurance_user_ids: roleUsersForm.insurance_user_ids,
+      salary_user_ids: roleUsersForm.salary_user_ids,
+      delivery_user_ids: roleUsersForm.delivery_user_ids
+    })
+
+    ElMessage.success('负责人保存成功')
+    showRoleUsersDialog.value = false
+    resetRoleUsersForm()
+    loadProjects()
+  } catch (error) {
+    console.error('保存项目负责人失败:', error)
+    ElMessage.error(error.response?.data?.message || '保存负责人失败')
+  } finally {
+    savingRoleUsers.value = false
+  }
+}
+
 const handleView = async (row) => {
   // 查看项目详情
   isEdit.value = false
@@ -3686,6 +3891,13 @@ watch(otherInsuranceNoSelection, (newVal) => {
 .remaining-days-text {
   color: #f56c6c;
   font-weight: 600;
+}
+
+.role-users-project-name {
+  margin-bottom: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
 }
 
 /* 合同模板管理样式 */

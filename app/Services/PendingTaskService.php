@@ -510,49 +510,30 @@ class PendingTaskService
                 return null;
             }
 
-            // 检查是否已存在待处理任务
-            $existingTask = PendingTask::where('account_set_id', $documentDelivery->account_set_id)
-                ->where('task_type', 'document_delivery')
-                ->where('related_id', $documentDelivery->id)
-                ->where('related_type', 'DocumentDelivery')
-                ->where('status', 'pending')
-                ->first();
-
-            if ($existingTask) {
-                $updateData = [];
-
-                foreach (['title', 'description', 'handler_id', 'handler_name'] as $field) {
-                    if (($existingTask->{$field} ?? null) !== ($payload[$field] ?? null)) {
-                        $updateData[$field] = $payload[$field];
-                    }
-                }
-
-                if (!empty($updateData)) {
-                    $existingTask->update($updateData);
-                }
-
-                return $existingTask;
-            }
-
-            // 创建待办任务
-            $task = PendingTask::create(array_merge($payload, [
+            $tasks = self::syncPendingTasksForHandlers([
                 'account_set_id' => $documentDelivery->account_set_id,
                 'task_type' => 'document_delivery',
+                'title' => $payload['title'],
+                'description' => $payload['description'],
                 'related_id' => $documentDelivery->id,
                 'related_type' => 'DocumentDelivery',
                 'status' => 'pending',
                 'route_name' => 'document-deliveries',
                 'route_params' => null,
-            ]));
+            ], $payload['handlers']);
+
+            if (empty($tasks)) {
+                return null;
+            }
 
             Log::info('创建文档交付待办任务', [
-                'task_id' => $task->id,
                 'delivery_id' => $documentDelivery->id,
-                'handler_id' => $payload['handler_id'],
+                'task_count' => count($tasks),
+                'handler_ids' => array_values(array_map(fn ($task) => (int) $task->handler_id, $tasks)),
                 'project_name' => $documentDelivery->project->name ?? null
             ]);
 
-            return $task;
+            return count($tasks) === 1 ? $tasks[0] : $tasks;
         } catch (\Exception $e) {
             Log::error('创建文档交付待办任务失败', [
                 'delivery_id' => $documentDelivery->id,
@@ -596,6 +577,125 @@ class PendingTaskService
         return self::createDocumentDeliveryTask($documentDelivery);
     }
 
+    private static function getProjectRoleHandlers($accountSetId, $projectId, $roleType)
+    {
+        if (!$projectId) {
+            return collect();
+        }
+
+        $userIds = app(ProjectRoleUserService::class)->getProjectRoleUserIds(
+            (int) $accountSetId,
+            (int) $projectId,
+            (string) $roleType
+        );
+
+        if (empty($userIds)) {
+            return collect();
+        }
+
+        return User::whereIn('id', $userIds)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    private static function resolveProjectHandlers($accountSetId, $projectId, $roleType, $fallbackHandlers = null)
+    {
+        return self::getProjectRoleHandlers($accountSetId, $projectId, $roleType);
+    }
+
+    private static function normalizeRouteParams($routeParams): ?array
+    {
+        if (is_string($routeParams)) {
+            $decoded = json_decode($routeParams, true);
+            $routeParams = is_array($decoded) ? $decoded : null;
+        }
+
+        if (!is_array($routeParams) || empty($routeParams)) {
+            return null;
+        }
+
+        ksort($routeParams);
+
+        return $routeParams;
+    }
+
+    private static function routeParamsMatch($currentRouteParams, ?array $targetRouteParams): bool
+    {
+        return self::normalizeRouteParams($currentRouteParams) === self::normalizeRouteParams($targetRouteParams);
+    }
+
+    private static function syncPendingTasksForHandlers(array $baseTaskData, $handlers, ?array $routeParams = null): array
+    {
+        $handlers = collect($handlers)->filter(function ($handler) {
+            return $handler instanceof User;
+        })->unique('id')->values();
+
+        $normalizedRouteParams = self::normalizeRouteParams($routeParams);
+
+        $existingTasks = PendingTask::where('account_set_id', $baseTaskData['account_set_id'])
+            ->where('task_type', $baseTaskData['task_type'])
+            ->where('related_id', $baseTaskData['related_id'])
+            ->where('related_type', $baseTaskData['related_type'])
+            ->where('status', 'pending')
+            ->get()
+            ->filter(function (PendingTask $task) use ($normalizedRouteParams) {
+                return self::routeParamsMatch($task->route_params, $normalizedRouteParams);
+            })
+            ->keyBy(function (PendingTask $task) {
+                return (int) $task->handler_id;
+            });
+
+        if ($handlers->isEmpty()) {
+            $existingTasks->each(function (PendingTask $task) {
+                $task->delete();
+            });
+
+            return [];
+        }
+
+        $syncedTasks = [];
+        foreach ($handlers as $handler) {
+            $taskData = $baseTaskData;
+            $taskData['handler_id'] = $handler->id;
+            $taskData['handler_name'] = $handler->name;
+            $taskData['route_params'] = $normalizedRouteParams;
+
+            $existingTask = $existingTasks->get((int) $handler->id);
+            if ($existingTask) {
+                $updateData = [];
+                foreach (['title', 'description', 'route_name', 'handler_name'] as $field) {
+                    if (($existingTask->{$field} ?? null) !== ($taskData[$field] ?? null)) {
+                        $updateData[$field] = $taskData[$field] ?? null;
+                    }
+                }
+
+                if (!self::routeParamsMatch($existingTask->route_params, $normalizedRouteParams)) {
+                    $updateData['route_params'] = $normalizedRouteParams;
+                }
+
+                if (!empty($updateData)) {
+                    $existingTask->update($updateData);
+                    $existingTask->refresh();
+                }
+
+                $syncedTasks[] = $existingTask;
+                continue;
+            }
+
+            $syncedTasks[] = PendingTask::create($taskData);
+        }
+
+        $activeHandlerIds = $handlers->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $existingTasks->each(function (PendingTask $task) use ($activeHandlerIds) {
+            if (!in_array((int) $task->handler_id, $activeHandlerIds, true)) {
+                $task->delete();
+            }
+        });
+
+        return $syncedTasks;
+    }
+
     /**
      * 获取项目的业务人员（第一个审批节点账号）
      */
@@ -621,10 +721,28 @@ class PendingTaskService
             return null;
         }
 
-        $handler = self::getProjectOperator($documentDelivery->project_id, $documentDelivery->account_set_id, 'document_delivery');
-        if (!$handler) {
-            Log::warning('无法确定文档交付处理人', [
-                'delivery_id' => $documentDelivery->id,
+            $handlers = self::resolveProjectHandlers(
+                $documentDelivery->account_set_id,
+                $documentDelivery->project_id,
+                ProjectRoleUserService::ROLE_DELIVERY,
+                [self::getProjectOperator($documentDelivery->project_id, $documentDelivery->account_set_id, 'document_delivery')]
+            );
+            if ($handlers->isEmpty()) {
+                self::syncPendingTasksForHandlers([
+                    'account_set_id' => $documentDelivery->account_set_id,
+                    'task_type' => 'document_delivery',
+                    'title' => '',
+                    'description' => '',
+                    'related_id' => $documentDelivery->id,
+                    'related_type' => 'DocumentDelivery',
+                    'status' => 'pending',
+                    'route_name' => 'document-deliveries',
+                    'route_params' => null,
+                ], collect());
+            }
+            if ($handlers->isEmpty()) {
+                Log::warning('无法确定文档交付处理人', [
+                    'delivery_id' => $documentDelivery->id,
                 'project_id' => $documentDelivery->project_id
             ]);
             return null;
@@ -636,8 +754,7 @@ class PendingTaskService
         return [
             'title' => "{$project->name} {$taskMonth} {$cycleText}资料交付待处理",
             'description' => "项目 {$project->name} 的 {$documentDelivery->delivery_period} {$cycleText}资料需要在 {$taskMonth} 完成交付，请及时处理。",
-            'handler_id' => $handler->id,
-            'handler_name' => $handler->name,
+            'handlers' => $handlers,
         ];
     }
 
@@ -764,8 +881,28 @@ class PendingTaskService
                 return null;
             }
 
-            $approvers = self::getBusinessApprovers($accountSetId, '工资表审批');
-            if ($approvers->isEmpty()) {
+            $handlers = self::resolveProjectHandlers(
+                $accountSetId,
+                $projectId,
+                ProjectRoleUserService::ROLE_SALARY,
+                self::getBusinessApprovers($accountSetId, '工资表审批')
+            );
+            if ($handlers->isEmpty()) {
+                self::syncPendingTasksForHandlers([
+                    'account_set_id' => $accountSetId,
+                    'task_type' => 'salary_basis',
+                    'title' => '',
+                    'description' => '',
+                    'related_id' => $projectId,
+                    'related_type' => 'Project',
+                    'status' => 'pending',
+                    'route_name' => 'salary-basis',
+                ], collect(), [
+                    'month' => $month,
+                    'project_id' => $projectId,
+                ]);
+            }
+            if ($handlers->isEmpty()) {
                 Log::warning('未找到审批人', [
                     'account_set_id' => $accountSetId,
                     'project_id' => $projectId
@@ -773,51 +910,26 @@ class PendingTaskService
                 return null;
             }
 
-            $tasks = [];
-            foreach ($approvers as $approver) {
-                // 检查是否已存在待处理任务
-                $existingTask = PendingTask::where('account_set_id', $accountSetId)
-                    ->where('task_type', 'salary_basis')
-                    ->where('related_id', $projectId)
-                    ->where('related_type', 'Project')
-                    ->where('handler_id', $approver->id)
-                    ->where('status', 'pending')
-                    ->where('route_params', 'LIKE', '%' . $month . '%')
-                    ->first();
+            $tasks = self::syncPendingTasksForHandlers([
+                'account_set_id' => $accountSetId,
+                'task_type' => 'salary_basis',
+                'title' => "{$project->name} {$month} 工资依据待上传",
+                'description' => "项目 {$project->name} 的 {$month} 工资依据需要上传，请及时处理。",
+                'related_id' => $projectId,
+                'related_type' => 'Project',
+                'status' => 'pending',
+                'route_name' => 'salary-basis',
+            ], $handlers, [
+                'month' => $month,
+                'project_id' => $projectId,
+            ]);
 
-                if ($existingTask) {
-                    $tasks[] = $existingTask;
-                    continue;
-                }
-
-                // 生成任务标题和描述
-                $title = "{$project->name} {$month} 工资依据待上传";
-                $description = "项目 {$project->name} 的 {$month} 工资依据需要上传，请及时处理。";
-
-                // 创建待办任务
-                $task = PendingTask::create([
-                    'account_set_id' => $accountSetId,
-                    'task_type' => 'salary_basis',
-                    'title' => $title,
-                    'description' => $description,
-                    'related_id' => $projectId,
-                    'related_type' => 'Project',
-                    'handler_id' => $approver->id,
-                    'handler_name' => $approver->name,
-                    'status' => 'pending',
-                    'route_name' => 'salary-basis',
-                    'route_params' => json_encode(['month' => $month, 'project_id' => $projectId]),
-                ]);
-
-                $tasks[] = $task;
-
-                Log::info('创建工资依据待办任务', [
-                    'task_id' => $task->id,
-                    'project_id' => $projectId,
-                    'month' => $month,
-                    'handler_id' => $approver->id
-                ]);
-            }
+            Log::info('创建工资依据待办任务', [
+                'project_id' => $projectId,
+                'month' => $month,
+                'task_count' => count($tasks),
+                'handler_ids' => array_values(array_map(fn ($task) => (int) $task->handler_id, $tasks)),
+            ]);
 
             return $tasks;
         } catch (\Exception $e) {
@@ -854,8 +966,28 @@ class PendingTaskService
                 return null;
             }
 
-            $approvers = self::getBusinessApprovers($accountSetId, '考勤申请');
-            if ($approvers->isEmpty()) {
+            $handlers = self::resolveProjectHandlers(
+                $accountSetId,
+                $projectId,
+                ProjectRoleUserService::ROLE_SALARY,
+                self::getBusinessApprovers($accountSetId, '考勤申请')
+            );
+            if ($handlers->isEmpty()) {
+                self::syncPendingTasksForHandlers([
+                    'account_set_id' => $accountSetId,
+                    'task_type' => 'attendance_basis',
+                    'title' => '',
+                    'description' => '',
+                    'related_id' => $projectId,
+                    'related_type' => 'Project',
+                    'status' => 'pending',
+                    'route_name' => 'attendance-basis',
+                ], collect(), [
+                    'month' => $month,
+                    'project_id' => $projectId,
+                ]);
+            }
+            if ($handlers->isEmpty()) {
                 Log::warning('未找到审批人', [
                     'account_set_id' => $accountSetId,
                     'project_id' => $projectId
@@ -863,51 +995,26 @@ class PendingTaskService
                 return null;
             }
 
-            $tasks = [];
-            foreach ($approvers as $approver) {
-                // 检查是否已存在待处理任务
-                $existingTask = PendingTask::where('account_set_id', $accountSetId)
-                    ->where('task_type', 'attendance_basis')
-                    ->where('related_id', $projectId)
-                    ->where('related_type', 'Project')
-                    ->where('handler_id', $approver->id)
-                    ->where('status', 'pending')
-                    ->where('route_params', 'LIKE', '%' . $month . '%')
-                    ->first();
+            $tasks = self::syncPendingTasksForHandlers([
+                'account_set_id' => $accountSetId,
+                'task_type' => 'attendance_basis',
+                'title' => "{$project->name} {$month} 考勤依据待上传",
+                'description' => "项目 {$project->name} 的 {$month} 考勤依据需要上传，请及时处理。",
+                'related_id' => $projectId,
+                'related_type' => 'Project',
+                'status' => 'pending',
+                'route_name' => 'attendance-basis',
+            ], $handlers, [
+                'month' => $month,
+                'project_id' => $projectId,
+            ]);
 
-                if ($existingTask) {
-                    $tasks[] = $existingTask;
-                    continue;
-                }
-
-                // 生成任务标题和描述
-                $title = "{$project->name} {$month} 考勤依据待上传";
-                $description = "项目 {$project->name} 的 {$month} 考勤依据需要上传，请及时处理。";
-
-                // 创建待办任务
-                $task = PendingTask::create([
-                    'account_set_id' => $accountSetId,
-                    'task_type' => 'attendance_basis',
-                    'title' => $title,
-                    'description' => $description,
-                    'related_id' => $projectId,
-                    'related_type' => 'Project',
-                    'handler_id' => $approver->id,
-                    'handler_name' => $approver->name,
-                    'status' => 'pending',
-                    'route_name' => 'attendance-basis',
-                    'route_params' => json_encode(['month' => $month, 'project_id' => $projectId]),
-                ]);
-
-                $tasks[] = $task;
-
-                Log::info('创建考勤依据待办任务', [
-                    'task_id' => $task->id,
-                    'project_id' => $projectId,
-                    'month' => $month,
-                    'handler_id' => $approver->id
-                ]);
-            }
+            Log::info('创建考勤依据待办任务', [
+                'project_id' => $projectId,
+                'month' => $month,
+                'task_count' => count($tasks),
+                'handler_ids' => array_values(array_map(fn ($task) => (int) $task->handler_id, $tasks)),
+            ]);
 
             return $tasks;
         } catch (\Exception $e) {
@@ -1034,9 +1141,28 @@ class PendingTaskService
                 return null; // 已提交或已审批，不创建任务
             }
 
-            // 获取项目的第一个审批节点的人（业务人员）
-            $operator = self::getProjectOperator($projectId, $accountSetId, '考勤申请');
-            if (!$operator) {
+            $handlers = self::resolveProjectHandlers(
+                $accountSetId,
+                $projectId,
+                ProjectRoleUserService::ROLE_SALARY,
+                [self::getProjectOperator($projectId, $accountSetId, '考勤申请')]
+            );
+            if ($handlers->isEmpty()) {
+                self::syncPendingTasksForHandlers([
+                    'account_set_id' => $accountSetId,
+                    'task_type' => 'attendance_sheet',
+                    'title' => '',
+                    'description' => '',
+                    'related_id' => $projectId,
+                    'related_type' => 'Project',
+                    'status' => 'pending',
+                    'route_name' => 'attendance-sheets',
+                ], collect(), [
+                    'month' => $month,
+                    'project_id' => $projectId,
+                ]);
+            }
+            if ($handlers->isEmpty()) {
                 Log::warning('未找到项目业务人员', [
                     'account_set_id' => $accountSetId,
                     'project_id' => $projectId
@@ -1044,47 +1170,32 @@ class PendingTaskService
                 return null;
             }
 
-            // 检查是否已存在待处理任务
-            $existingTask = \App\Models\PendingTask::where('account_set_id', $accountSetId)
-                ->where('task_type', 'attendance_sheet')
-                ->where('related_id', $projectId)
-                ->where('related_type', 'Project')
-                ->where('handler_id', $operator->id)
-                ->where('status', 'pending')
-                ->where('route_params', 'LIKE', '%' . $month . '%')
-                ->first();
-
-            if ($existingTask) {
-                return $existingTask;
-            }
-
-            // 生成任务标题和描述
-            $title = "{$project->name} {$month} 考勤表待提交";
-            $description = "项目 {$project->name} 的 {$month} 考勤表需要提交，请及时处理。";
-
-            // 创建待办任务
-            $task = \App\Models\PendingTask::create([
+            $tasks = self::syncPendingTasksForHandlers([
                 'account_set_id' => $accountSetId,
                 'task_type' => 'attendance_sheet',
-                'title' => $title,
-                'description' => $description,
+                'title' => "{$project->name} {$month} 考勤表待提交",
+                'description' => "项目 {$project->name} 的 {$month} 考勤表需要提交，请及时处理。",
                 'related_id' => $projectId,
                 'related_type' => 'Project',
-                'handler_id' => $operator->id,
-                'handler_name' => $operator->name,
                 'status' => 'pending',
                 'route_name' => 'attendance-sheets',
-                'route_params' => json_encode(['month' => $month, 'project_id' => $projectId]),
+            ], $handlers, [
+                'month' => $month,
+                'project_id' => $projectId,
             ]);
 
             Log::info('创建考勤表待办任务', [
-                'task_id' => $task->id,
                 'project_id' => $projectId,
                 'month' => $month,
-                'handler_id' => $operator->id
+                'task_count' => count($tasks),
+                'handler_ids' => array_values(array_map(fn ($task) => (int) $task->handler_id, $tasks)),
             ]);
 
-            return $task;
+            if (empty($tasks)) {
+                return null;
+            }
+
+            return count($tasks) === 1 ? $tasks[0] : $tasks;
         } catch (\Exception $e) {
             Log::error('创建考勤表待办任务失败', [
                 'project_id' => $projectId,
@@ -1126,9 +1237,28 @@ class PendingTaskService
                 return null; // 已提交或已审批，不创建任务
             }
 
-            // 获取项目的第一个审批节点的人（业务人员）
-            $operator = self::getProjectOperator($projectId, $accountSetId, '工资表审批');
-            if (!$operator) {
+            $handlers = self::resolveProjectHandlers(
+                $accountSetId,
+                $projectId,
+                ProjectRoleUserService::ROLE_SALARY,
+                [self::getProjectOperator($projectId, $accountSetId, '工资表审批')]
+            );
+            if ($handlers->isEmpty()) {
+                self::syncPendingTasksForHandlers([
+                    'account_set_id' => $accountSetId,
+                    'task_type' => 'salary_sheet',
+                    'title' => '',
+                    'description' => '',
+                    'related_id' => $projectId,
+                    'related_type' => 'Project',
+                    'status' => 'pending',
+                    'route_name' => 'salary-sheets',
+                ], collect(), [
+                    'month' => $month,
+                    'project_id' => $projectId,
+                ]);
+            }
+            if ($handlers->isEmpty()) {
                 Log::warning('未找到项目业务人员', [
                     'account_set_id' => $accountSetId,
                     'project_id' => $projectId
@@ -1136,47 +1266,32 @@ class PendingTaskService
                 return null;
             }
 
-            // 检查是否已存在待处理任务
-            $existingTask = \App\Models\PendingTask::where('account_set_id', $accountSetId)
-                ->where('task_type', 'salary_sheet')
-                ->where('related_id', $projectId)
-                ->where('related_type', 'Project')
-                ->where('handler_id', $operator->id)
-                ->where('status', 'pending')
-                ->where('route_params', 'LIKE', '%' . $month . '%')
-                ->first();
-
-            if ($existingTask) {
-                return $existingTask;
-            }
-
-            // 生成任务标题和描述
-            $title = "{$project->name} {$month} 工资表待提交";
-            $description = "项目 {$project->name} 的 {$month} 工资表需要提交，请及时处理。";
-
-            // 创建待办任务
-            $task = \App\Models\PendingTask::create([
+            $tasks = self::syncPendingTasksForHandlers([
                 'account_set_id' => $accountSetId,
                 'task_type' => 'salary_sheet',
-                'title' => $title,
-                'description' => $description,
+                'title' => "{$project->name} {$month} 工资表待提交",
+                'description' => "项目 {$project->name} 的 {$month} 工资表需要提交，请及时处理。",
                 'related_id' => $projectId,
                 'related_type' => 'Project',
-                'handler_id' => $operator->id,
-                'handler_name' => $operator->name,
                 'status' => 'pending',
                 'route_name' => 'salary-sheets',
-                'route_params' => json_encode(['month' => $month, 'project_id' => $projectId]),
+            ], $handlers, [
+                'month' => $month,
+                'project_id' => $projectId,
             ]);
 
             Log::info('创建工资表待办任务', [
-                'task_id' => $task->id,
                 'project_id' => $projectId,
                 'month' => $month,
-                'handler_id' => $operator->id
+                'task_count' => count($tasks),
+                'handler_ids' => array_values(array_map(fn ($task) => (int) $task->handler_id, $tasks)),
             ]);
 
-            return $task;
+            if (empty($tasks)) {
+                return null;
+            }
+
+            return count($tasks) === 1 ? $tasks[0] : $tasks;
         } catch (\Exception $e) {
             Log::error('创建工资表待办任务失败', [
                 'project_id' => $projectId,

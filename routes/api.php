@@ -426,6 +426,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}', [ProjectController::class, 'update']);
         Route::delete('/{id}', [ProjectController::class, 'destroy']);
         Route::get('/{id}/statistics', [ProjectController::class, 'getStatistics']);
+        Route::get('/{id}/role-users', [ProjectController::class, 'getRoleUsers']);
+        Route::post('/{id}/role-users', [ProjectController::class, 'saveRoleUsers']);
         Route::post('/{id}/contract-notices', [ProjectController::class, 'setContractNotices']);  // 设置劳动合同须知
         Route::get('/{id}/contract-notices', [ProjectController::class, 'getContractNotices']);   // 获取劳动合同须知
         

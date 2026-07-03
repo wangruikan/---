@@ -8,6 +8,7 @@ use App\Models\DocumentDeliveryItem;
 use App\Services\DocumentDeliveryService;
 use App\Services\DynamicScheduledTaskService;
 use App\Services\PendingTaskService;
+use App\Services\ProjectRoleUserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +16,23 @@ use Illuminate\Support\Facades\Validator;
 
 class DocumentDeliveryController extends Controller
 {
+    private function ensureDeliveryProjectAccess(Request $request, DocumentDelivery $delivery)
+    {
+        if (!app(ProjectRoleUserService::class)->userCanAccessProject(
+            $request->user(),
+            (int) $delivery->account_set_id,
+            (int) $delivery->project_id,
+            ProjectRoleUserService::ROLE_DELIVERY
+        )) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权访问该项目交付数据'
+            ], 403);
+        }
+
+        return null;
+    }
+
     /**
      * 获取交付记录列表
      */
@@ -36,6 +54,14 @@ class DocumentDeliveryController extends Controller
             );
 
             $query = DocumentDelivery::where('account_set_id', $accountSetId);
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $query,
+                'project_id',
+                $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_DELIVERY,
+                true
+            );
 
             if ($request->filled('project_id')) {
                 $query->where('project_id', $request->input('project_id'));
@@ -91,7 +117,7 @@ class DocumentDeliveryController extends Controller
     /**
      * 获取单个交付记录详情
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
         try {
             $delivery = $this->buildDeliveryResponse((int) $id);
@@ -101,6 +127,10 @@ class DocumentDeliveryController extends Controller
                     'success' => false,
                     'message' => '交付记录不存在'
                 ], 404);
+            }
+
+            if ($response = $this->ensureDeliveryProjectAccess($request, $delivery)) {
+                return $response;
             }
 
             return response()->json([
@@ -229,6 +259,10 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
+            if ($response = $this->ensureDeliveryProjectAccess($request, $delivery)) {
+                return $response;
+            }
+
             if ($delivery->delivery_method !== 'express') {
                 return response()->json([
                     'success' => false,
@@ -320,6 +354,10 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
+            if ($response = $this->ensureDeliveryProjectAccess($request, $delivery)) {
+                return $response;
+            }
+
             if ($delivery->delivery_method !== 'electronic') {
                 return response()->json([
                     'success' => false,
@@ -405,6 +443,10 @@ class DocumentDeliveryController extends Controller
                     'success' => false,
                     'message' => '交付记录不存在'
                 ], 404);
+            }
+
+            if ($response = $this->ensureDeliveryProjectAccess($request, $delivery)) {
+                return $response;
             }
 
             if ($delivery->delivery_method !== 'electronic') {
@@ -540,6 +582,10 @@ class DocumentDeliveryController extends Controller
                 ], 404);
             }
 
+            if ($response = $this->ensureDeliveryProjectAccess($request, $delivery)) {
+                return $response;
+            }
+
             $service = app(DocumentDeliveryService::class);
             $service->syncDeliveryItems($delivery);
             $delivery->load('items');
@@ -598,7 +644,6 @@ class DocumentDeliveryController extends Controller
     {
         try {
             $accountSetId = (int) $request->input('current_account_set_id');
-            $userId = $request->user()->id;
 
             if (!$accountSetId) {
                 return response()->json([
@@ -612,12 +657,21 @@ class DocumentDeliveryController extends Controller
                 $request->input('delivery_period')
             );
 
-            $deliveries = DocumentDelivery::where('account_set_id', $accountSetId)
+            $query = DocumentDelivery::where('account_set_id', $accountSetId)
                 ->where('status', 'pending')
-                ->whereHas('project', function ($query) use ($userId) {
-                })
                 ->orderBy('display_month', 'desc')
-                ->orderBy('delivery_period', 'desc')
+                ->orderBy('delivery_period', 'desc');
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $query,
+                'project_id',
+                $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_DELIVERY,
+                true
+            );
+
+            $deliveries = $query
                 ->get()
                 ->map(function (DocumentDelivery $delivery) {
                     return $this->buildDeliveryResponse($delivery->id, ['project', 'submitter']);

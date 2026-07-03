@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Models\PaymentDueDateConfig;
 use App\Models\ProcessApproval;
 use App\Models\Notification;
-use App\Models\ApprovalFlowConfig;
+use App\Services\ProjectRoleUserService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -142,10 +142,9 @@ class CheckInsuranceSummaryReminders extends Command
         $paymentTypeText = $paymentType === 'social_security' ? '社保' : '公积金';
         $dueDateText = $dueDate->format('Y年m月d日');
         
-        // 获取第一审批节点的用户
-        $firstApproverIds = $this->getFirstApprovers($accountSetId);
-        
-        if (empty($firstApproverIds)) {
+        $recipientIds = $this->resolveRecipientIds($accountSetId, $pendingSummaries);
+
+        if (empty($recipientIds)) {
             $this->warn("账套 #{$accountSetId} 没有找到第一审批节点的用户");
             return;
         }
@@ -173,7 +172,7 @@ class CheckInsuranceSummaryReminders extends Command
         $content = "以下{$paymentTypeText}汇总申请需要在缴费日期（{$dueDateText}）前完成审核：{$summaryList}，请及时处理。";
         
         // 为每个第一审批节点的用户创建通知
-        foreach ($firstApproverIds as $userId) {
+        foreach ($recipientIds as $userId) {
             Notification::create([
                 'user_id' => $userId,
                 'type' => 'insurance_summary_reminder',
@@ -194,18 +193,37 @@ class CheckInsuranceSummaryReminders extends Command
         }
     }
 
-    /**
-     * 获取第一审批节点的用户
-     */
-    private function getFirstApprovers($accountSetId)
+    private function resolveRecipientIds($accountSetId, $pendingSummaries): array
     {
-        return ApprovalFlowConfig::getFirstEffectiveApprovers(
-            (int) $accountSetId,
-            '保险汇总'
-        )
-            ->pluck('user_id')
-            ->map(fn($id) => (int) $id)
+        $projectIds = $pendingSummaries
+            ->flatMap(function ($summary) {
+                $projectIds = is_array($summary->project_ids) ? $summary->project_ids : [];
+                return collect($projectIds)->map(fn ($projectId) => (int) $projectId);
+            })
+            ->filter(fn ($projectId) => $projectId > 0)
+            ->unique()
             ->values()
             ->all();
+
+        if (!empty($projectIds)) {
+            $roleUsers = app(ProjectRoleUserService::class)->getProjectRoleUsersForProjects(
+                (int) $accountSetId,
+                $projectIds,
+                ProjectRoleUserService::ROLE_INSURANCE
+            );
+
+            $roleUserIds = $roleUsers->pluck('id')
+                ->map(fn ($userId) => (int) $userId)
+                ->filter(fn ($userId) => $userId > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($roleUserIds)) {
+                return $roleUserIds;
+            }
+        }
+
+        return [];
     }
 }

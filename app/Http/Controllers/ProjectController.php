@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Project;
+use App\Services\ProjectRoleUserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,7 @@ use App\Traits\ChecksPermission;
 class ProjectController extends Controller
 {
     use ChecksPermission;
+
     /**
      * 检查项目访问权限
      */
@@ -36,6 +38,13 @@ class ProjectController extends Controller
         }
     }
 
+    private function getCurrentAccountSetId(Request $request)
+    {
+        return $request->header('X-Account-Set-Id')
+            ?: $request->input('current_account_set_id')
+            ?: $request->user()?->account_set_id;
+    }
+
     private function calculateProjectStatusByEndDate($endDate): string
     {
         if (!$endDate) {
@@ -47,12 +56,23 @@ class ProjectController extends Controller
 
     private function applyProjectIndexFilters($query, Request $request): void
     {
-        $currentAccountSetId = $request->input('current_account_set_id');
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
 
         if ($currentAccountSetId) {
             $query->where('account_set_id', $currentAccountSetId);
         } elseif ($request->user()->role !== 'admin') {
             $query->whereRaw('1 = 0');
+        }
+
+        $responsibilityRoleType = $request->input('responsibility_role_type');
+        if ($currentAccountSetId && $responsibilityRoleType) {
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $query,
+                'id',
+                (int) $currentAccountSetId,
+                $request->user(),
+                (string) $responsibilityRoleType
+            );
         }
 
         if ($request->has('status') && $request->status) {
@@ -306,6 +326,59 @@ class ProjectController extends Controller
         });
     }
 
+    private function formatProjectRoleUsers(Project $project): array
+    {
+        $service = app(ProjectRoleUserService::class);
+        $roles = [];
+
+        foreach (ProjectRoleUserService::roleLabels() as $roleType => $label) {
+            $users = $service->getProjectRoleUsers($project, $roleType)
+                ->map(fn ($user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                ])
+                ->values()
+                ->all();
+
+            $roles[$roleType] = [
+                'label' => $label,
+                'user_ids' => array_values(array_map(fn ($item) => (int) $item['id'], $users)),
+                'users' => $users,
+            ];
+        }
+
+        return $roles;
+    }
+
+    private function currentUserCanManageProjectRoleUsers(Request $request, Project $project): bool
+    {
+        $user = $request->user();
+        if (!$user) {
+            return false;
+        }
+
+        if (in_array($user->role, ['admin', 'super_admin'], true)) {
+            return true;
+        }
+
+        $managerUserIds = app(ProjectRoleUserService::class)->getProjectRoleUserIds(
+            (int) $project->account_set_id,
+            (int) $project->id,
+            ProjectRoleUserService::ROLE_ROLE_MANAGER
+        );
+
+        return in_array((int) $user->id, $managerUserIds, true);
+    }
+
+    private function appendProjectRoleManagementPermissions($projects, Request $request)
+    {
+        $projects->each(function (Project $project) use ($request) {
+            $project->can_manage_role_users = $this->currentUserCanManageProjectRoleUsers($request, $project);
+        });
+
+        return $projects;
+    }
+
     public function index(Request $request)
     {
         if ($response = $this->checkPermission('projects.view')) {
@@ -339,6 +412,7 @@ class ProjectController extends Controller
         $query->orderBy('created_at', 'desc');
         if ($request->boolean('all') || (!$request->has('page') && !$request->has('per_page'))) {
             $allProjects = $query->get();
+            $this->appendProjectRoleManagementPermissions($allProjects, $request);
             $projects = [
                 'current_page' => 1,
                 'data' => $allProjects,
@@ -358,6 +432,7 @@ class ProjectController extends Controller
             $perPage = (int) $request->input('per_page', 10);
             $perPage = max(1, min($perPage, 1000));
             $projects = $query->paginate($perPage);
+            $this->appendProjectRoleManagementPermissions($projects->getCollection(), $request);
         }
         
         return response()->json([
@@ -760,6 +835,113 @@ class ProjectController extends Controller
         return response()->json([
             'success' => true,
             'data' => $statistics
+        ]);
+    }
+
+    public function getRoleUsers(Request $request, $id)
+    {
+        if ($response = $this->checkPermission('projects.view')) {
+            return $response;
+        }
+
+        $project = Project::findOrFail($id);
+        $this->checkProjectAccess($request, $project);
+
+        if (!$this->currentUserCanManageProjectRoleUsers($request, $project)) {
+            return response()->json([
+                'success' => false,
+                'message' => '只有管理员或负责人设置人可以维护项目负责人'
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'project_id' => $project->id,
+                'project_name' => $project->name,
+                'roles' => $this->formatProjectRoleUsers($project),
+            ]
+        ]);
+    }
+
+    public function saveRoleUsers(Request $request, $id)
+    {
+        $project = Project::findOrFail($id);
+        $this->checkProjectAccess($request, $project);
+
+        if (!$this->currentUserCanManageProjectRoleUsers($request, $project)) {
+            return response()->json([
+                'success' => false,
+                'message' => '只有管理员或负责人设置人可以维护项目负责人'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'insurance_user_ids' => 'nullable|array',
+            'insurance_user_ids.*' => 'integer',
+            'salary_user_ids' => 'nullable|array',
+            'salary_user_ids.*' => 'integer',
+            'delivery_user_ids' => 'nullable|array',
+            'delivery_user_ids.*' => 'integer',
+            'role_manager_user_ids' => 'nullable|array',
+            'role_manager_user_ids.*' => 'integer',
+        ], [
+            'insurance_user_ids.array' => '保险负责人格式不正确',
+            'insurance_user_ids.*.integer' => '保险负责人格式不正确',
+            'salary_user_ids.array' => '薪资员格式不正确',
+            'salary_user_ids.*.integer' => '薪资员格式不正确',
+            'delivery_user_ids.array' => '交付员格式不正确',
+            'delivery_user_ids.*.integer' => '交付员格式不正确',
+            'role_manager_user_ids.array' => '负责人设置人格式不正确',
+            'role_manager_user_ids.*.integer' => '负责人设置人格式不正确',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->validationErrorResponse($validator);
+        }
+
+        $service = app(ProjectRoleUserService::class);
+        $roleUserMap = [
+            ProjectRoleUserService::ROLE_INSURANCE => $service->normalizeUserIds($request->input('insurance_user_ids', [])),
+            ProjectRoleUserService::ROLE_SALARY => $service->normalizeUserIds($request->input('salary_user_ids', [])),
+            ProjectRoleUserService::ROLE_DELIVERY => $service->normalizeUserIds($request->input('delivery_user_ids', [])),
+            ProjectRoleUserService::ROLE_ROLE_MANAGER => $service->normalizeUserIds($request->input('role_manager_user_ids', [])),
+        ];
+
+        $allUserIds = collect($roleUserMap)->flatten()->unique()->values()->all();
+        if (!empty($allUserIds)) {
+            $validUserIds = DB::table('account_set_users')
+                ->where('account_set_id', $project->account_set_id)
+                ->whereIn('user_id', $allUserIds)
+                ->pluck('user_id')
+                ->map(fn ($userId) => (int) $userId)
+                ->values()
+                ->all();
+
+            $invalidUserIds = array_values(array_diff($allUserIds, $validUserIds));
+            if (!empty($invalidUserIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '存在不属于当前账套的人员，无法保存',
+                    'errors' => [
+                        'user_ids' => ['存在不属于当前账套的人员，无法保存']
+                    ]
+                ], 422);
+            }
+        }
+
+        foreach ($roleUserMap as $roleType => $userIds) {
+            $service->syncProjectRoleUsers($project, $roleType, $userIds);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => '项目负责人设置已保存',
+            'data' => [
+                'project_id' => $project->id,
+                'project_name' => $project->name,
+                'roles' => $this->formatProjectRoleUsers($project),
+            ]
         ]);
     }
 

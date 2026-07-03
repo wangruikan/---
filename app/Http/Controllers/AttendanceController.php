@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Services\ApprovalService;
 use App\Services\DynamicScheduledTaskService;
+use App\Services\ProjectRoleUserService;
 use App\Traits\ChecksPermission;
 
 class AttendanceController extends Controller
@@ -43,6 +44,37 @@ class AttendanceController extends Controller
 
         return true;
     }
+
+    private function getManagedSalaryProjectIds(Request $request, int $accountSetId): array
+    {
+        $user = $request->user();
+        if (!$user || in_array($user->role, ['admin', 'super_admin'], true)) {
+            return [];
+        }
+
+        return app(ProjectRoleUserService::class)->getManagedProjectIds(
+            $accountSetId,
+            (int) $user->id,
+            ProjectRoleUserService::ROLE_SALARY
+        );
+    }
+
+    private function ensureSalaryProjectAccess(Request $request, int $accountSetId, int $projectId)
+    {
+        if (!app(ProjectRoleUserService::class)->userCanAccessProject(
+            $request->user(),
+            $accountSetId,
+            $projectId,
+            ProjectRoleUserService::ROLE_SALARY
+        )) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权访问该项目数据'
+            ], 403);
+        }
+
+        return null;
+    }
     
     /**
      * 获取考勤表列表
@@ -61,6 +93,15 @@ class AttendanceController extends Controller
 
             $query = AttendanceSheet::byAccountSet($accountSetId)
                 ->with(['project', 'creator', 'submitter', 'approver']);
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $query,
+                'project_id',
+                (int) $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY,
+                true
+            );
 
             // 搜索条件
             if ($request->filled('project_id')) {
@@ -125,9 +166,20 @@ class AttendanceController extends Controller
                 ->unique()
                 ->toArray();
 
-            $projects = Project::where('account_set_id', $accountSetId)
+            $projectsQuery = Project::where('account_set_id', $accountSetId)
                 ->where('status', 'active')
-                ->select('id', 'name', 'code', 'require_attendance', 'requires_attendance', 'requires_attendance_basis')
+                ->select('id', 'name', 'code', 'require_attendance', 'requires_attendance', 'requires_attendance_basis');
+
+            app(ProjectRoleUserService::class)->applyManagedProjectFilter(
+                $projectsQuery,
+                'id',
+                (int) $accountSetId,
+                $request->user(),
+                ProjectRoleUserService::ROLE_SALARY,
+                true
+            );
+
+            $projects = $projectsQuery
                 ->orderBy('name')
                 ->get()
                 ->filter(function (Project $project) use ($existingProjectIds) {
@@ -199,6 +251,9 @@ class AttendanceController extends Controller
 
             $user = Auth::user();
             $accountSetId = $this->getAccountSetId($request);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $request->project_id)) {
+                return $response;
+            }
             // 允许同项目同月份重复创建考勤申请（每次创建视为新的申请批次）
 
             // 获取项目信息
@@ -266,6 +321,9 @@ class AttendanceController extends Controller
             $accountSetId = $this->getAccountSetId($request);
 
             $sheet = AttendanceSheet::byAccountSet($accountSetId)->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             if (!$sheet->canEdit()) {
                 return response()->json([
@@ -320,6 +378,9 @@ class AttendanceController extends Controller
             $sheet = AttendanceSheet::byAccountSet($accountSetId)
                 ->with(['project', 'creator', 'submitter', 'approver'])
                 ->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             // 获取考勤数据
             $attendanceData = $this->getAttendanceData($id);
@@ -355,6 +416,9 @@ class AttendanceController extends Controller
             $accountSetId = $this->getAccountSetId($request);
 
             $sheet = AttendanceSheet::byAccountSet($accountSetId)->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             if (!$sheet->canSubmit()) {
                 return response()->json([
@@ -422,6 +486,9 @@ class AttendanceController extends Controller
             $accountSetId = $this->getAccountSetId($request);
 
             $sheet = AttendanceSheet::byAccountSet($accountSetId)->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             if (!$sheet->canApprove()) {
                 return response()->json([
@@ -457,6 +524,9 @@ class AttendanceController extends Controller
             $accountSetId = $this->getAccountSetId($request);
 
             $sheet = AttendanceSheet::byAccountSet($accountSetId)->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             // 检查是否在审批中，审批中的数据不允许删除
             if ($sheet->status === AttendanceSheet::STATUS_SUBMITTED) {
@@ -500,6 +570,9 @@ class AttendanceController extends Controller
             $accountSetId = $this->getAccountSetId($request);
 
             $sheet = AttendanceSheet::byAccountSet($accountSetId)->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             // 验证文件
             $validator = Validator::make($request->all(), [
@@ -582,6 +655,9 @@ class AttendanceController extends Controller
             $accountSetId = $this->getAccountSetId($request);
 
             $sheet = AttendanceSheet::byAccountSet($accountSetId)->findOrFail($id);
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $sheet->project_id)) {
+                return $response;
+            }
 
             if (!$sheet->canEdit()) {
                 return response()->json([
@@ -740,6 +816,10 @@ class AttendanceController extends Controller
                     'success' => false,
                     'message' => '项目不存在'
                 ], 404);
+            }
+
+            if ($response = $this->ensureSalaryProjectAccess($request, (int) $accountSetId, (int) $project->id)) {
+                return $response;
             }
 
             $employees = $project->employees()

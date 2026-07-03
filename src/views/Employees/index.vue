@@ -11,11 +11,11 @@
       <div style="display: flex; gap: 10px;">
         <el-button 
           v-if="expiredIdCardsCount > 0" 
-          type="danger" 
+          :type="expiredIdCardsExpiredCount > 0 ? 'danger' : 'warning'"
           @click="showExpiredIdCardsDialog"
         >
           <el-icon><Warning /></el-icon>
-          身份证已过期 ({{ expiredIdCardsCount }}人)
+          身份证到期提醒 ({{ expiredIdCardsCount }}人)
         </el-button>
         <el-button 
           v-if="pendingContractUploadList.length > 0" 
@@ -5499,16 +5499,16 @@
     <!-- 身份证过期员工列表对话框 -->
     <el-dialog
       v-model="showExpiredIdCardsDialogVisible"
-      title="身份证已过期员工列表"
+      title="身份证到期提醒"
       width="800px"
     >
       <el-alert
         title="提醒"
-        type="warning"
+        :type="expiredIdCardsExpiredCount > 0 ? 'warning' : 'info'"
         :closable="false"
         style="margin-bottom: 16px;"
       >
-        以下在职员工的身份证已过期，请及时更新身份证信息
+        {{ idCardReminderSummaryText }}
       </el-alert>
       
       <el-table 
@@ -5526,9 +5526,18 @@
             {{ row.id_card_valid_until ? new Date(row.id_card_valid_until).toLocaleDateString('zh-CN') : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="已过期天数" width="120">
+        <el-table-column label="提醒状态" width="110">
           <template #default="{ row }">
-            <el-tag type="danger">{{ row.expired_days }} 天</el-tag>
+            <el-tag :type="row.status_type === 'expired' ? 'danger' : 'warning'">
+              {{ row.status_label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="剩余/过期天数" width="130">
+          <template #default="{ row }">
+            <el-tag :type="row.status_type === 'expired' ? 'danger' : 'warning'">
+              {{ row.days_label }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
@@ -6560,6 +6569,8 @@ const formRef = ref()
 // 身份证过期相关
 const expiredIdCardsCount = ref(0) // 过期身份证数量
 const expiredIdCardsList = ref([]) // 过期身份证列表
+const expiredIdCardsExpiredCount = ref(0) // 已过期身份证数量
+const expiringSoonIdCardsCount = ref(0) // 即将到期身份证数量
 const showExpiredIdCardsDialogVisible = ref(false) // 显示过期身份证对话框
 const loadingExpiredIdCards = ref(false) // 加载过期身份证列表
 
@@ -6573,6 +6584,18 @@ const employeeStats = ref({
   resigned: 0,    // 离职人数
   probation: 0,   // 试用期人数
   contractExpired: 0  // 合同已到期人数
+})
+
+const idCardReminderSummaryText = computed(() => {
+  if (expiredIdCardsExpiredCount.value > 0 && expiringSoonIdCardsCount.value > 0) {
+    return `以下在职员工中，有 ${expiredIdCardsExpiredCount.value} 人身份证已过期，另有 ${expiringSoonIdCardsCount.value} 人将在 30 天内到期，请及时上传新的身份证。`
+  }
+
+  if (expiredIdCardsExpiredCount.value > 0) {
+    return `以下在职员工的身份证已过期，请及时上传新的身份证。`
+  }
+
+  return `以下在职员工的身份证将在 30 天内到期，请及时上传新的身份证。`
 })
 
 // 社保、医保和公积金地区相关
@@ -7049,6 +7072,13 @@ const loadEmployees = async () => {
   }
 }
 
+const applyExpiredIdCardReminderState = (response) => {
+  expiredIdCardsCount.value = response.count || 0
+  expiredIdCardsList.value = response.data || []
+  expiredIdCardsExpiredCount.value = response.expired_count || 0
+  expiringSoonIdCardsCount.value = response.expiring_soon_count || 0
+}
+
 // 检查身份证过期的员工
 const checkExpiredIdCards = async () => {
   try {
@@ -7058,28 +7088,13 @@ const checkExpiredIdCards = async () => {
       }
     })
     if (response.success) {
-      expiredIdCardsCount.value = response.count || 0
-      expiredIdCardsList.value = response.data || []
+      applyExpiredIdCardReminderState(response)
       
-      // 如果有过期的身份证，弹出提示
-      if (expiredIdCardsCount.value > 0) {
-        ElMessageBox.alert(
-          `有 ${expiredIdCardsCount.value} 名在职员工身份证已过期，请及时更新身份证信息`,
-          '提醒',
-          {
-            confirmButtonText: '查看详情',
-            type: 'warning',
-            callback: (action) => {
-              if (action === 'confirm') {
-                showExpiredIdCardsDialog()
-              }
-            }
-          }
-        )
-      }
+      // 如果有身份证已过期或即将到期，进入页面时直接弹出提醒
+      showExpiredIdCardsDialogVisible.value = expiredIdCardsCount.value > 0
     }
   } catch (error) {
-    console.error('检查身份证过期失败:', error)
+    console.error('检查身份证到期提醒失败:', error)
   }
 }
 
@@ -7095,12 +7110,11 @@ const showExpiredIdCardsDialog = async () => {
       }
     })
     if (response.success) {
-      expiredIdCardsList.value = response.data || []
-      expiredIdCardsCount.value = response.count || 0
+      applyExpiredIdCardReminderState(response)
     }
   } catch (error) {
-    console.error('加载过期身份证列表失败:', error)
-    ElMessage.error('加载过期身份证列表失败')
+    console.error('加载身份证到期提醒列表失败:', error)
+    ElMessage.error('加载身份证到期提醒列表失败')
   } finally {
     loadingExpiredIdCards.value = false
   }

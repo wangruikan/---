@@ -4807,7 +4807,7 @@ class EmployeeController extends ApiController
     }
 
     /**
-     * 获取身份证已过期的在职员工列表
+     * 获取身份证已过期或一个月内即将到期的在职员工列表
      */
     public function getExpiredIdCards(Request $request)
     {
@@ -4817,32 +4817,64 @@ class EmployeeController extends ApiController
             if (!$accountSetId) {
                 $accountSetId = $request->user()->account_set_id;
             }
-            
+
+            $today = Carbon::today();
+            $warningDate = $today->copy()->addMonth();
+
             $expiredEmployees = Employee::where('account_set_id', $accountSetId)
                 ->whereNotNull('id_card_valid_until')
-                ->where('id_card_valid_until', '<', now()->toDateString());
+                ->whereDate('id_card_valid_until', '<=', $warningDate->toDateString());
 
             $this->applyActivePersonnelFilter($expiredEmployees);
 
             $expiredEmployees = $expiredEmployees
                 ->select('id', 'name', 'employee_number', 'id_number', 'id_card_valid_until')
+                ->orderBy('id_card_valid_until', 'asc')
                 ->get()
                 ->map(function ($employee) {
-                    $expiredDays = now()->diffInDays($employee->id_card_valid_until);
+                    $expiryDate = Carbon::parse($employee->id_card_valid_until)->startOfDay();
+                    $isExpired = $expiryDate->lt(Carbon::today());
+                    $isToday = $expiryDate->equalTo(Carbon::today());
+
+                    if ($isExpired) {
+                        $expiredDays = $expiryDate->diffInDays(Carbon::today());
+                        $statusType = 'expired';
+                        $statusLabel = '已过期';
+                        $daysLabel = '已过期 ' . $expiredDays . ' 天';
+                    } elseif ($isToday) {
+                        $expiredDays = 0;
+                        $statusType = 'expiring_soon';
+                        $statusLabel = '今日到期';
+                        $daysLabel = '今日到期';
+                    } else {
+                        $expiredDays = Carbon::today()->diffInDays($expiryDate);
+                        $statusType = 'expiring_soon';
+                        $statusLabel = '即将到期';
+                        $daysLabel = '剩余 ' . $expiredDays . ' 天';
+                    }
+
                     return [
                         'id' => $employee->id,
                         'name' => $employee->name,
                         'employee_number' => $employee->employee_number,
                         'id_number' => $employee->id_number,
                         'id_card_valid_until' => $employee->id_card_valid_until,
-                        'expired_days' => $expiredDays
+                        'expired_days' => $expiredDays,
+                        'status_type' => $statusType,
+                        'status_label' => $statusLabel,
+                        'days_label' => $daysLabel
                     ];
                 });
+
+            $expiredCount = $expiredEmployees->where('status_type', 'expired')->count();
+            $expiringSoonCount = $expiredEmployees->where('status_type', 'expiring_soon')->count();
 
             return response()->json([
                 'success' => true,
                 'data' => $expiredEmployees,
-                'count' => $expiredEmployees->count()
+                'count' => $expiredEmployees->count(),
+                'expired_count' => $expiredCount,
+                'expiring_soon_count' => $expiringSoonCount
             ]);
         } catch (\Exception $e) {
             \Log::error('获取过期身份证列表失败', [

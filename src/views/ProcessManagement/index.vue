@@ -1,143 +1,204 @@
 <template>
   <div class="process-management-container">
-    <!-- 筛选区域 -->
-    <el-card class="filter-card">
-      <el-form :model="filterForm" inline>
-        <el-form-item label="汇总类型">
-          <el-select v-model="filterForm.category" placeholder="全部类型" clearable style="width: 120px;">
-            <el-option label="社保汇总" value="social_insurance" />
-            <el-option label="公积金汇总" value="housing_fund" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="月份">
-          <el-date-picker
-            v-model="filterForm.month"
-            type="month"
-            placeholder="选择月份"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            clearable
-          />
-        </el-form-item>
-        <el-form-item label="流程状态">
-          <el-select v-model="filterForm.status" placeholder="全部状态" clearable style="width: 150px;">
-            <el-option label="草稿" value="draft" />
-            <el-option label="待审批" value="pending" />
-            <el-option label="已通过" value="approved" />
-            <el-option label="已驳回" value="rejected" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
-          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          <el-button type="success" :icon="Plus" @click="handleCreate">发起流程</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+    <el-tabs v-model="activeTab" class="management-tabs">
+      <el-tab-pane name="pending">
+        <template #label>
+          <span>待发起汇总<span v-if="pendingProcessProjects.length">({{ pendingProcessProjects.length }})</span></span>
+        </template>
 
-    <!-- 流程列表 -->
-    <el-card class="table-card">
-      <el-table :data="processList" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="流程ID" width="80" />
-        <el-table-column label="汇总类型" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.category === 'housing_fund'" type="warning">公积金汇总</el-tag>
-            <el-tag v-else type="primary">社保汇总</el-tag>
+        <el-card shadow="never" class="pending-card">
+          <template #header>
+            <div class="card-header">
+              <span class="title">待发起汇总任务</span>
+              <div class="pending-actions">
+                <el-date-picker
+                  v-model="pendingProcessMonth"
+                  type="month"
+                  placeholder="选择月份"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  style="width: 140px;"
+                />
+                <el-button type="text" @click="loadPendingProcessProjects">
+                  <el-icon><Refresh /></el-icon>
+                  刷新
+                </el-button>
+              </div>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column prop="title" label="流程标题" min-width="200" />
-        <el-table-column prop="month" label="月份" width="100" />
-        <el-table-column label="发起人" width="120">
-          <template #default="{ row }">
-            {{ row.initiator?.name || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="当前审批人" width="120">
-          <template #default="{ row }">
-            {{ getCurrentApproverName(row) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="盖章方式" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag
-              v-if="row.approval_instance?.stamp_method === 'offline'"
-              type="warning"
-            >
-              线下
-            </el-tag>
-            <el-tag
-              v-else-if="row.approval_instance?.stamp_method === 'online'"
-              type="success"
-            >
-              线上
-            </el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.status === 'draft'" type="info">草稿</el-tag>
-            <el-tag v-else-if="row.status === 'pending'" type="warning">待审批</el-tag>
-            <el-tag v-else-if="row.status === 'approved'" type="success">已通过</el-tag>
-            <el-tag v-else-if="row.status === 'rejected'" type="danger">已驳回</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="附件数量" width="100" align="center">
-          <template #default="{ row }">
-            {{ row.attachments?.length || 0 }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160">
-          <template #default="{ row }">
-            {{ formatDateTime(row.created_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" :icon="View" @click="handleView(row)">查看</el-button>
-            <el-button 
-              v-if="['draft', 'rejected'].includes(row.status)" 
-              link 
-              type="success" 
-              :icon="Promotion" 
-              @click="handleSubmit(row)"
-            >
-              提交
-            </el-button>
-            <el-button 
-              v-if="row.status === 'approved' && !row.has_payment_request" 
-              link 
-              type="warning" 
-              @click="openPaymentRequestDialog(row.id)"
-            >
-              {{ row.payment_request_status === 'rejected' ? '重新发起付款' : '发起付款' }}
-            </el-button>
-            <el-button 
-              v-if="['draft', 'rejected'].includes(row.status)" 
-              link 
-              type="danger" 
-              :icon="Delete" 
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
 
-      <!-- 分页 -->
-      <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="pagination.current"
-          v-model:page-size="pagination.pageSize"
-          :total="pagination.total"
-          :page-sizes="[10, 15, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          @current-change="loadProcessList"
-          @size-change="loadProcessList"
-        />
-      </div>
-    </el-card>
+          <el-table
+            :data="pendingProcessProjects"
+            v-loading="pendingProcessLoading"
+            border
+            stripe
+            style="width: 100%"
+          >
+            <el-table-column prop="name" label="项目名称" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="code" label="项目编号" min-width="140" />
+            <el-table-column label="汇总类型" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.category === 'housing_fund'" type="warning">公积金汇总</el-tag>
+                <el-tag v-else type="primary">社保汇总</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="month" label="汇总月份" width="120" />
+            <el-table-column label="说明" min-width="200">
+              <template #default="{ row }">
+                {{ row.disabled_reason || '可填写并提交' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button type="primary" size="small" @click="handleCreatePendingProcess(row)">
+                  填写
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane name="list" label="已创建流程">
+        <!-- 筛选区域 -->
+        <el-card class="filter-card">
+          <el-form :model="filterForm" inline>
+            <el-form-item label="汇总类型">
+              <el-select v-model="filterForm.category" placeholder="全部类型" clearable style="width: 120px;">
+                <el-option label="社保汇总" value="social_insurance" />
+                <el-option label="公积金汇总" value="housing_fund" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="月份">
+              <el-date-picker
+                v-model="filterForm.month"
+                type="month"
+                placeholder="选择月份"
+                format="YYYY-MM"
+                value-format="YYYY-MM"
+                clearable
+              />
+            </el-form-item>
+            <el-form-item label="流程状态">
+              <el-select v-model="filterForm.status" placeholder="全部状态" clearable style="width: 150px;">
+                <el-option label="草稿" value="draft" />
+                <el-option label="待审批" value="pending" />
+                <el-option label="已通过" value="approved" />
+                <el-option label="已驳回" value="rejected" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
+              <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <!-- 流程列表 -->
+        <el-card class="table-card">
+          <el-table :data="processList" v-loading="loading" border stripe>
+            <el-table-column prop="id" label="流程ID" width="80" />
+            <el-table-column label="汇总类型" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.category === 'housing_fund'" type="warning">公积金汇总</el-tag>
+                <el-tag v-else type="primary">社保汇总</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="title" label="流程标题" min-width="200" />
+            <el-table-column prop="month" label="月份" width="100" />
+            <el-table-column label="发起人" width="120">
+              <template #default="{ row }">
+                {{ row.initiator?.name || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="当前审批人" width="120">
+              <template #default="{ row }">
+                {{ getCurrentApproverName(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="盖章方式" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="row.approval_instance?.stamp_method === 'offline'"
+                  type="warning"
+                >
+                  线下
+                </el-tag>
+                <el-tag
+                  v-else-if="row.approval_instance?.stamp_method === 'online'"
+                  type="success"
+                >
+                  线上
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.status === 'draft'" type="info">草稿</el-tag>
+                <el-tag v-else-if="row.status === 'pending'" type="warning">待审批</el-tag>
+                <el-tag v-else-if="row.status === 'approved'" type="success">已通过</el-tag>
+                <el-tag v-else-if="row.status === 'rejected'" type="danger">已驳回</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="附件数量" width="100" align="center">
+              <template #default="{ row }">
+                {{ row.attachments?.length || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="创建时间" width="160">
+              <template #default="{ row }">
+                {{ formatDateTime(row.created_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="300" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" :icon="View" @click="handleView(row)">查看</el-button>
+                <el-button
+                  v-if="['draft', 'rejected'].includes(row.status)"
+                  link
+                  type="success"
+                  :icon="Promotion"
+                  @click="handleSubmit(row)"
+                >
+                  提交
+                </el-button>
+                <el-button
+                  v-if="row.status === 'approved' && !row.has_payment_request"
+                  link
+                  type="warning"
+                  @click="openPaymentRequestDialog(row.id)"
+                >
+                  {{ row.payment_request_status === 'rejected' ? '重新发起付款' : '发起付款' }}
+                </el-button>
+                <el-button
+                  v-if="['draft', 'rejected'].includes(row.status)"
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  @click="handleDelete(row)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 分页 -->
+          <div class="pagination-container">
+            <el-pagination
+              v-model:current-page="pagination.current"
+              v-model:page-size="pagination.pageSize"
+              :total="pagination.total"
+              :page-sizes="[10, 15, 20, 50]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @current-change="loadProcessList"
+              @size-change="loadProcessList"
+            />
+          </div>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 创建/编辑对话框 -->
     <el-dialog
@@ -148,10 +209,21 @@
     >
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="汇总类型" prop="category">
-          <el-radio-group v-model="form.category">
+          <el-radio-group v-model="form.category" :disabled="dialogCreateLocked">
             <el-radio value="social_insurance">社保汇总</el-radio>
             <el-radio value="housing_fund">公积金汇总</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="汇总月份" prop="month">
+          <el-date-picker
+            v-model="form.month"
+            type="month"
+            placeholder="选择月份"
+            format="YYYY-MM"
+            value-format="YYYY-MM"
+            style="width: 100%;"
+            :disabled="dialogCreateLocked"
+          />
         </el-form-item>
         <el-form-item label="流程标题" prop="title">
           <el-input v-model="form.title" placeholder="请输入流程标题" />
@@ -162,6 +234,7 @@
             placeholder="请选择项目"
             style="width: 100%;"
             @change="handleProjectChange"
+            :disabled="dialogCreateLocked"
           >
             <el-option
               v-for="project in projectList.filter(p => p && p.id)"
@@ -222,7 +295,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSave">保存</el-button>
+        <el-button v-if="!currentProcessId" type="primary" @click="handleSave">保存</el-button>
         <el-button 
           v-if="currentProcessId && fileList.length > 0" 
           type="success" 
@@ -464,10 +537,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search, Refresh, Plus, View, Promotion, CircleCheck, Delete, UploadFilled, Download, Paperclip, Document, DocumentAdd
+  Search, Refresh, View, Promotion, Delete, UploadFilled, Download, DocumentAdd
 } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
 import PaymentAttachmentUploader from '@/components/PaymentAttachmentUploader.vue'
@@ -476,9 +549,8 @@ import SituationExplanationInlineForm from '@/components/SituationExplanationInl
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
 import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import {
-  getProcessList, getProcessDetail, createProcess, uploadAttachment,
+  getProcessList, getPendingProcessProjects, getProcessDetail, createProcess, uploadAttachment,
   deleteAttachment as deleteProcessAttachment,
-  downloadAttachment as downloadProcessAttachment,
   submitProcess as submitProcessApi,
   deleteProcess as deleteProcessApi
 } from '@/api/processApproval'
@@ -488,6 +560,10 @@ import { useRouter } from 'vue-router'
 
 const accountSetStore = useAccountSetStore()
 const router = useRouter()
+
+const getCurrentAccountSetId = () => {
+  return accountSetStore.currentAccountSetId || Number(localStorage.getItem('current_account_set_id')) || null
+}
 
 // 项目列表
 const projectList = ref([])
@@ -569,6 +645,11 @@ const filterForm = reactive({
   status: ''
 })
 
+const activeTab = ref('pending')
+const pendingProcessMonth = ref('')
+const pendingProcessProjects = ref([])
+const pendingProcessLoading = ref(false)
+
 // 流程列表
 const loading = ref(false)
 const processList = ref([])
@@ -580,18 +661,22 @@ const pagination = reactive({
 
 // 对话框
 const dialogVisible = ref(false)
-const dialogTitle = ref('发起流程')
+const dialogTitle = ref('填写汇总申请')
+const dialogCreateLocked = ref(false)
 const showFormToWordDialog = ref(false)
 const formRef = ref(null)
 const form = reactive({
   category: 'social_insurance',
+  month: '',
   title: '',
   project_id: null,
   description: ''
 })
 const rules = {
   category: [{ required: true, message: '请选择汇总类型', trigger: 'change' }],
-  title: [{ required: true, message: '请输入流程标题', trigger: 'blur' }]
+  month: [{ required: true, message: '请选择汇总月份', trigger: 'change' }],
+  title: [{ required: true, message: '请输入流程标题', trigger: 'blur' }],
+  project_id: [{ required: true, message: '请选择关联项目', trigger: 'change' }]
 }
 
 // 当前流程ID（用于上传附件）
@@ -700,6 +785,29 @@ const loadProcessList = async () => {
   }
 }
 
+const loadPendingProcessProjects = async () => {
+  const currentAccountSetId = getCurrentAccountSetId()
+
+  if (!currentAccountSetId) {
+    pendingProcessProjects.value = []
+    return
+  }
+
+  pendingProcessLoading.value = true
+  try {
+    const res = await getPendingProcessProjects(
+      pendingProcessMonth.value,
+      currentAccountSetId
+    )
+    pendingProcessProjects.value = res.data || []
+  } catch (error) {
+    pendingProcessProjects.value = []
+    ElMessage.error('加载待发起汇总任务失败')
+  } finally {
+    pendingProcessLoading.value = false
+  }
+}
+
 // 查询
 const handleSearch = () => {
   pagination.current = 1
@@ -732,6 +840,14 @@ const loadProjects = async () => {
 // 项目选择改变
 const handleProjectChange = (value) => {
   // 可以在这里添加额外逻辑
+}
+
+const getProcessCategoryLabel = (category) => {
+  return category === 'housing_fund' ? '公积金汇总' : '社保汇总'
+}
+
+const buildProcessTitle = (row) => {
+  return row.title || `${row.name} ${row.month} ${getProcessCategoryLabel(row.category)}`
 }
 
 // 获取项目名称
@@ -810,15 +926,16 @@ const getCurrentApproverName = (row) => {
   return pendingRecord ? pendingRecord.approver_name : '-'
 }
 
-// 创建流程
-const handleCreate = () => {
-  dialogTitle.value = '发起流程'
+const handleCreatePendingProcess = (row) => {
+  dialogTitle.value = '填写汇总申请'
+  dialogCreateLocked.value = true
   currentProcessId.value = null
   fileList.value = []
   Object.assign(form, {
-    category: 'social_insurance',
-    title: '',
-    project_id: null,
+    category: row.category,
+    month: row.month || pendingProcessMonth.value,
+    title: buildProcessTitle(row),
+    project_id: row.project_id,
     description: ''
   })
   dialogVisible.value = true
@@ -840,11 +957,10 @@ const handleSave = async () => {
         })
         currentProcessId.value = res.data.id
         ElMessage.success('流程创建成功，现在可以上传附件了')
+        await Promise.all([loadProcessList(), loadPendingProcessProjects()])
         // 不关闭对话框，让用户上传附件
       } else {
-        ElMessage.success('流程保存成功')
-        dialogVisible.value = false
-        loadProcessList()
+        ElMessage.success('流程已保存')
       }
     } catch (error) {
       ElMessage.error(error.response?.data?.message || '保存失败')
@@ -1000,7 +1116,7 @@ const handleConfirmSubmitWithStamp = async () => {
     ElMessage.success('流程提交成功')
     submitStampDialogVisible.value = false
     dialogVisible.value = false
-    loadProcessList()
+    await Promise.all([loadProcessList(), loadPendingProcessProjects()])
   } catch (error) {
     ElMessage.error(error.response?.data?.message || '提交失败')
   }
@@ -1077,7 +1193,7 @@ const handleDelete = async (row) => {
 
     await deleteProcessApi(row.id)
     ElMessage.success('流程删除成功')
-    loadProcessList()
+    await Promise.all([loadProcessList(), loadPendingProcessProjects()])
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(error.response?.data?.message || '删除失败')
@@ -1303,15 +1419,58 @@ const formatDateTime = (dateTime) => {
 }
 
 onMounted(() => {
-  filterForm.month = getCurrentMonth()
+  const currentMonth = getCurrentMonth()
+  filterForm.month = currentMonth
+  pendingProcessMonth.value = currentMonth
   loadProjects()
   loadProcessList()
+  loadPendingProcessProjects()
+})
+
+watch(pendingProcessMonth, () => {
+  if (activeTab.value === 'pending') {
+    loadPendingProcessProjects()
+  }
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'pending') {
+    loadPendingProcessProjects()
+  } else {
+    loadProcessList()
+  }
 })
 </script>
 
 <style scoped>
 .process-management-container {
   padding: 20px;
+}
+
+.management-tabs :deep(.el-tabs__header) {
+  margin-bottom: 20px;
+}
+
+.pending-card {
+  margin-bottom: 20px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.card-header .title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .filter-card {

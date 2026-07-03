@@ -1101,6 +1101,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('process-approvals')->group(function () {
         Route::get('/', [App\Http\Controllers\ProcessApprovalController::class, 'index']);
         Route::post('/', [App\Http\Controllers\ProcessApprovalController::class, 'store']);
+        Route::get('/pending-projects', [App\Http\Controllers\ProcessApprovalController::class, 'getPendingProjects']);
         Route::get('/{id}', [App\Http\Controllers\ProcessApprovalController::class, 'show']);
         Route::post('/{id}/upload-attachment', [App\Http\Controllers\ProcessApprovalController::class, 'uploadAttachment']);
         Route::delete('/{id}/attachments/{attachmentId}', [App\Http\Controllers\ProcessApprovalController::class, 'deleteAttachment']);

@@ -94,13 +94,13 @@
             <keep-alive :max="20">
               <component
                 :is="Component"
-                :key="route.name || route.path"
+                :key="viewRenderKey"
                 v-if="route.meta?.keepAlive !== false"
               />
             </keep-alive>
             <component
               :is="Component"
-              :key="route.name || route.path"
+              :key="viewRenderKey"
               v-if="route.meta?.keepAlive === false"
             />
           </router-view>
@@ -255,6 +255,7 @@ const passwordRules = {
 
 const currentPageTitle = computed(() => route.meta?.title)
 const unreadCount = computed(() => notifications.value.filter(n => !n.is_read).length)
+const viewRenderKey = computed(() => `${route.name || route.path}:${accountSetStore.currentAccountSetId || 'no-account-set'}`)
 const canAccessAccountSets = computed(() => {
   return userStore.userInfo?.role === 'admin' || permissionStore.hasModuleAccess('account_sets')
 })

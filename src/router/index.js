@@ -401,8 +401,17 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
+  const accountSetStore = useAccountSetStore()
+
+  if (userStore.isLoggedIn && !userStore.userInfo) {
+    try {
+      await userStore.initUser()
+    } catch (error) {
+      console.error('路由守卫初始化用户信息失败:', error)
+    }
+  }
   
   // 检查是否需要登录
   if (to.meta.requiresAuth && !userStore.isLoggedIn) {
@@ -411,7 +420,7 @@ router.beforeEach((to, from, next) => {
   }
   
   // 检查是否需要管理员权限
-  if (to.meta.requiresAdmin && userStore.userInfo?.role !== 'admin') {
+  if (to.meta.requiresAdmin && !['admin', 'super_admin'].includes(userStore.userInfo?.role)) {
     console.warn('需要管理员权限，当前角色:', userStore.userInfo?.role)
     next('/')
     return
@@ -420,9 +429,9 @@ router.beforeEach((to, from, next) => {
   // 检查是否需要流程记录访问权限（已移除审批级别限制）
   if (to.meta.requiresProcessRecordAccess) {
     const user = userStore.userInfo
-    const accountSetStore = useAccountSetStore()
-    
-    if (!user || !accountSetStore.currentAccountSet?.id) {
+    const hasAccountSet = Boolean(accountSetStore.currentAccountSetId || accountSetStore.currentAccountSet?.id)
+
+    if (!user || !hasAccountSet) {
       console.warn('流程记录权限检查：用户未登录或未选择账套')
       next('/')
       return

@@ -12,6 +12,20 @@ export function getProcessList(params) {
 }
 
 /**
+ * 获取待发起汇总任务
+ */
+export function getPendingProcessProjects(month, currentAccountSetId) {
+  return request({
+    url: '/process-approvals/pending-projects',
+    method: 'get',
+    params: {
+      month,
+      current_account_set_id: currentAccountSetId
+    }
+  })
+}
+
+/**
  * 获取流程详情
  */
 export function getProcessDetail(id) {

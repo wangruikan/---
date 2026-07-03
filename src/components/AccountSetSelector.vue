@@ -28,9 +28,13 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useAccountSetStore } from '@/stores/accountSet'
+import { useUserStore } from '@/stores/user'
+import { usePermissionStore } from '@/stores/permission'
 import { ElMessage } from 'element-plus'
 
 const accountSetStore = useAccountSetStore()
+const userStore = useUserStore()
+const permissionStore = usePermissionStore()
 
 const selectedAccountSetId = ref(null)
 
@@ -57,16 +61,25 @@ watch(() => accountSets.value, (newSets) => {
   }
 }, { immediate: true })
 
-const handleAccountSetChange = (accountSetId) => {
+watch(() => accountSetStore.currentAccountSetId, (newId) => {
+  selectedAccountSetId.value = newId ? Number(newId) : null
+}, { immediate: true })
+
+const handleAccountSetChange = async (accountSetId) => {
   if (!accountSetId) return
-  
+
+  if (Number(accountSetStore.currentAccountSetId) === Number(accountSetId)) {
+    return
+  }
+
   accountSetStore.setCurrentAccountSet(accountSetId)
+
+  await Promise.allSettled([
+    userStore.refreshUserInfo(),
+    permissionStore.loadPermissions()
+  ])
+
   ElMessage.success(`已切换到 ${accountSets.value.find(s => s.id === accountSetId)?.name}`)
-  
-  // 刷新当前页面数据
-  setTimeout(() => {
-    window.location.reload()
-  }, 500)
 }
 </script>
 

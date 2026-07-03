@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\ProcessApproval;
 use App\Models\ProcessAttachment;
+use App\Models\Project;
 use App\Models\User;
 use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Carbon;
 use App\Traits\ChecksPermission;
 
 class ProcessApprovalController extends Controller
@@ -20,6 +22,34 @@ class ProcessApprovalController extends Controller
     public function __construct(ApprovalService $approvalService)
     {
         $this->approvalService = $approvalService;
+    }
+
+    private function getAccountSetId(Request $request)
+    {
+        return $request->header('X-Account-Set-Id')
+            ?: $request->input('current_account_set_id')
+            ?: $request->user()?->account_set_id;
+    }
+
+    private function projectCanCreateSummaryForMonth(Project $project, string $month): bool
+    {
+        $startMonth = $project->start_date ? Carbon::parse($project->start_date)->format('Y-m') : null;
+        $endMonth = $project->end_date ? Carbon::parse($project->end_date)->format('Y-m') : null;
+
+        if ($startMonth && $month < $startMonth) {
+            return false;
+        }
+
+        if ($endMonth && $month > $endMonth) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function buildSummaryTitle(string $projectName, string $month, string $categoryLabel): string
+    {
+        return "{$projectName} {$month} {$categoryLabel}";
     }
     /**
      * 获取流程列表
@@ -91,6 +121,84 @@ class ProcessApprovalController extends Controller
     }
 
     /**
+     * 获取待发起汇总任务列表
+     */
+    public function getPendingProjects(Request $request)
+    {
+        if ($response = $this->checkPermission('process_approval.view')) {
+            return $response;
+        }
+
+        $request->validate([
+            'month' => 'required|date_format:Y-m',
+        ]);
+
+        $accountSetId = $this->getAccountSetId($request);
+
+        if (!$accountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套'
+            ], 400);
+        }
+
+        $month = $request->input('month');
+
+        $existingKeys = [];
+        $existingProcesses = ProcessApproval::where('account_set_id', $accountSetId)
+            ->whereIn('category', ['social_insurance', 'housing_fund'])
+            ->where('month', $month)
+            ->get(['category', 'project_ids']);
+
+        foreach ($existingProcesses as $process) {
+            $projectIds = is_array($process->project_ids) ? $process->project_ids : [];
+            foreach ($projectIds as $projectId) {
+                $existingKeys[$projectId . ':' . $process->category] = true;
+            }
+        }
+
+        $categoryMap = [
+            'social_insurance' => '社保汇总',
+            'housing_fund' => '公积金汇总',
+        ];
+
+        $projects = Project::where('account_set_id', $accountSetId)
+            ->where('status', 'active')
+            ->select('id', 'name', 'code', 'start_date', 'end_date')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Project $project) => $this->projectCanCreateSummaryForMonth($project, $month));
+
+        $tasks = $projects->flatMap(function (Project $project) use ($categoryMap, $existingKeys, $month) {
+            return collect($categoryMap)
+                ->reject(function ($label, $category) use ($project, $existingKeys) {
+                    return isset($existingKeys[$project->id . ':' . $category]);
+                })
+                ->map(function ($label, $category) use ($project, $month) {
+                    return [
+                        'task_key' => "{$project->id}_{$category}_{$month}",
+                        'project_id' => $project->id,
+                        'name' => $project->name,
+                        'code' => $project->code,
+                        'month' => $month,
+                        'category' => $category,
+                        'category_label' => $label,
+                        'title' => $this->buildSummaryTitle($project->name, $month, $label),
+                        'can_create' => true,
+                        'disabled_reason' => null,
+                    ];
+                })
+                ->values();
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $tasks,
+            'count' => $tasks->count(),
+        ]);
+    }
+
+    /**
      * 获取流程详情
      */
     public function show(Request $request, $id)
@@ -121,13 +229,14 @@ class ProcessApprovalController extends Controller
         }
         $request->validate([
             'title' => 'required|string|max:255',
+            'month' => 'nullable|date_format:Y-m',
             'project_ids' => 'nullable|array',
             'project_ids.*' => 'integer|exists:projects,id',
             'description' => 'nullable|string',
         ]);
 
         // 从请求参数中获取账套ID
-        $accountSetId = $request->input('current_account_set_id');
+        $accountSetId = $this->getAccountSetId($request);
         if (!$accountSetId) {
             return response()->json([
                 'success' => false,
@@ -143,7 +252,7 @@ class ProcessApprovalController extends Controller
                 'initiator_id' => $request->user()->id,
                 'title' => $request->title,
                 'category' => $request->category ?? 'social_insurance', // 汇总类型：social_insurance=社保, housing_fund=公积金
-                'month' => now()->format('Y-m'), // 自动使用当前年月
+                'month' => $request->input('month') ?: now()->format('Y-m'),
                 'project_ids' => $request->project_ids ?? [],
                 'description' => $request->description,
                 'status' => 'draft',

@@ -634,6 +634,7 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
+            'other_insurance_enabled' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -759,7 +760,7 @@ class EmployeeController extends ApiController
             'special_deduction', 'is_annual_deduction',
             'social_security_region_id', 'medical_insurance_region_id', 
             'housing_fund_region_id', 'housing_fund_config_id', 
-            'large_medical_insurance_config_id', 'insurance_completed_at',
+            'large_medical_insurance_config_id', 'other_insurance_enabled', 'insurance_completed_at',
             'social_insurance_enrollment_date', 'provident_fund_enrollment_date',
             'medical_insurance_enrollment_date', 'large_medical_enrollment_date',
             
@@ -801,6 +802,15 @@ class EmployeeController extends ApiController
         $employeeData['contract_status'] = 'unsigned';
         if (empty($employeeData['personnel_status'])) {
             $employeeData['personnel_status'] = 'active';
+        }
+
+        if ($this->supportsEmployeeOtherInsuranceToggle()) {
+            $employeeData['other_insurance_enabled'] = $this->normalizeOtherInsuranceToggleValue(
+                $employeeData['other_insurance_enabled'] ?? null,
+                true
+            );
+        } else {
+            unset($employeeData['other_insurance_enabled']);
         }
         
         // 为布尔字段设置默认值（防止NOT NULL约束错误）
@@ -918,6 +928,23 @@ class EmployeeController extends ApiController
             ], $employee->employee_number, $resolvedDocumentSetId, true));
         }
 
+        $employee->refresh();
+        $employee->load('projects');
+        $this->detectInsuranceRegionChanges($employee, [
+            'social_security_region_id' => null,
+            'medical_insurance_region_id' => null,
+            'housing_fund_region_id' => null,
+            'housing_fund_config_id' => null,
+            'large_medical_insurance_config_id' => null,
+            'other_insurance_enabled' => false,
+            'project_other_insurance_policy_ids' => [],
+            'social_security_base' => null,
+            'medical_insurance_base' => null,
+            'housing_fund_base' => null,
+            'large_medical_base' => null,
+            'large_medical_company_base' => null,
+        ], $employeeData);
+
         return response()->json([
             'success' => true,
             'message' => '员工信息创建成功',
@@ -971,6 +998,7 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
+            'other_insurance_enabled' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -1035,7 +1063,7 @@ class EmployeeController extends ApiController
             'special_deduction', 'is_annual_deduction',
             'social_security_region_id', 'medical_insurance_region_id', 
             'housing_fund_region_id', 'housing_fund_config_id', 
-            'large_medical_insurance_config_id', 'insurance_completed_at',
+            'large_medical_insurance_config_id', 'other_insurance_enabled', 'insurance_completed_at',
             'social_insurance_enrollment_date', 'provident_fund_enrollment_date',
             'medical_insurance_enrollment_date', 'large_medical_enrollment_date',
             
@@ -1087,6 +1115,17 @@ class EmployeeController extends ApiController
                 $updateData['is_retired'] = true;
             }
         }
+
+        if ($this->supportsEmployeeOtherInsuranceToggle()) {
+            if (array_key_exists('other_insurance_enabled', $updateData)) {
+                $updateData['other_insurance_enabled'] = $this->normalizeOtherInsuranceToggleValue(
+                    $updateData['other_insurance_enabled'],
+                    true
+                );
+            }
+        } else {
+            unset($updateData['other_insurance_enabled']);
+        }
         
         // 清理数值字段，移除千位分隔符
         $numericFields = ['basic_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base', 'special_deduction'];
@@ -1128,6 +1167,7 @@ class EmployeeController extends ApiController
             'housing_fund_region_id',
             'housing_fund_config_id',
             'large_medical_insurance_config_id',
+            'other_insurance_enabled',
             'social_security_base',
             'medical_insurance_base',
             'housing_fund_base',
@@ -1135,6 +1175,7 @@ class EmployeeController extends ApiController
             'large_medical_company_base',
         ]);
         $oldActiveProjectId = $employee->activeProjects()->pluck('projects.id')->first();
+        $originalInsuranceData['project_other_insurance_policy_ids'] = $this->getProjectOtherInsurancePolicyIds($oldActiveProjectId);
         $newProjectId = null;
         if ($request->has('project_ids') && is_array($request->project_ids)) {
             $newProjectId = $request->project_ids[0] ?? null;
@@ -2513,6 +2554,39 @@ class EmployeeController extends ApiController
             ];
 
             foreach ($categoryMap as $changeType => $fieldMap) {
+                if ($changeType === 'other_insurance') {
+                    $oldPayload = $this->buildOtherInsuranceChangePayload(
+                        $originalData['other_insurance_enabled'] ?? true,
+                        $originalData['project_other_insurance_policy_ids'] ?? []
+                    );
+                    $newPayload = $this->buildOtherInsuranceChangePayload(
+                        $employee->other_insurance_enabled ?? null,
+                        $this->getProjectOtherInsurancePolicyIds($employee->getCurrentProject()?->id)
+                    );
+
+                    if ($this->isSameInsuranceChangeValue($oldPayload['policies'] ?? [], $newPayload['policies'] ?? [])) {
+                        continue;
+                    }
+
+                    \Log::info('检测到员工保险信息变更', [
+                        'employee_id' => $employee->id,
+                        'employee_name' => $employee->name,
+                        'change_type' => $changeType,
+                        'old_data' => $oldPayload,
+                        'new_data' => $newPayload,
+                    ]);
+
+                    $detectionService->triggerChange([
+                        'scope' => \App\Services\InsuranceChangeDetectionService::SCOPE_EMPLOYEE,
+                        'change_type' => $changeType,
+                        'employee' => $employee,
+                        'old_data' => $oldPayload,
+                        'new_data' => $newPayload,
+                        'source' => 'employee_insurance_profile_change',
+                    ]);
+                    continue;
+                }
+
                 $hasChangedField = false;
                 foreach ($fieldMap as $field => $payloadKey) {
                     if (!array_key_exists($field, $updateData)) {
@@ -2576,6 +2650,71 @@ class EmployeeController extends ApiController
         }
 
         return $oldValue == $newValue;
+    }
+
+    private function supportsEmployeeOtherInsuranceToggle(): bool
+    {
+        static $supports = null;
+
+        if ($supports !== null) {
+            return $supports;
+        }
+
+        $supports = Schema::hasColumn('employees', 'other_insurance_enabled');
+
+        return $supports;
+    }
+
+    private function normalizeOtherInsuranceToggleValue($value, bool $default = true): bool
+    {
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        $normalized = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        return $normalized === null ? $default : $normalized;
+    }
+
+    private function getProjectOtherInsurancePolicyIds($projectId): array
+    {
+        if (!$projectId) {
+            return [];
+        }
+
+        $project = Project::with('otherInsurancePolicies:id')->find($projectId);
+        if (!$project || !$project->otherInsurancePolicies) {
+            return [];
+        }
+
+        return $project->otherInsurancePolicies
+            ->pluck('id')
+            ->map(function ($id) {
+                return (int) $id;
+            })
+            ->values()
+            ->all();
+    }
+
+    private function buildOtherInsuranceChangePayload($enabled, array $policyIds): array
+    {
+        $isEnabled = $this->normalizeOtherInsuranceToggleValue($enabled, true);
+
+        return [
+            'policies' => $isEnabled
+                ? array_values(array_filter($policyIds, function ($id) {
+                    return !empty($id);
+                }))
+                : [],
+        ];
     }
 
     /**

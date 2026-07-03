@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class InsurancePersonnel extends Model
 {
@@ -141,6 +142,10 @@ class InsurancePersonnel extends Model
      */
     public static function getOrCreateFromInsuranceChange($change)
     {
+        $otherInsurancePolicies = $change->other_insurance_policies;
+        $shouldResetOtherInsurance = empty($otherInsurancePolicies) || $otherInsurancePolicies === '[]';
+        $usedQuotas = $shouldResetOtherInsurance ? null : $change->used_quotas;
+
         $matchedRecords = self::buildCurrentPersonnelQueryFromChange($change)
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
@@ -239,14 +244,16 @@ class InsurancePersonnel extends Model
                 'social_security_types' => $change->social_security_types,
                 'medical_insurance_types' => $change->medical_insurance_types,
                 'housing_fund_params' => $change->housing_fund_params,
-                'other_insurance_policies' => $change->other_insurance_policies,
+                'other_insurance_policies' => $otherInsurancePolicies,
                 'large_medical_insurance_config' => $change->large_medical_insurance_config,
-                'used_quotas' => $change->used_quotas,
+                'used_quotas' => $usedQuotas,
                 'status' => 'active',
                 'is_compensation' => 0,
                 // first_confirmation_date 不更新，保持首次确认日期不变
                 'last_updated_at' => now(),
             ]);
+
+            self::resetOtherInsuranceEnrollmentState($personnel, $shouldResetOtherInsurance);
 
             // 如果启用了大额医疗保险且之前没有设置支付起始月份，设置支付起始月份
             if ($change->large_medical_insurance_enabled && $change->large_medical_insurance_config_id) {
@@ -283,14 +290,16 @@ class InsurancePersonnel extends Model
                 'social_security_types' => $change->social_security_types,
                 'medical_insurance_types' => $change->medical_insurance_types,
                 'housing_fund_params' => $change->housing_fund_params,
-                'other_insurance_policies' => $change->other_insurance_policies,
+                'other_insurance_policies' => $otherInsurancePolicies,
                 'large_medical_insurance_config' => $change->large_medical_insurance_config,
-                'used_quotas' => $change->used_quotas,
+                'used_quotas' => $usedQuotas,
                 'status' => 'active',
                 'is_compensation' => 0,
                 'first_confirmation_date' => $change->first_confirmation_date ?? now()->toDateString(),
                 'last_updated_at' => now(),
             ]);
+
+            self::resetOtherInsuranceEnrollmentState($personnel, $shouldResetOtherInsurance);
 
             // 如果启用了大额医疗保险，设置支付起始月份
             if ($change->large_medical_insurance_enabled && $change->large_medical_insurance_config_id) {
@@ -299,6 +308,27 @@ class InsurancePersonnel extends Model
         }
 
         return $personnel;
+    }
+
+    private static function resetOtherInsuranceEnrollmentState(self $personnel, bool $shouldReset): void
+    {
+        if (!$shouldReset) {
+            return;
+        }
+
+        $dirty = false;
+        if (Schema::hasColumn('insurance_personnel', 'other_insurance_policy_versions')) {
+            $personnel->other_insurance_policy_versions = null;
+            $dirty = true;
+        }
+        if (Schema::hasColumn('insurance_personnel', 'other_insurance_enrolled_at')) {
+            $personnel->other_insurance_enrolled_at = null;
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $personnel->save();
+        }
     }
 
     private static function isLargeMedicalDisableOnlyChange($change): bool

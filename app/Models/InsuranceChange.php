@@ -311,6 +311,10 @@ class InsuranceChange extends Model
      */
     public function getCurrentOtherInsuranceConfig()
     {
+        if (!$this->isEmployeeOtherInsuranceEnabled()) {
+            return [];
+        }
+
         $otherInsurancePolicies = [];
         if ($this->employee && $this->employee->projects) {
             foreach ($this->employee->projects as $project) {
@@ -717,69 +721,74 @@ class InsuranceChange extends Model
         }
 
         // 保存其他保险配置
-        $project = $this->employee->projects->first();
-        if ($project && $project->otherInsurancePolicies) {
-            // 确保加载 type 关联
-            $project->load('otherInsurancePolicies.type');
-            
-            // 获取当前参保记录中已使用名额的保险ID列表
-            $usedQuotas = $this->used_quotas ?? [];
-            if (is_string($usedQuotas)) {
-                $usedQuotas = json_decode($usedQuotas, true) ?? [];
-            }
-            if (!is_array($usedQuotas)) {
-                $usedQuotas = [];
-            }
-            
-            $otherInsurancePolicies = [];
-            foreach ($project->otherInsurancePolicies as $policy) {
-                // 检查是否已使用名额
-                $quotaUsed = false;
-                $removedPersonName = null;
+        if (!$this->isEmployeeOtherInsuranceEnabled()) {
+            $this->other_insurance_policies = null;
+            $this->used_quotas = null;
+        } else {
+            $project = $this->employee->projects->first();
+            if ($project && $project->otherInsurancePolicies) {
+                // 确保加载 type 关联
+                $project->load('otherInsurancePolicies.type');
                 
-                // 首先检查used_quotas中是否有记录
-                foreach ($usedQuotas as $usedQuota) {
-                    if (is_array($usedQuota)) {
-                        // 新数据结构：包含policy_id和removed_person_name
-                        if ($usedQuota['policy_id'] == $policy->id) {
-                            $quotaUsed = true;
-                            $removedPersonName = $usedQuota['removed_person_name'] ?? null;
-                            break;
-                        }
-                    } else {
-                        // 旧数据结构：直接是policy_id
-                        if ($usedQuota == $policy->id) {
-                            $quotaUsed = true;
-                            break;
-                        }
-                    }
+                // 获取当前参保记录中已使用名额的保险ID列表
+                $usedQuotas = $this->used_quotas ?? [];
+                if (is_string($usedQuotas)) {
+                    $usedQuotas = json_decode($usedQuotas, true) ?? [];
+                }
+                if (!is_array($usedQuotas)) {
+                    $usedQuotas = [];
                 }
                 
-                // ✅ 修复：只根据 used_quotas 判断，不因为名额为0就标记为已用
-                // 名额为0可能是其他员工用完了，不代表当前员工使用了名额
-                
-                $otherInsurancePolicies[] = [
-                    'id' => $policy->id,
-                    'policy_name' => $policy->policy_name,
-                    'name' => $policy->policy_name, // 添加 name 字段
-                    'type' => $policy->type ? $policy->type->name : '其他保险',
-                    'type_id' => $policy->type_id,
-                    'coverage' => $policy->description ?: '已保障',
-                    'description' => $policy->description,
-                    'employee_per_capita_cost' => $policy->employee_per_capita_cost,
-                    'contact_name' => $policy->contact_name,
-                    'contact_phone' => $policy->contact_phone,
-                    'available_quota' => $policy->quota ?? 0,
-                    'quota' => $policy->quota ?? 0,
-                    'quota_used' => $quotaUsed, // 根据used_quotas正确设置
-                    'removed_person_name' => $removedPersonName, // 根据used_quotas正确设置
-                    'personnel_name_list' => $policy->personnel_name_list ?? [],
-                    'endorsement_number' => $policy->endorsement_number,
-                    'policy_end_date' => $policy->policy_end_date ?: $policy->end_date,
-                    'end_date' => $policy->end_date,
-                ];
+                $otherInsurancePolicies = [];
+                foreach ($project->otherInsurancePolicies as $policy) {
+                    // 检查是否已使用名额
+                    $quotaUsed = false;
+                    $removedPersonName = null;
+                    
+                    // 首先检查used_quotas中是否有记录
+                    foreach ($usedQuotas as $usedQuota) {
+                        if (is_array($usedQuota)) {
+                            // 新数据结构：包含policy_id和removed_person_name
+                            if ($usedQuota['policy_id'] == $policy->id) {
+                                $quotaUsed = true;
+                                $removedPersonName = $usedQuota['removed_person_name'] ?? null;
+                                break;
+                            }
+                        } else {
+                            // 旧数据结构：直接是policy_id
+                            if ($usedQuota == $policy->id) {
+                                $quotaUsed = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // ✅ 修复：只根据 used_quotas 判断，不因为名额为0就标记为已用
+                    // 名额为0可能是其他员工用完了，不代表当前员工使用了名额
+                    
+                    $otherInsurancePolicies[] = [
+                        'id' => $policy->id,
+                        'policy_name' => $policy->policy_name,
+                        'name' => $policy->policy_name, // 添加 name 字段
+                        'type' => $policy->type ? $policy->type->name : '其他保险',
+                        'type_id' => $policy->type_id,
+                        'coverage' => $policy->description ?: '已保障',
+                        'description' => $policy->description,
+                        'employee_per_capita_cost' => $policy->employee_per_capita_cost,
+                        'contact_name' => $policy->contact_name,
+                        'contact_phone' => $policy->contact_phone,
+                        'available_quota' => $policy->quota ?? 0,
+                        'quota' => $policy->quota ?? 0,
+                        'quota_used' => $quotaUsed, // 根据used_quotas正确设置
+                        'removed_person_name' => $removedPersonName, // 根据used_quotas正确设置
+                        'personnel_name_list' => $policy->personnel_name_list ?? [],
+                        'endorsement_number' => $policy->endorsement_number,
+                        'policy_end_date' => $policy->policy_end_date ?: $policy->end_date,
+                        'end_date' => $policy->end_date,
+                    ];
+                }
+                $this->other_insurance_policies = json_encode($otherInsurancePolicies);
             }
-            $this->other_insurance_policies = json_encode($otherInsurancePolicies);
         }
 
         // 保存大额医疗保险配置
@@ -947,15 +956,17 @@ class InsuranceChange extends Model
         }
 
         // 获取其他保险列表（包含人均费用）
-        $project = $this->employee->projects->first();
-        if ($project && $project->otherInsurancePolicies) {
-            foreach ($project->otherInsurancePolicies as $policy) {
-                // 格式：保单名:人均费用
-                $snapshot['other_insurance'][] = sprintf(
-                    '%s:%s',
-                    $policy->policy_name,
-                    $policy->employee_per_capita_cost ?? 0
-                );
+        if ($this->isEmployeeOtherInsuranceEnabled()) {
+            $project = $this->employee->projects->first();
+            if ($project && $project->otherInsurancePolicies) {
+                foreach ($project->otherInsurancePolicies as $policy) {
+                    // 格式：保单名:人均费用
+                    $snapshot['other_insurance'][] = sprintf(
+                        '%s:%s',
+                        $policy->policy_name,
+                        $policy->employee_per_capita_cost ?? 0
+                    );
+                }
             }
         }
 
@@ -1582,5 +1593,19 @@ class InsuranceChange extends Model
         }
 
         return $this->refresh();
+    }
+
+    private function isEmployeeOtherInsuranceEnabled(): bool
+    {
+        if (!$this->employee) {
+            return true;
+        }
+
+        $value = $this->employee->other_insurance_enabled ?? null;
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        return (bool) $value;
     }
 }

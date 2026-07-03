@@ -2049,6 +2049,16 @@
         <!-- 其他保险信息显示 -->
         <div v-if="projectOtherInsurancePolicies && projectOtherInsurancePolicies.length > 0" class="insurance-details">
           <h4>其他保险信息</h4>
+          <el-form-item label="其他保险任务">
+            <el-switch
+              v-model="form.other_insurance_enabled"
+              :disabled="isViewMode"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+            />
+            <div class="form-tip">关闭后，不再为该员工生成其他保险增减任务</div>
+          </el-form-item>
           <el-table :data="projectOtherInsurancePolicies" size="small" border>
             <el-table-column prop="name" label="保险名称" />
             <el-table-column prop="type" label="保险类型">
@@ -3866,6 +3876,15 @@
         <!-- 其他保险信息显示 -->
         <div v-if="projectOtherInsurancePolicies && projectOtherInsurancePolicies.length > 0" class="insurance-details">
           <h4>其他保险信息</h4>
+          <el-form-item label="其他保险任务">
+            <el-switch
+              v-model="form.other_insurance_enabled"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+            />
+            <div class="form-tip">关闭后，不再为该员工生成其他保险增减任务</div>
+          </el-form-item>
           <el-table :data="projectOtherInsurancePolicies" size="small" border>
             <el-table-column prop="name" label="保险名称" />
             <el-table-column prop="type" label="保险类型">
@@ -6401,12 +6420,20 @@ const normalizeSalaryAdjustmentRecord = (adjustment) => {
   }
 }
 
+const normalizeOtherInsuranceEnabled = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return true
+  }
+  return !(value === false || value === 0 || value === '0')
+}
+
 const buildEmployeeSubmitPayload = (source) => {
   const payload = {
     ...source,
     basic_salary: normalizeNullableNumber(source.basic_salary),
     project_document_set_id: normalizeNullableId(source.project_document_set_id),
     skip_form_filling: !!source.skip_form_filling,
+    other_insurance_enabled: normalizeOtherInsuranceEnabled(source.other_insurance_enabled),
     social_security_region_id: normalizeInsuranceRegionIdForSubmit(source.social_security_region_id),
     medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(source.medical_insurance_region_id),
     housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(source.housing_fund_region_id),
@@ -6616,6 +6643,7 @@ const form = reactive({
   housing_fund_region_id: null,
   housing_fund_config_id: null,
   large_medical_insurance_config_id: null,
+  other_insurance_enabled: true,
   social_insurance_enrollment_date: null,
   provident_fund_enrollment_date: null,
   medical_insurance_enrollment_date: null,
@@ -8145,6 +8173,7 @@ const handleView = async (row) => {
       const employeeData = convertNumericFields(data.employee)
       Object.assign(form, {
         ...employeeData,
+        other_insurance_enabled: normalizeOtherInsuranceEnabled(employeeData.other_insurance_enabled),
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
@@ -8227,6 +8256,7 @@ const handleView = async (row) => {
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
+        other_insurance_enabled: normalizeOtherInsuranceEnabled(rowData.other_insurance_enabled),
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
@@ -8291,6 +8321,7 @@ const handleEdit = async (row) => {
       const employeeData = convertNumericFields(data.employee)
       Object.assign(form, {
         ...employeeData,
+        other_insurance_enabled: normalizeOtherInsuranceEnabled(employeeData.other_insurance_enabled),
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
@@ -8398,6 +8429,7 @@ const handleEdit = async (row) => {
     const rowData = convertNumericFields(row)
     Object.assign(form, {
       ...rowData,
+      other_insurance_enabled: normalizeOtherInsuranceEnabled(rowData.other_insurance_enabled),
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
@@ -9481,6 +9513,7 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
     housing_fund_region_id: null,
     housing_fund_config_id: null,
     large_medical_insurance_config_id: null,
+    other_insurance_enabled: true,
     social_insurance_enrollment_date: null,
     provident_fund_enrollment_date: null,
     medical_insurance_enrollment_date: null,
@@ -11382,6 +11415,7 @@ const handleNewEmployee = async () => {
   if (!form.personnel_status) {
     form.personnel_status = 'active'
   }
+  form.other_insurance_enabled = normalizeOtherInsuranceEnabled(form.other_insurance_enabled)
 
   // 工号字段清空，由后端根据项目自动生成（如：AA001, AB001）
   form.employee_number = ''

@@ -655,16 +655,13 @@ class ApprovalService
                             
                             // 根据合同类型更新员工状态
                             if ($contract->contract_type === 'labor') {
-                                // 劳动合同：设置为在职并自动导入保险信息
+                                // 劳动合同：设置为在职
                                 $employee->update(['contract_status' => 'active']);
                                 Log::info('员工合同状态已更新为在职', [
                                     'employee_id' => $contract->employee_id,
                                     'contract_id' => $businessId,
                                     'contract_type' => 'labor'
                                 ]);
-                                
-                                // 自动导入保险信息到增减管理模块
-                                $this->autoImportInsuranceInfo($contract);
                             } elseif ($contract->contract_type === 'termination') {
                                 // 解除协议合同：设置为离职
                                 $updateData = ['contract_status' => 'terminated'];
@@ -1317,12 +1314,6 @@ class ApprovalService
                             'contract_upload_deadline' => $contractUploadDeadline->toDateString(),
                         ]);
                         
-                        // 获取审批实例以获取创建人信息
-                        $instance = null;
-                        if ($instanceId) {
-                            $instance = ApprovalInstance::find($instanceId);
-                        }
-                        
                         // 创建线下合同上传待办任务
                         try {
                             PendingTaskService::createOfflineContractTask($employee);
@@ -1333,28 +1324,6 @@ class ApprovalService
                             Log::error('创建线下合同上传待办任务失败', [
                                 'employee_id' => $employee->id,
                                 'error' => $e->getMessage()
-                            ]);
-                        }
-                        
-                        // 自动导入保险信息到增减管理模块（与劳动合同审批通过逻辑一致）
-                        // 创建一个虚拟合同对象用于调用autoImportInsuranceInfo
-                        $virtualContract = new \stdClass();
-                        $virtualContract->employee_id = $employee->id;
-                        $virtualContract->contract_type = 'labor';
-                        $virtualContract->id = null;  // 线下入职没有合同ID
-                        $virtualContract->account_set_id = $employee->account_set_id;  // 使用员工的账套ID
-                        $virtualContract->created_by = $instance ? $instance->created_by : null;  // 使用审批实例的创建人
-                        
-                        try {
-                            $this->autoImportInsuranceInfo($virtualContract);
-                            Log::info('线下入职：保险信息已自动导入', [
-                                'employee_id' => $employee->id
-                            ]);
-                        } catch (\Exception $e) {
-                            Log::error('线下入职：自动导入保险信息失败', [
-                                'employee_id' => $employee->id,
-                                'error' => $e->getMessage(),
-                                'trace' => $e->getTraceAsString()
                             ]);
                         }
                         

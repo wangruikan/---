@@ -9,6 +9,7 @@ use App\Models\InsurancePersonnel;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class InsuranceChangeDetectionService
 {
@@ -405,6 +406,7 @@ class InsuranceChangeDetectionService
     {
         $personnel = $options['personnel'] ?? null;
         $taskAction = $options['task_action'] ?? 'increase';
+        $otherInsuranceEnabled = $this->isOtherInsuranceEnabledForEmployee($employee);
 
         $genderValue = null;
         if (is_numeric($employee->gender)) {
@@ -436,7 +438,7 @@ class InsuranceChangeDetectionService
             'employee_housing_fund_base' => $employee->housing_fund_base ?? ($personnel->employee_housing_fund_base ?? 0),
             'employee_large_medical_base' => $employee->large_medical_base ?? ($personnel->employee_large_medical_base ?? 0),
             'employee_large_medical_company_base' => $employee->large_medical_company_base ?? ($personnel->employee_large_medical_company_base ?? 0),
-            'used_quotas' => $personnel->used_quotas ?? null,
+            'used_quotas' => $otherInsuranceEnabled ? ($personnel->used_quotas ?? null) : null,
             'change_type' => $taskAction,
             'status' => 'pending',
             'created_by' => 1,
@@ -506,7 +508,7 @@ class InsuranceChangeDetectionService
             ], JSON_UNESCAPED_UNICODE);
         }
 
-        $change->other_insurance_policies = $this->buildOtherInsurancePolicySnapshot($project, $personnel);
+        $change->other_insurance_policies = $this->buildOtherInsurancePolicySnapshot($project, $personnel, $employee);
 
         $change->large_medical_insurance_config = null;
         $largeMedicalConfig = $employee->largeMedicalInsuranceConfigRelation;
@@ -529,8 +531,16 @@ class InsuranceChangeDetectionService
         }
     }
 
-    private function buildOtherInsurancePolicySnapshot(Project $project, ?InsurancePersonnel $personnel = null): ?string
+    private function buildOtherInsurancePolicySnapshot(
+        Project $project,
+        ?InsurancePersonnel $personnel = null,
+        ?Employee $employee = null
+    ): ?string
     {
+        if ($employee && !$this->isOtherInsuranceEnabledForEmployee($employee)) {
+            return null;
+        }
+
         $project->loadMissing('otherInsurancePolicies.type');
         if (!$project->otherInsurancePolicies || $project->otherInsurancePolicies->isEmpty()) {
             return null;
@@ -706,6 +716,12 @@ class InsuranceChangeDetectionService
             case 'other_insurance':
                 // 其他保险：获取所有绑定了项目的员工
                 $query->whereHas('projects');
+                if ($this->supportsEmployeeOtherInsuranceToggle()) {
+                    $query->where(function ($subQuery) {
+                        $subQuery->where('other_insurance_enabled', true)
+                            ->orWhereNull('other_insurance_enabled');
+                    });
+                }
                 break;
         }
 
@@ -1113,57 +1129,67 @@ class InsuranceChangeDetectionService
                 // 只更新其他保险配置
                 // 重新加载员工和项目关联，确保获取最新数据
                 $record->load(['employee.projects.otherInsurancePolicies']);
+
+                if (!$record->employee || !$this->isOtherInsuranceEnabledForEmployee($record->employee)) {
+                    $record->other_insurance_policies = null;
+                    $record->used_quotas = null;
+                    break;
+                }
                 
                 $project = $record->employee->projects->first();
-                if ($project && $project->otherInsurancePolicies) {
-                    // 强制刷新 otherInsurancePolicies 关联
-                    $project->load('otherInsurancePolicies');
+                if (!$project || !$project->otherInsurancePolicies || $project->otherInsurancePolicies->isEmpty()) {
+                    $record->other_insurance_policies = null;
+                    $record->used_quotas = null;
+                    break;
+                }
+
+                // 强制刷新 otherInsurancePolicies 关联
+                $project->load('otherInsurancePolicies');
                     
-                    $usedQuotas = $record->used_quotas ?? [];
-                    if (is_string($usedQuotas)) {
-                        $usedQuotas = json_decode($usedQuotas, true) ?? [];
-                    }
-                    if (!is_array($usedQuotas)) {
-                        $usedQuotas = [];
-                    }
+                $usedQuotas = $record->used_quotas ?? [];
+                if (is_string($usedQuotas)) {
+                    $usedQuotas = json_decode($usedQuotas, true) ?? [];
+                }
+                if (!is_array($usedQuotas)) {
+                    $usedQuotas = [];
+                }
                     
-                    $otherInsurancePolicies = [];
-                    foreach ($project->otherInsurancePolicies as $policy) {
-                        $quotaUsed = false;
-                        $removedPersonName = null;
+                $otherInsurancePolicies = [];
+                foreach ($project->otherInsurancePolicies as $policy) {
+                    $quotaUsed = false;
+                    $removedPersonName = null;
                         
-                        foreach ($usedQuotas as $usedQuota) {
-                            if (is_array($usedQuota)) {
-                                if ($usedQuota['policy_id'] == $policy->id) {
-                                    $quotaUsed = true;
-                                    $removedPersonName = $usedQuota['removed_person_name'] ?? null;
-                                    break;
-                                }
+                    foreach ($usedQuotas as $usedQuota) {
+                        if (is_array($usedQuota)) {
+                            if ($usedQuota['policy_id'] == $policy->id) {
+                                $quotaUsed = true;
+                                $removedPersonName = $usedQuota['removed_person_name'] ?? null;
+                                break;
                             }
                         }
-                        
-                        $otherInsurancePolicies[] = [
-                            'id' => $policy->id,
-                            'type_id' => $policy->type_id,
-                            'policy_number' => $policy->policy_number,
-                            'policy_name' => $policy->policy_name,
-                            'insurance_company' => $policy->insurance_company,
-                            'coverage_amount' => $policy->coverage_amount,
-                            'employee_per_capita_cost' => $policy->employee_per_capita_cost,
-                            'quota' => $policy->quota,
-                            'contact_name' => $policy->contact_name,
-                            'contact_phone' => $policy->contact_phone,
-                            'personnel_name_list' => $policy->personnel_name_list,
-                            'start_date' => $policy->start_date,
-                            'end_date' => $policy->end_date,
-                            'status' => $policy->status,
-                            'description' => $policy->description,
-                            'quota_used' => $quotaUsed,
-                            'removed_person_name' => $removedPersonName,
-                        ];
                     }
-                    $record->other_insurance_policies = json_encode($otherInsurancePolicies);
+
+                    $otherInsurancePolicies[] = [
+                        'id' => $policy->id,
+                        'type_id' => $policy->type_id,
+                        'policy_number' => $policy->policy_number,
+                        'policy_name' => $policy->policy_name,
+                        'insurance_company' => $policy->insurance_company,
+                        'coverage_amount' => $policy->coverage_amount,
+                        'employee_per_capita_cost' => $policy->employee_per_capita_cost,
+                        'quota' => $policy->quota,
+                        'contact_name' => $policy->contact_name,
+                        'contact_phone' => $policy->contact_phone,
+                        'personnel_name_list' => $policy->personnel_name_list,
+                        'start_date' => $policy->start_date,
+                        'end_date' => $policy->end_date,
+                        'status' => $policy->status,
+                        'description' => $policy->description,
+                        'quota_used' => $quotaUsed,
+                        'removed_person_name' => $removedPersonName,
+                    ];
                 }
+                $record->other_insurance_policies = json_encode($otherInsurancePolicies);
                 break;
         }
     }
@@ -1199,6 +1225,33 @@ class InsuranceChangeDetectionService
             default:
                 return [];
         }
+    }
+
+    private function supportsEmployeeOtherInsuranceToggle(): bool
+    {
+        static $supports = null;
+
+        if ($supports !== null) {
+            return $supports;
+        }
+
+        $supports = Schema::hasColumn('employees', 'other_insurance_enabled');
+
+        return $supports;
+    }
+
+    private function isOtherInsuranceEnabledForEmployee(Employee $employee): bool
+    {
+        if (!$this->supportsEmployeeOtherInsuranceToggle()) {
+            return true;
+        }
+
+        $value = $employee->other_insurance_enabled;
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        return (bool) $value;
     }
 
     /**

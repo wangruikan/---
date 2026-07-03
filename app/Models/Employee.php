@@ -53,6 +53,7 @@ class Employee extends Model
         'housing_fund_base' => '公积金基数',
         'large_medical_base' => '大额医疗基数',
         'large_medical_company_base' => '大额医疗公司基数',
+        'other_insurance_enabled' => '其他保险开关',
         'special_deduction' => '专项扣除',
         'personal_investment_amount' => '个人投资金额',
         'personal_investment_ratio' => '个人投资比例',
@@ -126,6 +127,7 @@ class Employee extends Model
         'housing_fund_region_id',  // 【公积金参保地区ID】
         'housing_fund_config_id',  // 【公积金配置ID】
         'large_medical_insurance_config_id',  // 【大额医疗保险配置ID】
+        'other_insurance_enabled',  // 【其他保险是否启用】
         'insurance_completed_at',  // 【参保完成时间】
         'password_changed_at',
         'login_failed_count',
@@ -187,6 +189,7 @@ class Employee extends Model
         'has_liability_insurance' => 'boolean',
         'has_accident_insurance' => 'boolean',
         'has_employer_insurance' => 'boolean',
+        'other_insurance_enabled' => 'boolean',
         'is_retired' => 'boolean',
         'is_disabled' => 'boolean',
         'is_martyr_family' => 'boolean',

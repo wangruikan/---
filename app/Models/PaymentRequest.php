@@ -308,7 +308,7 @@ class PaymentRequest extends Model
         }
 
         if ($this->payment_type === 'insurance') {
-            return false;
+            return true;
         }
 
         if (!empty($this->reimbursement_id)) {

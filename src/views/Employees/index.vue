@@ -159,6 +159,14 @@
               <el-icon><FolderOpened /></el-icon>
               批量下载资料 ({{ selectedEmployees.length }})
             </el-button>
+            <el-button
+              type="primary"
+              @click="handleDownloadAllDocuments"
+              :disabled="pagination.total === 0 || loading"
+            >
+              <el-icon><FolderOpened /></el-icon>
+              一键下载全部资料
+            </el-button>
           </el-form-item>
         </el-form>
       </el-card>
@@ -429,6 +437,17 @@
           
           <el-table-column label="操作" width="760" fixed="right">
             <template #default="{ row }">
+              <el-tooltip
+                v-if="hasMissingRequiredDocuments(row)"
+                :content="getMissingRequiredDocumentsTooltip(row)"
+                placement="top"
+              >
+                <span class="employee-missing-document-indicator">
+                  <el-badge is-dot type="danger">
+                    <el-icon><Warning /></el-icon>
+                  </el-badge>
+                </span>
+              </el-tooltip>
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
               </el-button>
@@ -3032,8 +3051,8 @@
                 <el-form-item label="户名" prop="bank_account_holder">
                   <el-input
                     v-model="form.bank_account_holder"
-                    placeholder="请输入户名"
-                    clearable
+                    placeholder="自动引用姓名"
+                    readonly
                   />
                 </el-form-item>
               </el-col>
@@ -3442,10 +3461,10 @@
             <el-form-item label="户名" prop="bank_account_holder">
               <el-input
                 v-model="form.bank_account_holder"
-                placeholder="请输入户名"
-                clearable
+                placeholder="自动引用姓名"
+                readonly
               />
-              <div class="form-tip">银行账户的户名</div>
+              <div class="form-tip">自动引用员工姓名，不支持单独修改</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -6436,17 +6455,67 @@ const normalizeOtherInsuranceEnabled = (value) => {
   return !(value === false || value === 0 || value === '0')
 }
 
+const insuranceEnrollmentMonthFields = [
+  'social_insurance_enrollment_date',
+  'provident_fund_enrollment_date',
+  'medical_insurance_enrollment_date',
+  'large_medical_enrollment_date'
+]
+
+const normalizeInsuranceEnrollmentMonthValue = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, '0')
+    return `${year}-${month}-01`
+  }
+
+  const text = String(value).trim()
+  const dateMatch = text.match(/^(\d{4})-(\d{2})(?:-\d{2})?$/)
+  if (dateMatch) {
+    return `${dateMatch[1]}-${dateMatch[2]}-01`
+  }
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-\d{2}T/)
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-01`
+  }
+
+  return text
+}
+
+const normalizeInsuranceEnrollmentMonthFields = (source) => {
+  const normalized = { ...source }
+  insuranceEnrollmentMonthFields.forEach((field) => {
+    normalized[field] = normalizeInsuranceEnrollmentMonthValue(source?.[field])
+  })
+  return normalized
+}
+
+const syncBankAccountHolderWithName = (source) => {
+  if (!source) {
+    return
+  }
+  source.bank_account_holder = source.name ? String(source.name).trim() : ''
+}
+
 const buildEmployeeSubmitPayload = (source) => {
+  const normalizedSource = normalizeInsuranceEnrollmentMonthFields(source)
+  const bankAccountHolder = normalizedSource.name ? String(normalizedSource.name).trim() : ''
   const payload = {
-    ...source,
-    basic_salary: normalizeNullableNumber(source.basic_salary),
-    project_document_set_id: normalizeNullableId(source.project_document_set_id),
-    skip_form_filling: !!source.skip_form_filling,
-    other_insurance_enabled: normalizeOtherInsuranceEnabled(source.other_insurance_enabled),
-    social_security_region_id: normalizeInsuranceRegionIdForSubmit(source.social_security_region_id),
-    medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(source.medical_insurance_region_id),
-    housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(source.housing_fund_region_id),
-    salary_items: buildMergedSalaryItems(source)
+    ...normalizedSource,
+    basic_salary: normalizeNullableNumber(normalizedSource.basic_salary),
+    bank_account_holder: bankAccountHolder,
+    project_document_set_id: normalizeNullableId(normalizedSource.project_document_set_id),
+    skip_form_filling: !!normalizedSource.skip_form_filling,
+    other_insurance_enabled: normalizeOtherInsuranceEnabled(normalizedSource.other_insurance_enabled),
+    social_security_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.social_security_region_id),
+    medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.medical_insurance_region_id),
+    housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.housing_fund_region_id),
+    salary_items: buildMergedSalaryItems(normalizedSource)
   }
   const largeMedicalConfig = availableLargeMedicalInsuranceConfigs.value.find(
     item => item.id === payload.large_medical_insurance_config_id
@@ -6466,7 +6535,7 @@ const buildEmployeeSubmitPayload = (source) => {
     payload.large_medical_base = normalizeNullableNumber(largeMedicalConfig.employee_base_amount ?? largeMedicalConfig.base_amount)
     payload.large_medical_company_base = normalizeNullableNumber(largeMedicalConfig.base_amount)
   } else {
-    payload.large_medical_base = normalizeNullableNumber(source.medical_insurance_base)
+    payload.large_medical_base = normalizeNullableNumber(normalizedSource.medical_insurance_base)
     payload.large_medical_company_base = null
   }
 
@@ -6725,6 +6794,10 @@ const form = reactive({
   
   // 八、备注说明信息
   other_notes: ''
+})
+
+watch(() => form.name, () => {
+  syncBankAccountHolderWithName(form)
 })
 
 // 新增员工表单草稿暂存（仅新建模式生效，编辑/查看不污染）
@@ -7842,6 +7915,54 @@ const handleBatchDownloadDocuments = async () => {
   }
 }
 
+const handleDownloadAllDocuments = async () => {
+  if (!currentAccountSetId.value) {
+    ElMessage.warning('请先选择账套')
+    return
+  }
+
+  const loadingInstance = ElLoading.service({
+    lock: true,
+    text: '正在打包全部员工资料...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+
+  try {
+    const response = await request({
+      url: '/employees/download-all-documents',
+      method: 'post',
+      data: {
+        search: searchForm.search,
+        project_id: searchForm.project_id,
+        personnel_status: searchForm.personnel_status,
+        contract_sign_status: searchForm.contract_sign_status
+      },
+      responseType: 'blob'
+    })
+
+    const fileBlob = response instanceof Blob ? response : response?.data
+    if (!(fileBlob instanceof Blob)) {
+      throw new Error('资料压缩包响应格式异常')
+    }
+
+    const url = window.URL.createObjectURL(fileBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `员工资料_${new Date().getTime()}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success('员工资料下载成功')
+  } catch (error) {
+    console.error('一键下载员工资料失败:', error)
+    ElMessage.error('下载失败: ' + (error.message || '未知错误'))
+  } finally {
+    loadingInstance.close()
+  }
+}
+
 // 计算合同结束日期
 const calculateContractEndDate = () => {
   if (form.contract_start_date && form.contract_months) {
@@ -8182,13 +8303,14 @@ const handleView = async (row) => {
       const data = response.data
       
       // 1. 设置员工基本信息（转换数值字段类型）
-      const employeeData = convertNumericFields(data.employee)
+      const employeeData = normalizeInsuranceEnrollmentMonthFields(convertNumericFields(data.employee))
       Object.assign(form, {
         ...employeeData,
         other_insurance_enabled: normalizeOtherInsuranceEnabled(employeeData.other_insurance_enabled),
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      syncBankAccountHolderWithName(form)
       availableProjectDocumentSets.value = data.document_sets || []
       form.project_document_set_id = data.current_document_set_id ?? data.employee.project_document_set_id ?? null
       applySalaryStateToForm(employeeData)
@@ -8330,13 +8452,14 @@ const handleEdit = async (row) => {
       const data = response.data
       
       // 1. 设置员工基本信息（转换数值字段类型）
-      const employeeData = convertNumericFields(data.employee)
+      const employeeData = normalizeInsuranceEnrollmentMonthFields(convertNumericFields(data.employee))
       Object.assign(form, {
         ...employeeData,
         other_insurance_enabled: normalizeOtherInsuranceEnabled(employeeData.other_insurance_enabled),
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      syncBankAccountHolderWithName(form)
       availableProjectDocumentSets.value = data.document_sets || []
       form.project_document_set_id = data.current_document_set_id ?? data.employee.project_document_set_id ?? null
       applySalaryStateToForm(employeeData)
@@ -9656,6 +9779,18 @@ const getLaborContractStatusText = (status) => {
 
 const getDisplayLaborContractStatus = (row) => {
   return row.display_labor_contract_status || 'pending_signature'
+}
+
+const hasMissingRequiredDocuments = (row) => {
+  return Array.isArray(row?.missing_required_document_names) && row.missing_required_document_names.length > 0
+}
+
+const getMissingRequiredDocumentsTooltip = (row) => {
+  if (!hasMissingRequiredDocuments(row)) {
+    return '资料已上传完整'
+  }
+
+  return `未上传资料：${row.missing_required_document_names.join('、')}`
 }
 
 // ========== 合同管理相关 ==========
@@ -12068,5 +12203,22 @@ const getChangeComparison = (detail) => {
 
 .salary-card-form .el-form-item {
   margin-bottom: 20px;
+}
+
+.employee-missing-document-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  color: #f56c6c;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.employee-missing-document-indicator :deep(.el-badge__content.is-fixed.is-dot) {
+  top: 3px;
+  right: 3px;
 }
 </style>

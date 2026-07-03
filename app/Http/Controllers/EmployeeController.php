@@ -9,6 +9,7 @@ use App\Models\EmployeeRegistrationForm;
 use App\Models\EmployeeFormUpdateRequest;
 use App\Models\OperationLog;
 use App\Models\ApprovalInstance;
+use App\Models\ProjectDocumentConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -265,6 +266,136 @@ class EmployeeController extends ApiController
         }
 
         return $sourceType === 'offline' ? 'offline' : 'online';
+    }
+
+    protected function appendMissingRequiredDocumentData($employees, $selectedProjectId = null): void
+    {
+        if (!$employees || count($employees) === 0) {
+            return;
+        }
+
+        $defaultDocumentSetIdCache = [];
+        $employeeContexts = [];
+        $requiredPairs = [];
+
+        foreach ($employees as $employee) {
+            $employee->missing_required_document_names = [];
+            $employee->has_missing_required_documents = false;
+
+            [$projectId, $documentSetId] = $this->resolveEmployeeDocumentRequirementContext(
+                $employee,
+                $selectedProjectId,
+                $defaultDocumentSetIdCache
+            );
+
+            $employeeContexts[$employee->id] = [$projectId, $documentSetId];
+
+            if ($projectId && $documentSetId) {
+                $requiredPairs[$projectId . ':' . $documentSetId] = [
+                    'project_id' => $projectId,
+                    'document_set_id' => $documentSetId,
+                ];
+            }
+        }
+
+        if (empty($requiredPairs)) {
+            return;
+        }
+
+        $requiredConfigsQuery = ProjectDocumentConfig::query()
+            ->select(['id', 'project_id', 'document_set_id', 'document_name', 'sort_order'])
+            ->where('is_required', true)
+            ->where(function ($query) use ($requiredPairs) {
+                foreach (array_values($requiredPairs) as $index => $pair) {
+                    $method = $index === 0 ? 'where' : 'orWhere';
+                    $query->{$method}(function ($subQuery) use ($pair) {
+                        $subQuery->where('project_id', $pair['project_id'])
+                            ->where('document_set_id', $pair['document_set_id']);
+                    });
+                }
+            })
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('id', 'asc');
+
+        $requiredConfigMap = $requiredConfigsQuery->get()->groupBy(function ($config) {
+            return (int) $config->project_id . ':' . (int) $config->document_set_id;
+        });
+
+        foreach ($employees as $employee) {
+            [$projectId, $documentSetId] = $employeeContexts[$employee->id] ?? [null, null];
+            if (!$projectId || !$documentSetId) {
+                continue;
+            }
+
+            $requiredConfigs = $requiredConfigMap->get($projectId . ':' . $documentSetId, collect());
+            if ($requiredConfigs->isEmpty()) {
+                continue;
+            }
+
+            $uploadedConfigIds = collect($employee->documents ?? [])
+                ->pluck('document_config_id')
+                ->filter()
+                ->map(function ($id) {
+                    return (int) $id;
+                })
+                ->unique()
+                ->all();
+
+            $missingNames = [];
+            foreach ($requiredConfigs as $config) {
+                if (!in_array((int) $config->id, $uploadedConfigIds, true)) {
+                    $missingNames[] = $config->document_name;
+                }
+            }
+
+            $employee->missing_required_document_names = array_values(array_unique($missingNames));
+            $employee->has_missing_required_documents = !empty($employee->missing_required_document_names);
+        }
+    }
+
+    protected function resolveEmployeeDocumentRequirementContext(
+        Employee $employee,
+        $selectedProjectId,
+        array &$defaultDocumentSetIdCache
+    ): array {
+        $project = null;
+
+        if ($selectedProjectId) {
+            if (!$employee->relationLoaded('projects')) {
+                $employee->load('projects');
+            }
+
+            $project = $employee->projects->first(function ($item) use ($selectedProjectId) {
+                return (int) $item->id === (int) $selectedProjectId;
+            });
+        }
+
+        if (!$project) {
+            $project = $employee->getCurrentProject();
+        }
+
+        if (!$project) {
+            return [null, null];
+        }
+
+        if ($project->pivot && $project->pivot->document_set_id) {
+            return [(int) $project->id, (int) $project->pivot->document_set_id];
+        }
+
+        if (!Schema::hasTable('project_document_sets')) {
+            return [(int) $project->id, null];
+        }
+
+        $projectId = (int) $project->id;
+        if (!array_key_exists($projectId, $defaultDocumentSetIdCache)) {
+            $defaultDocumentSetIdCache[$projectId] = \App\Models\ProjectDocumentSet::where('project_id', $projectId)
+                ->orderByDesc('is_default')
+                ->orderBy('sort_order', 'asc')
+                ->orderBy('id', 'asc')
+                ->value('id');
+        }
+
+        return [$projectId, $defaultDocumentSetIdCache[$projectId] ? (int) $defaultDocumentSetIdCache[$projectId] : null];
     }
 
     protected function applyLaborContractSignFilter($query, ?string $contractSignStatus): void
@@ -624,6 +755,8 @@ class EmployeeController extends ApiController
                 $this->applyProjectDisplayFields($employee, $request->input('project_id'));
                 $employee->largeMedicalStatus = $this->buildLargeMedicalStatusData($employee);
             }
+
+            $this->appendMissingRequiredDocumentData($employees->items(), $request->input('project_id'));
             
             // 计算人员统计数据
             $currentAccountSetId = $request->input('current_account_set_id');
@@ -3791,6 +3924,177 @@ class EmployeeController extends ApiController
                 'message' => '下载失败: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function downloadAllDocuments(Request $request)
+    {
+        if ($response = $this->checkPermission('employees.view')) {
+            return $response;
+        }
+
+        try {
+            $currentAccountSetId = (int) $request->input('current_account_set_id');
+            if (!$currentAccountSetId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请先选择账套'
+                ], 422);
+            }
+
+            @set_time_limit(0);
+
+            $query = Employee::query()
+                ->select(['id', 'name', 'employee_number', 'account_set_id'])
+                ->with(['documents' => function ($documentQuery) {
+                    $documentQuery->select(['id', 'employee_id', 'document_name', 'original_filename', 'file_path']);
+                }])
+                ->where('account_set_id', $currentAccountSetId);
+
+            if ($request->filled('project_id')) {
+                $projectId = (int) $request->input('project_id');
+                $query->whereHas('projects', function ($projectQuery) use ($projectId) {
+                    $projectQuery->where('projects.id', $projectId);
+                });
+            }
+
+            $personnelStatus = $request->input('personnel_status', $request->input('contract_status'));
+            $this->applyPersonnelStatusFilter($query, $personnelStatus);
+
+            $contractSignStatus = $request->input('contract_sign_status');
+            $this->applyLaborContractSignFilter($query, $contractSignStatus);
+
+            if ($request->filled('search')) {
+                $search = trim((string) $request->input('search'));
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery->where('name', 'like', "%{$search}%")
+                        ->orWhere('id_number', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%");
+                });
+            }
+
+            $employees = $query
+                ->whereHas('documents')
+                ->orderBy('employee_number', 'desc')
+                ->get();
+
+            if ($employees->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前条件下没有可下载的员工资料'
+                ], 404);
+            }
+
+            $tempDir = storage_path('app/temp');
+            if (!is_dir($tempDir)) {
+                mkdir($tempDir, 0755, true);
+            }
+
+            $zipPath = $tempDir . DIRECTORY_SEPARATOR . 'employee-documents-' . uniqid('', true) . '.zip';
+            $zip = new \ZipArchive();
+            $openResult = $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+
+            if ($openResult !== true) {
+                throw new \RuntimeException('压缩包创建失败');
+            }
+
+            $fileCount = 0;
+
+            foreach ($employees as $employee) {
+                $employeeFolder = $this->sanitizeZipPathSegment($employee->name, '未命名员工')
+                    . '_'
+                    . $this->sanitizeZipPathSegment($employee->employee_number, 'ID' . $employee->id);
+
+                foreach ($employee->documents as $document) {
+                    if (empty($document->file_path)) {
+                        continue;
+                    }
+
+                    $sourcePath = public_path($document->file_path);
+                    if (!is_file($sourcePath)) {
+                        continue;
+                    }
+
+                    $documentFolder = $this->sanitizeZipPathSegment($document->document_name, '未分类资料');
+                    $originalFilename = $this->sanitizeZipPathSegment(
+                        $document->original_filename ?: basename($document->file_path),
+                        '未命名文件'
+                    );
+
+                    $zip->addFile(
+                        $sourcePath,
+                        $employeeFolder . '/' . $documentFolder . '/' . $document->id . '_' . $originalFilename
+                    );
+                    $fileCount++;
+                }
+            }
+
+            $zip->close();
+
+            if ($fileCount === 0) {
+                @unlink($zipPath);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => '当前条件下没有可下载的员工资料'
+                ], 404);
+            }
+
+            $downloadName = '员工资料_' . now()->format('YmdHis') . '.zip';
+            $fileSize = @filesize($zipPath) ?: null;
+
+            if (function_exists('ob_get_level')) {
+                while (ob_get_level() > 0) {
+                    @ob_end_clean();
+                }
+            }
+
+            return response()->streamDownload(function () use ($zipPath) {
+                $handle = fopen($zipPath, 'rb');
+                if ($handle) {
+                    while (!feof($handle)) {
+                        echo fread($handle, 8192);
+                        flush();
+                    }
+                    fclose($handle);
+                }
+
+                @unlink($zipPath);
+            }, $downloadName, array_filter([
+                'Content-Type' => 'application/zip',
+                'Content-Length' => $fileSize,
+                'Cache-Control' => 'private, max-age=0, no-cache, no-store, must-revalidate',
+                'Pragma' => 'no-cache',
+                'Expires' => '0',
+            ]));
+        } catch (\Exception $e) {
+            if (!empty($zipPath) && is_file($zipPath)) {
+                @unlink($zipPath);
+            }
+
+            \Log::error('一键下载员工资料失败: ' . $e->getMessage(), [
+                'request_params' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '下载失败: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function sanitizeZipPathSegment($value, string $fallback): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return $fallback;
+        }
+
+        $value = preg_replace('/[\\\\\/:*?"<>|]+/u', '_', $value);
+        $value = preg_replace('/\s+/u', ' ', $value);
+        $value = trim($value, ". \t\n\r\0\x0B");
+
+        return $value !== '' ? $value : $fallback;
     }
     
     /**

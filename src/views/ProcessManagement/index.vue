@@ -477,6 +477,7 @@
         <SituationExplanationInlineForm
           ref="paymentSituationFormRef"
           :has-uploaded-attachments="(invoiceFileList.length + paymentFileList.length) > 0"
+          :skip-required="paymentUploadLater"
           :base-info="paymentSituationBaseInfo"
         />
 
@@ -485,6 +486,7 @@
           ref="paymentAttachmentUploaderRef"
           v-model:invoice-file-list="invoiceFileList"
           v-model:other-file-list="paymentFileList"
+          @upload-later-changed="handlePaymentUploadLaterChange"
           :invoice-limit="10"
           :other-limit="5"
           :show-form-generator="false"
@@ -576,6 +578,7 @@ const paymentRequestDialogVisible = ref(false)
 const paymentAttachmentUploaderRef = ref(null)
 const paymentFileList = ref([])
 const invoiceFileList = ref([])
+const paymentUploadLater = ref(false)
 const originalAttachments = ref([]) // 原保险汇总的附件（自动带入审批）
 const paymentFormFields = ref({}) // 付款表单字段组件数据
 const paymentFormFieldsRef = ref(null)
@@ -623,6 +626,10 @@ const paymentSituationBaseInfo = computed(() => {
     remarks: paymentRequestData.remarks || ''
   }
 })
+
+const handlePaymentUploadLaterChange = (value) => {
+  paymentUploadLater.value = Boolean(value)
+}
 
 // 盖章方式选择对话框
 const submitStampDialogVisible = ref(false)
@@ -1228,6 +1235,7 @@ const openPaymentRequestDialog = async (processApprovalId) => {
     paymentRequestData.projectName = resolvedProjectName
     paymentRequestData.stamp_method = 'online'
     paymentRequestData.stamp_selection = getDefaultStampSelection()
+    paymentUploadLater.value = false
     
     // 重置付款表单字段组件
     paymentFormFields.value = {}
@@ -1376,7 +1384,9 @@ const confirmCreatePaymentRequest = async () => {
     if (completeResponse.success) {
       const message = allFiles.length > 0 
         ? `付款申请已提交！已上传 ${uploadCount}/${allFiles.length} 个文件（发票 ${invoiceFileList.value.length} 个，其他附件 ${paymentFileList.value.length} 个），审批流程已创建` 
-        : '付款申请已提交！系统已自动生成占位附件，审批流程已创建'
+        : (uploadLater
+          ? '付款申请已提交，可稍后在付款申请列表补传附件，审批流程已创建'
+          : '付款申请已提交，审批流程已创建')
       ElMessage.success(message)
       
       paymentRequestDialogVisible.value = false

@@ -111,6 +111,8 @@ class InsurancePaymentRequestController extends Controller
             $resolvedProject = !empty($formData['project']) ? $formData['project'] : $fallbackProjectName;
             $resolvedProjectName = !empty($formData['projectName']) ? $formData['projectName'] : $resolvedProject;
 
+            $uploadLater = $request->input('upload_later', false);
+
             $payload = [
                 'payment_type' => 'insurance',
                 'account_set_id' => $currentAccountSetId,
@@ -121,6 +123,7 @@ class InsurancePaymentRequestController extends Controller
                 'submitted_by' => $request->user()->id,
                 'submitted_at' => now(),
                 'remarks' => $request->remarks ?? ('保险汇总付款申请 - ' . $processApproval->title),
+                'upload_later' => $uploadLater,
                 // 报销表单字段
                 'category' => $formData['category'] ?? null, // 保存类目
                 'project' => $resolvedProject,
@@ -183,6 +186,8 @@ class InsurancePaymentRequestController extends Controller
                 // 创建付款申请记录
                 $paymentRequest = PaymentRequest::create($payload);
             }
+
+            \App\Services\PendingTaskService::createPaymentSupplementTask($paymentRequest);
 
             DB::commit();
 

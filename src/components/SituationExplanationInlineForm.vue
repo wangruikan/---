@@ -3,7 +3,14 @@
     <el-divider content-position="left">情况说明单</el-divider>
 
     <el-alert
-      v-if="hasUploadedAttachments"
+      v-if="skipRequired"
+      title="已勾选稍后上传，情况说明单已自动隐藏"
+      type="info"
+      :closable="false"
+      style="margin-bottom: 12px;"
+    />
+    <el-alert
+      v-else-if="hasUploadedAttachments"
       title="已上传附件，情况说明单已自动隐藏"
       type="success"
       :closable="false"
@@ -68,6 +75,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  skipRequired: {
+    type: Boolean,
+    default: false
+  },
   baseInfo: {
     type: Object,
     default: () => ({})
@@ -95,7 +106,7 @@ const rules = {
   matter: [{ required: true, message: '请输入事项说明', trigger: 'blur' }]
 }
 
-const showSituationForm = computed(() => !props.hasUploadedAttachments)
+const showSituationForm = computed(() => !props.hasUploadedAttachments && !props.skipRequired)
 
 const buildPdfFile = async (fileName) => {
   await nextTick()
@@ -181,9 +192,9 @@ watch(
 )
 
 watch(
-  () => props.hasUploadedAttachments,
-  (hasUploaded) => {
-    if (hasUploaded) {
+  () => [props.hasUploadedAttachments, props.skipRequired],
+  ([hasUploaded, skipRequired]) => {
+    if (hasUploaded || skipRequired) {
       formRef.value?.clearValidate()
     }
   }

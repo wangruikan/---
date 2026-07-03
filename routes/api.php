@@ -352,6 +352,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // 批量下载员工资料
         Route::post('/batch-download-documents', [EmployeeController::class, 'batchDownloadDocuments']);
+        Route::post('/download-all-documents', [EmployeeController::class, 'downloadAllDocuments']);
         
         // 获取员工入职登记表
         Route::get('/{id}/onboarding-form', [EmployeeController::class, 'getOnboardingForm']);

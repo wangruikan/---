@@ -4,32 +4,68 @@
       <span class="title">地区网站导航</span>
     </div>
 
-    <el-empty v-if="!loading && regionGroups.length === 0" description="暂无可用网站入口" />
+    <el-empty v-if="!loading && businessTypeGroups.length === 0" description="暂无可用网站入口" />
 
-    <div v-else class="region-list" v-loading="loading">
-      <section v-for="group in regionGroups" :key="group.region_name" class="region-panel">
-        <div class="region-panel-header">
-          <div class="region-title-wrap">
-            <span class="region-dot"></span>
-            <h3 class="region-title">{{ group.region_name }}</h3>
+    <div v-else class="business-type-grid" v-loading="loading">
+      <button
+        v-for="group in businessTypeGroups"
+        :key="group.business_type"
+        type="button"
+        class="business-type-card"
+        @click="handleOpenGroup(group)"
+      >
+        <div class="business-type-card-header">
+          <div class="business-type-title-wrap">
+            <span class="business-type-dot"></span>
+            <h3 class="business-type-title">{{ group.business_type }}</h3>
           </div>
-          <span class="region-count">{{ group.websites.length }} 个网站</span>
+          <span class="business-type-count">{{ group.websites.length }} 个网站</span>
         </div>
-        <div class="site-chip-list">
+        <div class="business-type-preview">
+          <span
+            v-for="site in group.previewWebsites"
+            :key="site.uid"
+            class="preview-chip"
+          >
+            {{ site.portal_name }}
+          </span>
+          <span v-if="group.remainingCount > 0" class="preview-chip more-chip">
+            +{{ group.remainingCount }}
+          </span>
+        </div>
+      </button>
+    </div>
+
+    <el-dialog
+      v-model="dialogVisible"
+      :title="currentGroup?.business_type || '网站列表'"
+      width="720px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div v-if="currentGroup" class="website-dialog-content">
+        <div class="dialog-summary">
+          共 {{ currentGroup.websites.length }} 个网站
+        </div>
+
+        <div class="website-list">
           <a
-            v-for="site in group.websites"
+            v-for="site in currentGroup.websites"
             :key="site.uid"
             :href="site.portal_url"
             target="_blank"
             rel="noopener noreferrer"
-            class="site-chip"
+            class="website-item"
           >
-            <span class="site-chip-text">{{ site.portal_name }}</span>
-            <el-icon class="site-chip-icon"><ArrowRight /></el-icon>
+            <div class="website-item-main">
+              <span class="website-name">{{ site.portal_name }}</span>
+              <el-tag size="small" effect="plain">{{ site.region_name }}</el-tag>
+            </div>
+            <el-icon class="website-item-icon"><ArrowRight /></el-icon>
           </a>
         </div>
-      </section>
-    </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -44,9 +80,16 @@ const accountSetStore = useAccountSetStore()
 
 const loading = ref(false)
 const rawPortalList = ref([])
+const dialogVisible = ref(false)
+const currentGroup = ref(null)
 
 const sortPortalList = (list) => {
   return [...list].sort((a, b) => {
+    const businessTypeDiff = String(a.business_type || '').localeCompare(String(b.business_type || ''), 'zh-CN')
+    if (businessTypeDiff !== 0) {
+      return businessTypeDiff
+    }
+
     const sortDiff = Number(a.sort_order || 0) - Number(b.sort_order || 0)
     if (sortDiff !== 0) {
       return sortDiff
@@ -116,36 +159,54 @@ const loadPortalList = async () => {
   }
 }
 
-const regionGroups = computed(() => {
+const businessTypeGroups = computed(() => {
   const groupedMap = new Map()
 
   sortPortalList(rawPortalList.value)
     .filter((item) => item.is_active)
     .forEach((item) => {
-      const regionName = item.region_name || '未设置地区'
+      const businessType = item.business_type || '未设置业务类型'
 
-      if (!groupedMap.has(regionName)) {
-        groupedMap.set(regionName, {
-          region_name: regionName,
+      if (!groupedMap.has(businessType)) {
+        groupedMap.set(businessType, {
+          business_type: businessType,
           websites: []
         })
       }
 
-      const group = groupedMap.get(regionName)
+      const group = groupedMap.get(businessType)
       const duplicate = group.websites.some((site) => {
-        return site.portal_name === item.portal_name && site.portal_url === item.portal_url
+        return site.region_name === (item.region_name || '未设置地区') &&
+          site.portal_name === item.portal_name &&
+          site.portal_url === item.portal_url
       })
 
       if (!duplicate) {
         group.websites.push({
           uid: item.id,
+          region_name: item.region_name || '未设置地区',
           portal_name: item.portal_name || '',
           portal_url: item.portal_url || ''
         })
       }
     })
 
-  return Array.from(groupedMap.values())
+  return Array.from(groupedMap.values()).map((group) => ({
+    ...group,
+    previewWebsites: group.websites.slice(0, 3),
+    remainingCount: Math.max(0, group.websites.length - 3)
+  }))
+})
+
+const handleOpenGroup = (group) => {
+  currentGroup.value = group
+  dialogVisible.value = true
+}
+
+watch(dialogVisible, (visible) => {
+  if (!visible) {
+    currentGroup.value = null
+  }
 })
 
 watch(
@@ -157,7 +218,7 @@ watch(
 )
 </script>
 
-<style scoped>
+<style>
 .region-portal-display-container {
   padding: 20px;
 }
@@ -175,52 +236,74 @@ watch(
   color: var(--el-text-color-primary);
 }
 
-.region-list {
+.business-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.business-type-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.region-panel {
-  padding: 20px 24px 24px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e8edf5;
-  box-shadow: 0 10px 24px rgba(31, 42, 68, 0.06);
-}
-
-.region-panel-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 16px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid #edf2f8;
+  width: 100%;
+  min-height: 136px;
+  padding: 20px;
+  border: 1px solid #e8edf5;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(31, 42, 68, 0.06);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  appearance: none;
 }
 
-.region-title-wrap {
+.business-type-card:hover {
+  border-color: #bfd3ff;
+  box-shadow: 0 14px 28px rgba(31, 42, 68, 0.1);
+  transform: translateY(-1px);
+}
+
+.business-type-card:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.business-type-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.business-type-title-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
-.region-dot {
+.business-type-dot {
   width: 10px;
   height: 10px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: #3b82f6;
   box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.12);
 }
 
-.region-title {
+.business-type-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 600;
   color: #1f2a44;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+  word-break: break-all;
 }
 
-.region-count {
+.business-type-count {
   flex-shrink: 0;
   padding: 6px 12px;
   border-radius: 999px;
@@ -230,51 +313,106 @@ watch(
   line-height: 20px;
 }
 
-.site-chip-list {
+.business-type-preview {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
-.site-chip {
+.preview-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 14px;
-  border-radius: 10px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 999px;
   background: #f7faff;
   border: 1px solid #dbe7ff;
   color: #2563eb;
+  font-size: 13px;
+  line-height: 18px;
+  word-break: break-all;
+}
+
+.more-chip {
+  color: #4a67a1;
+}
+
+.website-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dialog-summary {
+  color: var(--el-text-color-secondary);
   font-size: 14px;
-  line-height: 20px;
+  line-height: 22px;
+}
+
+.website-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.website-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 14px 16px;
+  border: 1px solid #e8edf5;
+  border-radius: 10px;
+  background: #ffffff;
+  color: inherit;
   text-decoration: none;
   transition: all 0.2s ease;
 }
 
-.site-chip:hover {
-  background: #edf4ff;
+.website-item:hover {
   border-color: #bfd3ff;
-  color: #1d4ed8;
-  transform: translateY(-1px);
+  background: #f8fbff;
 }
 
-.site-chip-text {
+.website-item-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.website-name {
+  color: #1f2a44;
+  font-size: 14px;
+  line-height: 22px;
   word-break: break-all;
 }
 
-.site-chip-icon {
-  font-size: 14px;
+.website-item-icon {
+  flex-shrink: 0;
+  color: #2563eb;
+  font-size: 16px;
 }
 
 @media (max-width: 768px) {
-  .region-panel {
+  .business-type-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .business-type-card {
     padding: 18px;
   }
 
-  .region-panel-header {
-    align-items: flex-start;
+  .business-type-card-header,
+  .website-item,
+  .website-item-main {
     flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

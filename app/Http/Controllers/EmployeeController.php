@@ -243,7 +243,11 @@ class EmployeeController extends ApiController
             return 'pending_signature';
         }
 
-        if (!in_array($latestLaborContract->status, ['employee_signed', 'completed'], true)) {
+        if ($latestLaborContract->status === 'employee_signed' && !$latestLaborContract->approval_instance_id) {
+            return 'pending_stamp';
+        }
+
+        if (!in_array($latestLaborContract->status, ['employee_signed', 'in_approval', 'completed'], true)) {
             return 'pending_signature';
         }
 
@@ -261,6 +265,43 @@ class EmployeeController extends ApiController
         }
 
         return $sourceType === 'offline' ? 'offline' : 'online';
+    }
+
+    protected function applyLaborContractSignFilter($query, ?string $contractSignStatus): void
+    {
+        if (!$contractSignStatus) {
+            return;
+        }
+
+        if ($contractSignStatus === 'unsigned') {
+            $query->where(function ($contractQuery) {
+                $contractQuery->whereDoesntHave('latestLaborContract')
+                    ->orWhereHas('latestLaborContract', function ($latestQuery) {
+                        $latestQuery->whereNotIn('status', ['employee_signed', 'in_approval', 'completed']);
+                    });
+            });
+            return;
+        }
+
+        if ($contractSignStatus === 'pending_stamp') {
+            $query->whereHas('latestLaborContract', function ($latestQuery) {
+                $latestQuery->where('status', 'employee_signed')
+                    ->whereNull('approval_instance_id');
+            });
+            return;
+        }
+
+        if ($contractSignStatus === 'signed') {
+            $query->whereHas('latestLaborContract', function ($latestQuery) {
+                $latestQuery->where(function ($signedQuery) {
+                    $signedQuery->whereIn('status', ['in_approval', 'completed'])
+                        ->orWhere(function ($pendingApprovalQuery) {
+                            $pendingApprovalQuery->where('status', 'employee_signed')
+                                ->whereNotNull('approval_instance_id');
+                        });
+                });
+            });
+        }
     }
 
     protected function applyPersonnelStatusFilter($query, ?string $personnelStatus): void
@@ -501,6 +542,9 @@ class EmployeeController extends ApiController
                     
                     $personnelStatus = $request->input('personnel_status', $request->input('contract_status'));
                     $this->applyPersonnelStatusFilter($query, $personnelStatus);
+
+                    $contractSignStatus = $request->input('contract_sign_status');
+                    $this->applyLaborContractSignFilter($query, $contractSignStatus);
                     
                     // 搜索
                     if ($request->has('search') && $request->search) {
@@ -634,7 +678,12 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
+            'social_security_region_id' => 'required|integer|exists:social_security_regions,id',
             'other_insurance_enabled' => 'nullable|boolean',
+        ], [
+            'social_security_region_id.required' => '请选择社保参保地区',
+            'social_security_region_id.integer' => '社保参保地区格式不正确',
+            'social_security_region_id.exists' => '所选社保参保地区不存在',
         ]);
 
         if ($validator->fails()) {
@@ -998,7 +1047,12 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
+            'social_security_region_id' => 'sometimes|required|integer|exists:social_security_regions,id',
             'other_insurance_enabled' => 'nullable|boolean',
+        ], [
+            'social_security_region_id.required' => '请选择社保参保地区',
+            'social_security_region_id.integer' => '社保参保地区格式不正确',
+            'social_security_region_id.exists' => '所选社保参保地区不存在',
         ]);
 
         if ($validator->fails()) {

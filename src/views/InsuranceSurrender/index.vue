@@ -157,6 +157,236 @@
           </div>
         </el-card>
       </el-tab-pane>
+
+      <el-tab-pane label="其他保险总统计" name="otherOverview">
+        <el-card class="filter-card">
+          <el-form :inline="true" :model="otherOverviewFilter">
+            <el-form-item label="月份">
+              <el-date-picker
+                v-model="otherOverviewFilter.month"
+                type="month"
+                placeholder="选择月份"
+                format="YYYY年MM月"
+                value-format="YYYY-MM"
+                style="width: 200px"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="loadOtherInsuranceOverview">查询</el-button>
+              <el-button @click="resetOtherInsuranceOverviewFilter">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <div v-loading="otherOverviewLoading" class="other-detail-panel">
+          <div class="overview-stat-grid">
+            <div class="overview-stat-card">
+              <div class="overview-stat-label">保单数</div>
+              <div class="overview-stat-value">{{ otherInsuranceOverviewStats.total }}</div>
+            </div>
+            <div class="overview-stat-card">
+              <div class="overview-stat-label">在保</div>
+              <div class="overview-stat-value success">{{ otherInsuranceOverviewStats.active }}</div>
+            </div>
+            <div class="overview-stat-card">
+              <div class="overview-stat-label">到期</div>
+              <div class="overview-stat-value warning">{{ otherInsuranceOverviewStats.expired }}</div>
+            </div>
+            <div class="overview-stat-card">
+              <div class="overview-stat-label">退保</div>
+              <div class="overview-stat-value danger">{{ otherInsuranceOverviewStats.surrendered }}</div>
+            </div>
+          </div>
+
+          <el-card class="table-card">
+            <el-table
+              v-if="otherInsuranceOverviewRows.length > 0"
+              :data="otherInsuranceOverviewRows"
+              size="small"
+              border
+              stripe
+              class="detail-table"
+            >
+              <el-table-column prop="serial_number" label="序号" width="60" align="center" />
+              <el-table-column prop="project_name" label="项目" min-width="140" />
+              <el-table-column prop="employee_name" label="姓名" width="100" />
+              <el-table-column prop="id_number" label="身份证号码" width="180" />
+              <el-table-column prop="gender" label="性别" width="80" align="center" />
+              <el-table-column prop="age" label="年龄" width="80" align="center" />
+              <el-table-column prop="contact_phone" label="联系电话" width="120" />
+              <el-table-column prop="addition_date" label="增加日期" width="110" align="center">
+                <template #default="{ row }">
+                  {{ row.addition_date ? formatDate(row.addition_date) : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="expiration_date" label="到期" width="110" align="center">
+                <template #default="{ row }">
+                  {{ row.expiration_date ? formatDate(row.expiration_date) : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="type" label="类型" width="80" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.type === '新增' ? 'success' : 'warning'" size="small">
+                    {{ row.type }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="insurance_status" label="参保状态" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.insurance_status === '在保' ? 'success' : 'warning'" size="small">
+                    {{ row.insurance_status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="employment_status" label="在职状态" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.employment_status === '在职' ? 'success' : 'warning'" size="small">
+                    {{ row.employment_status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="amount" label="金额" width="120" align="right">
+                <template #default="{ row }">
+                  <span class="amount-value">¥{{ Number(row.amount || 0).toFixed(2) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="replaced_person_name" label="替换人员" width="120" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.replaced_person_name && row.replaced_person_name !== '-'" type="info" size="small">
+                    {{ row.replaced_person_name }}
+                  </el-tag>
+                  <span v-else class="text-muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="endorsement_number" label="批单号" width="120" align="center">
+                <template #default="{ row }">
+                  <span v-if="row.endorsement_number && row.endorsement_number !== '-'">{{ row.endorsement_number }}</span>
+                  <span v-else class="text-muted">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="remarks" label="备注" min-width="120" />
+            </el-table>
+
+            <el-empty v-else description="暂无其他保险总统计数据" />
+          </el-card>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="其他保险明细" name="otherDetails">
+        <el-card class="filter-card">
+          <el-form :inline="true" :model="otherDetailFilter">
+            <el-form-item label="月份">
+              <el-date-picker
+                v-model="otherDetailFilter.month"
+                type="month"
+                placeholder="选择月份"
+                format="YYYY年MM月"
+                value-format="YYYY-MM"
+                style="width: 200px"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="loadOtherInsuranceDetails">查询</el-button>
+              <el-button @click="resetOtherInsuranceFilter">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <div v-loading="otherDetailLoading" class="other-detail-panel">
+          <div v-if="Object.keys(otherInsuranceDetails).length > 0">
+            <el-card
+              v-for="(group, insuranceType) in otherInsuranceDetails"
+              :key="insuranceType"
+              class="table-card insurance-group-card"
+            >
+              <template #header>
+                <div class="group-card-header">
+                  <div class="group-header">
+                    <span class="insurance-type-title">{{ insuranceType }}</span>
+                    <span class="group-count">共 {{ group.policies.length }} 人</span>
+                  </div>
+                  <el-button
+                    type="primary"
+                    size="small"
+                    @click="exportInsuranceGroup(insuranceType, group.policies)"
+                  >
+                    导出Excel
+                  </el-button>
+                </div>
+              </template>
+
+              <el-table
+                :data="group.policies"
+                size="small"
+                border
+                stripe
+                class="detail-table"
+              >
+                <el-table-column prop="serial_number" label="序号" width="60" align="center" />
+                <el-table-column prop="employee_name" label="姓名" width="100" />
+                <el-table-column prop="id_number" label="身份证号码" width="180" />
+                <el-table-column prop="gender" label="性别" width="80" align="center" />
+                <el-table-column prop="age" label="年龄" width="80" align="center" />
+                <el-table-column prop="contact_phone" label="联系电话" width="120" />
+                <el-table-column prop="project_name" label="项目" min-width="140" />
+                <el-table-column prop="addition_date" label="增加日期" width="110" align="center">
+                  <template #default="{ row }">
+                    {{ row.addition_date ? formatDate(row.addition_date) : '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="expiration_date" label="到期" width="110" align="center">
+                  <template #default="{ row }">
+                    {{ row.expiration_date ? formatDate(row.expiration_date) : '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="type" label="类型" width="80" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="row.type === '新增' ? 'success' : 'warning'" size="small">
+                      {{ row.type }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="insurance_status" label="参保状态" width="90" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="row.insurance_status === '在保' ? 'success' : 'danger'" size="small">
+                      {{ row.insurance_status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="employment_status" label="在职状态" width="90" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="row.employment_status === '在职' ? 'success' : 'warning'" size="small">
+                      {{ row.employment_status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="amount" label="金额" width="120" align="right">
+                  <template #default="{ row }">
+                    <span class="amount-value">¥{{ Number(row.amount || 0).toFixed(2) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="replaced_person_name" label="替换人员" width="120" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.replaced_person_name && row.replaced_person_name !== '-'" type="info" size="small">
+                      {{ row.replaced_person_name }}
+                    </el-tag>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="endorsement_number" label="批单号" width="120" align="center">
+                  <template #default="{ row }">
+                    <span v-if="row.endorsement_number && row.endorsement_number !== '-'">{{ row.endorsement_number }}</span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="remarks" label="备注" min-width="120" />
+              </el-table>
+            </el-card>
+          </div>
+
+          <el-empty v-else description="暂无其他保险明细数据" />
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <el-dialog v-model="detailVisible" title="退保详情/处理" width="900px">
@@ -497,6 +727,155 @@ const handleCreate = async () => {
 const loading = ref(false)
 const list = ref([])
 
+const getCurrentMonth = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+const formatDate = (date) => {
+  if (!date) return ''
+  return String(date).split('T')[0]
+}
+
+const formatGender = (gender) => {
+  if (gender === 1 || gender === '1' || gender === 'male' || gender === '男') return '男'
+  if (gender === 2 || gender === '2' || gender === 'female' || gender === '女') return '女'
+  return '-'
+}
+
+const formatEmployeeStatus = (status) => {
+  if (status === 1 || status === '1') return '在职'
+  if (status === 2 || status === '2') return '离职'
+  return '在职'
+}
+
+const calculateAgeFromId = (idNumber, birthDate = null) => {
+  let birth = null
+
+  if (birthDate) {
+    birth = new Date(birthDate)
+    if (Number.isNaN(birth.getTime()) || birth.getTime() > Date.now()) {
+      birth = null
+    }
+  }
+
+  if (!birth && idNumber && idNumber.length >= 14) {
+    try {
+      const birthStr = idNumber.substring(6, 14)
+      const year = Number.parseInt(birthStr.substring(0, 4), 10)
+      const month = Number.parseInt(birthStr.substring(4, 6), 10)
+      const day = Number.parseInt(birthStr.substring(6, 8), 10)
+
+      if (
+        year >= 1900 &&
+        year <= new Date().getFullYear() &&
+        month >= 1 &&
+        month <= 12 &&
+        day >= 1 &&
+        day <= 31
+      ) {
+        birth = new Date(year, month - 1, day)
+      }
+    } catch (error) {
+      console.warn('身份证号码解析失败:', idNumber, error)
+    }
+  }
+
+  if (!birth || Number.isNaN(birth.getTime())) {
+    return '-'
+  }
+
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  const monthDiff = today.getMonth() - birth.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age -= 1
+  }
+
+  return age
+}
+
+const getMonthEndDate = (month) => {
+  if (!month || !month.includes('-')) {
+    return new Date()
+  }
+
+  const [year, monthNumber] = month.split('-').map(Number)
+  return new Date(year, monthNumber, 0, 23, 59, 59, 999)
+}
+
+const getDateMonth = (date) => {
+  if (!date) return ''
+  return String(date).slice(0, 7)
+}
+
+const getOtherInsuranceStatus = (expirationDate, month) => {
+  if (!expirationDate || expirationDate === '-') {
+    return '在保'
+  }
+
+  const parsedDate = new Date(expirationDate)
+  if (Number.isNaN(parsedDate.getTime())) {
+    return '在保'
+  }
+
+  return parsedDate.getTime() <= getMonthEndDate(month).getTime() ? '到期' : '在保'
+}
+
+const buildOtherInsuranceRows = (details, month, useDynamicStatus = false) => {
+  const rows = []
+
+  details.forEach((detail) => {
+    const employee = detail.employee || {}
+    const project = detail.project || {}
+    let otherInsurancePolicies = detail.other_insurance_policies
+
+    if (!otherInsurancePolicies) {
+      return
+    }
+
+    if (typeof otherInsurancePolicies === 'string') {
+      try {
+        otherInsurancePolicies = JSON.parse(otherInsurancePolicies)
+      } catch (error) {
+        console.error('解析other_insurance_policies失败:', error)
+        return
+      }
+    }
+
+    if (!Array.isArray(otherInsurancePolicies) || otherInsurancePolicies.length === 0) {
+      return
+    }
+
+    otherInsurancePolicies.forEach((policy) => {
+      const expirationDate = policy.policy_end_date || '-'
+
+      rows.push({
+        insurance_type: policy.type || '其他保险',
+        employee_name: detail.employee_name || employee.name || '-',
+        id_number: detail.employee_id_number || employee.id_number || '-',
+        gender: formatGender(detail.employee_gender || employee.gender),
+        age: calculateAgeFromId(detail.employee_id_number || employee.id_number, detail.employee_birth_date || employee.birth_date),
+        contact_phone: detail.employee_phone || employee.phone || '-',
+        project_name: detail.project_name || project.name || '-',
+        addition_date: new Date().toLocaleDateString('zh-CN').replace(/\//g, '-'),
+        expiration_date: expirationDate,
+        type: policy.removed_person_name ? '替换' : '新增',
+        insurance_status: useDynamicStatus ? getOtherInsuranceStatus(expirationDate, month) : '在保',
+        employment_status: formatEmployeeStatus(detail.employee_status || employee.status),
+        amount: Number(policy.employee_per_capita_cost || 0),
+        replaced_person_name: policy.removed_person_name || '-',
+        endorsement_number: policy.endorsement_number || '-',
+        remarks: policy.coverage || policy.description || '-'
+      })
+    })
+  })
+
+  return rows
+}
+
 const filterForm = reactive({
   status: ''
 })
@@ -515,11 +894,70 @@ const statisticsFilter = reactive({
   monthRange: null
 })
 
+const otherOverviewLoading = ref(false)
+const otherOverviewRawDetails = ref([])
+const otherOverviewSurrenders = ref([])
+
+const otherOverviewFilter = reactive({
+  month: getCurrentMonth()
+})
+
+const otherDetailLoading = ref(false)
+const otherInsuranceRawDetails = ref([])
+
+const otherDetailFilter = reactive({
+  month: getCurrentMonth()
+})
+
+const otherInsuranceOverviewRows = computed(() => {
+  return buildOtherInsuranceRows(otherOverviewRawDetails.value, otherOverviewFilter.month, true).map((row, index) => ({
+    ...row,
+    serial_number: index + 1
+  }))
+})
+
+const otherInsuranceOverviewStats = computed(() => {
+  const rows = otherInsuranceOverviewRows.value
+
+  return {
+    total: rows.length,
+    active: rows.filter(row => row.insurance_status === '在保').length,
+    expired: rows.filter(row => row.insurance_status === '到期').length,
+    surrendered: otherOverviewSurrenders.value.length
+  }
+})
+
+const otherInsuranceDetails = computed(() => {
+  const groupedData = {}
+
+  buildOtherInsuranceRows(otherInsuranceRawDetails.value, otherDetailFilter.month).forEach((row) => {
+    const insuranceType = row.insurance_type || '其他保险'
+
+    if (!groupedData[insuranceType]) {
+      groupedData[insuranceType] = {
+        type: insuranceType,
+        policies: []
+      }
+    }
+
+    groupedData[insuranceType].policies.push({
+      ...row,
+      serial_number: groupedData[insuranceType].policies.length + 1
+    })
+  })
+
+  return groupedData
+})
+
 // 标签页切换
 const handleTabChange = (tabName) => {
   if (tabName === 'statistics') {
     loadAvailablePolicies()
     loadStatistics()
+  } else if (tabName === 'otherOverview') {
+    loadOtherInsuranceOverview()
+  } else if (tabName === 'otherDetails') {
+    loadOtherInsuranceDetails()
   } else if (tabName === 'list') {
     loadList()
   }
@@ -579,6 +1017,128 @@ const resetStatistics = () => {
   statisticsFilter.policy_id = null
   statisticsFilter.monthRange = null
   loadStatistics()
+}
+
+const loadOtherInsuranceOverview = async () => {
+  if (!currentAccountSetId.value) {
+    ElMessage.warning('请先选择账套')
+    return
+  }
+
+  otherOverviewLoading.value = true
+  try {
+    const [detailRes, surrenderRes] = await Promise.all([
+      request.get('/insurance-changes/details', {
+        params: {
+          account_set_id: currentAccountSetId.value,
+          month: otherOverviewFilter.month
+        }
+      }),
+      request.get('/insurance-surrenders', {
+        params: {
+          account_set_id: currentAccountSetId.value
+        }
+      })
+    ])
+
+    otherOverviewRawDetails.value = Array.isArray(detailRes.data) ? detailRes.data : []
+
+    const surrenderList = Array.isArray(surrenderRes.data) ? surrenderRes.data : []
+    otherOverviewSurrenders.value = surrenderList.filter(item => getDateMonth(item.created_at) === otherOverviewFilter.month)
+  } catch (error) {
+    otherOverviewRawDetails.value = []
+    otherOverviewSurrenders.value = []
+    ElMessage.error(error.response?.data?.message || error.message || '加载其他保险总统计失败')
+  } finally {
+    otherOverviewLoading.value = false
+  }
+}
+
+const resetOtherInsuranceOverviewFilter = () => {
+  otherOverviewFilter.month = getCurrentMonth()
+  loadOtherInsuranceOverview()
+}
+
+const loadOtherInsuranceDetails = async () => {
+  if (!currentAccountSetId.value) {
+    ElMessage.warning('请先选择账套')
+    return
+  }
+
+  otherDetailLoading.value = true
+  try {
+    const res = await request.get('/insurance-changes/details', {
+      params: {
+        account_set_id: currentAccountSetId.value,
+        month: otherDetailFilter.month
+      }
+    })
+    otherInsuranceRawDetails.value = Array.isArray(res.data) ? res.data : []
+  } catch (error) {
+    otherInsuranceRawDetails.value = []
+    ElMessage.error(error.response?.data?.message || error.message || '加载其他保险明细失败')
+  } finally {
+    otherDetailLoading.value = false
+  }
+}
+
+const resetOtherInsuranceFilter = () => {
+  otherDetailFilter.month = getCurrentMonth()
+  loadOtherInsuranceDetails()
+}
+
+const exportInsuranceGroup = async (insuranceType, policies) => {
+  try {
+    const XLSX = await import('xlsx')
+    const headers = ['序号', '姓名', '身份证号码', '性别', '年龄', '联系电话', '项目', '增加日期', '到期', '类型', '参保状态', '在职状态', '金额', '替换人员', '批单号', '备注']
+    const rows = policies.map((policy) => ([
+      policy.serial_number,
+      policy.employee_name,
+      policy.id_number,
+      policy.gender,
+      policy.age,
+      policy.contact_phone,
+      policy.project_name,
+      policy.addition_date,
+      policy.expiration_date,
+      policy.type,
+      policy.insurance_status,
+      policy.employment_status,
+      Number(policy.amount || 0).toFixed(2),
+      policy.replaced_person_name,
+      policy.endorsement_number,
+      policy.remarks
+    ]))
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    worksheet['!cols'] = [
+      { wch: 8 },
+      { wch: 12 },
+      { wch: 22 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 18 }
+    ]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, insuranceType.slice(0, 31) || '其他保险')
+    const fileName = `${insuranceType}_${otherDetailFilter.month || getCurrentMonth()}.xlsx`
+    XLSX.writeFile(workbook, fileName)
+    ElMessage.success(`导出成功：${fileName}`)
+  } catch (error) {
+    console.error('导出其他保险明细失败:', error)
+    ElMessage.error('导出失败，请重试')
+  }
 }
 
 // 查看员工明细
@@ -789,6 +1349,67 @@ onMounted(() => {
 .insurance-surrender-container { padding: 20px; }
 .page-header { margin-bottom: 16px; }
 .page-header h2 { margin: 0; font-size: 24px; color: #303133; }
+.other-detail-panel { margin-top: 16px; }
+.overview-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.overview-stat-card {
+  padding: 16px 18px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #fff;
+}
+.overview-stat-label {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+.overview-stat-value {
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 600;
+  color: #303133;
+}
+.overview-stat-value.success { color: #67c23a; }
+.overview-stat-value.warning { color: #e6a23c; }
+.overview-stat-value.danger { color: #f56c6c; }
+.insurance-group-card { margin-bottom: 16px; border-left: 4px solid #409eff; }
+.group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.insurance-type-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.group-count {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  color: #606266;
+  font-size: 12px;
+}
+.detail-table { margin-top: 0; }
+.amount-value { color: #e6a23c; font-weight: 600; }
+.text-muted { color: #c0c4cc; }
+
+@media (max-width: 960px) {
+  .overview-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 /* 文件列表样式 - 复用员工档案中的样式 */
 .files-list {

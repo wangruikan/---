@@ -120,6 +120,19 @@
               <el-option label="退休" value="retired" />
             </el-select>
           </el-form-item>
+
+          <el-form-item label="签署状态">
+            <el-select
+              v-model="searchForm.contract_sign_status"
+              placeholder="请选择签署状态"
+              clearable
+              style="width: 200px"
+            >
+              <el-option label="未签署" value="unsigned" />
+              <el-option label="已签署" value="signed" />
+              <el-option label="待盖章" value="pending_stamp" />
+            </el-select>
+          </el-form-item>
           
           <el-form-item>
             <el-button type="primary" @click="handleSearch">
@@ -1863,9 +1876,7 @@
                 style="width: 100%"
                 :disabled="isViewMode"
                 @change="handleSocialSecurityRegionChange"
-                clearable
               >
-                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableSocialSecurityRegions"
                   :key="region.id"
@@ -3719,9 +3730,7 @@
                 placeholder="请选择社保参保地区"
                 style="width: 100%"
                 @change="handleSocialSecurityRegionChange"
-                clearable
               >
-                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableSocialSecurityRegions"
                   :key="region.id"
@@ -6590,7 +6599,8 @@ const projectOtherInsurancePolicies = ref([])
 const searchForm = reactive({
   search: '',
   project_id: '',
-  personnel_status: ''
+  personnel_status: '',
+  contract_sign_status: ''
 })
 
 const pagination = reactive({
@@ -6792,6 +6802,7 @@ const formRules = {
     { required: true, message: '请选择所属项目', trigger: 'change' }
   ],
   social_security_region_id: [
+    { required: true, message: '请选择社保参保地区', trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   social_insurance_enrollment_date: [
@@ -7455,7 +7466,8 @@ const handleReset = () => {
   Object.assign(searchForm, {
     search: '',
     project_id: '',
-    personnel_status: ''
+    personnel_status: '',
+    contract_sign_status: ''
   })
   handleSearch()
 }
@@ -9625,6 +9637,7 @@ const getDisplayPersonnelStatus = (row) => {
 const getLaborContractStatusType = (status) => {
   const types = {
     pending_signature: 'warning',
+    pending_stamp: 'primary',
     online: 'success',
     offline: 'info'
   }
@@ -9634,6 +9647,7 @@ const getLaborContractStatusType = (status) => {
 const getLaborContractStatusText = (status) => {
   const texts = {
     pending_signature: '待签署',
+    pending_stamp: '待盖章',
     online: '线上',
     offline: '线下'
   }

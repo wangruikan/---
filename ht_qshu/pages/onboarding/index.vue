@@ -43,16 +43,16 @@
 			</view>
 
 			<view class="form-item">
-				<text class="label">身份证有效期开始</text>
+				<text class="label required">身份证有效期开始</text>
 				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_from)" @change="onIdCardValidFromChange">
 					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_from) || '请选择日期' }}</view>
 				</picker>
 			</view>
 
 			<view class="form-item">
-				<text class="label">身份证有效期至</text>
+				<text class="label required">身份证有效期至</text>
 				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_until)" @change="onIdCardValidUntilChange">
-					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_until) || '长期有效可不填' }}</view>
+					<view class="picker">{{ formatDateDisplay(formData.id_card_valid_until) || '请选择日期' }}</view>
 				</picker>
 			</view>
 			

@@ -355,12 +355,12 @@
           
           <!-- 资料上传视图的列 -->
           <template v-if="selectedModules.includes('documents')">
-            <el-table-column label="资料总数" width="100">
+            <el-table-column label="资料总数" width="100" header-cell-class-name="highlight-red-header">
               <template #default="{ row }">
                 <el-tag type="primary">{{ row.documents?.length || 0 }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="资料列表" min-width="400">
+            <el-table-column label="资料列表" min-width="400" header-cell-class-name="highlight-red-header">
               <template #default="{ row }">
                 <div v-if="row.documents && row.documents.length > 0" style="display: flex; flex-wrap: wrap; gap: 8px;">
                   <el-tag 
@@ -384,11 +384,6 @@
                 {{ row.bank_account || '-' }}
               </template>
             </el-table-column>
-            <el-table-column prop="bank_account_holder" label="户名" width="120">
-              <template #default="{ row }">
-                {{ row.bank_account_holder || '-' }}
-              </template>
-            </el-table-column>
             <el-table-column prop="bank_name" label="开户行" width="150">
               <template #default="{ row }">
                 {{ row.bank_name || '-' }}
@@ -397,11 +392,6 @@
             <el-table-column prop="bank_branch" label="开户地" width="150">
               <template #default="{ row }">
                 {{ row.bank_branch || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="remittance_remark" label="汇款备注" width="200">
-              <template #default="{ row }">
-                {{ row.remittance_remark || '-' }}
               </template>
             </el-table-column>
           </template>
@@ -12220,5 +12210,9 @@ const getChangeComparison = (detail) => {
 .employee-missing-document-indicator :deep(.el-badge__content.is-fixed.is-dot) {
   top: 3px;
   right: 3px;
+}
+
+:deep(.highlight-red-header .cell) {
+  color: #f56c6c;
 }
 </style>

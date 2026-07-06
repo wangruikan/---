@@ -536,6 +536,11 @@ class InsuranceChangeController extends ApiController
             }
         }
 
+        $hasSocialSecurity = !empty($socialSecurityTypes);
+        $hasMedicalInsurance = !empty($medicalInsuranceTypes);
+        $hasHousingFund = !empty($housingFundConfig);
+        $hasLargeMedical = $personnel->large_medical_insurance_enabled && !empty($largeMedicalConfig);
+
         // 使用参保人员记录中的基数值（原始基数）
         $originalMedicalBase = $personnel->employee_medical_insurance_base ?? 0;
         $originalPensionBase = $personnel->employee_social_security_base ?? 0;
@@ -545,7 +550,7 @@ class InsuranceChangeController extends ApiController
         // 获取上下限并应用约束
         // 1. 社保基数上下限约束
         $socialRegion = null;
-        if ($personnel->social_security_region_id) {
+        if ($hasSocialSecurity && $personnel->social_security_region_id) {
             $socialRegion = \App\Models\SocialSecurityRegion::find($personnel->social_security_region_id);
         }
         
@@ -568,7 +573,7 @@ class InsuranceChangeController extends ApiController
 
         // 2. 医保基数上下限约束
         $medicalRegion = null;
-        if ($personnel->medical_insurance_region_id) {
+        if ($hasMedicalInsurance && $personnel->medical_insurance_region_id) {
             $medicalRegion = \App\Models\MedicalInsuranceRegion::find($personnel->medical_insurance_region_id);
         }
         $medicalBase = $this->applyBaseLimits(
@@ -634,7 +639,7 @@ class InsuranceChangeController extends ApiController
 
         // 计算大额医疗金额
         $largeMedicalCompanyBase = $personnel->employee_large_medical_company_base ?? $largeMedicalBase;
-        if ($personnel->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
+        if ($hasLargeMedical && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
             $calculationType = $largeMedicalConfig['calculation_type'] ?? 'base';
             $isPaymentMonth = $this->isLargeMedicalPaymentMonthForConfig(
                 $largeMedicalConfig,
@@ -690,19 +695,19 @@ class InsuranceChangeController extends ApiController
             'project_name' => $personnel->project ? $personnel->project->name : '',
             'other_insurance_policies' => $filteredOtherInsurancePolicies,
             'payment_period' => $paymentPeriod, // 费款所属期
-            'social_security_code' => $personnel->social_security_code, // 社保编号
-            'medical_insurance_code' => $personnel->medical_insurance_code, // 医保编号
-            'housing_fund_account_number' => $personnel->housing_fund_account_number, // 公积金账号
+            'social_security_code' => $hasSocialSecurity ? $personnel->social_security_code : null, // 社保编号
+            'medical_insurance_code' => $hasMedicalInsurance ? $personnel->medical_insurance_code : null, // 医保编号
+            'housing_fund_account_number' => $hasHousingFund ? $personnel->housing_fund_account_number : null, // 公积金账号
             // 各项参保日期（从员工档案中获取）
             'social_insurance_enrollment_date' => $employee ? $employee->social_insurance_enrollment_date : null,
             'medical_insurance_enrollment_date' => $employee ? $employee->medical_insurance_enrollment_date : null,
             'provident_fund_enrollment_date' => $employee ? $employee->provident_fund_enrollment_date : null,
             'large_medical_enrollment_date' => $employee ? $employee->large_medical_enrollment_date : null,
-            'employee_medical_insurance_base' => $medicalBase,
-            'employee_social_security_base' => $pensionBase,
-            'employee_housing_fund_base' => $housingFundBase,
-            'employee_large_medical_base' => $largeMedicalBase,
-            'employee_large_medical_company_base' => $largeMedicalCompanyBase,
+            'employee_medical_insurance_base' => $hasMedicalInsurance ? $medicalBase : 0,
+            'employee_social_security_base' => $hasSocialSecurity ? $pensionBase : 0,
+            'employee_housing_fund_base' => $hasHousingFund ? $housingFundBase : 0,
+            'employee_large_medical_base' => $hasLargeMedical ? $largeMedicalBase : 0,
+            'employee_large_medical_company_base' => $hasLargeMedical ? $largeMedicalCompanyBase : 0,
             'medical_insurance_company_amount' => $medicalCompanyAmount,
             'medical_insurance_employee_amount' => $medicalEmployeeAmount,
             'social_security_company_amount' => $socialCompanyAmount,
@@ -776,6 +781,11 @@ class InsuranceChangeController extends ApiController
             }
         }
 
+        $hasSocialSecurity = !empty($socialSecurityTypes);
+        $hasMedicalInsurance = !empty($medicalInsuranceTypes);
+        $hasHousingFund = !empty($housingFundConfig);
+        $hasLargeMedical = $personnel->large_medical_insurance_enabled && !empty($largeMedicalConfig);
+
         // 使用参保人员记录中的基数值
         $medicalBase = $personnel->employee_medical_insurance_base ?? 0;
         $pensionBase = $personnel->employee_social_security_base ?? 0;
@@ -814,7 +824,7 @@ class InsuranceChangeController extends ApiController
         }
 
         // 计算大额医疗金额
-        if ($personnel->large_medical_insurance_enabled && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
+        if ($hasLargeMedical && is_array($largeMedicalConfig) && !empty($largeMedicalConfig)) {
             \Log::info('大额医疗计算调试', [
                 'employee_name' => $personnel->employee_name,
                 'employee_type' => $employeeType,
@@ -878,14 +888,14 @@ class InsuranceChangeController extends ApiController
             'project_name' => $personnel->project ? $personnel->project->name : '',
             'other_insurance_policies' => $filteredOtherInsurancePolicies,
             'payment_period' => $paymentPeriod,
-            'social_security_code' => $personnel->social_security_code, // 社保编号
-            'medical_insurance_code' => $personnel->medical_insurance_code, // 医保编号
-            'housing_fund_account_number' => $personnel->housing_fund_account_number, // 公积金账号
-            'employee_medical_insurance_base' => $medicalBase,
-            'employee_social_security_base' => $pensionBase,
-            'employee_housing_fund_base' => $housingFundBase,
-            'employee_large_medical_base' => $largeMedicalBase,
-            'employee_large_medical_company_base' => $largeMedicalCompanyBase,
+            'social_security_code' => $hasSocialSecurity ? $personnel->social_security_code : null, // 社保编号
+            'medical_insurance_code' => $hasMedicalInsurance ? $personnel->medical_insurance_code : null, // 医保编号
+            'housing_fund_account_number' => $hasHousingFund ? $personnel->housing_fund_account_number : null, // 公积金账号
+            'employee_medical_insurance_base' => $hasMedicalInsurance ? $medicalBase : 0,
+            'employee_social_security_base' => $hasSocialSecurity ? $pensionBase : 0,
+            'employee_housing_fund_base' => $hasHousingFund ? $housingFundBase : 0,
+            'employee_large_medical_base' => $hasLargeMedical ? $largeMedicalBase : 0,
+            'employee_large_medical_company_base' => $hasLargeMedical ? $largeMedicalCompanyBase : 0,
             'medical_insurance_company_amount' => $medicalCompanyAmount,
             'medical_insurance_employee_amount' => $medicalEmployeeAmount,
             'social_security_company_amount' => $socialCompanyAmount,
@@ -1068,6 +1078,24 @@ class InsuranceChangeController extends ApiController
             }
         }
 
+        $hasSocialSecurity = !empty($socialSecurityTypes);
+        $hasMedicalInsurance = !empty($medicalInsuranceTypes);
+        $hasHousingFund = !empty($housingFundConfig);
+        $hasLargeMedicalConfig = $personnel->large_medical_insurance_enabled && !empty($largeMedicalConfig);
+
+        $needSocialSecurity = $needSocialSecurity && $hasSocialSecurity;
+        $needMedicalInsurance = $needMedicalInsurance && $hasMedicalInsurance;
+        $needProvidentFund = $needProvidentFund && $hasHousingFund;
+        $needLargeMedical = $needLargeMedical && $hasLargeMedicalConfig;
+
+        if (!$needSocialSecurity && !$needMedicalInsurance && !$needProvidentFund && !$needLargeMedical) {
+            return null;
+        }
+
+        $periodParts = explode('-', $paymentPeriod);
+        $periodYear = isset($periodParts[0]) ? (int) $periodParts[0] : (int) date('Y');
+        $periodMonth = isset($periodParts[1]) ? (int) $periodParts[1] : (int) date('n');
+
         // 使用参保人员记录中的基数值
         $medicalBase = $personnel->employee_medical_insurance_base ?? 0;
         $pensionBase = $personnel->employee_social_security_base ?? 0;
@@ -1145,9 +1173,9 @@ class InsuranceChangeController extends ApiController
             'project_name' => $personnel->project ? $personnel->project->name : '',
             'other_insurance_policies' => $filteredOtherInsurancePolicies,
             'payment_period' => $paymentPeriod,
-            'social_security_code' => $personnel->social_security_code,
-            'medical_insurance_code' => $personnel->medical_insurance_code,
-            'housing_fund_account_number' => $personnel->housing_fund_account_number,
+            'social_security_code' => $needSocialSecurity ? $personnel->social_security_code : null,
+            'medical_insurance_code' => $needMedicalInsurance ? $personnel->medical_insurance_code : null,
+            'housing_fund_account_number' => $needProvidentFund ? $personnel->housing_fund_account_number : null,
             'employee_medical_insurance_base' => $needMedicalInsurance ? $medicalBase : 0,
             'employee_social_security_base' => $needSocialSecurity ? $pensionBase : 0,
             'employee_housing_fund_base' => $needProvidentFund ? $housingFundBase : 0,

@@ -126,14 +126,6 @@
                 </template>
               </el-table-column>
               <el-table-column prop="project.name" label="项目名称" width="150" />
-              <!-- 参保地区列已隐藏 -->
-              <el-table-column label="状态" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="getStatusTagType(row.status)">
-                    {{ getStatusText(row.status) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
               <el-table-column
                 v-for="category in insuranceCategoryColumns"
                 :key="category.key"
@@ -142,13 +134,27 @@
                 align="center"
               >
                 <template #default="{ row }">
-                  <el-tag
-                    v-if="getCategoryDisplayStatus(row, category.key)"
-                    :type="getStatusTagType(getCategoryDisplayStatus(row, category.key))"
-                    size="small"
-                  >
-                    {{ getStatusText(getCategoryDisplayStatus(row, category.key)) }}
-                  </el-tag>
+                  <template v-if="getCategoryDisplayStatus(row, category.key)">
+                    <span
+                      v-if="isSuccessStatus(getCategoryDisplayStatus(row, category.key))"
+                      class="category-status-icon success"
+                    >
+                      √
+                    </span>
+                    <span
+                      v-else-if="isFailedStatus(getCategoryDisplayStatus(row, category.key))"
+                      class="category-status-icon failed"
+                    >
+                      ×
+                    </span>
+                    <el-tag
+                      v-else
+                      :type="getStatusTagType(getCategoryDisplayStatus(row, category.key))"
+                      size="small"
+                    >
+                      {{ getStatusText(getCategoryDisplayStatus(row, category.key)) }}
+                    </el-tag>
+                  </template>
                   <span v-else>-</span>
                 </template>
               </el-table-column>
@@ -4473,6 +4479,14 @@ const getStatusTagType = (status) => {
   return typeMap[status] || 'warning' // 默认显示为待处理样式
 }
 
+const isSuccessStatus = (status) => {
+  return ['completed', 'processing', 'approved', 'finished'].includes(status)
+}
+
+const isFailedStatus = (status) => {
+  return status === 'failed'
+}
+
 // 获取详情表格数据
 // 获取社保详情
 const getSocialSecurityDetails = () => {
@@ -6031,6 +6045,24 @@ watch(showExportDialog, (newVal) => {
 }
 
 .failed-count {
+  color: #f56c6c;
+}
+
+.category-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.category-status-icon.success {
+  color: #67c23a;
+}
+
+.category-status-icon.failed {
   color: #f56c6c;
 }
 

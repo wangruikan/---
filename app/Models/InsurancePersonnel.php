@@ -191,9 +191,9 @@ class InsurancePersonnel extends Model
         // 应用上下限约束到基数
         $constrainedBases = self::applyBaseConstraintsFromChange($change);
 
-        $hasSocialSecurityConfig = !empty($change->social_security_types) || !empty($constrainedBases['social_security']);
-        $hasMedicalInsuranceConfig = !empty($change->medical_insurance_types) || !empty($constrainedBases['medical_insurance']);
-        $hasHousingFundConfig = !empty($change->housing_fund_params) || !empty($constrainedBases['housing_fund']);
+        $hasSocialSecurityConfig = self::hasNonEmptySnapshotValue($change->social_security_types);
+        $hasMedicalInsuranceConfig = self::hasNonEmptySnapshotValue($change->medical_insurance_types);
+        $hasHousingFundConfig = self::hasNonEmptySnapshotValue($change->housing_fund_params);
 
         // 确保地区ID正确。对显式清空的分类，不再回退员工档案，避免减保后又被自动补回。
         $socialSecurityRegionId = $hasSocialSecurityConfig
@@ -236,14 +236,14 @@ class InsurancePersonnel extends Model
                 'housing_fund_config_id' => $change->housing_fund_config_id,
                 'large_medical_insurance_config_id' => $change->large_medical_insurance_config_id,
                 'large_medical_insurance_enabled' => $change->large_medical_insurance_enabled,
-                'employee_social_security_base' => $constrainedBases['social_security'],
-                'employee_medical_insurance_base' => $constrainedBases['medical_insurance'],
-                'employee_housing_fund_base' => $constrainedBases['housing_fund'],
+                'employee_social_security_base' => $hasSocialSecurityConfig ? $constrainedBases['social_security'] : null,
+                'employee_medical_insurance_base' => $hasMedicalInsuranceConfig ? $constrainedBases['medical_insurance'] : null,
+                'employee_housing_fund_base' => $hasHousingFundConfig ? $constrainedBases['housing_fund'] : null,
                 'employee_large_medical_base' => $change->employee_large_medical_base,
                 'employee_large_medical_company_base' => $change->employee_large_medical_company_base,
-                'social_security_types' => $change->social_security_types,
-                'medical_insurance_types' => $change->medical_insurance_types,
-                'housing_fund_params' => $change->housing_fund_params,
+                'social_security_types' => $hasSocialSecurityConfig ? $change->social_security_types : null,
+                'medical_insurance_types' => $hasMedicalInsuranceConfig ? $change->medical_insurance_types : null,
+                'housing_fund_params' => $hasHousingFundConfig ? $change->housing_fund_params : null,
                 'other_insurance_policies' => $otherInsurancePolicies,
                 'large_medical_insurance_config' => $change->large_medical_insurance_config,
                 'used_quotas' => $usedQuotas,
@@ -282,14 +282,14 @@ class InsurancePersonnel extends Model
                 'housing_fund_config_id' => $change->housing_fund_config_id,
                 'large_medical_insurance_config_id' => $change->large_medical_insurance_config_id,
                 'large_medical_insurance_enabled' => $change->large_medical_insurance_enabled,
-                'employee_social_security_base' => $constrainedBases['social_security'],
-                'employee_medical_insurance_base' => $constrainedBases['medical_insurance'],
-                'employee_housing_fund_base' => $constrainedBases['housing_fund'],
+                'employee_social_security_base' => $hasSocialSecurityConfig ? $constrainedBases['social_security'] : null,
+                'employee_medical_insurance_base' => $hasMedicalInsuranceConfig ? $constrainedBases['medical_insurance'] : null,
+                'employee_housing_fund_base' => $hasHousingFundConfig ? $constrainedBases['housing_fund'] : null,
                 'employee_large_medical_base' => $change->employee_large_medical_base,
                 'employee_large_medical_company_base' => $change->employee_large_medical_company_base,
-                'social_security_types' => $change->social_security_types,
-                'medical_insurance_types' => $change->medical_insurance_types,
-                'housing_fund_params' => $change->housing_fund_params,
+                'social_security_types' => $hasSocialSecurityConfig ? $change->social_security_types : null,
+                'medical_insurance_types' => $hasMedicalInsuranceConfig ? $change->medical_insurance_types : null,
+                'housing_fund_params' => $hasHousingFundConfig ? $change->housing_fund_params : null,
                 'other_insurance_policies' => $otherInsurancePolicies,
                 'large_medical_insurance_config' => $change->large_medical_insurance_config,
                 'used_quotas' => $usedQuotas,
@@ -403,6 +403,29 @@ class InsurancePersonnel extends Model
                 'start_year' => $currentYear,
             ]);
         }
+    }
+
+    private static function hasNonEmptySnapshotValue($value): bool
+    {
+        if (is_array($value)) {
+            return !empty($value);
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '' || $trimmed === 'null' || $trimmed === '[]' || $trimmed === '{}') {
+                return false;
+            }
+
+            $decoded = json_decode($trimmed, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return !empty($decoded);
+            }
+
+            return true;
+        }
+
+        return !empty($value);
     }
 
     /**

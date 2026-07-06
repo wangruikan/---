@@ -117,55 +117,39 @@
               <el-table-column prop="employee.name" label="员工姓名" width="120" />
               <el-table-column label="增减类型" width="100">
                 <template #default="{ row }">
-                  <!-- 如果有变更摘要，说明是配置变更，不是真正的新增或减少 -->
-                  <el-tag v-if="row.change_summary" type="warning">
-                    配置变更
-                  </el-tag>
-                  <el-tag v-else-if="row.change_type === 'decrease'" type="danger">
-                    减少参保
+                  <el-tag v-if="row.change_type === 'decrease'" type="danger">
+                    减少
                   </el-tag>
                   <el-tag v-else type="success">
-                    新增参保
+                    增加
                   </el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="project.name" label="项目名称" width="150" />
               <!-- 参保地区列已隐藏 -->
-              <el-table-column label="状态" width="220">
+              <el-table-column label="状态" width="100">
                 <template #default="{ row }">
-                  <div style="display: flex; flex-direction: column; gap: 5px;">
-                    <el-tag :type="getStatusTagType(row.status)">
-                      {{ getStatusText(row.status) }}
-                    </el-tag>
-                    <!-- 显示变更标记（所有状态都显示，只要有变更摘要） -->
-                    <div v-if="row.change_summary" style="display: flex; flex-wrap: wrap; gap: 4px;">
-                      <el-tag v-if="row.change_summary.includes('社保')" type="success" size="small" effect="dark">
-                        🟢 社保变更
-                      </el-tag>
-                      <el-tag v-if="row.change_summary.includes('医保')" type="primary" size="small" effect="dark">
-                        🔵 医保变更
-                      </el-tag>
-                      <el-tag v-if="row.change_summary.includes('公积金')" type="warning" size="small" effect="dark">
-                        🟡 公积金变更
-                      </el-tag>
-                      <el-tag v-if="row.change_summary.includes('大额')" type="info" size="small" effect="dark">
-                        🟣 大额医疗变更
-                      </el-tag>
-                      <el-tag v-if="row.change_summary.includes('其他保险')" type="danger" size="small" effect="dark">
-                        🔴 其他保险变更
-                      </el-tag>
-                      <!-- 如果没有匹配到具体类型，显示通用变更标记 -->
-                      <el-tag 
-                        v-if="!row.change_summary.includes('社保') && !row.change_summary.includes('医保') && !row.change_summary.includes('公积金') && !row.change_summary.includes('大额') && !row.change_summary.includes('其他保险')" 
-                        type="danger" 
-                        size="small" 
-                        effect="dark"
-                      >
-                        <el-icon style="margin-right: 2px;"><Warning /></el-icon>
-                        有变更
-                      </el-tag>
-                    </div>
-                  </div>
+                  <el-tag :type="getStatusTagType(row.status)">
+                    {{ getStatusText(row.status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column
+                v-for="category in insuranceCategoryColumns"
+                :key="category.key"
+                :label="category.label"
+                width="110"
+                align="center"
+              >
+                <template #default="{ row }">
+                  <el-tag
+                    v-if="getCategoryDisplayStatus(row, category.key)"
+                    :type="getStatusTagType(getCategoryDisplayStatus(row, category.key))"
+                    size="small"
+                  >
+                    {{ getStatusText(getCategoryDisplayStatus(row, category.key)) }}
+                  </el-tag>
+                  <span v-else>-</span>
                 </template>
               </el-table-column>
               <el-table-column label="附件" width="120">
@@ -782,19 +766,7 @@
           <el-input :value="currentChange.project ? currentChange.project.name : ''" disabled />
         </el-form-item>
         <el-form-item label="处理业务">
-          <el-select
-            v-model="processForm.category"
-            placeholder="请选择处理业务"
-            style="width: 100%;"
-            @change="handleProcessCategoryChange"
-          >
-            <el-option
-              v-for="item in processableItems"
-              :key="item.id"
-              :label="getCategoryText(item.category)"
-              :value="item.category"
-            />
-          </el-select>
+          <el-input :model-value="processableCategoryText" disabled />
         </el-form-item>
         <el-form-item label="处理结果">
           <el-radio-group v-model="processForm.result">
@@ -805,14 +777,14 @@
 
         <el-alert
           v-if="processForm.result === 'success'"
-          title="成功后会立即按所选业务更新参保数据，本次不需要上传附件。"
+          title="成功后会立即将本条任务下的全部待处理业务一次性完成，本次不需要上传附件。"
           type="success"
           :closable="false"
           style="margin-bottom: 16px;"
         />
         <el-alert
           v-else
-          title="失败时必须上传对应业务附件，当前业务会保留失败结果，并立即生成下月续办任务。"
+          title="失败时必须上传附件，当前整条任务的待处理业务都会保留失败结果，并立即生成下月续办任务。"
           type="warning"
           :closable="false"
           style="margin-bottom: 16px;"
@@ -872,7 +844,6 @@
             type="primary"
             @click="submitProcess"
             :loading="processing && processingChangeId === currentChange?.id"
-            :disabled="!processForm.category"
           >
             确认提交
           </el-button>
@@ -3682,7 +3653,6 @@ const currentChange = ref(null)
 const processingChangeId = ref(null)
 
 const processForm = ref({
-  category: '',
   result: 'success'
 })
 
@@ -3699,12 +3669,22 @@ const processableItems = computed(() => {
   return currentChange.value.change_items.filter((item) => ['pending', 'submitted'].includes(item.status))
 })
 
-const currentProcessItem = computed(() => {
-  if (!currentChange.value || !processForm.value.category || !Array.isArray(currentChange.value.change_items)) {
-    return null
+const processableCategoryText = computed(() => {
+  if (!processableItems.value.length) {
+    return '全部业务'
   }
 
-  return currentChange.value.change_items.find((item) => item.category === processForm.value.category) || null
+  const categoryMap = {
+    social_security: '社保',
+    medical_insurance: '医保',
+    housing_fund: '公积金',
+    large_medical_insurance: '大额医疗',
+    other_insurance: '其他保险'
+  }
+
+  return processableItems.value
+    .map((item) => categoryMap[item.category] || item.category)
+    .join('、')
 })
 
 const currentProcessAttachments = computed(() => {
@@ -3712,12 +3692,7 @@ const currentProcessAttachments = computed(() => {
     return []
   }
 
-  const itemId = currentProcessItem.value?.id
-  if (!itemId) {
-    return []
-  }
-
-  return (currentChange.value.attachments || []).filter((attachment) => attachment.insurance_change_item_id === itemId)
+  return (currentChange.value.attachments || []).filter((attachment) => !attachment.insurance_change_item_id)
 })
 
 // 查看文件表单
@@ -4021,10 +3996,6 @@ const hasProcessableItems = (change) => {
   return Array.isArray(change?.change_items) && change.change_items.some((item) => ['pending', 'submitted'].includes(item.status))
 }
 
-const handleProcessCategoryChange = () => {
-  fileList.value = []
-}
-
 const refreshCurrentChangeData = async (changeId) => {
   const detailResponse = await request.get(`/insurance-changes/${changeId}?t=${Date.now()}`)
   if (detailResponse.success) {
@@ -4036,7 +4007,6 @@ const refreshCurrentChangeData = async (changeId) => {
 
 const showProcessDialog = async (change) => {
   processForm.value = {
-    category: '',
     result: 'success'
   }
   fileList.value = []
@@ -4046,14 +4016,6 @@ const showProcessDialog = async (change) => {
     currentChange.value = latestChange || change
   } catch (error) {
     currentChange.value = change
-  }
-
-  const defaultItem = Array.isArray(currentChange.value?.change_items)
-    ? currentChange.value.change_items.find((item) => ['pending', 'submitted'].includes(item.status))
-    : null
-
-  if (defaultItem) {
-    processForm.value.category = defaultItem.category
   }
 
   showUploadDialogFlag.value = true
@@ -4155,11 +4117,6 @@ const submitProcess = async () => {
     return
   }
 
-  if (!processForm.value.category) {
-    ElMessage.warning('请选择处理业务')
-    return
-  }
-
   if (processing.value) {
     return
   }
@@ -4173,7 +4130,6 @@ const submitProcess = async () => {
       fileList.value.forEach((file) => {
         formData.append('attachments[]', file.raw)
       })
-      formData.append('category', processForm.value.category)
 
       const uploadResponse = await request.post(
         `/insurance-changes/${currentChange.value.id}/upload-attachment`,
@@ -4189,12 +4145,11 @@ const submitProcess = async () => {
     }
 
     if (processForm.value.result === 'failed' && currentProcessAttachments.value.length === 0) {
-      ElMessage.warning('失败时必须上传对应业务附件')
+      ElMessage.warning('失败时必须上传整单处理附件')
       return
     }
 
     const response = await request.put(`/insurance-changes/${currentChange.value.id}/confirm-process`, {
-      category: processForm.value.category,
       result: processForm.value.result
     })
 
@@ -5082,6 +5037,7 @@ const getCategoryText = (category) => {
     'social_security': '社保',
     'medical_insurance': '医保',
     'housing_fund': '公积金',
+    'large_medical_insurance': '大额医疗',
     'other_insurance': '其他保险'
   }
   return categoryMap[category] || category

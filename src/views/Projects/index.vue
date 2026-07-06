@@ -197,8 +197,8 @@
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20844;&#31215;&#37329;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ getHousingFundRegionsText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险数量" min-width="120" align="center">
-            <template #default="{ row }">{{ getOtherInsurancePoliciesCountText(row) }}</template>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险类别" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ getOtherInsurancePoliciesSummaryText(row) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="430" fixed="right">
             <template #default="{ row }">
@@ -3586,9 +3586,20 @@ const getMedicalInsuranceRegionsText = (row) => {
   return toDisplayText(extractDisplayNames(row?.medical_insurance_regions, ['name', 'region_name']))
 }
 
-const getOtherInsurancePoliciesCountText = (row) => {
-  const count = Array.isArray(row?.other_insurance_policies) ? row.other_insurance_policies.length : 0
-  return `${count}个`
+const getOtherInsurancePoliciesSummaryText = (row) => {
+  const policies = Array.isArray(row?.other_insurance_policies) ? row.other_insurance_policies : []
+  const typeNames = [...new Set(
+    policies
+      .map(policy => policy?.type?.name || '')
+      .filter(name => typeof name === 'string' && name.trim() !== '')
+  )]
+  const count = policies.length
+
+  if (typeNames.length === 0) {
+    return `无（${count}）`
+  }
+
+  return `${typeNames.join('、')}（${count}）`
 }
 
 const formatFileSize = (size) => {

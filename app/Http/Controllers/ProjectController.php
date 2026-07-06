@@ -94,6 +94,18 @@ class ProjectController extends Controller
             $requestData['code'] = trim($requestData['code']);
         }
 
+        foreach ([
+            'social_security_regions',
+            'medical_insurance_regions',
+            'housing_fund_regions',
+            'other_insurance_policies',
+            'large_medical_insurance_configs',
+        ] as $field) {
+            if (array_key_exists($field, $requestData)) {
+                $requestData[$field] = $this->normalizeProjectRelationIds($requestData[$field]);
+            }
+        }
+
         $hasInvoiceInfos = array_key_exists('invoice_infos', $requestData);
         $legacyInvoiceFields = [
             'invoice_company_name',
@@ -124,6 +136,32 @@ class ProjectController extends Controller
         Project::syncLegacyInvoiceFields($requestData, $invoiceInfos);
 
         return $requestData;
+    }
+
+    private function normalizeProjectRelationIds($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return collect($value)
+            ->map(function ($item) {
+                if (is_array($item)) {
+                    return $item['id'] ?? null;
+                }
+
+                if (is_object($item)) {
+                    return $item->id ?? null;
+                }
+
+                return $item;
+            })
+            ->filter(fn ($item) => is_numeric($item))
+            ->map(fn ($item) => (int) $item)
+            ->filter(fn (int $item) => $item > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function projectValidationRules(): array

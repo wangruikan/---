@@ -89,7 +89,21 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="支付对象" prop="payee">
-              <el-input v-model="paymentForm.payee" />
+              <el-autocomplete
+                v-model="paymentForm.payee"
+                :fetch-suggestions="queryPaymentPayees"
+                placeholder="请输入或选择支付对象"
+                style="width: 100%"
+                clearable
+                @select="handleSelectPaymentPayee"
+              >
+                <template #default="{ item }">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 500;">{{ item.value }}</span>
+                    <span style="font-size: 12px; color: #999; margin-left: 10px;">{{ item.bank_name }}</span>
+                  </div>
+                </template>
+              </el-autocomplete>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -416,6 +430,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { getPaymentPayees } from '@/api/paymentPayees'
 
 const props = defineProps({
   hasUploadedAttachments: {
@@ -575,6 +590,35 @@ const removeTravelItem = (index) => {
 
 const formatAmount = (val) => {
   return Number(val || 0).toFixed(2)
+}
+
+const queryPaymentPayees = async (queryString, callback) => {
+  try {
+    const res = await getPaymentPayees({
+      keyword: queryString || ''
+    })
+
+    const options = Array.isArray(res.data)
+      ? res.data.map((item) => ({
+          value: item.payee_name,
+          bank_name: item.bank_name,
+          bank_account: item.bank_account
+        }))
+      : []
+
+    callback(options)
+  } catch (error) {
+    console.error('加载收款信息失败:', error)
+    callback([])
+  }
+}
+
+const handleSelectPaymentPayee = (item) => {
+  if (!item) return
+
+  paymentForm.payee = item.value || ''
+  paymentForm.bank = item.bank_name || ''
+  paymentForm.bankAccount = item.bank_account || ''
 }
 
 const convertToChinese = (money) => {

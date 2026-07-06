@@ -887,6 +887,13 @@ Route::middleware('auth:sanctum')->prefix('financial-software-links')->group(fun
     Route::delete('/{id}', [App\Http\Controllers\FinancialSoftwareLinkController::class, 'destroy']);
 });
 
+Route::middleware('auth:sanctum')->prefix('payment-payees')->group(function () {
+    Route::get('/', [App\Http\Controllers\PaymentPayeeController::class, 'index']);
+    Route::post('/', [App\Http\Controllers\PaymentPayeeController::class, 'store']);
+    Route::put('/{id}', [App\Http\Controllers\PaymentPayeeController::class, 'update']);
+    Route::delete('/{id}', [App\Http\Controllers\PaymentPayeeController::class, 'destroy']);
+});
+
 // 操作日志管理
 Route::middleware('auth:sanctum')->prefix('operation-logs')->group(function () {
     Route::get('/', [App\Http\Controllers\OperationLogController::class, 'index']);

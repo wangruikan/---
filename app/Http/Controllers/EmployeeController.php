@@ -512,7 +512,6 @@ class EmployeeController extends ApiController
             'social_insurance_enrollment_date' => '社保参保日期',
             'provident_fund_enrollment_date' => '公积金参保日期',
             'medical_insurance_enrollment_date' => '医保参保日期',
-            'large_medical_enrollment_date' => '大额医疗参保日期',
         ];
 
         $hasInsuranceDate = false;
@@ -597,7 +596,6 @@ class EmployeeController extends ApiController
             ['region' => 'social_security_region_id', 'date' => 'social_insurance_enrollment_date', 'regionLabel' => '社保地区', 'dateLabel' => '社保参保日期'],
             ['region' => 'medical_insurance_region_id', 'date' => 'medical_insurance_enrollment_date', 'regionLabel' => '医保地区', 'dateLabel' => '医保参保日期'],
             ['region' => 'housing_fund_region_id', 'date' => 'provident_fund_enrollment_date', 'regionLabel' => '公积金地区', 'dateLabel' => '公积金参保日期'],
-            ['region' => 'large_medical_insurance_config_id', 'date' => 'large_medical_enrollment_date', 'regionLabel' => '大额医疗保险', 'dateLabel' => '大额医疗参保日期'],
         ];
 
         foreach ($pairs as $pair) {
@@ -614,6 +612,132 @@ class EmployeeController extends ApiController
         }
 
         return null;
+    }
+
+    private function normalizeInsuranceBindingId($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value) && trim($value) === '__NONE__') {
+            return null;
+        }
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function resolveLargeMedicalSyncProject(array $data, ?Employee $employee = null): ?Project
+    {
+        $projectId = null;
+
+        if (!empty($data['project_ids']) && is_array($data['project_ids'])) {
+            $projectId = $data['project_ids'][0] ?? null;
+        }
+
+        if (!$projectId && $employee) {
+            $projectId = $employee->getCurrentProject()?->id;
+
+            if (!$projectId && !empty($employee->project_ids)) {
+                $projectId = is_array($employee->project_ids)
+                    ? ($employee->project_ids[0] ?? null)
+                    : $employee->project_ids;
+            }
+        }
+
+        return $projectId ? Project::find($projectId) : null;
+    }
+
+    private function resolveLargeMedicalConfigFromMedical(?Project $project, ?int $medicalRegionId, ?Employee $employee = null): ?\App\Models\LargeMedicalInsuranceConfig
+    {
+        if (!$project || !$medicalRegionId) {
+            return null;
+        }
+
+        $medicalRegion = \App\Models\MedicalInsuranceRegion::find($medicalRegionId);
+        if (!$medicalRegion) {
+            return null;
+        }
+
+        $regionNames = collect([
+            $medicalRegion->name ?? null,
+            $medicalRegion->region_name ?? null,
+        ])->map(function ($name) {
+            return trim((string) $name);
+        })->filter()->unique()->values();
+
+        if ($regionNames->isEmpty()) {
+            return null;
+        }
+
+        $resolvedConfig = $project->getResolvedLargeMedicalInsuranceConfigs()
+            ->first(function ($config) use ($regionNames) {
+                return $regionNames->contains(trim((string) $config->region_name));
+            });
+
+        if ($resolvedConfig) {
+            return $resolvedConfig;
+        }
+
+        $accountSetId = $employee->account_set_id ?? $project->account_set_id ?? null;
+        if (!$accountSetId) {
+            return null;
+        }
+
+        return \App\Models\LargeMedicalInsuranceConfig::where('account_set_id', $accountSetId)
+            ->where('status', 1)
+            ->whereIn('region_name', $regionNames->all())
+            ->orderBy('id')
+            ->first();
+    }
+
+    private function syncLargeMedicalWithMedical(array &$data, ?Employee $employee = null): void
+    {
+        $medicalRegionId = $this->normalizeInsuranceBindingId(
+            $data['medical_insurance_region_id'] ?? ($employee->medical_insurance_region_id ?? null)
+        );
+
+        if (!$medicalRegionId) {
+            $data['large_medical_insurance_config_id'] = null;
+            $data['large_medical_enrollment_date'] = null;
+            $data['large_medical_base'] = null;
+            $data['large_medical_company_base'] = null;
+            return;
+        }
+
+        $project = $this->resolveLargeMedicalSyncProject($data, $employee);
+        $largeMedicalConfig = $this->resolveLargeMedicalConfigFromMedical($project, $medicalRegionId, $employee);
+
+        if (!$largeMedicalConfig) {
+            $data['large_medical_insurance_config_id'] = null;
+            $data['large_medical_enrollment_date'] = null;
+            $data['large_medical_base'] = null;
+            $data['large_medical_company_base'] = null;
+            return;
+        }
+
+        $medicalEnrollmentDate = $data['medical_insurance_enrollment_date']
+            ?? ($employee->medical_insurance_enrollment_date ?? null);
+        $medicalBase = $data['medical_insurance_base']
+            ?? ($employee->medical_insurance_base ?? null);
+
+        $data['large_medical_insurance_config_id'] = $largeMedicalConfig->id;
+        $data['large_medical_enrollment_date'] = $medicalEnrollmentDate ?: null;
+
+        if ($largeMedicalConfig->calculation_type !== 'base') {
+            $data['large_medical_base'] = null;
+            $data['large_medical_company_base'] = null;
+            return;
+        }
+
+        if (($largeMedicalConfig->base_source ?? 'employee') === 'config') {
+            $data['large_medical_base'] = $largeMedicalConfig->employee_base_amount ?? $largeMedicalConfig->base_amount;
+            $data['large_medical_company_base'] = $largeMedicalConfig->base_amount;
+            return;
+        }
+
+        $data['large_medical_base'] = ($medicalBase === null || $medicalBase === '') ? null : $medicalBase;
+        $data['large_medical_company_base'] = null;
     }
 
     public function index(Request $request)
@@ -1033,6 +1157,8 @@ class EmployeeController extends ApiController
                 $employeeData['insurance_completed_at'] = date('Y-m-d H:i:s', strtotime($employeeData['insurance_completed_at']));
             }
         }
+
+        $this->syncLargeMedicalWithMedical($employeeData);
         
         // 【账套关联】自动关联到当前账套
         $currentAccountSetId = $request->input('current_account_set_id');
@@ -1346,7 +1472,9 @@ class EmployeeController extends ApiController
                 $updateData['insurance_completed_at'] = date('Y-m-d H:i:s', strtotime($updateData['insurance_completed_at']));
             }
         }
-        
+
+        $this->syncLargeMedicalWithMedical($updateData, $employee);
+
         // 记录项目变更前后的对比（单活跃项目）
         $originalInsuranceData = $employee->only([
             'social_security_region_id',
@@ -4427,10 +4555,7 @@ class EmployeeController extends ApiController
             }
 
             // 检查是否有待处理的"开启大额医疗保险"任务（无论开关状态）
-            $pendingTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                ->whereIn('status', ['pending', 'submitted'])
-                ->whereIn('change_summary', ['开启大额医疗保险', '关闭大额医疗保险'])
-                ->first();
+            $pendingTask = $this->findPendingLargeMedicalTask($employee);
 
             if ($pendingTask) {
                 return response()->json([
@@ -4575,10 +4700,7 @@ class EmployeeController extends ApiController
                 ], 400);
             }
 
-            $pendingTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                ->whereIn('status', ['pending', 'submitted'])
-                ->whereIn('change_summary', ['开启大额医疗保险', '关闭大额医疗保险'])
-                ->first();
+            $pendingTask = $this->findPendingLargeMedicalTask($employee);
 
             if ($pendingTask) {
                 return response()->json([
@@ -4668,6 +4790,46 @@ class EmployeeController extends ApiController
         }
     }
 
+    private function insuranceChangeContainsLargeMedical(\App\Models\InsuranceChange $change): bool
+    {
+        if (in_array($change->change_summary, ['开启大额医疗保险', '关闭大额医疗保险'], true)) {
+            return true;
+        }
+
+        $details = $change->change_details;
+        if (is_string($details)) {
+            $details = json_decode($details, true);
+        }
+
+        if (!is_array($details)) {
+            return false;
+        }
+
+        $changes = $details['changes'] ?? $details;
+        if (!is_array($changes)) {
+            return false;
+        }
+
+        foreach ($changes as $item) {
+            if (($item['category'] ?? null) === 'large_medical_insurance') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function findPendingLargeMedicalTask(Employee $employee): ?\App\Models\InsuranceChange
+    {
+        return \App\Models\InsuranceChange::where('employee_id', $employee->id)
+            ->whereIn('status', ['pending', 'submitted'])
+            ->latest('id')
+            ->get()
+            ->first(function ($change) {
+                return $this->insuranceChangeContainsLargeMedical($change);
+            });
+    }
+
     private function buildLargeMedicalStatusData(Employee $employee): array
     {
         if (!$employee->large_medical_insurance_config_id) {
@@ -4687,14 +4849,11 @@ class EmployeeController extends ApiController
             ->where('status', 'active')
             ->first();
 
-        $pendingTask = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-            ->whereIn('status', ['pending', 'submitted'])
-            ->whereIn('change_summary', ['开启大额医疗保险', '关闭大额医疗保险'])
-            ->latest('id')
-            ->first();
+        $pendingTask = $this->findPendingLargeMedicalTask($employee);
 
         if ($pendingTask) {
-            $isDisableTask = $pendingTask->change_summary === '关闭大额医疗保险';
+            $isDisableTask = $pendingTask->change_summary === '关闭大额医疗保险'
+                || $pendingTask->change_type === 'decrease';
 
             return [
                 'has_config' => true,

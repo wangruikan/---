@@ -1818,7 +1818,7 @@
         <!-- 参保地区选择 -->
         <el-divider content-position="left">保险信息</el-divider>
         <el-row :gutter="30">
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="社保参保日期" prop="social_insurance_enrollment_date">
               <el-date-picker
                 v-model="form.social_insurance_enrollment_date"
@@ -1832,7 +1832,7 @@
               <div class="form-tip">社保开始参保的月份</div>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="公积金参保日期" prop="provident_fund_enrollment_date">
               <el-date-picker
                 v-model="form.provident_fund_enrollment_date"
@@ -1846,7 +1846,7 @@
               <div class="form-tip">公积金开始参保的月份</div>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="医保参保日期" prop="medical_insurance_enrollment_date">
               <el-date-picker
                 v-model="form.medical_insurance_enrollment_date"
@@ -1858,20 +1858,6 @@
                 value-format="YYYY-MM-DD"
               />
               <div class="form-tip">医保开始参保的月份</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="大额参保日期" prop="large_medical_enrollment_date">
-              <el-date-picker
-                v-model="form.large_medical_enrollment_date"
-                type="month"
-                placeholder="请选择大额参保日期"
-                style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
-                format="YYYY-MM"
-                value-format="YYYY-MM-DD"
-              />
-              <div class="form-tip">大额医疗开始参保的月份（可选）</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -1969,34 +1955,8 @@
           </el-col>
         </el-row>
         
-        <!-- 大额医疗保险配置选择 -->
+        <!-- 大额医疗保险状态按钮 -->
         <el-row :gutter="30">
-          <el-col :span="8">
-            <el-form-item label="大额医疗保险" prop="large_medical_insurance_config_id">
-              <el-select
-                v-model="form.large_medical_insurance_config_id"
-                placeholder="请选择大额医疗保险配置"
-                style="width: 100%"
-                :disabled="isViewMode"
-                @change="handleLargeMedicalInsuranceConfigChange"
-                clearable
-              >
-                <el-option
-                  v-for="config in availableLargeMedicalInsuranceConfigs"
-                  :key="config.id"
-                  :label="`${config.region_name} (${config.calculation_type === 'base' ? '按基数' : '固定金额'})`"
-                  :value="config.id"
-                >
-                  <span>{{ config.region_name }}</span>
-                  <span style="float: right; color: #8492a6; font-size: 12px">
-                    {{ config.calculation_type === 'base' ? '按基数' : '固定金额' }}
-                  </span>
-                </el-option>
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的大额医疗保险配置中选择</div>
-            </el-form-item>
-          </el-col>
-          <!-- 大额医疗保险状态按钮 -->
           <el-col :span="8" v-if="isEdit && currentLargeMedicalStatus">
             <el-form-item label="大额参保状态">
               <div style="display: flex; align-items: center; gap: 10px;">
@@ -3677,7 +3637,7 @@
         <!-- 参保地区选择 -->
         <el-divider content-position="left">保险信息</el-divider>
         <el-row :gutter="30">
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="社保参保日期" prop="social_insurance_enrollment_date">
               <el-date-picker
                 v-model="form.social_insurance_enrollment_date"
@@ -3690,7 +3650,7 @@
               <div class="form-tip">社保开始参保的月份</div>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="公积金参保日期" prop="provident_fund_enrollment_date">
               <el-date-picker
                 v-model="form.provident_fund_enrollment_date"
@@ -3703,7 +3663,7 @@
               <div class="form-tip">公积金开始参保的月份</div>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="医保参保日期" prop="medical_insurance_enrollment_date">
               <el-date-picker
                 v-model="form.medical_insurance_enrollment_date"
@@ -3714,19 +3674,6 @@
                 value-format="YYYY-MM-DD"
               />
               <div class="form-tip">医保开始参保的月份</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item label="大额参保日期" prop="large_medical_enrollment_date">
-              <el-date-picker
-                v-model="form.large_medical_enrollment_date"
-                type="month"
-                placeholder="请选择大额参保日期"
-                style="width: 100%"
-                format="YYYY-MM"
-                value-format="YYYY-MM-DD"
-              />
-              <div class="form-tip">大额医疗开始参保的月份（可选）</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -3816,34 +3763,6 @@
                 </el-option>
               </el-select>
               <div class="form-tip">选择该地区下的具体公积金配置</div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        
-        <!-- 大额医疗保险配置选择 -->
-        <el-row :gutter="30">
-          <el-col :span="8">
-            <el-form-item label="大额医疗保险" prop="large_medical_insurance_config_id">
-              <el-select
-                v-model="form.large_medical_insurance_config_id"
-                placeholder="请选择大额医疗保险配置"
-                style="width: 100%"
-                @change="handleLargeMedicalInsuranceConfigChange"
-                clearable
-              >
-                <el-option
-                  v-for="config in availableLargeMedicalInsuranceConfigs"
-                  :key="config.id"
-                  :label="`${config.region_name} (${config.calculation_type === 'base' ? '按基数' : '固定金额'})`"
-                  :value="config.id"
-                >
-                  <span>{{ config.region_name }}</span>
-                  <span style="float: right; color: #8492a6; font-size: 12px">
-                    {{ config.calculation_type === 'base' ? '按基数' : '固定金额' }}
-                  </span>
-                </el-option>
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的大额医疗保险配置中选择</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -6256,6 +6175,42 @@ const normalizeInsuranceRegionIdForSubmit = (value) => {
   return value
 }
 
+const normalizeRegionName = (value) => {
+  if (value === null || value === undefined) {
+    return ''
+  }
+  return String(value).trim()
+}
+
+const resolveLargeMedicalInsuranceConfigByMedicalRegionId = (medicalRegionId) => {
+  const normalizedMedicalRegionId = normalizeInsuranceRegionIdForSubmit(medicalRegionId)
+  if (!normalizedMedicalRegionId) {
+    return null
+  }
+
+  const medicalRegion = availableMedicalInsuranceRegions.value.find(
+    region => Number(region.id) === Number(normalizedMedicalRegionId)
+  )
+
+  if (!medicalRegion) {
+    return null
+  }
+
+  const regionNames = [
+    normalizeRegionName(medicalRegion.region_name),
+    normalizeRegionName(medicalRegion.name)
+  ].filter(Boolean)
+
+  if (regionNames.length === 0) {
+    return null
+  }
+
+  return availableLargeMedicalInsuranceConfigs.value.find((config) => {
+    const configRegionName = normalizeRegionName(config.region_name)
+    return regionNames.includes(configRegionName)
+  }) || null
+}
+
 const normalizeNullableId = (value) => {
   if (value === null || value === undefined || value === '') {
     return null
@@ -6322,9 +6277,7 @@ const insurancePairFieldMeta = {
   medical_insurance_region_id: { pairedField: 'medical_insurance_enrollment_date', regionLabel: '医保地区', dateLabel: '医保参保日期', fieldType: 'region' },
   medical_insurance_enrollment_date: { pairedField: 'medical_insurance_region_id', regionLabel: '医保地区', dateLabel: '医保参保日期', fieldType: 'date' },
   housing_fund_region_id: { pairedField: 'provident_fund_enrollment_date', regionLabel: '公积金地区', dateLabel: '公积金参保日期', fieldType: 'region' },
-  provident_fund_enrollment_date: { pairedField: 'housing_fund_region_id', regionLabel: '公积金地区', dateLabel: '公积金参保日期', fieldType: 'date' },
-  large_medical_insurance_config_id: { pairedField: 'large_medical_enrollment_date', regionLabel: '大额医疗保险', dateLabel: '大额医疗参保日期', fieldType: 'region' },
-  large_medical_enrollment_date: { pairedField: 'large_medical_insurance_config_id', regionLabel: '大额医疗保险', dateLabel: '大额医疗参保日期', fieldType: 'date' }
+  provident_fund_enrollment_date: { pairedField: 'housing_fund_region_id', regionLabel: '公积金地区', dateLabel: '公积金参保日期', fieldType: 'date' }
 }
 
 const isFilledInsuranceField = (field, value) => {
@@ -6365,7 +6318,7 @@ const validateMedicalInsuranceBaseForLargeMedical = (_rule, value, callback) => 
     selectedLargeMedicalInsuranceConfig.value.base_source !== 'config' &&
     normalizeNullableNumber(value) === null
   ) {
-    callback(new Error('已选择大额医疗保险，请先填写医保基数'))
+    callback(new Error('当前医保地区已绑定大额医疗，请先填写医保基数'))
     return
   }
 
@@ -6383,9 +6336,7 @@ const triggerDateAndInsuranceValidation = async () => {
     'medical_insurance_region_id',
     'medical_insurance_enrollment_date',
     'housing_fund_region_id',
-    'provident_fund_enrollment_date',
-    'large_medical_insurance_config_id',
-    'large_medical_enrollment_date'
+    'provident_fund_enrollment_date'
   ]
   fields.forEach((field) => {
     formRef.value?.validateField?.(field)
@@ -6504,6 +6455,8 @@ const syncBankAccountHolderWithName = (source) => {
 const buildEmployeeSubmitPayload = (source) => {
   const normalizedSource = normalizeInsuranceEnrollmentMonthFields(source)
   const bankAccountHolder = normalizedSource.name ? String(normalizedSource.name).trim() : ''
+  const medicalInsuranceRegionId = normalizeInsuranceRegionIdForSubmit(normalizedSource.medical_insurance_region_id)
+  const largeMedicalConfig = resolveLargeMedicalInsuranceConfigByMedicalRegionId(medicalInsuranceRegionId)
   const payload = {
     ...normalizedSource,
     basic_salary: normalizeNullableNumber(normalizedSource.basic_salary),
@@ -6512,17 +6465,14 @@ const buildEmployeeSubmitPayload = (source) => {
     skip_form_filling: !!normalizedSource.skip_form_filling,
     other_insurance_enabled: normalizeOtherInsuranceEnabled(normalizedSource.other_insurance_enabled),
     social_security_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.social_security_region_id),
-    medical_insurance_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.medical_insurance_region_id),
+    medical_insurance_region_id: medicalInsuranceRegionId,
     housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.housing_fund_region_id),
-    salary_items: buildMergedSalaryItems(normalizedSource)
-  }
-  const largeMedicalConfig = availableLargeMedicalInsuranceConfigs.value.find(
-    item => item.id === payload.large_medical_insurance_config_id
-  ) || (
-    selectedLargeMedicalInsuranceConfig.value?.id === payload.large_medical_insurance_config_id
-      ? selectedLargeMedicalInsuranceConfig.value
+    salary_items: buildMergedSalaryItems(normalizedSource),
+    large_medical_insurance_config_id: largeMedicalConfig?.id ?? null,
+    large_medical_enrollment_date: largeMedicalConfig
+      ? (normalizedSource.medical_insurance_enrollment_date || null)
       : null
-  )
+  }
 
   if (!largeMedicalConfig) {
     payload.large_medical_base = null
@@ -6905,12 +6855,6 @@ const formRules = {
   ],
   provident_fund_enrollment_date: [
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
-  ],
-  large_medical_insurance_config_id: [
-    { validator: validateInsurancePairCompleteness, trigger: 'change' }
-  ],
-  large_medical_enrollment_date: [
-    { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ]
 }
 
@@ -6981,7 +6925,7 @@ const syncLargeMedicalBaseFromMedicalInsuranceBase = ({ warnIfMissing = false } 
     form.large_medical_base = null
     form.large_medical_company_base = null
     if (warnIfMissing) {
-      ElMessage.warning('已选择大额医疗保险，请先填写医保基数')
+      ElMessage.warning('当前医保地区已绑定大额医疗，请先填写医保基数')
     }
     return false
   }
@@ -6991,9 +6935,39 @@ const syncLargeMedicalBaseFromMedicalInsuranceBase = ({ warnIfMissing = false } 
   return true
 }
 
+const syncLargeMedicalSelectionFromMedicalInsurance = ({ warnIfMissingBase = false } = {}) => {
+  const largeMedicalConfig = resolveLargeMedicalInsuranceConfigByMedicalRegionId(form.medical_insurance_region_id)
+
+  if (!largeMedicalConfig) {
+    form.large_medical_insurance_config_id = null
+    form.large_medical_enrollment_date = null
+    selectedLargeMedicalInsuranceConfig.value = null
+    syncLargeMedicalBaseFromMedicalInsuranceBase()
+    formRef.value?.clearValidate?.('medical_insurance_base')
+    return false
+  }
+
+  form.large_medical_insurance_config_id = largeMedicalConfig.id
+  form.large_medical_enrollment_date = form.medical_insurance_enrollment_date || null
+  selectedLargeMedicalInsuranceConfig.value = largeMedicalConfig
+  syncLargeMedicalBaseFromMedicalInsuranceBase({ warnIfMissing: warnIfMissingBase })
+  formRef.value?.validateField?.('medical_insurance_base')
+
+  return true
+}
+
 watch(() => form.medical_insurance_base, () => {
   syncLargeMedicalBaseFromMedicalInsuranceBase()
   formRef.value?.validateField?.('medical_insurance_base')
+})
+
+watch(() => form.medical_insurance_enrollment_date, (value) => {
+  if (!form.medical_insurance_region_id || !selectedLargeMedicalInsuranceConfig.value) {
+    form.large_medical_enrollment_date = null
+    return
+  }
+
+  form.large_medical_enrollment_date = value || null
 })
 
 // 工资卡验证规则
@@ -7205,9 +7179,9 @@ const handleEnableLargeMedical = async (row) => {
     return
   }
   
-  // 校验是否填写了大额参保日期
-  if (!row.large_medical_enrollment_date) {
-    ElMessage.warning('该员工未填写大额医疗参保日期，请先在人员档案中编辑填写后再启用')
+  // 大额参保日期跟随医保参保日期
+  if (!row.medical_insurance_enrollment_date) {
+    ElMessage.warning('该员工未填写医保参保日期，请先在人员档案中编辑填写后再启用')
     return
   }
   
@@ -7283,9 +7257,9 @@ const handleEnableLargeMedicalInDialog = async () => {
     return
   }
   
-  // 校验是否填写了大额参保日期
-  if (!form.large_medical_enrollment_date) {
-    ElMessage.warning('请先填写大额医疗参保日期后再启用')
+  // 大额参保日期跟随医保参保日期
+  if (!form.medical_insurance_enrollment_date) {
+    ElMessage.warning('请先填写医保参保日期后再启用')
     return
   }
   
@@ -8096,6 +8070,9 @@ const handleProjectIdsChange = async (projectIds, { preserveDocumentSet = false 
   form.housing_fund_region_id = null
   form.housing_fund_config_id = null
   form.large_medical_insurance_config_id = null
+  form.large_medical_enrollment_date = null
+  form.large_medical_base = null
+  form.large_medical_company_base = null
   selectedSocialSecurityRegion.value = null
   selectedMedicalInsuranceRegion.value = null
   selectedHousingFundRegion.value = null
@@ -8142,12 +8119,15 @@ const loadProjectLargeMedicalInsuranceConfigs = async (projectIds) => {
     
     if (response.success) {
       availableLargeMedicalInsuranceConfigs.value = response.data || []
+      syncLargeMedicalSelectionFromMedicalInsurance()
     } else {
       availableLargeMedicalInsuranceConfigs.value = []
+      syncLargeMedicalSelectionFromMedicalInsurance()
     }
   } catch (error) {
     console.error('加载大额医疗保险配置失败:', error)
     availableLargeMedicalInsuranceConfigs.value = []
+    syncLargeMedicalSelectionFromMedicalInsurance()
   }
 }
 
@@ -8168,6 +8148,7 @@ const handleSocialSecurityRegionChange = (regionId) => {
 const handleMedicalInsuranceRegionChange = (regionId) => {
   if (isNoInsuranceSelected(regionId)) {
     selectedMedicalInsuranceRegion.value = null
+    syncLargeMedicalSelectionFromMedicalInsurance()
     return
   }
   if (regionId) {
@@ -8175,6 +8156,7 @@ const handleMedicalInsuranceRegionChange = (regionId) => {
   } else {
     selectedMedicalInsuranceRegion.value = null
   }
+  syncLargeMedicalSelectionFromMedicalInsurance()
 }
 
 // 处理公积金地区变化
@@ -8241,20 +8223,6 @@ const handleHousingFundConfigChange = (configId) => {
   }
 }
 
-// 处理大额医疗保险配置变化
-const handleLargeMedicalInsuranceConfigChange = (configId) => {
-  if (configId) {
-    selectedLargeMedicalInsuranceConfig.value = availableLargeMedicalInsuranceConfigs.value.find(c => c.id === configId)
-    syncLargeMedicalBaseFromMedicalInsuranceBase({ warnIfMissing: true })
-    formRef.value?.validateField?.('medical_insurance_base')
-  } else {
-    selectedLargeMedicalInsuranceConfig.value = null
-    syncLargeMedicalBaseFromMedicalInsuranceBase()
-    formRef.value?.clearValidate?.('medical_insurance_base')
-  }
-}
-
-
 const handleSizeChange = (size) => {
   pagination.pageSize = size
   loadEmployees()
@@ -8287,6 +8255,8 @@ const handleView = async (row) => {
   isViewMode.value = true
   isEdit.value = false
   activeTab.value = 'employee'
+  selectedLargeMedicalInsuranceConfig.value = null
+  availableLargeMedicalInsuranceConfigs.value = []
   registrationFormType.value = 'onboarding'  // 重置登记表类型
   registrationForm.value = null  // 重置从业人员登记表数据
   loadTransferLogs(row.id)
@@ -8362,10 +8332,7 @@ const handleView = async (row) => {
       // 5. 设置大额医疗保险配置
       if (data.large_medical_insurance_configs) {
         availableLargeMedicalInsuranceConfigs.value = data.large_medical_insurance_configs
-        if (form.large_medical_insurance_config_id) {
-          selectedLargeMedicalInsuranceConfig.value = availableLargeMedicalInsuranceConfigs.value.find(c => c.id === form.large_medical_insurance_config_id)
-          syncLargeMedicalBaseFromMedicalInsuranceBase()
-        }
+        syncLargeMedicalSelectionFromMedicalInsurance()
       }
       
       // 6. 设置入职登记表
@@ -8438,6 +8405,8 @@ const handleEdit = async (row) => {
   isEdit.value = true
   isViewMode.value = false
   activeTab.value = 'employee'
+  selectedLargeMedicalInsuranceConfig.value = null
+  availableLargeMedicalInsuranceConfigs.value = []
   loadTransferLogs(row.id)
   
   // 如果是离职或退休状态，加载离职证明
@@ -8511,10 +8480,7 @@ const handleEdit = async (row) => {
       // 5. 设置大额医疗保险配置
       if (data.large_medical_insurance_configs) {
         availableLargeMedicalInsuranceConfigs.value = data.large_medical_insurance_configs
-        if (form.large_medical_insurance_config_id) {
-          selectedLargeMedicalInsuranceConfig.value = availableLargeMedicalInsuranceConfigs.value.find(c => c.id === form.large_medical_insurance_config_id)
-          syncLargeMedicalBaseFromMedicalInsuranceBase()
-        }
+        syncLargeMedicalSelectionFromMedicalInsurance()
       }
       
       // 6. 设置入职登记表

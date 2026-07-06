@@ -407,6 +407,7 @@ class InsuranceChangeDetectionService
         $personnel = $options['personnel'] ?? null;
         $taskAction = $options['task_action'] ?? 'increase';
         $otherInsuranceEnabled = $this->isOtherInsuranceEnabledForEmployee($employee);
+        $largeMedicalEnabled = $this->shouldEnableLargeMedicalForChange($employee, $personnel);
 
         $genderValue = null;
         if (is_numeric($employee->gender)) {
@@ -432,7 +433,7 @@ class InsuranceChangeDetectionService
             'housing_fund_region_id' => $employee->housing_fund_region_id,
             'housing_fund_config_id' => $employee->housing_fund_config_id,
             'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id ?: ($personnel->large_medical_insurance_config_id ?? null),
-            'large_medical_insurance_enabled' => $personnel->large_medical_insurance_enabled ?? false,
+            'large_medical_insurance_enabled' => $largeMedicalEnabled,
             'employee_social_security_base' => $employee->social_security_base ?? ($personnel->employee_social_security_base ?? 0),
             'employee_medical_insurance_base' => $employee->medical_insurance_base ?? ($personnel->employee_medical_insurance_base ?? 0),
             'employee_housing_fund_base' => $employee->housing_fund_base ?? ($personnel->employee_housing_fund_base ?? 0),
@@ -453,6 +454,15 @@ class InsuranceChangeDetectionService
         }
 
         return $change;
+    }
+
+    private function shouldEnableLargeMedicalForChange(Employee $employee, ?InsurancePersonnel $personnel = null): bool
+    {
+        if ($personnel) {
+            return (bool) ($personnel->large_medical_insurance_enabled ?? false);
+        }
+
+        return !empty($employee->large_medical_insurance_config_id);
     }
 
     private function fillChangeSnapshotsFromState(
@@ -899,7 +909,7 @@ class InsuranceChangeDetectionService
                     'housing_fund_region_id' => $employee->housing_fund_region_id,
                     'housing_fund_config_id' => $employee->housing_fund_config_id,
                     'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id,
-                    'large_medical_insurance_enabled' => false,  // 默认关闭，需要手动开启
+                    'large_medical_insurance_enabled' => $this->shouldEnableLargeMedicalForChange($employee),
                     'employee_social_security_base' => $employee->social_security_base,
                     'employee_medical_insurance_base' => $employee->medical_insurance_base,
                     'employee_housing_fund_base' => $employee->housing_fund_base,
@@ -1219,6 +1229,7 @@ class InsuranceChangeDetectionService
             case 'large_medical_insurance':
                 return [
                     'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id,
+                    'large_medical_insurance_enabled' => $this->shouldEnableLargeMedicalForChange($employee),
                     'employee_large_medical_base' => $employee->large_medical_base,
                     'employee_large_medical_company_base' => $employee->large_medical_company_base,
                 ];

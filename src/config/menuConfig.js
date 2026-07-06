@@ -51,6 +51,7 @@ export const menuConfig = [
     requireBusiness: true,
     children: [
       { title: '付款申请', path: '/payment-applications', icon: 'DocumentChecked' },
+      { title: '收款信息维护', path: '/payment-payees', icon: 'List', skipPermissionCheck: true },
       { title: '出款汇总', path: '/payment-summaries', icon: 'List' },
       { title: '发票申请', path: '/invoice-applications', icon: 'Document' },
       { title: '发票汇总', path: '/invoice-summary', icon: 'List' },

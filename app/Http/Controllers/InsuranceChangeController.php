@@ -1638,18 +1638,19 @@ class InsuranceChangeController extends ApiController
             $result = $this->normalizeProcessResult($request->input('result'));
 
             if ($this->isChangeItemsEnabled()) {
-                if ($category === null) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => '请选择处理业务'
-                    ], 422);
+                if ($category !== null) {
+                    if ($result === 'failed') {
+                        return $this->failProcessByCategory($change, $category, $user);
+                    }
+
+                    return $this->confirmProcessByCategory($change, $category, $user);
                 }
 
                 if ($result === 'failed') {
-                    return $this->failProcessByCategory($change, $category, $user);
+                    return $this->failProcessAll($change, $user);
                 }
 
-                return $this->confirmProcessByCategory($change, $category, $user);
+                return $this->confirmProcessAll($change, $user);
             }
 
             // Permission checks are intentionally relaxed here for compatibility.
@@ -1834,6 +1835,104 @@ class InsuranceChangeController extends ApiController
                 'processed_by' => $user && $user->id ? $user->id : null,
                 'processed_at' => now(),
             ]);
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记失败，并生成下月续办任务',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function confirmProcessAll(InsuranceChange $change, $user)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('status', ['pending', 'submitted'])
+            ->get();
+
+        if ($items->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前状态不允许处理'
+            ], 400);
+        }
+
+        if ($items->contains(function ($item) {
+            return $item->category === 'other_insurance';
+        })) {
+            $validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change);
+            if ($validationResponse) {
+                return $validationResponse;
+            }
+        }
+
+        DB::transaction(function () use ($change, $items, $user) {
+            foreach ($items as $item) {
+                $this->applyCategorySuccessToCurrentMonth($change, $item->category);
+
+                if ($item->category === 'other_insurance') {
+                    $change->update([
+                        'other_insurance_processed' => 1,
+                    ]);
+                }
+
+                $item->update([
+                    'status' => 'completed',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '业务处理成功',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function failProcessAll(InsuranceChange $change, $user)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('status', ['pending', 'submitted'])
+            ->get();
+
+        if ($items->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前状态不允许处理'
+            ], 400);
+        }
+
+        $hasGeneralAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->whereNull('insurance_change_item_id')
+            ->exists();
+
+        if (!$hasGeneralAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '失败时必须上传整单处理附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $items, $user) {
+            foreach ($items as $item) {
+                $this->createNextMonthCarryoverChange($change, $item->category, $user);
+
+                $item->update([
+                    'status' => 'failed',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
 
             $this->syncChangeStatusFromItems($change, $user);
         });

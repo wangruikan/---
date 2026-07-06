@@ -117,39 +117,55 @@
               <el-table-column prop="employee.name" label="员工姓名" width="120" />
               <el-table-column label="增减类型" width="100">
                 <template #default="{ row }">
-                  <el-tag v-if="row.change_type === 'decrease'" type="danger">
-                    减少
+                  <!-- 如果有变更摘要，说明是配置变更，不是真正的新增或减少 -->
+                  <el-tag v-if="row.change_summary" type="warning">
+                    配置变更
+                  </el-tag>
+                  <el-tag v-else-if="row.change_type === 'decrease'" type="danger">
+                    减少参保
                   </el-tag>
                   <el-tag v-else type="success">
-                    增加
+                    新增参保
                   </el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="project.name" label="项目名称" width="150" />
               <!-- 参保地区列已隐藏 -->
-              <el-table-column label="状态" width="100">
+              <el-table-column label="状态" width="220">
                 <template #default="{ row }">
-                  <el-tag :type="getStatusTagType(row.status)">
-                    {{ getStatusText(row.status) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column
-                v-for="category in insuranceCategoryColumns"
-                :key="category.key"
-                :label="category.label"
-                width="110"
-                align="center"
-              >
-                <template #default="{ row }">
-                  <el-tag
-                    v-if="getCategoryDisplayStatus(row, category.key)"
-                    :type="getStatusTagType(getCategoryDisplayStatus(row, category.key))"
-                    size="small"
-                  >
-                    {{ getStatusText(getCategoryDisplayStatus(row, category.key)) }}
-                  </el-tag>
-                  <span v-else>-</span>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <el-tag :type="getStatusTagType(row.status)">
+                      {{ getStatusText(row.status) }}
+                    </el-tag>
+                    <!-- 显示变更标记（所有状态都显示，只要有变更摘要） -->
+                    <div v-if="row.change_summary" style="display: flex; flex-wrap: wrap; gap: 4px;">
+                      <el-tag v-if="row.change_summary.includes('社保')" type="success" size="small" effect="dark">
+                        🟢 社保变更
+                      </el-tag>
+                      <el-tag v-if="row.change_summary.includes('医保')" type="primary" size="small" effect="dark">
+                        🔵 医保变更
+                      </el-tag>
+                      <el-tag v-if="row.change_summary.includes('公积金')" type="warning" size="small" effect="dark">
+                        🟡 公积金变更
+                      </el-tag>
+                      <el-tag v-if="row.change_summary.includes('大额')" type="info" size="small" effect="dark">
+                        🟣 大额医疗变更
+                      </el-tag>
+                      <el-tag v-if="row.change_summary.includes('其他保险')" type="danger" size="small" effect="dark">
+                        🔴 其他保险变更
+                      </el-tag>
+                      <!-- 如果没有匹配到具体类型，显示通用变更标记 -->
+                      <el-tag 
+                        v-if="!row.change_summary.includes('社保') && !row.change_summary.includes('医保') && !row.change_summary.includes('公积金') && !row.change_summary.includes('大额') && !row.change_summary.includes('其他保险')" 
+                        type="danger" 
+                        size="small" 
+                        effect="dark"
+                      >
+                        <el-icon style="margin-right: 2px;"><Warning /></el-icon>
+                        有变更
+                      </el-tag>
+                    </div>
+                  </div>
                 </template>
               </el-table-column>
               <el-table-column label="附件" width="120">

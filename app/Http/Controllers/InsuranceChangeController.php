@@ -1635,9 +1635,25 @@ class InsuranceChangeController extends ApiController
             $change = InsuranceChange::findOrFail($id);
             $user = $request->user();
             $category = $this->normalizeChangeCategory($request->input('category'));
+            $categories = $this->normalizeChangeCategories($request->input('categories'), $category);
             $result = $this->normalizeProcessResult($request->input('result'));
 
             if ($this->isChangeItemsEnabled()) {
+                if ($request->has('categories')) {
+                    if (empty($categories)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => '请选择处理业务'
+                        ], 422);
+                    }
+
+                    if ($result === 'failed') {
+                        return $this->failProcessByCategories($change, $categories, $user);
+                    }
+
+                    return $this->confirmProcessByCategories($change, $categories, $user);
+                }
+
                 if ($category !== null) {
                     if ($result === 'failed') {
                         return $this->failProcessByCategory($change, $category, $user);
@@ -1751,6 +1767,27 @@ class InsuranceChangeController extends ApiController
         return in_array($category, $allowed, true) ? $category : null;
     }
 
+    private function normalizeChangeCategories($categories, ?string $fallbackCategory = null): array
+    {
+        $normalized = [];
+
+        if (is_array($categories)) {
+            $normalized = $categories;
+        } elseif (is_string($categories) && trim($categories) !== '') {
+            $normalized = [$categories];
+        }
+
+        if ($fallbackCategory !== null) {
+            $normalized[] = $fallbackCategory;
+        }
+
+        $normalized = array_map(function ($category) {
+            return $this->normalizeChangeCategory($category);
+        }, $normalized);
+
+        return array_values(array_unique(array_filter($normalized)));
+    }
+
     private function confirmProcessByCategory(InsuranceChange $change, string $category, $user)
     {
         $this->syncChangeItems($change);
@@ -1835,6 +1872,135 @@ class InsuranceChangeController extends ApiController
                 'processed_by' => $user && $user->id ? $user->id : null,
                 'processed_at' => now(),
             ]);
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记失败，并生成下月续办任务',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function confirmProcessByCategories(InsuranceChange $change, array $categories, $user)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('category', $categories)
+            ->get()
+            ->keyBy('category');
+
+        $missingCategories = array_values(array_diff($categories, $items->keys()->all()));
+        if (!empty($missingCategories)) {
+            return response()->json([
+                'success' => false,
+                'message' => '未找到可处理的业务项'
+            ], 400);
+        }
+
+        $unprocessable = $items->filter(function ($item) {
+            return !in_array($item->status, ['pending', 'submitted'], true);
+        });
+
+        if ($unprocessable->isNotEmpty()) {
+            $labels = $unprocessable->map(function ($item) {
+                return $this->getCategoryDisplayText($item->category);
+            })->implode('、');
+
+            return response()->json([
+                'success' => false,
+                'message' => '以下业务当前不能处理：' . $labels
+            ], 400);
+        }
+
+        if (in_array('other_insurance', $categories, true) && ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change))) {
+            return $validationResponse;
+        }
+
+        DB::transaction(function () use ($change, $categories, $items, $user) {
+            foreach ($categories as $category) {
+                $item = $items->get($category);
+
+                $this->applyCategorySuccessToCurrentMonth($change, $category);
+
+                if ($category === 'other_insurance') {
+                    $change->update([
+                        'other_insurance_processed' => 1,
+                    ]);
+                }
+
+                $item->update([
+                    'status' => 'completed',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '业务处理成功',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function failProcessByCategories(InsuranceChange $change, array $categories, $user)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('category', $categories)
+            ->get()
+            ->keyBy('category');
+
+        $missingCategories = array_values(array_diff($categories, $items->keys()->all()));
+        if (!empty($missingCategories)) {
+            return response()->json([
+                'success' => false,
+                'message' => '未找到可处理的业务项'
+            ], 400);
+        }
+
+        $unprocessable = $items->filter(function ($item) {
+            return !in_array($item->status, ['pending', 'submitted'], true);
+        });
+
+        if ($unprocessable->isNotEmpty()) {
+            $labels = $unprocessable->map(function ($item) {
+                return $this->getCategoryDisplayText($item->category);
+            })->implode('、');
+
+            return response()->json([
+                'success' => false,
+                'message' => '以下业务当前不能处理：' . $labels
+            ], 400);
+        }
+
+        $hasGeneralAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->whereNull('insurance_change_item_id')
+            ->exists();
+
+        if (!$hasGeneralAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '失败时必须上传处理附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $categories, $items, $user) {
+            foreach ($categories as $category) {
+                $this->createNextMonthCarryoverChange($change, $category, $user);
+
+                $items->get($category)->update([
+                    'status' => 'failed',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
 
             $this->syncChangeStatusFromItems($change, $user);
         });

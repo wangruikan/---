@@ -178,6 +178,7 @@
       </div>
       <el-checkbox-group v-model="selectedModules" @change="handleModuleChange">
         <el-checkbox label="employee" border>员工信息</el-checkbox>
+        <el-checkbox label="contract" border>合同情况</el-checkbox>
         <el-checkbox label="insurance" border>保险信息</el-checkbox>
         <el-checkbox label="documents" border>资料上传</el-checkbox>
         <!-- <el-checkbox label="personal" border>个人信息</el-checkbox> -->
@@ -202,7 +203,7 @@
           <!-- 始终显示的列 -->
           <el-table-column prop="employee_number" label="工号" width="120" fixed="left" />
           <el-table-column prop="name" label="姓名" width="100" fixed="left" />
-          <el-table-column prop="projects" label="所属项目" min-width="200">
+          <el-table-column prop="projects" label="所属项目" width="200" fixed="left">
             <template #default="{ row }">
               <el-tag
                 v-for="project in getDisplayProjects(row)"
@@ -214,33 +215,52 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="display_personnel_status" label="人员状态" width="100">
+          <el-table-column prop="display_personnel_status" label="人员状态" width="100" fixed="left">
             <template #default="{ row }">
               <el-tag :type="getEmployeePersonnelStatusType(getDisplayPersonnelStatus(row))">
                 {{ getEmployeePersonnelStatusText(getDisplayPersonnelStatus(row)) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="display_labor_contract_status" label="合同状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="getLaborContractStatusType(getDisplayLaborContractStatus(row))">
-                {{ getLaborContractStatusText(getDisplayLaborContractStatus(row)) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          
-          <!-- 线下合同上传状态 -->
-          <el-table-column label="线下合同" width="110">
-            <template #default="{ row }">
-              <el-tag 
-                v-if="row.is_offline_onboarding" 
-                :type="row.contract_uploaded ? 'success' : 'warning'"
-              >
-                {{ row.contract_uploaded ? '已上传' : '待上传' }}
-              </el-tag>
-              <el-text v-else type="info">-</el-text>
-            </template>
-          </el-table-column>
+
+          <template v-if="selectedModules.includes('contract')">
+            <el-table-column prop="display_labor_contract_status" label="合同状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getLaborContractStatusType(getDisplayLaborContractStatus(row))">
+                  {{ getLaborContractStatusText(getDisplayLaborContractStatus(row)) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="线下合同" width="110">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="row.is_offline_onboarding"
+                  :type="row.contract_uploaded ? 'success' : 'warning'"
+                >
+                  {{ row.contract_uploaded ? '已上传' : '待上传' }}
+                </el-tag>
+                <el-text v-else type="info">-</el-text>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="续签" width="80" align="center">
+              <template #default="{ row }">
+                {{ row.completed_labor_contract_count ?? 0 }}
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="contract_start_date" label="合同开始日期" width="130">
+              <template #default="{ row }">
+                {{ formatDate(row.contract_start_date) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="contract_end_date" label="合同结束日期" width="130">
+              <template #default="{ row }">
+                {{ formatDate(row.contract_end_date) }}
+              </template>
+            </el-table-column>
+          </template>
           
           <!-- 员工信息视图的列 -->
           <template v-if="selectedModules.includes('employee')">
@@ -262,16 +282,6 @@
             <el-table-column prop="hire_date" label="入职日期" width="120">
               <template #default="{ row }">
                 {{ formatDate(row.hire_date) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="contract_start_date" label="合同开始日期" width="130">
-              <template #default="{ row }">
-                {{ formatDate(row.contract_start_date) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="contract_end_date" label="合同结束日期" width="130">
-              <template #default="{ row }">
-                {{ formatDate(row.contract_end_date) }}
               </template>
             </el-table-column>
             <el-table-column prop="country_region" label="国籍(地区)" width="120" />
@@ -5226,6 +5236,26 @@
           <div class="form-tip">选择盖章方式后，提交审批时将自动使用此方式</div>
         </el-form-item>
 
+        <el-form-item
+          v-if="needsTerminationReason(uploadForm.contract_type)"
+          label="离职原因"
+          required
+        >
+          <el-select
+            v-model="uploadForm.termination_reason"
+            placeholder="请选择离职原因"
+            style="width: 100%"
+            filterable
+          >
+            <el-option
+              v-for="reason in terminationReasonOptions"
+              :key="reason"
+              :label="reason"
+              :value="reason"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="选择模板" required v-if="uploadForm.contract_type && uploadForm.stamp_method !== 'offline'">
           <el-select
             v-model="uploadForm.template_id"
@@ -5307,12 +5337,33 @@
             v-model="uploadSignedForm.contract_type"
             placeholder="请选择合同类型"
             style="width: 100%"
+            @change="handleUploadSignedContractTypeChange"
           >
             <el-option label="劳动合同" value="labor" />
             <el-option label="保密协议" value="confidentiality" />
             <el-option label="解除协议合同" value="termination" />
             <el-option label="退休解除协议合同" value="retirement" />
             <el-option label="其他合同" value="other" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item
+          v-if="needsTerminationReason(uploadSignedForm.contract_type)"
+          label="离职原因"
+          required
+        >
+          <el-select
+            v-model="uploadSignedForm.termination_reason"
+            placeholder="请选择离职原因"
+            style="width: 100%"
+            filterable
+          >
+            <el-option
+              v-for="reason in terminationReasonOptions"
+              :key="reason"
+              :label="reason"
+              :value="reason"
+            />
           </el-select>
         </el-form-item>
         
@@ -6512,7 +6563,7 @@ const formatSalaryItems = (items) => {
 const batchEmployees = ref([]) // 待创建的员工列表
 const showBatchList = ref(false) // 显示批量列表对话框
 const batchCreating = ref(false) // 批量创建中
-const selectedModules = ref(['employee']) // 选中的模块，默认显示员工信息
+const selectedModules = ref(['employee', 'contract']) // 选中的模块，默认显示员工信息和合同情况
 const isViewMode = ref(false) // 添加查看模式标识
 const formRef = ref()
 
@@ -9788,6 +9839,7 @@ const uploadingSignedContract = ref(false)
 const uploadSignedForm = reactive({
   employee_id: null,
   contract_type: '',
+  termination_reason: '',
   notes: ''
 })
 const signedContractFile = ref(null)
@@ -9831,6 +9883,7 @@ const fileList = ref([])
 const uploadForm = reactive({
   employee_id: null,
   contract_type: '',
+  termination_reason: '',
   stamp_method: 'online',
   template_id: null,
   notes: ''
@@ -9838,6 +9891,26 @@ const uploadForm = reactive({
 
 // 可用模板列表
 const availableTemplates = ref([])
+
+const terminationReasonOptions = [
+  '人员调转(转出)',
+  '被辞退',
+  '参军',
+  '辞职',
+  '其他',
+  '用人单位破产终止劳动合同',
+  '用人单位被吊销、关闭、撤销、解散终止劳动合同',
+  '用人单位依法提出解除劳动合同',
+  '劳动合同期满终止劳动合同',
+  '退出现役未就业',
+  '劳动者本人依照劳动合同法第三十八条规定解除劳动合同',
+  '等待在职转退休',
+  '转公务员',
+  '开除除名',
+  '自动离职',
+  '上学',
+  '劳改劳教'
+]
 
 const normalizeContractApprovalStatus = (status) => {
   const statusMap = {
@@ -10119,6 +10192,10 @@ const getToken = () => {
 }
 // ========== 离职证明相关方法结束 ==========
 
+const needsTerminationReason = (contractType) => {
+  return ['termination', 'retirement'].includes(contractType)
+}
+
 // 选择合同类型
 const handleContractTypeSelect = async (contractType) => {
   console.log('=== 开始选择合同类型 ===')
@@ -10129,6 +10206,7 @@ const handleContractTypeSelect = async (contractType) => {
   // 重置表单（参考 SharedFiles 的实现，不在 reactive 对象中存储 File）
   uploadForm.contract_type = contractType
   uploadForm.employee_id = currentEmployee.value?.id || null
+  uploadForm.termination_reason = ''
   uploadForm.stamp_method = 'online'
   uploadForm.template_id = null
   uploadForm.notes = ''
@@ -10185,6 +10263,10 @@ const handleFileExceed = () => {
 const handleContractTypeChange = async (contractType) => {
   console.log('🔄 合同类型变更:', contractType)
   console.log('👤 当前员工:', currentEmployee.value)
+
+  if (!needsTerminationReason(contractType)) {
+    uploadForm.termination_reason = ''
+  }
   
   if (!contractType || !currentEmployee.value) return
   
@@ -10244,6 +10326,11 @@ const handleCreateContract = async () => {
     return
   }
 
+  if (needsTerminationReason(uploadForm.contract_type) && !uploadForm.termination_reason) {
+    ElMessage.warning('请选择离职原因')
+    return
+  }
+
   uploading.value = true
   try {
     if (uploadForm.stamp_method === 'offline') {
@@ -10268,6 +10355,7 @@ const handleCreateContract = async () => {
       const response = await uploadSignedContract({
         employee_id: uploadForm.employee_id,
         contract_type: uploadForm.contract_type,
+        termination_reason: uploadForm.termination_reason || '',
         contract_file: selectedFile,
         target_status: 'employee_signed',
         notes: uploadForm.notes || ''
@@ -10283,6 +10371,7 @@ const handleCreateContract = async () => {
           : '合同创建成功'
       )
       showUploadDialog.value = false
+      uploadForm.termination_reason = ''
       fileList.value = []
       if (uploadRef.value) {
         uploadRef.value.clearFiles()
@@ -10302,6 +10391,7 @@ const handleCreateContract = async () => {
     const prepareData = {
       employee_id: uploadForm.employee_id,
       contract_type: uploadForm.contract_type,
+      termination_reason: uploadForm.termination_reason || '',
       stamp_method: uploadForm.stamp_method,
       template_id: uploadForm.template_id,
       notes: uploadForm.notes || ''
@@ -10333,6 +10423,7 @@ const handleCreateContract = async () => {
     formData.append('employee_id', uploadForm.employee_id)
     formData.append('template_id', uploadForm.template_id)
     formData.append('contract_type', uploadForm.contract_type)
+    formData.append('termination_reason', uploadForm.termination_reason || '')
     formData.append('stamp_method', uploadForm.stamp_method)
     formData.append('notes', uploadForm.notes || '')
     formData.append('filled_pdf', filledPdfBlob, 'filled_contract.pdf')
@@ -10347,6 +10438,7 @@ const handleCreateContract = async () => {
     if (saveResponse.success) {
       ElMessage.success('合同创建成功，数据已自动填充')
       showUploadDialog.value = false
+      uploadForm.termination_reason = ''
       // 刷新合同列表
       await loadEmployeeContracts(currentEmployee.value.id)
     } else {
@@ -10411,6 +10503,12 @@ const handleSubmitApproval = async (contract) => {
   } catch (error) {
     console.error('Open signature dialog error:', error)
     ElMessage.error('打开盖章签字对话框失败')
+  }
+}
+
+const handleUploadSignedContractTypeChange = (contractType) => {
+  if (!needsTerminationReason(contractType)) {
+    uploadSignedForm.termination_reason = ''
   }
 }
 
@@ -10638,6 +10736,11 @@ const handleUploadSignedContract = async () => {
     return
   }
 
+  if (needsTerminationReason(uploadSignedForm.contract_type) && !uploadSignedForm.termination_reason) {
+    ElMessage.warning('请选择离职原因')
+    return
+  }
+
   if (!signedContractFile.value) {
     ElMessage.warning('请选择合同文件')
     return
@@ -10662,6 +10765,7 @@ const handleUploadSignedContract = async () => {
     const uploadData = {
       employee_id: currentEmployee.value.id,
       contract_type: uploadSignedForm.contract_type,
+      termination_reason: uploadSignedForm.termination_reason || '',
       contract_file: signedContractFile.value,
       notes: uploadSignedForm.notes || ''
     }
@@ -10673,6 +10777,7 @@ const handleUploadSignedContract = async () => {
       
       // 重置表单
       uploadSignedForm.contract_type = ''
+      uploadSignedForm.termination_reason = ''
       uploadSignedForm.notes = ''
       signedContractFile.value = null
       if (uploadSignedRef.value) {

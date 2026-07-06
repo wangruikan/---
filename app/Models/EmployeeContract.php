@@ -21,6 +21,7 @@ class EmployeeContract extends Model
      */
     protected $auditableFields = [
         'contract_type' => '合同类型',
+        'termination_reason' => '离职原因',
         'contract_file' => '合同文件',
         'original_filename' => '原始文件名',
         'status' => '状态',
@@ -45,6 +46,7 @@ class EmployeeContract extends Model
         'employee_id',
         'account_set_id',
         'contract_type',
+        'termination_reason',
         'stamp_method',  // 盖章方式：online-线上盖章，offline-线下盖章
         'contract_file',
         'original_filename',

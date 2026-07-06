@@ -821,6 +821,12 @@ class EmployeeController extends ApiController
                         $query->orderBy('employees.employee_number', 'desc');
                     }
 
+                    $query->withCount([
+                        'laborContracts as completed_labor_contract_count' => function ($contractQuery) {
+                            $contractQuery->where('status', 'completed');
+                        }
+                    ]);
+
                     $perPage = $request->input('per_page', 10);
                     $result = $query->paginate($perPage);
                     

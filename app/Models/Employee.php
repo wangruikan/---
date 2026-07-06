@@ -352,6 +352,12 @@ class Employee extends Model
         return $this->hasMany(Salary::class);
     }
 
+    public function laborContracts()
+    {
+        return $this->hasMany(EmployeeContract::class)
+            ->where('contract_type', 'labor');
+    }
+
     public function latestLaborContract()
     {
         return $this->hasOne(EmployeeContract::class)

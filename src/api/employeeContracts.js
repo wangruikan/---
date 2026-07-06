@@ -24,6 +24,9 @@ export function uploadContract(data) {
     formData.append('employee_id', data.employee_id)
     formData.append('contract_type', data.contract_type)
     formData.append('contract_file', data.contract_file)
+    if (data.termination_reason) {
+      formData.append('termination_reason', data.termination_reason)
+    }
     if (data.notes) {
       formData.append('notes', data.notes)
     }
@@ -48,6 +51,7 @@ export function uploadContract(data) {
       employee_id: data.employee_id,
       contract_type: data.contract_type,
       template_id: data.template_id,
+      termination_reason: data.termination_reason || '',
       notes: data.notes || ''
     }
     
@@ -119,6 +123,9 @@ export function uploadSignedContract(data) {
   formData.append('employee_id', data.employee_id)
   formData.append('contract_type', data.contract_type)
   formData.append('contract_file', data.contract_file, data.contract_file?.name || 'contract.pdf')
+  if (data.termination_reason) {
+    formData.append('termination_reason', data.termination_reason)
+  }
   if (data.target_status) {
     formData.append('target_status', data.target_status)
   }

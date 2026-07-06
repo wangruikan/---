@@ -646,109 +646,7 @@ class ApprovalService
                     
                     // 如果审批完成，根据合同类型更新员工状态（支持 complete 和 completed 两种状态）
                     if ($status === 'completed' || $status === 'complete') {
-                        $employee = \App\Models\Employee::find($contract->employee_id);
-                        if ($employee) {
-                            // 检查数据库表是否有这些字段
-                            $hasTerminationDate = Schema::hasColumn('employees', 'termination_date');
-                            $hasRetirementDate = Schema::hasColumn('employees', 'retirement_date');
-                            $hasIsRetired = Schema::hasColumn('employees', 'is_retired');
-                            
-                            // 根据合同类型更新员工状态
-                            if ($contract->contract_type === 'labor') {
-                                // 劳动合同：设置为在职
-                                $employee->update(['contract_status' => 'active']);
-                                Log::info('员工合同状态已更新为在职', [
-                                    'employee_id' => $contract->employee_id,
-                                    'contract_id' => $businessId,
-                                    'contract_type' => 'labor'
-                                ]);
-                            } elseif ($contract->contract_type === 'termination') {
-                                // 解除协议合同：设置为离职
-                                $updateData = ['contract_status' => 'terminated'];
-                                if ($hasTerminationDate) {
-                                    $updateData['termination_date'] = now();
-                                }
-                                $employee->update($updateData);
-                                Log::info('员工合同状态已更新为离职', [
-                                    'employee_id' => $contract->employee_id,
-                                    'contract_id' => $businessId,
-                                    'contract_type' => 'termination',
-                                    'has_termination_date_field' => $hasTerminationDate
-                                ]);
-                                
-                                // 自动创建参保减少记录
-                                $this->autoCreateDecreaseInsuranceRecord($contract, 'terminated');
-                                
-                                // 回退其他保险名额
-                                $this->returnOtherInsuranceQuota($contract, $employee);
-                                
-                                // 删除该员工的基数调差记录
-                                $this->deleteEmployeeCompensationRecords($employee->id);
-                            } elseif ($contract->contract_type === 'retirement') {
-                                // 退休解除协议合同：设置为退休
-                                // 先更新 contract_status，然后更新 is_retired（如果字段存在）
-                                $employee->contract_status = 'terminated';
-                                
-                                // 尝试更新 is_retired 字段（即使字段检查失败也尝试，因为可能字段存在但检查有问题）
-                                try {
-                                    if ($hasIsRetired) {
-                                        $employee->is_retired = true;
-                                    } else {
-                                        // 如果字段检查失败，尝试直接更新（可能字段存在但检查有问题）
-                                        DB::table('employees')
-                                            ->where('id', $employee->id)
-                                            ->update(['is_retired' => true]);
-                                    }
-                                } catch (\Exception $e) {
-                                    Log::warning('更新 is_retired 字段失败', [
-                                        'employee_id' => $employee->id,
-                                        'error' => $e->getMessage()
-                                    ]);
-                                }
-                                
-                                // 更新 retirement_date
-                                try {
-                                    if ($hasRetirementDate) {
-                                        $employee->retirement_date = now();
-                                    } else {
-                                        // 如果字段检查失败，尝试直接更新
-                                        DB::table('employees')
-                                            ->where('id', $employee->id)
-                                            ->update(['retirement_date' => now()]);
-                                    }
-                                } catch (\Exception $e) {
-                                    Log::warning('更新 retirement_date 字段失败', [
-                                        'employee_id' => $employee->id,
-                                        'error' => $e->getMessage()
-                                    ]);
-                                }
-                                
-                                $employee->save();
-                                
-                                // 重新加载模型以确保访问器生效
-                                $employee->refresh();
-                                
-                                Log::info('员工合同状态已更新为退休', [
-                                    'employee_id' => $contract->employee_id,
-                                    'contract_id' => $businessId,
-                                    'contract_type' => 'retirement',
-                                    'has_is_retired_field' => $hasIsRetired,
-                                    'has_retirement_date_field' => $hasRetirementDate,
-                                    'is_retired' => $employee->is_retired ?? 'N/A',
-                                    'contract_status_accessor' => $employee->contract_status, // 访问器返回的值
-                                    'contract_status_raw' => $employee->getAttributes()['contract_status'] ?? 'N/A' // 原始值
-                                ]);
-                                
-                                // 自动创建参保减少记录
-                                $this->autoCreateDecreaseInsuranceRecord($contract, 'retired');
-                                
-                                // 回退其他保险名额
-                                $this->returnOtherInsuranceQuota($contract, $employee);
-                                
-                                // 删除该员工的基数调差记录
-                                $this->deleteEmployeeCompensationRecords($employee->id);
-                            }
-                        }
+                        $this->handleEmployeeContractCompleted($contract);
                     } elseif ($status === 'rejected') {
                         // 如果审批被驳回，保持原状态或设为"未签署"
                         \App\Models\Employee::where('id', $contract->employee_id)
@@ -1422,6 +1320,113 @@ class ApprovalService
                 ]);
             }
         }
+    }
+
+    public function handleEmployeeContractCompleted(EmployeeContract $contract): void
+    {
+        $employee = \App\Models\Employee::find($contract->employee_id);
+        if (!$employee) {
+            return;
+        }
+
+        $hasTerminationDate = Schema::hasColumn('employees', 'termination_date');
+        $hasTerminationReason = Schema::hasColumn('employees', 'termination_reason');
+        $hasRetirementDate = Schema::hasColumn('employees', 'retirement_date');
+        $hasIsRetired = Schema::hasColumn('employees', 'is_retired');
+        $terminationReason = trim((string) ($contract->termination_reason ?? ''));
+
+        if ($contract->contract_type === 'labor') {
+            $employee->update(['contract_status' => 'active']);
+            Log::info('员工合同状态已更新为在职', [
+                'employee_id' => $contract->employee_id,
+                'contract_id' => $contract->id,
+                'contract_type' => 'labor'
+            ]);
+            return;
+        }
+
+        if ($contract->contract_type === 'termination') {
+            $updateData = ['contract_status' => 'terminated'];
+            if ($hasTerminationDate) {
+                $updateData['termination_date'] = now();
+            }
+            if ($hasTerminationReason && $terminationReason !== '') {
+                $updateData['termination_reason'] = $terminationReason;
+            }
+
+            $employee->update($updateData);
+
+            Log::info('员工合同状态已更新为离职', [
+                'employee_id' => $contract->employee_id,
+                'contract_id' => $contract->id,
+                'contract_type' => 'termination',
+                'termination_reason' => $terminationReason,
+                'has_termination_date_field' => $hasTerminationDate
+            ]);
+
+            $this->autoCreateDecreaseInsuranceRecord($contract, 'terminated');
+            $this->returnOtherInsuranceQuota($contract, $employee);
+            $this->deleteEmployeeCompensationRecords($employee->id);
+            return;
+        }
+
+        if ($contract->contract_type !== 'retirement') {
+            return;
+        }
+
+        $employee->contract_status = 'terminated';
+        if ($hasTerminationReason && $terminationReason !== '') {
+            $employee->termination_reason = $terminationReason;
+        }
+
+        try {
+            if ($hasIsRetired) {
+                $employee->is_retired = true;
+            } else {
+                DB::table('employees')
+                    ->where('id', $employee->id)
+                    ->update(['is_retired' => true]);
+            }
+        } catch (\Exception $e) {
+            Log::warning('更新 is_retired 字段失败', [
+                'employee_id' => $employee->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        try {
+            if ($hasRetirementDate) {
+                $employee->retirement_date = now();
+            } else {
+                DB::table('employees')
+                    ->where('id', $employee->id)
+                    ->update(['retirement_date' => now()]);
+            }
+        } catch (\Exception $e) {
+            Log::warning('更新 retirement_date 字段失败', [
+                'employee_id' => $employee->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        $employee->save();
+        $employee->refresh();
+
+        Log::info('员工合同状态已更新为退休', [
+            'employee_id' => $contract->employee_id,
+            'contract_id' => $contract->id,
+            'contract_type' => 'retirement',
+            'termination_reason' => $terminationReason,
+            'has_is_retired_field' => $hasIsRetired,
+            'has_retirement_date_field' => $hasRetirementDate,
+            'is_retired' => $employee->is_retired ?? 'N/A',
+            'contract_status_accessor' => $employee->contract_status,
+            'contract_status_raw' => $employee->getAttributes()['contract_status'] ?? 'N/A'
+        ]);
+
+        $this->autoCreateDecreaseInsuranceRecord($contract, 'retired');
+        $this->returnOtherInsuranceQuota($contract, $employee);
+        $this->deleteEmployeeCompensationRecords($employee->id);
     }
     
     /**
@@ -2278,6 +2283,7 @@ class ApprovalService
             } elseif ($employeeStatus === 'retired') {
                 $employeeStatusValue = 3; // 退休
             }
+            $decreaseReasonNote = $this->buildDecreaseReasonNote($contract, $employeeStatus);
 
             $existingOpenChange = \App\Models\InsuranceChange::findLatestOpenChange(
                 (int) $employee->id,
@@ -2295,7 +2301,7 @@ class ApprovalService
                     'employee_status' => $employeeStatusValue,
                     'change_type' => 'decrease',
                     'created_by' => $existingOpenChange->created_by ?: $contract->created_by,
-                    'notes' => $employeeStatus === 'terminated' ? '员工离职，停止参保' : '员工退休，停止参保',
+                    'notes' => $decreaseReasonNote,
                     'social_security_types' => $personnelRecord->social_security_types,
                     'medical_insurance_types' => $personnelRecord->medical_insurance_types,
                     'housing_fund_params' => $personnelRecord->housing_fund_params,
@@ -2336,7 +2342,7 @@ class ApprovalService
                 'change_type' => 'decrease',  // 标识为减少记录
                 'status' => 'pending',
                 'created_by' => $contract->created_by,
-                'notes' => $employeeStatus === 'terminated' ? '员工离职，停止参保' : '员工退休，停止参保',
+                'notes' => $decreaseReasonNote,
                 // 复制当前参保记录的保险配置
                 'social_security_types' => $personnelRecord->social_security_types,
                 'medical_insurance_types' => $personnelRecord->medical_insurance_types,
@@ -2366,6 +2372,16 @@ class ApprovalService
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    private function buildDecreaseReasonNote(EmployeeContract $contract, string $employeeStatus): string
+    {
+        $terminationReason = trim((string) ($contract->termination_reason ?? ''));
+        if ($terminationReason !== '') {
+            return $terminationReason;
+        }
+
+        return $employeeStatus === 'terminated' ? '员工离职，停止参保' : '员工退休，停止参保';
     }
 
     /**

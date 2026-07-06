@@ -144,9 +144,9 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('basic')" prop="salary_payment_date" label="&#24037;&#36164;&#21457;&#25918;&#26085;&#26399;" width="120">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="salary_payment_date" label="发薪日" width="120">
             <template #default="{ row }">
-              {{ row.salary_payment_date ? row.salary_payment_date + '\u53f7' : '-' }}
+              {{ row.salary_payment_date ? row.salary_payment_date + '日' : '-' }}
             </template>
           </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('basic')" prop="delivery_frequency" label="&#20132;&#20184;&#39057;&#29575;" width="100">
@@ -159,14 +159,14 @@
               {{ getDeliveryMethodText(row.delivery_method) }}
             </template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('basic')" prop="requires_salary_basis" label="&#19978;&#20256;&#24037;&#36164;&#20381;&#25454;" width="120">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="requires_salary_basis" label="工资依据" width="120">
             <template #default="{ row }">
               <el-tag :type="row.requires_salary_basis ? 'success' : 'info'">
                 {{ row.requires_salary_basis ? '\u662f' : '\u5426' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('basic')" prop="requires_attendance_basis" label="&#19978;&#20256;&#32771;&#21220;&#20381;&#25454;" width="120">
+          <el-table-column v-if="isColumnGroupVisible('basic')" prop="requires_attendance_basis" label="考勤依据" width="120">
             <template #default="{ row }">
               <el-tag :type="row.requires_attendance_basis ? 'success' : 'info'">
                 {{ row.requires_attendance_basis ? '\u662f' : '\u5426' }}

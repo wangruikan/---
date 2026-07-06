@@ -126,6 +126,16 @@
                 </template>
               </el-table-column>
               <el-table-column prop="project.name" label="项目名称" width="150" />
+              <el-table-column label="地区名称" width="140" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ getPrimaryRegionName(row) || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="离职原因" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ getChangeLeaveReason(row) || '-' }}
+                </template>
+              </el-table-column>
               <el-table-column
                 v-for="category in insuranceCategoryColumns"
                 :key="category.key"
@@ -164,11 +174,11 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="其他保险明细" min-width="220">
+              <el-table-column label="其他保险种类" min-width="220">
                 <template #default="{ row }">
-                  <div v-if="getOtherInsurancePolicyNames(row).length > 0" class="other-insurance-name-list">
+                  <div v-if="getOtherInsuranceTypeNames(row).length > 0" class="other-insurance-name-list">
                     <el-tag
-                      v-for="name in getOtherInsurancePolicyNames(row)"
+                      v-for="name in getOtherInsuranceTypeNames(row)"
                       :key="name"
                       size="small"
                       type="info"
@@ -1007,6 +1017,12 @@
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(currentChange.created_at) }}</el-descriptions-item>
+          <el-descriptions-item
+            v-if="currentChange.change_type === 'decrease' && getChangeLeaveReason(currentChange)"
+            label="离职原因"
+          >
+            {{ getChangeLeaveReason(currentChange) }}
+          </el-descriptions-item>
         </el-descriptions>
 
         <div v-if="hasRegionInfo()" class="insurance-region-info">
@@ -2328,6 +2344,89 @@ const getCategoryDisplayStatus = (change, category) => {
   }
 
   return ''
+}
+
+const getSocialSecurityRegionName = (change) => {
+  return change?.employee?.social_security_region?.name ||
+    change?.employee?.socialSecurityRegion?.name ||
+    change?.social_security_region_name ||
+    ''
+}
+
+const getHousingFundRegionName = (change) => {
+  return change?.employee?.housing_fund_region?.region_name ||
+    change?.employee?.housingFundRegion?.region_name ||
+    change?.housing_fund_region_name ||
+    ''
+}
+
+const getPrimaryRegionName = (change) => {
+  return getSocialSecurityRegionName(change) ||
+    getHousingFundRegionName(change) ||
+    change?.employee?.medical_insurance_region?.name ||
+    change?.employee?.medicalInsuranceRegion?.name ||
+    ''
+}
+
+const getChangeLeaveReason = (change) => {
+  if (!change || change.change_type !== 'decrease') {
+    return ''
+  }
+
+  const note = typeof change.notes === 'string' ? change.notes.trim() : ''
+  if (!note || ['员工离职，停止参保', '员工退休，停止参保'].includes(note)) {
+    return ''
+  }
+
+  return note
+}
+
+const parseOtherInsurancePolicies = (change) => {
+  const policySources = [
+    change?.other_insurance_policies,
+    getCategoryItem(change, 'other_insurance')?.category_snapshot
+  ]
+
+  for (const source of policySources) {
+    if (!source) {
+      continue
+    }
+
+    let parsed = source
+
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed)
+      } catch (error) {
+        continue
+      }
+    }
+
+    if (Array.isArray(parsed)) {
+      return parsed
+    }
+
+    if (parsed && Array.isArray(parsed.other_insurance_policies)) {
+      return parsed.other_insurance_policies
+    }
+  }
+
+  return []
+}
+
+const getOtherInsuranceTypeNames = (change) => {
+  const names = parseOtherInsurancePolicies(change)
+    .map((policy) => {
+      if (!policy || typeof policy !== 'object') {
+        return ''
+      }
+
+      return resolveOtherInsuranceTypeName(policy)
+    })
+    .map((name) => (typeof name === 'string' ? name.trim() : ''))
+    .filter(Boolean)
+
+  return Array.from(new Set(names))
 }
 
 const projectOptions = computed(() => {
@@ -6102,6 +6201,12 @@ watch(showExportDialog, (newVal) => {
 
 .category-status-icon.terminated {
   color: #e6a23c;
+}
+
+.other-insurance-name-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* 表格内标题样式 */

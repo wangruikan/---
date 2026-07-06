@@ -10,6 +10,7 @@ use App\Models\ApprovalCCUser;
 use App\Models\ApprovalInstance;
 use App\Models\ApprovalRecord;
 use App\Models\PendingTask;
+use App\Services\ApprovalService;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -79,7 +80,10 @@ class EmployeeContractController extends Controller
             'stamp_method' => 'nullable|in:online,offline',
             'template_id' => 'nullable|exists:contract_templates,id',
             'notes' => 'nullable|string',
+            'termination_reason' => 'nullable|string|max:255',
         ]);
+
+        $this->appendTerminationReasonValidation($validator, $request);
 
         if ($validator->fails()) {
             return response()->json([
@@ -969,6 +973,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_type' => $request->contract_type,
+                'termination_reason' => $this->normalizeTerminationReason($request->input('termination_reason')),
                 'stamp_method' => $request->stamp_method ?? 'online',
                 'contract_file' => $path,
                 'original_filename' => $originalFilename,
@@ -1009,7 +1014,10 @@ class EmployeeContractController extends Controller
             'template_id' => 'required|exists:contract_templates,id',
             'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'notes' => 'nullable|string',
+            'termination_reason' => 'nullable|string|max:255',
         ]);
+
+        $this->appendTerminationReasonValidation($validator, $request);
 
         if ($validator->fails()) {
             return response()->json([
@@ -1119,7 +1127,8 @@ class EmployeeContractController extends Controller
                         'previous_company' => $employee->previous_company ?? '',
                     ],
                     'contract_type' => $request->contract_type,
-                    'notes' => $request->notes
+                    'notes' => $request->notes,
+                    'termination_reason' => $this->normalizeTerminationReason($request->input('termination_reason'))
                 ]
             ]);
 
@@ -1274,7 +1283,10 @@ class EmployeeContractController extends Controller
             'stamp_method' => 'nullable|in:online,offline',
             'filled_pdf' => 'required|file|mimes:pdf|max:10240', // 10MB限制
             'notes' => 'nullable|string',
+            'termination_reason' => 'nullable|string|max:255',
         ]);
+
+        $this->appendTerminationReasonValidation($validator, $request);
 
         if ($validator->fails()) {
             \Log::warning('saveFilledContract: 验证失败', ['errors' => $validator->errors()]);
@@ -1350,6 +1362,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_type' => $request->contract_type,
+                'termination_reason' => $this->normalizeTerminationReason($request->input('termination_reason')),
                 'stamp_method' => $request->stamp_method ?? 'online',
                 'contract_file' => $targetPath,
                 'original_filename' => $template->sharedFile->name,
@@ -1487,6 +1500,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $currentAccountSetId,
                 'contract_type' => $request->contract_type,
+                'termination_reason' => $this->normalizeTerminationReason($request->input('termination_reason')),
                 'stamp_method' => $request->stamp_method ?? 'online',
                 'contract_file' => $targetPath,
                 'original_filename' => $templateFile->name,
@@ -1614,6 +1628,7 @@ class EmployeeContractController extends Controller
             'contract_file' => 'required|file|max:10240',
             'target_status' => 'nullable|in:employee_signed,completed',
             'notes' => 'nullable|string',
+            'termination_reason' => 'nullable|string|max:255',
         ], [
             'contract_file.required' => '请上传合同文件',
             'contract_file.max' => '合同文件大小不能超过10MB',
@@ -1625,6 +1640,8 @@ class EmployeeContractController extends Controller
                 $validator->errors()->add('contract_file', '合同文件必须是PDF格式');
             }
         });
+
+        $this->appendTerminationReasonValidation($validator, $request);
 
         if ($validator->fails()) {
             return response()->json([
@@ -1653,6 +1670,7 @@ class EmployeeContractController extends Controller
                 'employee_id' => $request->employee_id,
                 'account_set_id' => $employee->account_set_id,
                 'contract_type' => $request->contract_type,
+                'termination_reason' => $this->normalizeTerminationReason($request->input('termination_reason')),
                 'stamp_method' => 'offline',
                 'source_type' => 'offline',
                 'contract_file' => $path,
@@ -1669,6 +1687,10 @@ class EmployeeContractController extends Controller
             }
 
             $contract = EmployeeContract::create($contractData);
+
+            if ($targetStatus === 'completed') {
+                app(ApprovalService::class)->handleEmployeeContractCompleted($contract);
+            }
             
             // 如果员工是线下入职，标记合同已上传
             if ($employee->is_offline_onboarding && !$employee->contract_uploaded) {
@@ -1750,5 +1772,24 @@ class EmployeeContractController extends Controller
         fclose($handle);
 
         return $signature === '%PDF';
+    }
+
+    private function appendTerminationReasonValidation($validator, Request $request): void
+    {
+        $validator->after(function ($validator) use ($request) {
+            if (!in_array($request->input('contract_type'), ['termination', 'retirement'], true)) {
+                return;
+            }
+
+            if ($this->normalizeTerminationReason($request->input('termination_reason')) === null) {
+                $validator->errors()->add('termination_reason', '请选择离职原因');
+            }
+        });
+    }
+
+    private function normalizeTerminationReason($value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+        return $value === '' ? null : $value;
     }
 }

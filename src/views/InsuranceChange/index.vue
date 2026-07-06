@@ -38,7 +38,7 @@
                   <el-option label="全部" value="" />
                   <el-option label="待处理" value="pending" />
                   <el-option label="成功" value="completed" />
-                  <el-option label="终止" value="terminated" />
+                  <el-option label="终结" value="terminated" />
                   <el-option label="失败" value="failed" />
                 </el-select>
               </el-form-item>
@@ -80,7 +80,7 @@
                   <span class="total-count">共 {{ filteredChanges.length }} / {{ changes.length }} 条记录</span>
                   <span class="summary-count pending-count">待处理 {{ changeStats.pending }} 人</span>
                   <span class="summary-count success-count">成功 {{ changeStats.success }} 人</span>
-                  <span class="summary-count terminated-count">终止 {{ changeStats.terminated }} 人</span>
+                  <span class="summary-count terminated-count">终结 {{ changeStats.terminated }} 人</span>
                   <span class="summary-count failed-count">失败 {{ changeStats.failed }} 人</span>
                   <!-- 生成参保登记表按钮 - 已隐藏 -->
                   <!--
@@ -147,6 +147,12 @@
                     >
                       ×
                     </span>
+                    <span
+                      v-else-if="isTerminatedStatus(getCategoryDisplayStatus(row, category.key))"
+                      class="category-status-icon terminated"
+                    >
+                      ▲
+                    </span>
                     <el-tag
                       v-else
                       :type="getStatusTagType(getCategoryDisplayStatus(row, category.key))"
@@ -155,6 +161,22 @@
                       {{ getStatusText(getCategoryDisplayStatus(row, category.key)) }}
                     </el-tag>
                   </template>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="其他保险明细" min-width="220">
+                <template #default="{ row }">
+                  <div v-if="getOtherInsurancePolicyNames(row).length > 0" class="other-insurance-name-list">
+                    <el-tag
+                      v-for="name in getOtherInsurancePolicyNames(row)"
+                      :key="name"
+                      size="small"
+                      type="info"
+                      effect="plain"
+                    >
+                      {{ name }}
+                    </el-tag>
+                  </div>
                   <span v-else>-</span>
                 </template>
               </el-table-column>
@@ -792,6 +814,7 @@
           <el-radio-group v-model="processForm.result">
             <el-radio-button label="success">成功</el-radio-button>
             <el-radio-button label="failed">失败</el-radio-button>
+            <el-radio-button label="terminated">终结</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
@@ -803,8 +826,15 @@
           style="margin-bottom: 16px;"
         />
         <el-alert
-          v-else
+          v-else-if="processForm.result === 'failed'"
           title="失败时必须上传附件，当前所选业务会保留失败结果，并立即生成下月续办任务。"
+          type="warning"
+          :closable="false"
+          style="margin-bottom: 16px;"
+        />
+        <el-alert
+          v-else
+          title="终结时必须上传附件，当前所选业务会直接终结，不会生成下月续办任务。"
           type="warning"
           :closable="false"
           style="margin-bottom: 16px;"
@@ -835,7 +865,7 @@
           </el-table>
         </el-form-item>
 
-        <el-form-item label="上传附件" v-if="processForm.result === 'failed'">
+        <el-form-item label="上传附件" v-if="['failed', 'terminated'].includes(processForm.result)">
           <el-upload
             ref="uploadRef"
             :file-list="fileList"
@@ -4194,7 +4224,7 @@ const submitProcess = async () => {
   processingChangeId.value = currentChange.value.id
 
   try {
-    if (processForm.value.result === 'failed' && fileList.value.length > 0) {
+    if (['failed', 'terminated'].includes(processForm.value.result) && fileList.value.length > 0) {
       const formData = new FormData()
       fileList.value.forEach((file) => {
         formData.append('attachments[]', file.raw)
@@ -4213,8 +4243,8 @@ const submitProcess = async () => {
       fileList.value = []
     }
 
-    if (processForm.value.result === 'failed' && currentProcessAttachments.value.length === 0) {
-      ElMessage.warning('失败时必须上传处理附件')
+    if (['failed', 'terminated'].includes(processForm.value.result) && currentProcessAttachments.value.length === 0) {
+      ElMessage.warning(processForm.value.result === 'terminated' ? '终结时必须上传处理附件' : '失败时必须上传处理附件')
       return
     }
 
@@ -4456,7 +4486,7 @@ const getStatusText = (status) => {
     'submitted': '待确认',  // 已上传附件，待确认处理
     'completed': '成功',
     'failed': '失败',
-    'terminated': '终止',
+    'terminated': '终结',
     'processing': '成功', // 兼容旧状态
     'approved': '成功',   // 兼容旧状态
     'finished': '成功'    // 兼容旧状态
@@ -4485,6 +4515,10 @@ const isSuccessStatus = (status) => {
 
 const isFailedStatus = (status) => {
   return status === 'failed'
+}
+
+const isTerminatedStatus = (status) => {
+  return status === 'terminated'
 }
 
 // 获取详情表格数据
@@ -6064,6 +6098,10 @@ watch(showExportDialog, (newVal) => {
 
 .category-status-icon.failed {
   color: #f56c6c;
+}
+
+.category-status-icon.terminated {
+  color: #e6a23c;
 }
 
 /* 表格内标题样式 */

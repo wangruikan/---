@@ -1678,6 +1678,9 @@ class InsuranceChangeController extends ApiController
                     if ($result === 'failed') {
                         return $this->failProcessByCategories($change, $categories, $user);
                     }
+                    if ($result === 'terminated') {
+                        return $this->terminateProcessByCategories($change, $categories, $user);
+                    }
 
                     return $this->confirmProcessByCategories($change, $categories, $user);
                 }
@@ -1686,12 +1689,18 @@ class InsuranceChangeController extends ApiController
                     if ($result === 'failed') {
                         return $this->failProcessByCategory($change, $category, $user);
                     }
+                    if ($result === 'terminated') {
+                        return $this->terminateProcessByCategory($change, $category, $user);
+                    }
 
                     return $this->confirmProcessByCategory($change, $category, $user);
                 }
 
                 if ($result === 'failed') {
                     return $this->failProcessAll($change, $user);
+                }
+                if ($result === 'terminated') {
+                    return $this->terminateProcessAll($change, $user);
                 }
 
                 return $this->confirmProcessAll($change, $user);
@@ -1770,7 +1779,15 @@ class InsuranceChangeController extends ApiController
 
     private function normalizeProcessResult($result): string
     {
-        return $result === 'failed' ? 'failed' : 'success';
+        if ($result === 'failed') {
+            return 'failed';
+        }
+
+        if ($result === 'terminated') {
+            return 'terminated';
+        }
+
+        return 'success';
     }
 
     private function normalizeChangeCategory($category): ?string
@@ -1911,6 +1928,52 @@ class InsuranceChangeController extends ApiController
         ]);
     }
 
+    private function terminateProcessByCategory(InsuranceChange $change, string $category, $user)
+    {
+        $this->syncChangeItems($change);
+        $item = $change->items()->where('category', $category)->first();
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => '未找到可处理的业务项'
+            ], 400);
+        }
+
+        if (!in_array($item->status, ['pending', 'submitted'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => '该业务项当前不能处理'
+            ], 400);
+        }
+
+        $hasCategoryAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->where('insurance_change_item_id', $item->id)
+            ->exists();
+
+        if (!$hasCategoryAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '终结时必须上传对应业务附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $item, $user) {
+            $item->update([
+                'status' => 'terminated',
+                'processed_by' => $user && $user->id ? $user->id : null,
+                'processed_at' => now(),
+            ]);
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记终结',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
     private function confirmProcessByCategories(InsuranceChange $change, array $categories, $user)
     {
         $this->syncChangeItems($change);
@@ -2040,6 +2103,68 @@ class InsuranceChangeController extends ApiController
         ]);
     }
 
+    private function terminateProcessByCategories(InsuranceChange $change, array $categories, $user)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('category', $categories)
+            ->get()
+            ->keyBy('category');
+
+        $missingCategories = array_values(array_diff($categories, $items->keys()->all()));
+        if (!empty($missingCategories)) {
+            return response()->json([
+                'success' => false,
+                'message' => '未找到可处理的业务项'
+            ], 400);
+        }
+
+        $unprocessable = $items->filter(function ($item) {
+            return !in_array($item->status, ['pending', 'submitted'], true);
+        });
+
+        if ($unprocessable->isNotEmpty()) {
+            $labels = $unprocessable->map(function ($item) {
+                return $this->getCategoryDisplayText($item->category);
+            })->implode('、');
+
+            return response()->json([
+                'success' => false,
+                'message' => '以下业务当前不能处理：' . $labels
+            ], 400);
+        }
+
+        $hasGeneralAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->whereNull('insurance_change_item_id')
+            ->exists();
+
+        if (!$hasGeneralAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '终结时必须上传处理附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $categories, $items, $user) {
+            foreach ($categories as $category) {
+                $items->get($category)->update([
+                    'status' => 'terminated',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记终结',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
     private function confirmProcessAll(InsuranceChange $change, $user)
     {
         $this->syncChangeItems($change);
@@ -2134,6 +2259,51 @@ class InsuranceChangeController extends ApiController
         return response()->json([
             'success' => true,
             'message' => '已标记失败，并生成下月续办任务',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function terminateProcessAll(InsuranceChange $change, $user)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('status', ['pending', 'submitted'])
+            ->get();
+
+        if ($items->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => '当前状态不允许处理'
+            ], 400);
+        }
+
+        $hasGeneralAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->whereNull('insurance_change_item_id')
+            ->exists();
+
+        if (!$hasGeneralAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '终结时必须上传整单处理附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $items, $user) {
+            foreach ($items as $item) {
+                $item->update([
+                    'status' => 'terminated',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记终结',
             'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
         ]);
     }

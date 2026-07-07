@@ -105,6 +105,14 @@
         <el-checkbox label="invoice">&#24320;&#31080;&#20449;&#24687;</el-checkbox>
         <el-checkbox label="insurance">&#20445;&#38505;&#35774;&#32622;</el-checkbox>
       </el-checkbox-group>
+      <el-button
+        type="success"
+        size="small"
+        :disabled="!roleUsersEntryProject || !canManageRoleUsers(roleUsersEntryProject)"
+        @click="handleRoleUsersEntry"
+      >
+        负责人
+      </el-button>
     </div>
     </div>
 
@@ -200,13 +208,13 @@
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险类别" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">{{ getOtherInsurancePoliciesSummaryText(row) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="430" fixed="right">
+          <el-table-column label="操作" width="520" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
               </el-button>
-              <el-button v-if="canManageRoleUsers(row)" type="success" size="small" @click="handleRoleUsers(row)">
-                负责人
+              <el-button v-if="row.status === 'active'" type="danger" size="small" @click="handleDeactivate(row)">
+                停用
               </el-button>
               <el-button type="success" size="small" @click="handleNoticeSettings(row)">
                 须知设置
@@ -1483,7 +1491,7 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
-import { getProjects, createProject, updateProject, deleteProject, getProjectCodePreview, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
+import { getProjects, getProject, createProject, updateProject, deleteProject, getProjectCodePreview, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
 import { getUsers } from '@/api/user'
 import { getSharedFiles } from '@/api/sharedFiles'
 import { addContractTemplate, getDefaultTemplates, getContractTemplates, setDefaultTemplate, deleteContractTemplate } from '@/api/contractTemplates'
@@ -1519,6 +1527,13 @@ const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 const canCreateProject = computed(() => permissionStore.hasPermission('projects.create'))
 const canEditProject = computed(() => permissionStore.hasPermission('projects.edit'))
 const canDeleteProject = computed(() => permissionStore.hasPermission('projects.delete'))
+const roleUsersEntryProject = computed(() => {
+  if (projects.value.length === 1) {
+    return projects.value[0]
+  }
+
+  return null
+})
 
 // 计算属性：按保险类型分组的保单
 const groupedPoliciesByType = computed(() => {
@@ -2848,6 +2863,20 @@ const canManageRoleUsers = (row) => {
   return !!row?.can_manage_role_users
 }
 
+const handleRoleUsersEntry = () => {
+  if (!roleUsersEntryProject.value) {
+    ElMessage.warning('请先筛选到单个项目后再设置负责人')
+    return
+  }
+
+  if (!canManageRoleUsers(roleUsersEntryProject.value)) {
+    ElMessage.warning('当前没有可设置负责人的权限')
+    return
+  }
+
+  handleRoleUsers(roleUsersEntryProject.value)
+}
+
 const resetRoleUsersForm = () => {
   roleUsersProject.value = null
   roleUsersForm.role_manager_user_ids = []
@@ -3041,6 +3070,53 @@ const handleDelete = async (row) => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Delete project error:', error)
+    }
+  }
+}
+
+const handleDeactivate = async (row) => {
+  try {
+    await ElMessageBox.confirm('停用后会自动把项目结束时间改成昨天，并立即结束该项目，是否继续？', '确认停用', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    const detailResponse = await getProject(row.id)
+    const project = detailResponse?.data || row
+    const normalizedInvoiceInfos = normalizeProjectInvoiceInfos(project.invoice_infos, project)
+
+    await updateProject(row.id, {
+      name: project.name,
+      code: project.code,
+      description: project.description,
+      status: 'completed',
+      start_date: formatDate(project.start_date),
+      end_date: getYesterdayDate(),
+      invoice_infos: normalizedInvoiceInfos,
+      social_security_location: project.social_security_location || '',
+      insurance_types: Array.isArray(project.insurance_types) ? project.insurance_types : [],
+      salary_payment_date: project.salary_payment_date,
+      salary_payment_month: project.salary_payment_month || 'current',
+      insurance_import_month: project.insurance_import_month || 'current',
+      requires_attendance: Boolean(project.requires_attendance),
+      requires_salary_basis: Boolean(project.requires_salary_basis),
+      requires_attendance_basis: Boolean(project.requires_attendance_basis),
+      registration_form_type: project.registration_form_type || 'onboarding',
+      delivery_frequency: project.delivery_frequency || 'monthly',
+      delivery_method: project.delivery_method || 'electronic',
+      social_security_regions: extractRelationIds(project.social_security_regions),
+      housing_fund_regions: extractRelationIds(project.housing_fund_regions),
+      medical_insurance_regions: extractRelationIds(project.medical_insurance_regions),
+      other_insurance_policies: extractRelationIds(project.other_insurance_policies)
+    })
+
+    ElMessage.success('项目已结束')
+    loadProjects()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Deactivate project error:', error)
+      ElMessage.error(error.response?.data?.message || '停用失败')
     }
   }
 }
@@ -3567,6 +3643,39 @@ const extractDisplayNames = (list, preferredKeys = ['name']) => {
 }
 
 const toDisplayText = (names) => (names.length > 0 ? names.join('\u3001') : '-')
+
+const extractRelationIds = (list) => {
+  if (!Array.isArray(list)) {
+    return []
+  }
+
+  return list.map((item) => {
+    if (typeof item === 'number') {
+      return item
+    }
+
+    if (typeof item === 'string' && item.trim() !== '' && !Number.isNaN(Number(item))) {
+      return Number(item)
+    }
+
+    if (item && typeof item === 'object' && item.id) {
+      return Number(item.id)
+    }
+
+    return null
+  }).filter((item) => Number.isInteger(item) && item > 0)
+}
+
+const getYesterdayDate = () => {
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  const year = yesterday.getFullYear()
+  const month = String(yesterday.getMonth() + 1).padStart(2, '0')
+  const day = String(yesterday.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
 
 const getSocialSecurityRegionsText = (row) => {
   const names = extractDisplayNames(row?.social_security_regions_data, ['name', 'region_name'])

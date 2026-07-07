@@ -54,6 +54,17 @@ class ProjectController extends Controller
         return Carbon::parse($endDate)->lt(Carbon::today('Asia/Shanghai')) ? 'completed' : 'active';
     }
 
+    private function resolveProjectStatus(array $projectData, $fallbackEndDate = null): string
+    {
+        $explicitStatus = $projectData['status'] ?? null;
+
+        if (in_array($explicitStatus, ['active', 'completed', 'inactive'], true)) {
+            return $explicitStatus;
+        }
+
+        return $this->calculateProjectStatusByEndDate($projectData['end_date'] ?? $fallbackEndDate);
+    }
+
     private function applyProjectIndexFilters($query, Request $request): void
     {
         $currentAccountSetId = $this->getCurrentAccountSetId($request);
@@ -502,7 +513,7 @@ class ProjectController extends Controller
 
         // 【账套关联】自动关联到当前账套
         $projectData = $requestData;
-        $projectData['status'] = $this->calculateProjectStatusByEndDate($projectData['end_date'] ?? null);
+        $projectData['status'] = $this->resolveProjectStatus($projectData);
         if ($request->has('requires_attendance')) {
             $projectData['require_attendance'] = $request->input('requires_attendance');
         }
@@ -638,7 +649,7 @@ class ProjectController extends Controller
 
         // 同步 requires_attendance 和 require_attendance 字段
         $updateData = $requestData;
-        $updateData['status'] = $this->calculateProjectStatusByEndDate($updateData['end_date'] ?? $project->end_date);
+        $updateData['status'] = $this->resolveProjectStatus($updateData, $project->end_date);
         if ($request->has('requires_attendance')) {
             $updateData['require_attendance'] = $request->input('requires_attendance');
         }

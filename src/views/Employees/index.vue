@@ -25,6 +25,15 @@
           <el-icon><Warning /></el-icon>
           待上传合同 ({{ pendingContractUploadList.length }}人)
         </el-button>
+        <el-button
+          type="warning"
+          plain
+          :loading="archiveReminderLoading"
+          @click="openArchiveReminderDialog"
+        >
+          <el-icon><Warning /></el-icon>
+          档案提醒汇总
+        </el-button>
         <el-button type="success" @click="handleDownloadTemplate">
           <el-icon><Download /></el-icon>
           下载导入模板
@@ -258,6 +267,20 @@
             <el-table-column prop="contract_end_date" label="合同结束日期" width="130">
               <template #default="{ row }">
                 {{ formatDate(row.contract_end_date) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="退休剩余天数" width="130" align="center">
+              <template #default="{ row }">
+                <span :class="{ 'danger-text': isRemainingDaysWarning(getRetirementRemainingDays(row)) }">
+                  {{ formatRemainingDays(getRetirementRemainingDays(row), '已退休') }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="人员合同到期天数" width="140" align="center">
+              <template #default="{ row }">
+                <span :class="{ 'danger-text': isRemainingDaysWarning(getContractRemainingDays(row)) }">
+                  {{ formatRemainingDays(getContractRemainingDays(row), '已到期') }}
+                </span>
               </template>
             </el-table-column>
           </template>
@@ -5637,6 +5660,86 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="showArchiveReminderDialogVisible"
+      title="档案提醒汇总"
+      width="1100px"
+    >
+      <el-alert
+        title="提醒"
+        type="warning"
+        :closable="false"
+        style="margin-bottom: 16px;"
+      >
+        {{ archiveReminderSummaryText }}
+      </el-alert>
+
+      <el-tabs v-model="archiveReminderActiveTab">
+        <el-tab-pane
+          v-for="item in archiveReminderSummaryItems"
+          :key="item.key"
+          :name="item.key"
+        >
+          <template #label>
+            {{ item.label }} ({{ item.rows.length }})
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+
+      <el-table
+        v-if="currentArchiveReminderItem"
+        :data="currentArchiveReminderItem.rows"
+        v-loading="archiveReminderLoading"
+        border
+        stripe
+        max-height="520"
+        :empty-text="archiveReminderLoading ? '正在加载...' : '当前分类暂无人员'"
+      >
+        <el-table-column type="index" label="序号" width="60" />
+        <el-table-column prop="name" label="姓名" width="110" />
+        <el-table-column prop="employee_number" label="工号" width="130">
+          <template #default="{ row }">
+            {{ row.employee_number || '未设置' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="所属项目" min-width="180">
+          <template #default="{ row }">
+            <el-tag
+              v-for="project in getDisplayProjects(row)"
+              :key="project.id"
+              class="project-tag"
+              size="small"
+            >
+              {{ project.name }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="人员状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getEmployeePersonnelStatusType(getDisplayPersonnelStatus(row))">
+              {{ getEmployeePersonnelStatusText(getDisplayPersonnelStatus(row)) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="合同情况" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getLaborContractStatusType(getDisplayLaborContractStatus(row))">
+              {{ getLaborContractStatusText(getDisplayLaborContractStatus(row)) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="提醒说明" min-width="280" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ getArchiveReminderRemark(row, archiveReminderActiveTab) }}
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <el-button @click="showArchiveReminderDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 员工变更历史对话框 -->
     <el-dialog
       v-model="changeHistoryDialogVisible"
@@ -6599,6 +6702,72 @@ const idCardReminderSummaryText = computed(() => {
   return `以下在职员工的身份证将在 30 天内到期，请及时上传新的身份证。`
 })
 
+const isActiveEmployeeForReminder = (row) => {
+  return getDisplayPersonnelStatus(row) === 'active'
+}
+
+const archiveReminderSummaryItems = computed(() => {
+  const rows = archiveReminderEmployees.value
+
+  return [
+    {
+      key: 'missing_documents',
+      label: '资料不全',
+      rows: rows.filter(row => hasMissingRequiredDocuments(row))
+    },
+    {
+      key: 'unsigned_contract',
+      label: '未签合同',
+      rows: rows.filter(row => isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_signature')
+    },
+    {
+      key: 'offline_contract_upload',
+      label: '线下待上传合同',
+      rows: rows.filter(row => row?.is_offline_onboarding && !row?.contract_uploaded)
+    },
+    {
+      key: 'pending_stamp',
+      label: '签了未盖章',
+      rows: rows.filter(row => isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_stamp')
+    },
+    {
+      key: 'retired',
+      label: '退休人员',
+      rows: rows.filter(row => getDisplayPersonnelStatus(row) === 'retired')
+    },
+    {
+      key: 'contract_expiring',
+      label: '合同30天内到期',
+      rows: rows.filter(row => {
+        const remainingDays = getContractRemainingDays(row)
+        return isActiveEmployeeForReminder(row) && remainingDays !== null && remainingDays >= 0 && remainingDays <= 30
+      })
+    },
+    {
+      key: 'contract_expired',
+      label: '合同已到期',
+      rows: rows.filter(row => {
+        const remainingDays = getContractRemainingDays(row)
+        return isActiveEmployeeForReminder(row) && remainingDays !== null && remainingDays < 0
+      })
+    }
+  ]
+})
+
+const currentArchiveReminderItem = computed(() => {
+  return archiveReminderSummaryItems.value.find(item => item.key === archiveReminderActiveTab.value) || archiveReminderSummaryItems.value[0] || null
+})
+
+const archiveReminderSummaryText = computed(() => {
+  const nonEmptyItems = archiveReminderSummaryItems.value.filter(item => item.rows.length > 0)
+
+  if (nonEmptyItems.length === 0) {
+    return '按当前筛选条件，暂无需要关注的档案提醒。'
+  }
+
+  return `按当前筛选条件，共有 ${nonEmptyItems.map(item => `${item.label}${item.rows.length}人`).join('，')}。`
+})
+
 // 社保、医保和公积金地区相关
 const availableSocialSecurityRegions = ref([])
 const availableMedicalInsuranceRegions = ref([])
@@ -6627,6 +6796,10 @@ const submittingOfflineOnboarding = ref(false) // 提交线下入职中
 const offlineOnboardingStampSelectorRef = ref(null)
 const pendingContractUploadList = ref([]) // 待上传合同的员工列表
 const showPendingContractDialog = ref(false) // 显示待上传合同对话框
+const showArchiveReminderDialogVisible = ref(false) // 显示档案提醒汇总对话框
+const archiveReminderLoading = ref(false)
+const archiveReminderActiveTab = ref('missing_documents')
+const archiveReminderEmployees = ref([])
 const currentEditingEmployeeId = ref(null) // 当前编辑的员工ID
 
 // 员工变更历史相关
@@ -8667,6 +8840,106 @@ const loadPendingContractUpload = async () => {
   } catch (error) {
     console.error('Load pending contract upload error:', error)
   }
+}
+
+const setArchiveReminderDefaultTab = () => {
+  const firstNonEmptyItem = archiveReminderSummaryItems.value.find(item => item.rows.length > 0)
+  archiveReminderActiveTab.value = firstNonEmptyItem?.key || archiveReminderSummaryItems.value[0]?.key || 'missing_documents'
+}
+
+const loadArchiveReminderEmployees = async () => {
+  archiveReminderLoading.value = true
+
+  try {
+    const perPage = 200
+    let page = 1
+    let total = 0
+    const allEmployees = []
+
+    while (true) {
+      const response = await getEmployees({
+        page,
+        per_page: perPage,
+        ...searchForm
+      })
+
+      if (!response?.success) {
+        throw new Error(response?.message || '加载档案提醒数据失败')
+      }
+
+      const pageRows = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data)
+          ? response.data
+          : []
+
+      allEmployees.push(...pageRows)
+
+      total = response.data?.total || response.pagination?.total || allEmployees.length
+      const lastPage = response.data?.last_page || Math.max(1, Math.ceil(total / perPage))
+
+      if (!Array.isArray(response.data?.data) || page >= lastPage || pageRows.length === 0 || allEmployees.length >= total) {
+        break
+      }
+
+      page += 1
+    }
+
+    archiveReminderEmployees.value = allEmployees
+    setArchiveReminderDefaultTab()
+  } catch (error) {
+    console.error('加载档案提醒汇总失败:', error)
+    ElMessage.error(error.message || '加载档案提醒汇总失败')
+    archiveReminderEmployees.value = []
+    setArchiveReminderDefaultTab()
+  } finally {
+    archiveReminderLoading.value = false
+  }
+}
+
+const openArchiveReminderDialog = async () => {
+  showArchiveReminderDialogVisible.value = true
+  await loadArchiveReminderEmployees()
+}
+
+const getArchiveReminderRemark = (row, categoryKey) => {
+  if (!row) {
+    return '-'
+  }
+
+  if (categoryKey === 'missing_documents') {
+    return row.missing_required_document_names?.join('、') || '资料未上传完整'
+  }
+
+  if (categoryKey === 'unsigned_contract') {
+    return '劳动合同尚未签署'
+  }
+
+  if (categoryKey === 'offline_contract_upload') {
+    const deadline = formatDate(row.contract_upload_deadline)
+    return deadline !== '-' ? `线下入职待上传合同，截止日期：${deadline}` : '线下入职待上传合同'
+  }
+
+  if (categoryKey === 'pending_stamp') {
+    return '劳动合同已签署，待盖章完成'
+  }
+
+  if (categoryKey === 'retired') {
+    const retirementDate = formatDate(row.retirement_date)
+    return retirementDate !== '-' ? `退休日期：${retirementDate}` : '已退休'
+  }
+
+  if (categoryKey === 'contract_expiring') {
+    const remainingDays = getContractRemainingDays(row)
+    return remainingDays === null ? '合同到期时间未设置' : `${remainingDays}天后到期`
+  }
+
+  if (categoryKey === 'contract_expired') {
+    const remainingDays = getContractRemainingDays(row)
+    return remainingDays === null ? '合同到期时间未设置' : `已超期${Math.abs(remainingDays)}天`
+  }
+
+  return '-'
 }
 
 // 标记合同已上传
@@ -11099,6 +11372,59 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`
 }
 
+const parseLocalDate = (date) => {
+  if (!date) return null
+
+  if (date instanceof Date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  }
+
+  if (typeof date === 'string') {
+    const datePart = date.split(' ')[0]
+    const [year, month, day] = datePart.split('-').map(Number)
+
+    if ([year, month, day].every(Number.isFinite)) {
+      return new Date(year, month - 1, day)
+    }
+  }
+
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+}
+
+const getRemainingDays = (date) => {
+  const targetDate = parseLocalDate(date)
+  if (!targetDate) return null
+
+  const today = new Date()
+  const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const diffMs = targetDate.getTime() - currentDate.getTime()
+
+  return Math.round(diffMs / (24 * 60 * 60 * 1000))
+}
+
+const getRetirementRemainingDays = (row) => {
+  return getRemainingDays(row?.retirement_date)
+}
+
+const getContractRemainingDays = (row) => {
+  return getRemainingDays(row?.contract_end_date)
+}
+
+const isRemainingDaysWarning = (days) => {
+  return days !== null && days <= 30
+}
+
+const formatRemainingDays = (days, expiredText) => {
+  if (days === null) return '-'
+  if (days < 0) return expiredText
+  return `${days}天`
+}
+
 // 合同类型文本
 const getContractTypeText = (type, row = null) => {
   if (type === 'other') {
@@ -12295,6 +12621,11 @@ const getChangeComparison = (detail) => {
 .employee-missing-document-indicator :deep(.el-badge__content.is-fixed.is-dot) {
   top: 3px;
   right: 3px;
+}
+
+.danger-text {
+  color: #f56c6c;
+  font-weight: 500;
 }
 
 :deep(.highlight-red-header .cell) {

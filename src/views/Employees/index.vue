@@ -2021,8 +2021,16 @@
           <h4>社保配置详情</h4>
           <el-table :data="selectedSocialSecurityRegion.social_security_types" size="small" border>
             <el-table-column prop="name" label="保险类型" />
-            <el-table-column prop="employee_ratio" label="个人比例" />
-            <el-table-column prop="company_ratio" label="公司比例" />
+            <el-table-column prop="employee_ratio" label="个人比例">
+              <template #default="{ row }">
+                {{ formatInsuranceRatio(row.employee_ratio) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="company_ratio" label="公司比例">
+              <template #default="{ row }">
+                {{ formatInsuranceRatio(row.company_ratio) }}
+              </template>
+            </el-table-column>
           </el-table>
         </div>
         
@@ -2048,12 +2056,12 @@
             </el-table-column>
             <el-table-column prop="employee_ratio" label="个人比例">
               <template #default="{ row }">
-                {{ row.employee_ratio ? (row.employee_ratio * 100).toFixed(2) + '%' : '-' }}
+                {{ formatInsuranceRatio(row.employee_ratio) }}
               </template>
             </el-table-column>
             <el-table-column prop="company_ratio" label="公司比例">
               <template #default="{ row }">
-                {{ row.company_ratio ? (row.company_ratio * 100).toFixed(2) + '%' : '-' }}
+                {{ formatInsuranceRatio(row.company_ratio) }}
               </template>
             </el-table-column>
           </el-table>
@@ -2062,18 +2070,36 @@
         <!-- 其他保险信息显示 -->
         <div v-if="projectOtherInsurancePolicies && projectOtherInsurancePolicies.length > 0" class="insurance-details">
           <h4>其他保险信息</h4>
-          <el-form-item label="其他保险任务">
-            <el-switch
-              v-model="form.other_insurance_enabled"
+          <el-form-item label="其他保险保单">
+            <el-checkbox-group
+              v-model="form.other_insurance_policy_ids"
               :disabled="isViewMode"
-              inline-prompt
-              active-text="开"
-              inactive-text="关"
-            />
-            <div class="form-tip">关闭后，不再为该员工生成其他保险增减任务</div>
+              class="other-insurance-checkbox-group"
+            >
+              <el-checkbox
+                v-for="policy in projectOtherInsurancePolicies"
+                :key="policy.id"
+                :label="policy.id"
+              >
+                {{ policy.name }}
+              </el-checkbox>
+            </el-checkbox-group>
+            <div class="form-tip">按员工实际参保的其他保险保单进行选择</div>
           </el-form-item>
           <el-table :data="projectOtherInsurancePolicies" size="small" border>
             <el-table-column prop="name" label="保险名称" />
+            <el-table-column label="是否参保" width="100">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="form.other_insurance_policy_ids.includes(Number(row.id))"
+                  type="success"
+                  size="small"
+                >
+                  已选
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="type" label="保险类型">
               <template #default="{ row }">
                 {{ typeof row.type === 'object' ? JSON.stringify(row.type) : row.type }}
@@ -3805,8 +3831,16 @@
           <h4>社保配置详情</h4>
           <el-table :data="selectedSocialSecurityRegion.social_security_types" size="small" border>
             <el-table-column prop="name" label="保险类型" />
-            <el-table-column prop="employee_ratio" label="个人比例" />
-            <el-table-column prop="company_ratio" label="公司比例" />
+            <el-table-column prop="employee_ratio" label="个人比例">
+              <template #default="{ row }">
+                {{ formatInsuranceRatio(row.employee_ratio) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="company_ratio" label="公司比例">
+              <template #default="{ row }">
+                {{ formatInsuranceRatio(row.company_ratio) }}
+              </template>
+            </el-table-column>
           </el-table>
         </div>
         
@@ -3832,12 +3866,12 @@
             </el-table-column>
             <el-table-column prop="employee_ratio" label="个人比例">
               <template #default="{ row }">
-                {{ row.employee_ratio ? (row.employee_ratio * 100).toFixed(2) + '%' : '-' }}
+                {{ formatInsuranceRatio(row.employee_ratio) }}
               </template>
             </el-table-column>
             <el-table-column prop="company_ratio" label="公司比例">
               <template #default="{ row }">
-                {{ row.company_ratio ? (row.company_ratio * 100).toFixed(2) + '%' : '-' }}
+                {{ formatInsuranceRatio(row.company_ratio) }}
               </template>
             </el-table-column>
           </el-table>
@@ -3846,17 +3880,35 @@
         <!-- 其他保险信息显示 -->
         <div v-if="projectOtherInsurancePolicies && projectOtherInsurancePolicies.length > 0" class="insurance-details">
           <h4>其他保险信息</h4>
-          <el-form-item label="其他保险任务">
-            <el-switch
-              v-model="form.other_insurance_enabled"
-              inline-prompt
-              active-text="开"
-              inactive-text="关"
-            />
-            <div class="form-tip">关闭后，不再为该员工生成其他保险增减任务</div>
+          <el-form-item label="其他保险保单">
+            <el-checkbox-group
+              v-model="form.other_insurance_policy_ids"
+              class="other-insurance-checkbox-group"
+            >
+              <el-checkbox
+                v-for="policy in projectOtherInsurancePolicies"
+                :key="policy.id"
+                :label="policy.id"
+              >
+                {{ policy.name }}
+              </el-checkbox>
+            </el-checkbox-group>
+            <div class="form-tip">按员工实际参保的其他保险保单进行选择</div>
           </el-form-item>
           <el-table :data="projectOtherInsurancePolicies" size="small" border>
             <el-table-column prop="name" label="保险名称" />
+            <el-table-column label="是否参保" width="100">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="form.other_insurance_policy_ids.includes(Number(row.id))"
+                  type="success"
+                  size="small"
+                >
+                  已选
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="type" label="保险类型">
               <template #default="{ row }">
                 {{ typeof row.type === 'object' ? JSON.stringify(row.type) : row.type }}
@@ -6479,6 +6531,21 @@ const validateMedicalInsuranceBaseForLargeMedical = (_rule, value, callback) => 
   callback()
 }
 
+const insuranceRegionLabels = {
+  social_security_region_id: '社保参保地区',
+  medical_insurance_region_id: '医保参保地区',
+  housing_fund_region_id: '公积金参保地区'
+}
+
+const validateRequiredInsuranceRegion = (rule, value, callback) => {
+  if (!isFilledInsuranceField(rule.field, value)) {
+    callback(new Error(`请选择${insuranceRegionLabels[rule.field] || '参保地区'}`))
+    return
+  }
+
+  callback()
+}
+
 const triggerDateAndInsuranceValidation = async () => {
   await nextTick()
   if (!formRef.value) return
@@ -6552,11 +6619,44 @@ const normalizeSalaryAdjustmentRecord = (adjustment) => {
   }
 }
 
-const normalizeOtherInsuranceEnabled = (value) => {
-  if (value === undefined || value === null || value === '') {
-    return true
+const normalizeOtherInsurancePolicyIds = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return []
   }
-  return !(value === false || value === 0 || value === '0')
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      value = Array.isArray(parsed) ? parsed : []
+    } catch {
+      value = []
+    }
+  }
+
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return [...new Set(value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0))]
+}
+
+const applyOtherInsuranceSelectionByPolicies = (selectedIds = []) => {
+  const availableIds = projectOtherInsurancePolicies.value.map((item) => Number(item.id))
+  form.other_insurance_policy_ids = normalizeOtherInsurancePolicyIds(selectedIds)
+    .filter((id) => availableIds.includes(id))
+}
+
+const formatInsuranceRatio = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) {
+    return '-'
+  }
+
+  return `${(numericValue * 100).toFixed(2)}%`
 }
 
 const insuranceEnrollmentMonthFields = [
@@ -6617,7 +6717,7 @@ const buildEmployeeSubmitPayload = (source) => {
     bank_account_holder: bankAccountHolder,
     project_document_set_id: normalizeNullableId(normalizedSource.project_document_set_id),
     skip_form_filling: !!normalizedSource.skip_form_filling,
-    other_insurance_enabled: normalizeOtherInsuranceEnabled(normalizedSource.other_insurance_enabled),
+    other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(normalizedSource.other_insurance_policy_ids),
     social_security_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.social_security_region_id),
     medical_insurance_region_id: medicalInsuranceRegionId,
     housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.housing_fund_region_id),
@@ -6909,7 +7009,7 @@ const form = reactive({
   housing_fund_region_id: null,
   housing_fund_config_id: null,
   large_medical_insurance_config_id: null,
-  other_insurance_enabled: true,
+  other_insurance_policy_ids: [],
   social_insurance_enrollment_date: null,
   provident_fund_enrollment_date: null,
   medical_insurance_enrollment_date: null,
@@ -7056,28 +7156,43 @@ const formRules = {
     { required: true, message: '请选择合同结束日期', trigger: 'change' }
   ],
   medical_insurance_base: [
+    { required: true, message: '请输入医保基数', trigger: 'change' },
     { validator: validateMedicalInsuranceBaseForLargeMedical, trigger: 'change' }
+  ],
+  social_security_base: [
+    { required: true, message: '请输入社保基数', trigger: 'change' }
+  ],
+  housing_fund_base: [
+    { required: true, message: '请输入公积金基数', trigger: 'change' }
   ],
   project_ids: [
     { required: true, message: '请选择所属项目', trigger: 'change' }
   ],
   social_security_region_id: [
-    { required: true, message: '请选择社保参保地区', trigger: 'change' },
+    { validator: validateRequiredInsuranceRegion, trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   social_insurance_enrollment_date: [
+    { required: true, message: '请选择社保参保日期', trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   medical_insurance_region_id: [
+    { validator: validateRequiredInsuranceRegion, trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   medical_insurance_enrollment_date: [
+    { required: true, message: '请选择医保参保日期', trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   housing_fund_region_id: [
+    { validator: validateRequiredInsuranceRegion, trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
+  housing_fund_config_id: [
+    { required: true, message: '请选择公积金配置', trigger: 'change' }
+  ],
   provident_fund_enrollment_date: [
+    { required: true, message: '请选择公积金参保日期', trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ]
 }
@@ -8310,6 +8425,7 @@ const handleProjectIdsChange = async (projectIds, { preserveDocumentSet = false 
 const loadProjectOtherInsurancePolicies = async (projectIds) => {
   if (!projectIds || projectIds.length === 0) {
     projectOtherInsurancePolicies.value = []
+    applyOtherInsuranceSelectionByPolicies([])
     return
   }
   
@@ -8320,12 +8436,15 @@ const loadProjectOtherInsurancePolicies = async (projectIds) => {
     
     if (response.success) {
       projectOtherInsurancePolicies.value = response.data || []
+      applyOtherInsuranceSelectionByPolicies(form.other_insurance_policy_ids)
     } else {
       projectOtherInsurancePolicies.value = []
+      applyOtherInsuranceSelectionByPolicies([])
     }
   } catch (error) {
     console.error('加载其他保险信息失败:', error)
     projectOtherInsurancePolicies.value = []
+    applyOtherInsuranceSelectionByPolicies([])
   }
 }
 
@@ -8504,7 +8623,7 @@ const handleView = async (row) => {
       const employeeData = normalizeInsuranceEnrollmentMonthFields(convertNumericFields(data.employee))
       Object.assign(form, {
         ...employeeData,
-        other_insurance_enabled: normalizeOtherInsuranceEnabled(employeeData.other_insurance_enabled),
+        other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(employeeData.other_insurance_policy_ids),
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
@@ -8551,6 +8670,10 @@ const handleView = async (row) => {
       // 4. 设置其他保险政策
       if (data.other_insurance_policies) {
         projectOtherInsurancePolicies.value = data.other_insurance_policies
+        applyOtherInsuranceSelectionByPolicies(employeeData.other_insurance_policy_ids)
+      } else {
+        projectOtherInsurancePolicies.value = []
+        applyOtherInsuranceSelectionByPolicies([])
       }
       
       // 5. 设置大额医疗保险配置
@@ -8585,7 +8708,7 @@ const handleView = async (row) => {
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
-        other_insurance_enabled: normalizeOtherInsuranceEnabled(rowData.other_insurance_enabled),
+        other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(rowData.other_insurance_policy_ids),
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
@@ -8652,7 +8775,7 @@ const handleEdit = async (row) => {
       const employeeData = normalizeInsuranceEnrollmentMonthFields(convertNumericFields(data.employee))
       Object.assign(form, {
         ...employeeData,
-        other_insurance_enabled: normalizeOtherInsuranceEnabled(employeeData.other_insurance_enabled),
+        other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(employeeData.other_insurance_policy_ids),
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
@@ -8699,6 +8822,10 @@ const handleEdit = async (row) => {
       // 4. 设置其他保险政策
       if (data.other_insurance_policies) {
         projectOtherInsurancePolicies.value = data.other_insurance_policies
+        applyOtherInsuranceSelectionByPolicies(employeeData.other_insurance_policy_ids)
+      } else {
+        projectOtherInsurancePolicies.value = []
+        applyOtherInsuranceSelectionByPolicies([])
       }
       
       // 5. 设置大额医疗保险配置
@@ -8758,7 +8885,7 @@ const handleEdit = async (row) => {
     const rowData = convertNumericFields(row)
     Object.assign(form, {
       ...rowData,
-      other_insurance_enabled: normalizeOtherInsuranceEnabled(rowData.other_insurance_enabled),
+      other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(rowData.other_insurance_policy_ids),
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
@@ -9942,7 +10069,7 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
     housing_fund_region_id: null,
     housing_fund_config_id: null,
     large_medical_insurance_config_id: null,
-    other_insurance_enabled: true,
+    other_insurance_policy_ids: [],
     social_insurance_enrollment_date: null,
     provident_fund_enrollment_date: null,
     medical_insurance_enrollment_date: null,
@@ -11965,7 +12092,7 @@ const handleNewEmployee = async () => {
   if (!form.personnel_status) {
     form.personnel_status = 'active'
   }
-  form.other_insurance_enabled = normalizeOtherInsuranceEnabled(form.other_insurance_enabled)
+  form.other_insurance_policy_ids = normalizeOtherInsurancePolicyIds(form.other_insurance_policy_ids)
 
   // 工号字段清空，由后端根据项目自动生成（如：AA001, AB001）
   form.employee_number = ''

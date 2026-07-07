@@ -54,6 +54,7 @@ class Employee extends Model
         'large_medical_base' => '大额医疗基数',
         'large_medical_company_base' => '大额医疗公司基数',
         'other_insurance_enabled' => '其他保险开关',
+        'other_insurance_policy_ids' => '其他保险选择',
         'special_deduction' => '专项扣除',
         'personal_investment_amount' => '个人投资金额',
         'personal_investment_ratio' => '个人投资比例',
@@ -128,6 +129,7 @@ class Employee extends Model
         'housing_fund_config_id',  // 【公积金配置ID】
         'large_medical_insurance_config_id',  // 【大额医疗保险配置ID】
         'other_insurance_enabled',  // 【其他保险是否启用】
+        'other_insurance_policy_ids',  // 【员工选择的其他保险保单ID列表】
         'insurance_completed_at',  // 【参保完成时间】
         'password_changed_at',
         'login_failed_count',
@@ -190,6 +192,7 @@ class Employee extends Model
         'has_accident_insurance' => 'boolean',
         'has_employer_insurance' => 'boolean',
         'other_insurance_enabled' => 'boolean',
+        'other_insurance_policy_ids' => 'array',
         'is_retired' => 'boolean',
         'is_disabled' => 'boolean',
         'is_martyr_family' => 'boolean',
@@ -303,6 +306,82 @@ class Employee extends Model
 
         return $this->projects()->wherePivot('status', 'active')->first()
             ?: $this->projects()->first();
+    }
+
+    public static function supportsOtherInsurancePolicySelection(): bool
+    {
+        static $supports = null;
+
+        if ($supports !== null) {
+            return $supports;
+        }
+
+        $supports = Schema::hasColumn('employees', 'other_insurance_policy_ids');
+
+        return $supports;
+    }
+
+    public function getSelectedOtherInsurancePolicyIds(?Project $project = null): array
+    {
+        $project = $project ?: $this->getCurrentProject();
+        $projectPolicyIds = $this->getProjectOtherInsurancePolicyIds($project);
+
+        $selectedIds = $this->normalizeOtherInsurancePolicyIds(
+            static::supportsOtherInsurancePolicySelection()
+                ? $this->getAttribute('other_insurance_policy_ids')
+                : []
+        );
+
+        if (empty($projectPolicyIds)) {
+            return $selectedIds;
+        }
+
+        return array_values(array_intersect($selectedIds, $projectPolicyIds));
+    }
+
+    private function normalizeOtherInsurancePolicyIds($value): array
+    {
+        if ($value === null || $value === '') {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            $value = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map(function ($id) {
+            return is_numeric($id) ? (int) $id : null;
+        }, $value))));
+    }
+
+    private function getProjectOtherInsurancePolicyIds(?Project $project): array
+    {
+        if (!$project) {
+            return [];
+        }
+
+        if ($project->relationLoaded('otherInsurancePolicies') && $project->otherInsurancePolicies) {
+            return $project->otherInsurancePolicies
+                ->pluck('id')
+                ->map(function ($id) {
+                    return (int) $id;
+                })
+                ->values()
+                ->all();
+        }
+
+        return $project->otherInsurancePolicies()
+            ->pluck('other_insurance_policies.id')
+            ->map(function ($id) {
+                return (int) $id;
+            })
+            ->values()
+            ->all();
     }
 
     public function getCurrentProjectDocumentSetId(): ?int

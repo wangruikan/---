@@ -556,6 +556,16 @@ class InsuranceChangeDetectionService
             return null;
         }
 
+        $selectedPolicyIds = $employee
+            ? $employee->getSelectedOtherInsurancePolicyIds($project)
+            : $project->otherInsurancePolicies->pluck('id')->map(function ($id) {
+                return (int) $id;
+            })->values()->all();
+
+        if (empty($selectedPolicyIds)) {
+            return null;
+        }
+
         $usedQuotas = $personnel ? $personnel->used_quotas : [];
         if (is_string($usedQuotas)) {
             $usedQuotas = json_decode($usedQuotas, true) ?: [];
@@ -566,6 +576,10 @@ class InsuranceChangeDetectionService
 
         $policies = [];
         foreach ($project->otherInsurancePolicies as $policy) {
+            if (!in_array((int) $policy->id, $selectedPolicyIds, true)) {
+                continue;
+            }
+
             $quotaUsed = false;
             $removedPersonName = null;
 
@@ -726,16 +740,17 @@ class InsuranceChangeDetectionService
             case 'other_insurance':
                 // 其他保险：获取所有绑定了项目的员工
                 $query->whereHas('projects');
-                if ($this->supportsEmployeeOtherInsuranceToggle()) {
-                    $query->where(function ($subQuery) {
-                        $subQuery->where('other_insurance_enabled', true)
-                            ->orWhereNull('other_insurance_enabled');
-                    });
-                }
                 break;
         }
 
-        return $query->get();
+        $employees = $query->get();
+        if ($changeType === 'other_insurance') {
+            $employees = $employees->filter(function (Employee $employee) {
+                return !empty($employee->getSelectedOtherInsurancePolicyIds());
+            })->values();
+        }
+
+        return $employees;
     }
 
     /**
@@ -1153,6 +1168,13 @@ class InsuranceChangeDetectionService
                     break;
                 }
 
+                $selectedPolicyIds = $record->employee->getSelectedOtherInsurancePolicyIds($project);
+                if (empty($selectedPolicyIds)) {
+                    $record->other_insurance_policies = null;
+                    $record->used_quotas = null;
+                    break;
+                }
+
                 // 强制刷新 otherInsurancePolicies 关联
                 $project->load('otherInsurancePolicies');
                     
@@ -1166,6 +1188,10 @@ class InsuranceChangeDetectionService
                     
                 $otherInsurancePolicies = [];
                 foreach ($project->otherInsurancePolicies as $policy) {
+                    if (!in_array((int) $policy->id, $selectedPolicyIds, true)) {
+                        continue;
+                    }
+
                     $quotaUsed = false;
                     $removedPersonName = null;
                         
@@ -1240,29 +1266,12 @@ class InsuranceChangeDetectionService
 
     private function supportsEmployeeOtherInsuranceToggle(): bool
     {
-        static $supports = null;
-
-        if ($supports !== null) {
-            return $supports;
-        }
-
-        $supports = Schema::hasColumn('employees', 'other_insurance_enabled');
-
-        return $supports;
+        return Employee::supportsOtherInsurancePolicySelection();
     }
 
     private function isOtherInsuranceEnabledForEmployee(Employee $employee): bool
     {
-        if (!$this->supportsEmployeeOtherInsuranceToggle()) {
-            return true;
-        }
-
-        $value = $employee->other_insurance_enabled;
-        if ($value === null || $value === '') {
-            return true;
-        }
-
-        return (bool) $value;
+        return !empty($employee->getSelectedOtherInsurancePolicyIds());
     }
 
     /**

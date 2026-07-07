@@ -1309,7 +1309,7 @@ class ProjectController extends Controller
         
         if (!empty($addedPolicies) || !empty($removedPolicies)) {
             // 有变更，触发自动导入
-            $this->triggerOtherInsuranceChangeForProject($project, $addedPolicies, $removedPolicies);
+            $this->triggerOtherInsuranceChangeForProject($project, $oldPolicyIds, $newPolicyIds);
             
             \Log::info('检测到项目其他保险保单变更', [
                 'project_id' => $project->id,
@@ -1600,7 +1600,7 @@ class ProjectController extends Controller
     /**
      * 项目其他保险保单变更时，为该项目的所有员工创建增减记录
      */
-    private function triggerOtherInsuranceChangeForProject($project, $addedPolicies, $removedPolicies)
+    private function triggerOtherInsuranceChangeForProject($project, $oldPolicyIds, $newPolicyIds)
     {
         try {
             // 获取该项目下的所有在职员工
@@ -1618,13 +1618,27 @@ class ProjectController extends Controller
             $detectionService = app(\App\Services\InsuranceChangeDetectionService::class);
             
             foreach ($employees as $employee) {
+                $selectedPolicyIds = array_values(array_unique(array_filter(array_map(function ($id) {
+                    return is_numeric($id) ? (int) $id : null;
+                }, (array) ($employee->other_insurance_policy_ids ?? [])))));
+
+                $oldSelectedPolicyIds = array_values(array_intersect($selectedPolicyIds, array_map('intval', $oldPolicyIds)));
+                $newSelectedPolicyIds = array_values(array_intersect($selectedPolicyIds, array_map('intval', $newPolicyIds)));
+
+                sort($oldSelectedPolicyIds);
+                sort($newSelectedPolicyIds);
+
+                if ($oldSelectedPolicyIds === $newSelectedPolicyIds) {
+                    continue;
+                }
+
                 $detectionService->triggerChange([
                     'scope' => \App\Services\InsuranceChangeDetectionService::SCOPE_EMPLOYEE,
                     'change_type' => 'other_insurance',
                     'employee' => $employee,
                     'project_id' => $project->id,
-                    'old_data' => ['policies' => array_values($removedPolicies)],
-                    'new_data' => ['policies' => array_values($addedPolicies)],
+                    'old_data' => ['policies' => $oldSelectedPolicyIds],
+                    'new_data' => ['policies' => $newSelectedPolicyIds],
                     'source' => 'project_other_insurance_policy_change',
                 ]);
             }
@@ -1632,8 +1646,8 @@ class ProjectController extends Controller
             \Log::info('项目其他保险保单变更处理完成', [
                 'project_id' => $project->id,
                 'affected_employees' => $employees->count(),
-                'added_policies' => $addedPolicies,
-                'removed_policies' => $removedPolicies
+                'old_policies' => $oldPolicyIds,
+                'new_policies' => $newPolicyIds
             ]);
             
         } catch (\Exception $e) {

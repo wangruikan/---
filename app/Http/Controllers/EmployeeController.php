@@ -941,12 +941,31 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
+            'social_security_base' => 'required|numeric|min:0',
+            'medical_insurance_base' => 'required|numeric|min:0',
+            'housing_fund_base' => 'required|numeric|min:0',
             'social_security_region_id' => 'required|integer|exists:social_security_regions,id',
-            'other_insurance_enabled' => 'nullable|boolean',
+            'medical_insurance_region_id' => 'required|integer|exists:medical_insurance_regions,id',
+            'housing_fund_region_id' => 'required|integer|exists:housing_fund_regions,id',
+            'housing_fund_config_id' => 'required|integer|exists:housing_fund_configs,id',
+            'social_insurance_enrollment_date' => 'required|date',
+            'medical_insurance_enrollment_date' => 'required|date',
+            'provident_fund_enrollment_date' => 'required|date',
+            'other_insurance_policy_ids' => 'nullable|array',
+            'other_insurance_policy_ids.*' => 'integer|exists:other_insurance_policies,id',
         ], [
             'social_security_region_id.required' => '请选择社保参保地区',
             'social_security_region_id.integer' => '社保参保地区格式不正确',
             'social_security_region_id.exists' => '所选社保参保地区不存在',
+            'medical_insurance_region_id.required' => '请选择医保参保地区',
+            'medical_insurance_region_id.integer' => '医保参保地区格式不正确',
+            'medical_insurance_region_id.exists' => '所选医保参保地区不存在',
+            'housing_fund_region_id.required' => '请选择公积金参保地区',
+            'housing_fund_region_id.integer' => '公积金参保地区格式不正确',
+            'housing_fund_region_id.exists' => '所选公积金参保地区不存在',
+            'housing_fund_config_id.required' => '请选择公积金配置',
+            'housing_fund_config_id.integer' => '公积金配置格式不正确',
+            'housing_fund_config_id.exists' => '所选公积金配置不存在',
         ]);
 
         if ($validator->fails()) {
@@ -1072,7 +1091,7 @@ class EmployeeController extends ApiController
             'special_deduction', 'is_annual_deduction',
             'social_security_region_id', 'medical_insurance_region_id', 
             'housing_fund_region_id', 'housing_fund_config_id', 
-            'large_medical_insurance_config_id', 'other_insurance_enabled', 'insurance_completed_at',
+            'large_medical_insurance_config_id', 'other_insurance_enabled', 'other_insurance_policy_ids', 'insurance_completed_at',
             'social_insurance_enrollment_date', 'provident_fund_enrollment_date',
             'medical_insurance_enrollment_date', 'large_medical_enrollment_date',
             
@@ -1116,15 +1135,6 @@ class EmployeeController extends ApiController
             $employeeData['personnel_status'] = 'active';
         }
 
-        if ($this->supportsEmployeeOtherInsuranceToggle()) {
-            $employeeData['other_insurance_enabled'] = $this->normalizeOtherInsuranceToggleValue(
-                $employeeData['other_insurance_enabled'] ?? null,
-                true
-            );
-        } else {
-            unset($employeeData['other_insurance_enabled']);
-        }
-        
         // 为布尔字段设置默认值（防止NOT NULL约束错误）
         $booleanFields = ['is_disabled', 'is_martyr_family', 'is_elderly_alone', 'skip_form_filling', 'deduct_expense'];
         foreach ($booleanFields as $field) {
@@ -1165,6 +1175,12 @@ class EmployeeController extends ApiController
         }
 
         $this->syncLargeMedicalWithMedical($employeeData);
+        $this->syncEmployeeOtherInsuranceSelection(
+            $employeeData,
+            $request->has('project_ids') && is_array($request->project_ids)
+                ? ($request->project_ids[0] ?? null)
+                : null
+        );
         
         // 【账套关联】自动关联到当前账套
         $currentAccountSetId = $request->input('current_account_set_id');
@@ -1250,8 +1266,7 @@ class EmployeeController extends ApiController
             'housing_fund_region_id' => null,
             'housing_fund_config_id' => null,
             'large_medical_insurance_config_id' => null,
-            'other_insurance_enabled' => false,
-            'project_other_insurance_policy_ids' => [],
+            'other_insurance_policy_ids' => [],
             'social_security_base' => null,
             'medical_insurance_base' => null,
             'housing_fund_base' => null,
@@ -1312,12 +1327,31 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
+            'social_security_base' => 'sometimes|required|numeric|min:0',
+            'medical_insurance_base' => 'sometimes|required|numeric|min:0',
+            'housing_fund_base' => 'sometimes|required|numeric|min:0',
             'social_security_region_id' => 'sometimes|required|integer|exists:social_security_regions,id',
-            'other_insurance_enabled' => 'nullable|boolean',
+            'medical_insurance_region_id' => 'sometimes|required|integer|exists:medical_insurance_regions,id',
+            'housing_fund_region_id' => 'sometimes|required|integer|exists:housing_fund_regions,id',
+            'housing_fund_config_id' => 'sometimes|required|integer|exists:housing_fund_configs,id',
+            'social_insurance_enrollment_date' => 'sometimes|required|date',
+            'medical_insurance_enrollment_date' => 'sometimes|required|date',
+            'provident_fund_enrollment_date' => 'sometimes|required|date',
+            'other_insurance_policy_ids' => 'nullable|array',
+            'other_insurance_policy_ids.*' => 'integer|exists:other_insurance_policies,id',
         ], [
             'social_security_region_id.required' => '请选择社保参保地区',
             'social_security_region_id.integer' => '社保参保地区格式不正确',
             'social_security_region_id.exists' => '所选社保参保地区不存在',
+            'medical_insurance_region_id.required' => '请选择医保参保地区',
+            'medical_insurance_region_id.integer' => '医保参保地区格式不正确',
+            'medical_insurance_region_id.exists' => '所选医保参保地区不存在',
+            'housing_fund_region_id.required' => '请选择公积金参保地区',
+            'housing_fund_region_id.integer' => '公积金参保地区格式不正确',
+            'housing_fund_region_id.exists' => '所选公积金参保地区不存在',
+            'housing_fund_config_id.required' => '请选择公积金配置',
+            'housing_fund_config_id.integer' => '公积金配置格式不正确',
+            'housing_fund_config_id.exists' => '所选公积金配置不存在',
         ]);
 
         if ($validator->fails()) {
@@ -1382,7 +1416,7 @@ class EmployeeController extends ApiController
             'special_deduction', 'is_annual_deduction',
             'social_security_region_id', 'medical_insurance_region_id', 
             'housing_fund_region_id', 'housing_fund_config_id', 
-            'large_medical_insurance_config_id', 'other_insurance_enabled', 'insurance_completed_at',
+            'large_medical_insurance_config_id', 'other_insurance_enabled', 'other_insurance_policy_ids', 'insurance_completed_at',
             'social_insurance_enrollment_date', 'provident_fund_enrollment_date',
             'medical_insurance_enrollment_date', 'large_medical_enrollment_date',
             
@@ -1435,17 +1469,6 @@ class EmployeeController extends ApiController
             }
         }
 
-        if ($this->supportsEmployeeOtherInsuranceToggle()) {
-            if (array_key_exists('other_insurance_enabled', $updateData)) {
-                $updateData['other_insurance_enabled'] = $this->normalizeOtherInsuranceToggleValue(
-                    $updateData['other_insurance_enabled'],
-                    true
-                );
-            }
-        } else {
-            unset($updateData['other_insurance_enabled']);
-        }
-        
         // 清理数值字段，移除千位分隔符
         $numericFields = ['basic_salary', 'social_security_base', 'medical_insurance_base', 'housing_fund_base', 'large_medical_base', 'large_medical_company_base', 'special_deduction'];
         foreach ($numericFields as $field) {
@@ -1480,6 +1503,14 @@ class EmployeeController extends ApiController
         }
 
         $this->syncLargeMedicalWithMedical($updateData, $employee);
+        $this->syncEmployeeOtherInsuranceSelection(
+            $updateData,
+            $request->has('project_ids') && is_array($request->project_ids)
+                ? ($request->project_ids[0] ?? null)
+                : $employee->getCurrentProject()?->id,
+            true,
+            $employee
+        );
 
         // 记录项目变更前后的对比（单活跃项目）
         $originalInsuranceData = $employee->only([
@@ -1488,7 +1519,7 @@ class EmployeeController extends ApiController
             'housing_fund_region_id',
             'housing_fund_config_id',
             'large_medical_insurance_config_id',
-            'other_insurance_enabled',
+            'other_insurance_policy_ids',
             'social_security_base',
             'medical_insurance_base',
             'housing_fund_base',
@@ -1496,7 +1527,6 @@ class EmployeeController extends ApiController
             'large_medical_company_base',
         ]);
         $oldActiveProjectId = $employee->activeProjects()->pluck('projects.id')->first();
-        $originalInsuranceData['project_other_insurance_policy_ids'] = $this->getProjectOtherInsurancePolicyIds($oldActiveProjectId);
         $newProjectId = null;
         if ($request->has('project_ids') && is_array($request->project_ids)) {
             $newProjectId = $request->project_ids[0] ?? null;
@@ -2742,7 +2772,7 @@ class EmployeeController extends ApiController
                 'id' => $policy->id,
                 'name' => $policy->policy_name,
                 'type' => $policy->type ? $policy->type->name : '未知类型',
-                'coverage' => $policy->description || '暂无描述',
+                'coverage' => $policy->description ?: '暂无描述',
                 'employee_per_capita_cost' => $policy->employee_per_capita_cost,
                 'contact_name' => $policy->contact_name,
                 'contact_phone' => $policy->contact_phone,
@@ -2877,12 +2907,10 @@ class EmployeeController extends ApiController
             foreach ($categoryMap as $changeType => $fieldMap) {
                 if ($changeType === 'other_insurance') {
                     $oldPayload = $this->buildOtherInsuranceChangePayload(
-                        $originalData['other_insurance_enabled'] ?? true,
-                        $originalData['project_other_insurance_policy_ids'] ?? []
+                        $originalData['other_insurance_policy_ids'] ?? []
                     );
                     $newPayload = $this->buildOtherInsuranceChangePayload(
-                        $employee->other_insurance_enabled ?? null,
-                        $this->getProjectOtherInsurancePolicyIds($employee->getCurrentProject()?->id)
+                        $employee->other_insurance_policy_ids ?? []
                     );
 
                     if ($this->isSameInsuranceChangeValue($oldPayload['policies'] ?? [], $newPayload['policies'] ?? [])) {
@@ -2962,6 +2990,20 @@ class EmployeeController extends ApiController
 
     private function isSameInsuranceChangeValue($oldValue, $newValue): bool
     {
+        if (is_array($oldValue) || is_array($newValue)) {
+            $normalize = function ($value): array {
+                $items = is_array($value) ? $value : [$value];
+                $items = array_values(array_filter(array_map(function ($item) {
+                    return is_numeric($item) ? (int) $item : null;
+                }, $items)));
+                sort($items);
+
+                return $items;
+            };
+
+            return $normalize($oldValue) === $normalize($newValue);
+        }
+
         if (($oldValue === null || $oldValue === '') && ($newValue === null || $newValue === '')) {
             return true;
         }
@@ -2973,7 +3015,7 @@ class EmployeeController extends ApiController
         return $oldValue == $newValue;
     }
 
-    private function supportsEmployeeOtherInsuranceToggle(): bool
+    private function supportsEmployeeOtherInsurancePolicySelection(): bool
     {
         static $supports = null;
 
@@ -2981,28 +3023,67 @@ class EmployeeController extends ApiController
             return $supports;
         }
 
-        $supports = Schema::hasColumn('employees', 'other_insurance_enabled');
+        $supports = Schema::hasColumn('employees', 'other_insurance_policy_ids');
 
         return $supports;
     }
 
-    private function normalizeOtherInsuranceToggleValue($value, bool $default = true): bool
+    private function normalizeOtherInsurancePolicyIds($value): array
     {
         if ($value === null || $value === '') {
-            return $default;
+            return [];
         }
 
-        if (is_bool($value)) {
-            return $value;
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            $value = is_array($decoded) ? $decoded : [];
         }
 
-        if (is_numeric($value)) {
-            return (int) $value === 1;
+        if (!is_array($value)) {
+            return [];
         }
 
-        $normalized = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $policyIds = array_values(array_unique(array_filter(array_map(function ($id) {
+            return is_numeric($id) ? (int) $id : null;
+        }, $value))));
+        sort($policyIds);
 
-        return $normalized === null ? $default : $normalized;
+        return $policyIds;
+    }
+
+    private function syncEmployeeOtherInsuranceSelection(
+        array &$employeeData,
+        $projectId,
+        bool $preserveWhenMissing = false,
+        ?Employee $employee = null
+    ): void
+    {
+        $hasIncomingSelection = array_key_exists('other_insurance_policy_ids', $employeeData);
+        if ($preserveWhenMissing && !$hasIncomingSelection && $employee) {
+            $selectedPolicyIds = $this->normalizeOtherInsurancePolicyIds($employee->other_insurance_policy_ids ?? []);
+        } else {
+            $selectedPolicyIds = $this->normalizeOtherInsurancePolicyIds($employeeData['other_insurance_policy_ids'] ?? []);
+        }
+
+        $projectPolicyIds = $this->getProjectOtherInsurancePolicyIds($projectId);
+
+        if (!empty($projectPolicyIds)) {
+            $selectedPolicyIds = array_values(array_intersect($selectedPolicyIds, $projectPolicyIds));
+        } else {
+            $selectedPolicyIds = [];
+        }
+
+        if ($this->supportsEmployeeOtherInsurancePolicySelection()) {
+            $employeeData['other_insurance_policy_ids'] = $selectedPolicyIds;
+        } else {
+            unset($employeeData['other_insurance_policy_ids']);
+        }
+
+        if (Schema::hasColumn('employees', 'other_insurance_enabled')) {
+            $employeeData['other_insurance_enabled'] = !empty($selectedPolicyIds);
+        } else {
+            unset($employeeData['other_insurance_enabled']);
+        }
     }
 
     private function getProjectOtherInsurancePolicyIds($projectId): array
@@ -3025,16 +3106,10 @@ class EmployeeController extends ApiController
             ->all();
     }
 
-    private function buildOtherInsuranceChangePayload($enabled, array $policyIds): array
+    private function buildOtherInsuranceChangePayload($policyIds): array
     {
-        $isEnabled = $this->normalizeOtherInsuranceToggleValue($enabled, true);
-
         return [
-            'policies' => $isEnabled
-                ? array_values(array_filter($policyIds, function ($id) {
-                    return !empty($id);
-                }))
-                : [],
+            'policies' => $this->normalizeOtherInsurancePolicyIds($policyIds),
         ];
     }
 
@@ -3259,7 +3334,7 @@ class EmployeeController extends ApiController
                             'id' => $policy->id,
                             'name' => $policy->policy_name,
                             'type' => $policy->type ? $policy->type->name : '未知类型',
-                            'coverage' => $policy->description || '暂无描述',
+                            'coverage' => $policy->description ?: '暂无描述',
                             'employee_per_capita_cost' => $policy->employee_per_capita_cost,
                             'contact_name' => $policy->contact_name,
                             'contact_phone' => $policy->contact_phone,

@@ -131,7 +131,12 @@
                   {{ getPrimaryRegionName(row) || '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="离职原因" min-width="220" show-overflow-tooltip>
+              <el-table-column
+                v-if="changeStatusTab === 'decrease'"
+                label="离职原因"
+                min-width="220"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   {{ getChangeLeaveReason(row) || '-' }}
                 </template>

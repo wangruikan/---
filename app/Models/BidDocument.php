@@ -34,6 +34,7 @@ class BidDocument extends Model
     const TYPE_QUALIFICATION = 'qualification';         // 资质证明
     const TYPE_BOND_RECEIPT = 'bond_receipt';           // 保证金凭证
     const TYPE_CONTRACT = 'contract';                   // 合同文件
+    const TYPE_LOST_REASON_ATTACHMENT = 'lost_reason_attachment'; // 未中标附件
     const TYPE_OTHER = 'other';                         // 其他
 
     /**
@@ -49,6 +50,7 @@ class BidDocument extends Model
             self::TYPE_QUALIFICATION => '资质证明',
             self::TYPE_BOND_RECEIPT => '保证金凭证',
             self::TYPE_CONTRACT => '合同文件',
+            self::TYPE_LOST_REASON_ATTACHMENT => '未中标附件',
             self::TYPE_OTHER => '其他',
         ];
         return $typeMap[$type] ?? $type;

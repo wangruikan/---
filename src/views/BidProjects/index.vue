@@ -45,8 +45,8 @@
               <el-icon :size="30"><Warning /></el-icon>
             </div>
             <div class="stat-content">
-              <div class="stat-label">即将到期</div>
-              <div class="stat-value">{{ statistics.deadline_approaching || 0 }}</div>
+              <div class="stat-label">已到期</div>
+              <div class="stat-value">{{ statistics.overdue || 0 }}</div>
             </div>
           </div>
         </el-card>
@@ -180,6 +180,14 @@
             <el-tag v-if="scope.row.bid_result" :type="getResultType(scope.row.bid_result)">
               {{ scope.row.result_text }}
             </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lost_reason" label="未中标原因" width="120">
+          <template #default="scope">
+            <span v-if="scope.row.status === 'lost' || scope.row.bid_result === 'lost'">
+              {{ scope.row.lost_reason || '-' }}
+            </span>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -421,6 +429,22 @@
             <el-option label="已取消" value="cancelled" />
           </el-select>
         </el-form-item>
+        <el-form-item label="未中标原因" required v-if="statusForm.status === 'lost'">
+          <el-select v-model="statusForm.lost_reason" placeholder="请选择未中标原因" style="width: 100%;">
+            <el-option v-for="item in lostReasonOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="附件" required v-if="requiresStatusLostAttachment">
+          <el-upload
+            ref="statusUploadRef"
+            :auto-upload="false"
+            :limit="1"
+            :on-change="handleStatusAttachmentChange"
+            :on-remove="handleStatusAttachmentRemove"
+          >
+            <el-button type="primary">选择附件</el-button>
+          </el-upload>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input
             v-model="statusForm.remarks"
@@ -545,9 +569,16 @@ const formRules = {
 // 状态对话框
 const statusDialogVisible = ref(false)
 const currentProject = ref(null)
+const statusUploadRef = ref(null)
+const lostReasonOptions = ['废标', '流标', '未列首标']
 const statusForm = reactive({
   status: '',
+  lost_reason: '',
+  attachment: null,
   remarks: ''
+})
+const requiresStatusLostAttachment = computed(() => {
+  return statusForm.status === 'lost' && ['流标', '未列首标'].includes(statusForm.lost_reason)
 })
 
 // 详情对话框
@@ -659,8 +690,19 @@ const handleView = (row) => {
 const handleUpdateStatus = (row) => {
   currentProject.value = row
   statusForm.status = row.status
+  statusForm.lost_reason = row.lost_reason || ''
+  statusForm.attachment = null
   statusForm.remarks = ''
+  statusUploadRef.value?.clearFiles()
   statusDialogVisible.value = true
+}
+
+const handleStatusAttachmentChange = (file) => {
+  statusForm.attachment = file.raw
+}
+
+const handleStatusAttachmentRemove = () => {
+  statusForm.attachment = null
 }
 
 // 确认更新状态
@@ -669,10 +711,19 @@ const handleConfirmUpdateStatus = async () => {
     ElMessage.warning('请选择新状态')
     return
   }
+  if (statusForm.status === 'lost' && !statusForm.lost_reason) {
+    ElMessage.warning('请选择未中标原因')
+    return
+  }
+  if (requiresStatusLostAttachment.value && !statusForm.attachment) {
+    ElMessage.warning('请上传未中标附件')
+    return
+  }
 
   submitLoading.value = true
   try {
-    const response = await updateBidProjectStatus(currentProject.value.id, statusForm)
+    const payload = buildStatusPayload()
+    const response = await updateBidProjectStatus(currentProject.value.id, payload)
     if (response && response.success) {
       ElMessage.success('状态更新成功')
       statusDialogVisible.value = false
@@ -712,6 +763,19 @@ const handleSubmit = async () => {
   } finally {
     submitLoading.value = false
   }
+}
+
+const buildStatusPayload = () => {
+  const payload = new FormData()
+  payload.append('status', statusForm.status)
+  payload.append('remarks', statusForm.remarks || '')
+  if (statusForm.status === 'lost') {
+    payload.append('lost_reason', statusForm.lost_reason || '')
+    if (statusForm.attachment) {
+      payload.append('attachment', statusForm.attachment)
+    }
+  }
+  return payload
 }
 
 // 删除

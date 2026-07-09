@@ -53,6 +53,9 @@
             <el-descriptions-item label="中标日期" v-if="project.bid_result === 'won'">
               {{ project.win_date || '-' }}
             </el-descriptions-item>
+            <el-descriptions-item label="未中标原因" v-if="project.bid_result === 'lost' || project.status === 'lost'">
+              {{ project.lost_reason || '-' }}
+            </el-descriptions-item>
             <el-descriptions-item label="负责人">{{ project.responsible_person || '-' }}</el-descriptions-item>
             <el-descriptions-item label="负责部门">{{ project.responsible_department || '-' }}</el-descriptions-item>
             <el-descriptions-item label="项目规模" :span="2">
@@ -151,6 +154,7 @@
             <el-option label="资质证明" value="qualification" />
             <el-option label="保证金凭证" value="bond_receipt" />
             <el-option label="合同文件" value="contract" />
+            <el-option label="未中标附件" value="lost_reason_attachment" />
             <el-option label="其他" value="other" />
           </el-select>
         </el-form-item>
@@ -256,6 +260,22 @@
             value-format="YYYY-MM-DD"
           />
         </el-form-item>
+        <el-form-item label="未中标原因" v-if="resultForm.bid_result === 'lost'" required>
+          <el-select v-model="resultForm.lost_reason" placeholder="请选择未中标原因" style="width: 100%;">
+            <el-option v-for="item in lostReasonOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="附件" v-if="requiresResultLostAttachment" required>
+          <el-upload
+            ref="resultUploadRef"
+            :auto-upload="false"
+            :limit="1"
+            :on-change="handleResultAttachmentChange"
+            :on-remove="handleResultAttachmentRemove"
+          >
+            <el-button type="primary">选择附件</el-button>
+          </el-upload>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="resultForm.remarks" type="textarea" :rows="3" />
         </el-form-item>
@@ -272,7 +292,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload } from '@element-plus/icons-vue'
 import {
@@ -319,11 +339,18 @@ const logForm = reactive({
 
 // 设置结果
 const resultDialogVisible = ref(false)
+const resultUploadRef = ref(null)
+const lostReasonOptions = ['废标', '流标', '未列首标']
 const resultForm = reactive({
   bid_result: '',
+  lost_reason: '',
   win_amount: '',
   win_date: '',
+  attachment: null,
   remarks: ''
+})
+const requiresResultLostAttachment = computed(() => {
+  return resultForm.bid_result === 'lost' && ['流标', '未列首标'].includes(resultForm.lost_reason)
 })
 
 watch(() => props.modelValue, (val) => {
@@ -464,7 +491,17 @@ const handleSetResult = () => {
   Object.keys(resultForm).forEach(key => {
     resultForm[key] = ''
   })
+  resultForm.attachment = null
+  resultUploadRef.value?.clearFiles()
   resultDialogVisible.value = true
+}
+
+const handleResultAttachmentChange = (file) => {
+  resultForm.attachment = file.raw
+}
+
+const handleResultAttachmentRemove = () => {
+  resultForm.attachment = null
 }
 
 const handleConfirmSetResult = async () => {
@@ -477,10 +514,18 @@ const handleConfirmSetResult = async () => {
     ElMessage.warning('请输入中标金额')
     return
   }
+  if (resultForm.bid_result === 'lost' && !resultForm.lost_reason) {
+    ElMessage.warning('请选择未中标原因')
+    return
+  }
+  if (requiresResultLostAttachment.value && !resultForm.attachment) {
+    ElMessage.warning('请上传未中标附件')
+    return
+  }
 
   submitLoading.value = true
   try {
-    const response = await setBidResult(props.projectId, resultForm)
+    const response = await setBidResult(props.projectId, buildResultPayload())
     if (response && response.success) {
       ElMessage.success('设置成功')
       resultDialogVisible.value = false
@@ -493,6 +538,23 @@ const handleConfirmSetResult = async () => {
   } finally {
     submitLoading.value = false
   }
+}
+
+const buildResultPayload = () => {
+  const payload = new FormData()
+  payload.append('bid_result', resultForm.bid_result)
+  payload.append('remarks', resultForm.remarks || '')
+  if (resultForm.bid_result === 'won') {
+    payload.append('win_amount', resultForm.win_amount || '')
+    payload.append('win_date', resultForm.win_date || '')
+  }
+  if (resultForm.bid_result === 'lost') {
+    payload.append('lost_reason', resultForm.lost_reason || '')
+    if (resultForm.attachment) {
+      payload.append('attachment', resultForm.attachment)
+    }
+  }
+  return payload
 }
 
 const handleClose = () => {
@@ -544,6 +606,7 @@ const getDocumentTypeText = (type) => {
     qualification: '资质证明',
     bond_receipt: '保证金凭证',
     contract: '合同文件',
+    lost_reason_attachment: '未中标附件',
     other: '其他'
   }
   return typeMap[type] || type

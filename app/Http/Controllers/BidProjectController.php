@@ -28,7 +28,7 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $query = BidProject::where('account_set_id', $accountSetId)
+        $query = $this->visibleBidProjectQuery($user, $accountSetId)
             ->with('creator:id,name');
 
         // 搜索条件
@@ -100,8 +100,8 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->with(['documents', 'progressLogs' => function($query) {
                 $query->orderBy('log_time', 'desc');
             }])
@@ -226,8 +226,8 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->first();
 
         if (!$project) {
@@ -310,8 +310,8 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->first();
 
         if (!$project) {
@@ -367,8 +367,25 @@ class BidProjectController extends Controller
 
         $validator = Validator::make($request->all(), [
             'status' => 'required|string|in:preparing,submitted,opened,evaluating,won,lost,abandoned,contracted,completed,cancelled',
+            'lost_reason' => 'nullable|string|in:废标,流标,未列首标',
+            'attachment' => 'nullable|file|max:51200',
             'remarks' => 'nullable|string',
         ]);
+
+        $validator->after(function ($validator) use ($request) {
+            if ($request->status !== BidProject::STATUS_LOST) {
+                return;
+            }
+
+            if (!$request->lost_reason) {
+                $validator->errors()->add('lost_reason', '请选择未中标原因');
+                return;
+            }
+
+            if (in_array($request->lost_reason, ['流标', '未列首标'], true) && !$request->hasFile('attachment')) {
+                $validator->errors()->add('attachment', '请上传未中标附件');
+            }
+        });
 
         if ($validator->fails()) {
             return response()->json([
@@ -378,8 +395,8 @@ class BidProjectController extends Controller
             ], 422);
         }
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->first();
 
         if (!$project) {
@@ -394,14 +411,34 @@ class BidProjectController extends Controller
             $oldStatus = $project->status;
             $newStatus = $request->status;
 
-            $project->update(['status' => $newStatus]);
+            $updateData = ['status' => $newStatus];
+            if ($newStatus === BidProject::STATUS_LOST) {
+                $updateData['bid_result'] = BidProject::RESULT_LOST;
+                $updateData['lost_reason'] = $request->lost_reason;
+            }
+
+            $project->update($updateData);
+
+            $attachment = null;
+            if ($newStatus === BidProject::STATUS_LOST && $request->hasFile('attachment')) {
+                $attachment = $this->storeBidDocumentFromUpload(
+                    $request,
+                    $project,
+                    BidDocument::TYPE_LOST_REASON_ATTACHMENT,
+                    '未中标附件-' . $request->lost_reason,
+                    $request->remarks
+                );
+            }
 
             // 记录状态变更
             BidProgressLog::create([
                 'bid_project_id' => $project->id,
                 'log_type' => BidProgressLog::TYPE_STATUS_CHANGE,
                 'log_title' => '状态变更',
-                'log_content' => $request->remarks ?? '项目状态由【' . BidProject::getStatusText($oldStatus) . '】变更为【' . BidProject::getStatusText($newStatus) . '】',
+                'log_content' => $request->remarks
+                    ?? '项目状态由【' . BidProject::getStatusText($oldStatus) . '】变更为【' . BidProject::getStatusText($newStatus) . '】'
+                        . ($request->lost_reason ? '，未中标原因：' . $request->lost_reason : '')
+                        . ($attachment ? '，已上传附件：' . $attachment->document_name : ''),
                 'old_status' => $oldStatus,
                 'new_status' => $newStatus,
                 'log_time' => now(),
@@ -435,10 +472,27 @@ class BidProjectController extends Controller
 
         $validator = Validator::make($request->all(), [
             'bid_result' => 'required|string|in:won,lost,abandoned',
+            'lost_reason' => 'nullable|string|in:废标,流标,未列首标',
             'win_amount' => 'nullable|numeric|min:0',
             'win_date' => 'nullable|date',
+            'attachment' => 'nullable|file|max:51200',
             'remarks' => 'nullable|string',
         ]);
+
+        $validator->after(function ($validator) use ($request) {
+            if ($request->bid_result !== BidProject::RESULT_LOST) {
+                return;
+            }
+
+            if (!$request->lost_reason) {
+                $validator->errors()->add('lost_reason', '请选择未中标原因');
+                return;
+            }
+
+            if (in_array($request->lost_reason, ['流标', '未列首标'], true) && !$request->hasFile('attachment')) {
+                $validator->errors()->add('attachment', '请上传未中标附件');
+            }
+        });
 
         if ($validator->fails()) {
             return response()->json([
@@ -448,8 +502,8 @@ class BidProjectController extends Controller
             ], 422);
         }
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->first();
 
         if (!$project) {
@@ -464,27 +518,45 @@ class BidProjectController extends Controller
             $updateData = [
                 'bid_result' => $request->bid_result,
             ];
+            $oldStatus = $project->status;
 
             // 根据结果更新状态
             if ($request->bid_result === 'won') {
                 $updateData['status'] = BidProject::STATUS_WON;
                 $updateData['win_amount'] = $request->win_amount;
                 $updateData['win_date'] = $request->win_date ?? now()->toDateString();
+                $updateData['lost_reason'] = null;
             } elseif ($request->bid_result === 'lost') {
                 $updateData['status'] = BidProject::STATUS_LOST;
+                $updateData['lost_reason'] = $request->lost_reason;
             } else {
                 $updateData['status'] = BidProject::STATUS_ABANDONED;
+                $updateData['lost_reason'] = null;
             }
 
             $project->update($updateData);
+
+            $attachment = null;
+            if ($request->bid_result === BidProject::RESULT_LOST && $request->hasFile('attachment')) {
+                $attachment = $this->storeBidDocumentFromUpload(
+                    $request,
+                    $project,
+                    BidDocument::TYPE_LOST_REASON_ATTACHMENT,
+                    '未中标附件-' . $request->lost_reason,
+                    $request->remarks
+                );
+            }
 
             // 记录日志
             BidProgressLog::create([
                 'bid_project_id' => $project->id,
                 'log_type' => BidProgressLog::TYPE_STATUS_CHANGE,
                 'log_title' => '投标结果确定',
-                'log_content' => $request->remarks ?? '投标结果：' . BidProject::getResultText($request->bid_result),
-                'old_status' => $project->status,
+                'log_content' => $request->remarks
+                    ?? '投标结果：' . BidProject::getResultText($request->bid_result)
+                        . ($request->lost_reason ? '，未中标原因：' . $request->lost_reason : '')
+                        . ($attachment ? '，已上传附件：' . $attachment->document_name : ''),
+                'old_status' => $oldStatus,
                 'new_status' => $updateData['status'],
                 'log_time' => now(),
                 'operator_id' => $user->id,
@@ -531,8 +603,8 @@ class BidProjectController extends Controller
             ], 422);
         }
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->first();
 
         if (!$project) {
@@ -544,21 +616,14 @@ class BidProjectController extends Controller
 
         DB::beginTransaction();
         try {
-            $file = $request->file('file');
-            $filePath = $file->store('bid_documents/' . $id, 'public');
-
-            $document = BidDocument::create([
-                'bid_project_id' => $id,
-                'document_type' => $request->document_type,
-                'document_name' => $request->document_name,
-                'file_path' => $filePath,
-                'file_size' => $file->getSize(),
-                'file_type' => $file->getClientOriginalExtension(),
-                'upload_by' => $user->id,
-                'upload_at' => now(),
-                'version' => $request->version ?? '1.0',
-                'remarks' => $request->remarks,
-            ]);
+            $document = $this->storeBidDocumentFromUpload(
+                $request,
+                $project,
+                $request->document_type,
+                $request->document_name,
+                $request->remarks,
+                $request->version ?? '1.0'
+            );
 
             // 记录日志
             BidProgressLog::create([
@@ -596,8 +661,8 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $project = BidProject::where('id', $projectId)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $projectId)
             ->first();
 
         if (!$project) {
@@ -662,8 +727,8 @@ class BidProjectController extends Controller
             ], 422);
         }
 
-        $project = BidProject::where('id', $id)
-            ->where('account_set_id', $accountSetId)
+        $project = $this->visibleBidProjectQuery($user, $accountSetId)
+            ->where('id', $id)
             ->first();
 
         if (!$project) {
@@ -713,17 +778,17 @@ class BidProjectController extends Controller
 
         // 统计各种状态的数量
         $stats = [
-            'total' => BidProject::where('account_set_id', $accountSetId)->count(),
-            'preparing' => BidProject::where('account_set_id', $accountSetId)->where('status', BidProject::STATUS_PREPARING)->count(),
-            'submitted' => BidProject::where('account_set_id', $accountSetId)->where('status', BidProject::STATUS_SUBMITTED)->count(),
+            'total' => $this->visibleBidProjectQuery($user, $accountSetId)->count(),
+            'preparing' => $this->visibleBidProjectQuery($user, $accountSetId)->where('status', BidProject::STATUS_PREPARING)->count(),
+            'submitted' => $this->visibleBidProjectQuery($user, $accountSetId)->where('status', BidProject::STATUS_SUBMITTED)->count(),
             // 中标：可能status是won，或者bid_result是won
-            'won' => BidProject::where('account_set_id', $accountSetId)
+            'won' => $this->visibleBidProjectQuery($user, $accountSetId)
                 ->where(function($query) {
                     $query->where('status', BidProject::STATUS_WON)
                           ->orWhere('bid_result', BidProject::RESULT_WON);
                 })
                 ->count(),
-            'lost' => BidProject::where('account_set_id', $accountSetId)
+            'lost' => $this->visibleBidProjectQuery($user, $accountSetId)
                 ->where(function($query) {
                     $query->where('status', BidProject::STATUS_LOST)
                           ->orWhere('bid_result', BidProject::RESULT_LOST);
@@ -734,7 +799,7 @@ class BidProjectController extends Controller
         ];
 
         // 计算即将到期和已过期
-        $projects = BidProject::where('account_set_id', $accountSetId)
+        $projects = $this->visibleBidProjectQuery($user, $accountSetId)
             ->whereNotNull('bid_deadline')
             ->get();
 
@@ -778,7 +843,7 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $categories = BidProject::where('account_set_id', $accountSetId)
+        $categories = $this->visibleBidProjectQuery($user, $accountSetId)
             ->whereNotNull('project_category')
             ->distinct()
             ->pluck('project_category');
@@ -786,6 +851,47 @@ class BidProjectController extends Controller
         return response()->json([
             'success' => true,
             'data' => $categories
+        ]);
+    }
+
+    private function visibleBidProjectQuery($user, $accountSetId)
+    {
+        $query = BidProject::where('account_set_id', $accountSetId);
+
+        if (!$this->canViewAllBidProjects($user)) {
+            $query->where('created_by', $user->id);
+        }
+
+        return $query;
+    }
+
+    private function canViewAllBidProjects($user): bool
+    {
+        return $user && in_array($user->role, ['super_admin', 'admin', 'manager', 'senior_manager'], true);
+    }
+
+    private function storeBidDocumentFromUpload(
+        Request $request,
+        BidProject $project,
+        string $documentType,
+        string $documentName,
+        ?string $remarks = null,
+        string $version = '1.0'
+    ): BidDocument {
+        $file = $request->file('file') ?: $request->file('attachment');
+        $filePath = $file->store('bid_documents/' . $project->id, 'public');
+
+        return BidDocument::create([
+            'bid_project_id' => $project->id,
+            'document_type' => $documentType,
+            'document_name' => $documentName,
+            'file_path' => $filePath,
+            'file_size' => $file->getSize(),
+            'file_type' => $file->getClientOriginalExtension(),
+            'upload_by' => $request->user()?->id ?? Auth::id(),
+            'upload_at' => now(),
+            'version' => $version,
+            'remarks' => $remarks,
         ]);
     }
 }

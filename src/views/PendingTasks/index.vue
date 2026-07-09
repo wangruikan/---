@@ -41,8 +41,16 @@
       </template>
 
       <el-table :data="tasks" v-loading="loading" style="width: 100%">
-        <el-table-column prop="title" label="任务标题" min-width="200" />
-        <el-table-column prop="description" label="任务描述" min-width="300" />
+        <el-table-column label="任务标题" min-width="200">
+          <template #default="{ row }">
+            {{ formatTaskTitle(row.title) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="任务描述" min-width="300">
+          <template #default="{ row }">
+            {{ formatTaskDescription(row.description) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="task_type" label="任务类型" width="150">
           <template #default="{ row }">
             <el-tag :type="getTaskTypeTagType(row.task_type)">
@@ -147,6 +155,14 @@ const getTaskTypeTagType = (type) => {
     'salary_sheet': 'warning'
   }
   return typeMap[type] || 'info'
+}
+
+const formatTaskTitle = (title) => {
+  return String(title || '').replace('发票信息待填写', '发票待开具')
+}
+
+const formatTaskDescription = (description) => {
+  return String(description || '').replace('请填写发票信息并发起审批', '请开具并发起审批')
 }
 
 const fetchTasks = async () => {

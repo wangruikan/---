@@ -202,6 +202,15 @@ export default {
 						title: `成功上传${successCount}个文件${failCount > 0 ? `，${failCount}个失败` : ''}`,
 						icon: successCount === chooseResult.length ? 'success' : 'none'
 					})
+					if (this.isIdCardDocument(item)) {
+						setTimeout(() => {
+							uni.showModal({
+								title: '提示',
+								content: '请确认身份证正反面都已上传',
+								showCancel: false
+							})
+						}, 800)
+					}
 					// 刷新列表
 					this.loadDocuments()
 				} else {
@@ -263,6 +272,10 @@ export default {
 					fail: () => resolve([])
 				})
 			})
+		},
+
+		isIdCardDocument(item) {
+			return String(item && item.document_name ? item.document_name : '').includes('身份证')
 		},
 
 		async handleDelete(file, item) {

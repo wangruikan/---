@@ -277,7 +277,7 @@
 
             <el-table-column label="续签" width="80" align="center">
               <template #default="{ row }">
-                {{ row.completed_labor_contract_count ?? 0 }}
+                {{ getRenewalContractCount(row) }}
               </template>
             </el-table-column>
 
@@ -1347,9 +1347,9 @@
               <el-date-picker
                 v-model="form.employment_date"
                 type="date"
-                placeholder="请选择任职受雇从业日期"
+                placeholder="由合同开始日期自动引用"
                 style="width: 100%"
-                :disabled="isViewMode"
+                disabled
               />
             </el-form-item>
           </el-col>
@@ -1434,57 +1434,6 @@
             <el-form-item label="跳过小程序表单" prop="skip_form_filling">
               <el-switch v-model="form.skip_form_filling" :disabled="isViewMode" />
               <div class="form-tip" style="color: #909399;">开启后生成工资表时不校验表单填写</div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        
-        <!-- 四、涉税与投资信息 -->
-        <el-divider content-position="left">涉税与投资信息</el-divider>
-        <el-row :gutter="30">
-          <el-col :span="12">
-            <el-form-item label="涉税事由" prop="tax_matter">
-              <el-select v-model="form.tax_matter" placeholder="请选择涉税事由" :disabled="isViewMode" clearable>
-                <el-option label="任职受雇" value="任职受雇" />
-                <el-option label="提供临时劳务" value="提供临时劳务" />
-                <el-option label="转让财产" value="转让财产" />
-                <el-option label="从事投资和经营活动" value="从事投资和经营活动" />
-                <el-option label="其他" value="其他" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="是否扣除减除费用" prop="deduct_expense">
-              <el-switch v-model="form.deduct_expense" :disabled="isViewMode" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        
-        <el-row :gutter="30">
-          <el-col :span="12">
-            <el-form-item label="个人投资额" prop="personal_investment_amount">
-              <el-input-number
-                v-model="form.personal_investment_amount"
-                :min="0"
-                :precision="2"
-                placeholder="请输入个人投资额"
-                style="width: 100%"
-                :disabled="isViewMode"
-                :controls="false"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="个人投资比例(%)" prop="personal_investment_ratio">
-              <el-input-number
-                v-model="form.personal_investment_ratio"
-                :min="0"
-                :max="100"
-                :precision="2"
-                placeholder="请输入个人投资比例"
-                style="width: 100%"
-                :disabled="isViewMode"
-                :controls="false"
-              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -1745,6 +1694,64 @@
             </el-form-item>
           </el-col>
         </el-row> -->
+          </el-form>
+        </el-tab-pane>
+
+        <el-tab-pane label="涉税与投资" name="tax-investment">
+          <el-form
+            :model="form"
+            :rules="formRules"
+            label-width="140px"
+          >
+            <el-divider content-position="left">涉税与投资信息</el-divider>
+            <el-row :gutter="30">
+              <el-col :span="12">
+                <el-form-item label="涉税事由" prop="tax_matter">
+                  <el-select v-model="form.tax_matter" placeholder="请选择涉税事由" :disabled="isViewMode" clearable>
+                    <el-option label="任职受雇" value="任职受雇" />
+                    <el-option label="提供临时劳务" value="提供临时劳务" />
+                    <el-option label="转让财产" value="转让财产" />
+                    <el-option label="从事投资和经营活动" value="从事投资和经营活动" />
+                    <el-option label="其他" value="其他" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="是否扣除减除费用" prop="deduct_expense">
+                  <el-switch v-model="form.deduct_expense" :disabled="isViewMode" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-row :gutter="30">
+              <el-col :span="12">
+                <el-form-item label="个人投资额" prop="personal_investment_amount">
+                  <el-input-number
+                    v-model="form.personal_investment_amount"
+                    :min="0"
+                    :precision="2"
+                    placeholder="请输入个人投资额"
+                    style="width: 100%"
+                    :disabled="isViewMode"
+                    :controls="false"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="个人投资比例(%)" prop="personal_investment_ratio">
+                  <el-input-number
+                    v-model="form.personal_investment_ratio"
+                    :min="0"
+                    :max="100"
+                    :precision="2"
+                    placeholder="请输入个人投资比例"
+                    style="width: 100%"
+                    :disabled="isViewMode"
+                    :controls="false"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
           </el-form>
         </el-tab-pane>
         
@@ -3059,15 +3066,6 @@
 
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="银行账号" prop="bank_account">
-                  <el-input
-                    v-model="form.bank_account"
-                    placeholder="请输入银行账号"
-                    clearable
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
                 <el-form-item label="户名" prop="bank_account_holder">
                   <el-input
                     v-model="form.bank_account_holder"
@@ -3076,14 +3074,23 @@
                   />
                 </el-form-item>
               </el-col>
+              <el-col :span="12">
+                <el-form-item label="银行账号" prop="bank_account">
+                  <el-input
+                    v-model="form.bank_account"
+                    placeholder="请输入银行账号"
+                    clearable
+                  />
+                </el-form-item>
+              </el-col>
             </el-row>
 
             <el-row :gutter="20">
               <el-col :span="12">
-                <el-form-item label="开户行" prop="bank_name">
+                <el-form-item label="开户银行" prop="bank_name">
                   <el-select
                     v-model="form.bank_name"
-                    placeholder="请选择开户行"
+                    placeholder="请选择开户银行"
                     clearable
                     filterable
                     style="width: 100%"
@@ -3115,10 +3122,10 @@
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="开户地" prop="bank_branch">
+                <el-form-item label="开户行" prop="bank_branch">
                   <el-input
                     v-model="form.bank_branch"
-                    placeholder="请输入开户地/支行"
+                    placeholder="请输入开户行"
                     clearable
                   />
                 </el-form-item>
@@ -3468,16 +3475,6 @@
         <el-divider content-position="left">工资卡信息</el-divider>
         <el-row :gutter="30">
           <el-col :span="12">
-            <el-form-item label="银行账号" prop="bank_account">
-              <el-input
-                v-model="form.bank_account"
-                placeholder="请输入银行账号"
-                clearable
-              />
-              <div class="form-tip">用于工资发放的银行账号</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
             <el-form-item label="户名" prop="bank_account_holder">
               <el-input
                 v-model="form.bank_account_holder"
@@ -3487,14 +3484,24 @@
               <div class="form-tip">自动引用员工姓名，不支持单独修改</div>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="银行账号" prop="bank_account">
+              <el-input
+                v-model="form.bank_account"
+                placeholder="请输入银行账号"
+                clearable
+              />
+              <div class="form-tip">用于工资发放的银行账号</div>
+            </el-form-item>
+          </el-col>
         </el-row>
         
         <el-row :gutter="30">
           <el-col :span="12">
-            <el-form-item label="开户行" prop="bank_name">
+            <el-form-item label="开户银行" prop="bank_name">
               <el-select
                 v-model="form.bank_name"
-                placeholder="请选择开户行"
+                placeholder="请选择开户银行"
                 clearable
                 filterable
                 style="width: 100%"
@@ -3527,13 +3534,13 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="开户地" prop="bank_branch">
+            <el-form-item label="开户行" prop="bank_branch">
               <el-input
                 v-model="form.bank_branch"
-                placeholder="请输入开户地/支行"
+                placeholder="请输入开户行"
                 clearable
               />
-              <div class="form-tip">具体的开户地或支行</div>
+              <div class="form-tip">具体开户行或支行</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -5031,16 +5038,6 @@
               show-word-limit
             />
           </el-form-item>
-          <el-form-item label="盖章方式" required>
-            <el-radio-group v-model="registrationFormUpdateForm.stamp_method">
-              <el-radio value="online">线上盖章</el-radio>
-              <el-radio value="offline">线下盖章</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <ApprovalStampSelector
-            ref="registrationFormUpdateStampSelectorRef"
-            v-model="registrationFormUpdateForm.stamp_selection"
-          />
         </el-form>
       </div>
 
@@ -6107,13 +6104,10 @@ const registrationFormUpdateLoading = ref(false)
 const submittingRegistrationFormUpdate = ref(false)
 const registrationFormPhotoUploading = ref(false)
 const registrationFormUpdateEmployee = ref(null)
-const registrationFormUpdateStampSelectorRef = ref(null)
 const registrationFormUpdateForm = reactive({
   form_type: 'onboarding',
   form_type_text: '员工入职登记表',
   reason: '',
-  stamp_method: 'online',
-  stamp_selection: getDefaultStampSelection(),
   data: {}
 })
 
@@ -6809,6 +6803,12 @@ const syncBankAccountHolderWithName = (source) => {
   source.bank_account_holder = source.name ? String(source.name).trim() : ''
 }
 
+const ensureEmploymentTypeDefault = (source) => {
+  if (source && !source.employment_type) {
+    source.employment_type = '雇员'
+  }
+}
+
 const buildEmployeeSubmitPayload = (source) => {
   const normalizedSource = normalizeInsuranceEnrollmentMonthFields(source)
   const bankAccountHolder = normalizedSource.name ? String(normalizedSource.name).trim() : ''
@@ -7145,7 +7145,7 @@ const form = reactive({
   
   // 二、从业任职信息
   personnel_status: 'active',
-  employment_type: '',
+  employment_type: '雇员',
   employment_date: '',
   resignation_date: '',
   signing_location: '', // 签署地
@@ -7202,6 +7202,10 @@ const form = reactive({
 
 watch(() => form.name, () => {
   syncBankAccountHolderWithName(form)
+})
+
+watch(() => form.contract_start_date, (value) => {
+  form.employment_date = value || ''
 })
 
 // 新增员工表单草稿暂存（仅新建模式生效，编辑/查看不污染）
@@ -7895,11 +7899,14 @@ const handleSearch = () => {
   loadEmployees()
 }
 
-// 处理合同开始日期变化，单向联动到入职日期
+// 处理合同开始日期变化，单向联动到入职日期和任职受雇从业日期
 const handleContractStartDateChange = (value) => {
   if (value) {
     // 每次修改合同开始日期都联动更新入职日期
     form.hire_date = value
+    form.employment_date = value
+  } else {
+    form.employment_date = ''
   }
 }
 
@@ -8823,6 +8830,7 @@ const handleView = async (row) => {
         salary_items: []
       })
       syncBankAccountHolderWithName(form)
+      ensureEmploymentTypeDefault(form)
       availableProjectDocumentSets.value = data.document_sets || []
       form.project_document_set_id = data.current_document_set_id ?? data.employee.project_document_set_id ?? null
       applySalaryStateToForm(employeeData)
@@ -8907,6 +8915,7 @@ const handleView = async (row) => {
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      ensureEmploymentTypeDefault(form)
       availableProjectDocumentSets.value = []
       form.project_document_set_id = null
       applySalaryStateToForm(rowData)
@@ -8929,6 +8938,7 @@ const handleView = async (row) => {
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
+    ensureEmploymentTypeDefault(form)
     availableProjectDocumentSets.value = []
     projectOtherInsurancePolicies.value = []
     form.project_document_set_id = null
@@ -8977,6 +8987,7 @@ const handleEdit = async (row) => {
         salary_items: []
       })
       syncBankAccountHolderWithName(form)
+      ensureEmploymentTypeDefault(form)
       availableProjectDocumentSets.value = data.document_sets || []
       form.project_document_set_id = data.current_document_set_id ?? data.employee.project_document_set_id ?? null
       applySalaryStateToForm(employeeData)
@@ -9064,6 +9075,7 @@ const handleEdit = async (row) => {
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      ensureEmploymentTypeDefault(form)
       availableProjectDocumentSets.value = []
       projectOtherInsurancePolicies.value = []
       form.project_document_set_id = null
@@ -9088,6 +9100,7 @@ const handleEdit = async (row) => {
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
+    ensureEmploymentTypeDefault(form)
     availableProjectDocumentSets.value = []
     form.project_document_set_id = null
     applySalaryStateToForm(rowData)
@@ -9561,8 +9574,6 @@ const handleEditRegistrationForm = async (row) => {
 
   registrationFormUpdateEmployee.value = row
   registrationFormUpdateForm.reason = ''
-  registrationFormUpdateForm.stamp_method = 'online'
-  registrationFormUpdateForm.stamp_selection = getDefaultStampSelection()
   registrationFormUpdateForm.data = {}
   showRegistrationFormUpdateDialog.value = true
   registrationFormUpdateLoading.value = true
@@ -9621,19 +9632,11 @@ const confirmSubmitRegistrationFormUpdate = async () => {
     return
   }
 
-  const stampResult = registrationFormUpdateStampSelectorRef.value?.validate?.()
-  if (stampResult && !stampResult.valid) {
-    ElMessage.warning(stampResult.message)
-    return
-  }
-
   const payload = {
     form_type: registrationFormUpdateForm.form_type,
     form_data: buildRegistrationFormUpdateSubmitData(),
     reason: registrationFormUpdateForm.reason?.trim() || '',
-    stamp_method: registrationFormUpdateForm.stamp_method,
-    project_id: searchForm.project_id || null,
-    ...(stampResult?.value || registrationFormUpdateForm.stamp_selection)
+    project_id: searchForm.project_id || null
   }
 
   try {
@@ -10317,7 +10320,7 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
     
     // 二、从业任职信息
     personnel_status: 'active',
-    employment_type: '',
+    employment_type: '雇员',
     employment_date: '',
     resignation_date: '',
     signing_location: '', // 签署地
@@ -10430,6 +10433,11 @@ const getLaborContractStatusText = (status) => {
 
 const getDisplayLaborContractStatus = (row) => {
   return row.display_labor_contract_status || 'pending_signature'
+}
+
+const getRenewalContractCount = (row) => {
+  const completedCount = Number(row?.completed_labor_contract_count || 0)
+  return Math.max(completedCount - 1, 0)
 }
 
 const hasMissingRequiredDocuments = (row) => {
@@ -12317,6 +12325,9 @@ const handleNewEmployee = async () => {
 
   if (!form.personnel_status) {
     form.personnel_status = 'active'
+  }
+  if (!form.employment_type) {
+    form.employment_type = '雇员'
   }
   form.other_insurance_policy_ids = normalizeOtherInsurancePolicyIds(form.other_insurance_policy_ids)
 

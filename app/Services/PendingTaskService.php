@@ -29,6 +29,9 @@ class PendingTaskService
                 return null;
             }
 
+            $title = "{$application->project_name} 发票待开具";
+            $description = "发票申请 {$application->application_no} 已创建，请开具并发起审批。";
+
             $existingTask = PendingTask::where('account_set_id', $application->account_set_id)
                 ->where('task_type', 'invoice_fill')
                 ->where('related_id', $application->id)
@@ -38,6 +41,12 @@ class PendingTaskService
 
             if ($existingTask) {
                 $updateData = [];
+                if ($existingTask->title !== $title) {
+                    $updateData['title'] = $title;
+                }
+                if ($existingTask->description !== $description) {
+                    $updateData['description'] = $description;
+                }
                 if ((int) $existingTask->handler_id !== (int) $handler->id) {
                     $updateData['handler_id'] = $handler->id;
                     $updateData['handler_name'] = $handler->name;
@@ -59,9 +68,6 @@ class PendingTaskService
 
                 return $existingTask;
             }
-
-            $title = "{$application->project_name} 发票信息待填写";
-            $description = "发票申请 {$application->application_no} 已创建，请填写发票信息并发起审批。";
 
             $task = PendingTask::create([
                 'account_set_id' => $application->account_set_id,

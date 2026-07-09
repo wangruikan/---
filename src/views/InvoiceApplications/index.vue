@@ -65,7 +65,7 @@
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="project_name" label="开票项目名称" min-width="180">
+        <el-table-column prop="project_name" label="项目" min-width="180">
           <template #default="{ row }">
             {{ row.project_name || '-' }}
           </template>
@@ -75,7 +75,7 @@
             {{ row.company_name || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="项目" min-width="220">
+        <el-table-column label="开票项目名称" min-width="220">
           <template #default="{ row }">
             {{ formatContentProjectNames(row.content_items || row.contentItems) }}
           </template>
@@ -814,7 +814,7 @@
               <el-row v-if="canEdit">
                 <el-col :span="24" style="text-align: right">
                   <el-button type="primary" @click="handleSaveInvoiceDetails">保存发票号码</el-button>
-                  <el-button type="success" @click="openSubmitStampDialog">提交审批</el-button>
+                  <el-button type="success" @click="handleSubmit">提交审批</el-button>
                 </el-col>
               </el-row>
             </el-form>
@@ -1005,40 +1005,9 @@
         <el-button
           v-if="currentApplication.can_fill_invoice && (!currentApplication.approval_status || currentApplication.approval_status === 'rejected')"
           type="success"
-          @click="openSubmitStampDialog"
+          @click="handleSubmit"
         >
           提交审批
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 盖章方式选择对话框 -->
-    <el-dialog
-      v-model="submitStampDialogVisible"
-      title="提交审批"
-      width="500px"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="submitStampForm" label-width="100px">
-        <el-form-item label="盖章方式" required>
-          <el-radio-group v-model="submitStampForm.stamp_method">
-            <el-radio value="online">线上盖章</el-radio>
-            <el-radio value="offline">线下盖章</el-radio>
-          </el-radio-group>
-          <div style="margin-top: 8px; color: #909399; font-size: 12px;">
-            线上盖章：系统自动在PDF上添加印章；线下盖章：需要手动在纸质文件上盖章
-          </div>
-        </el-form-item>
-        <ApprovalStampSelector
-          ref="submitStampSelectorRef"
-          v-model="submitStampForm.stamp_selection"
-          :disabled="true"
-        />
-      </el-form>
-      <template #footer>
-        <el-button @click="submitStampDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleConfirmSubmitStamp" :loading="submitting">
-          确认提交
         </el-button>
       </template>
     </el-dialog>
@@ -1047,7 +1016,7 @@
     <el-dialog
       v-model="invoiceNumberDialogVisible"
       title="填写发票号码"
-      width="420px"
+      width="520px"
       @close="handleInvoiceNumberDialogClose"
     >
       <el-form
@@ -1063,11 +1032,27 @@
             clearable
           />
         </el-form-item>
+        <el-form-item label="发票附件">
+          <el-upload
+            v-model:file-list="invoiceNumberFileList"
+            :auto-upload="false"
+            :before-upload="beforeUpload"
+            multiple
+          >
+            <el-button type="primary">
+              <el-icon><Upload /></el-icon>
+              上传发票
+            </el-button>
+            <template #tip>
+              <div class="el-upload__tip">支持上传发票附件，单个文件不超过 10MB</div>
+            </template>
+          </el-upload>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="invoiceNumberDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleConfirmInvoiceNumber" :loading="invoiceNumberSubmitting">
-          确定
+          确定并提交
         </el-button>
       </template>
     </el-dialog>
@@ -1151,7 +1136,6 @@ import { getProjects } from '@/api/projects'
 import request from '@/api/request'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
-import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
 import * as XLSX from 'xlsx'
 
 // 账套store
@@ -1159,13 +1143,6 @@ const route = useRoute()
 const router = useRouter()
 const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
-
-const getDefaultStampSelection = () => ({
-  stamp_selection_mode: 'none',
-  stamp_company: '',
-  stamp_type: '',
-  stamp_id: null
-})
 
 // 权限控制
 const canCreateInvoice = computed(() => permissionStore.hasPermission('invoice_applications.create'))
@@ -1517,14 +1494,7 @@ const invoiceNumberForm = reactive({
 const invoiceNumberFormRules = {
   invoice_number: [{ required: true, message: '请输入发票号码', trigger: 'blur' }]
 }
-
-// 盖章方式选择对话框
-const submitStampDialogVisible = ref(false)
-const submitStampSelectorRef = ref(null)
-const submitStampForm = reactive({
-  stamp_method: 'online', // 默认线上盖章
-  stamp_selection: getDefaultStampSelection()
-})
+const invoiceNumberFileList = ref([])
 
 // 明细项对话框
 const itemDialogVisible = ref(false)
@@ -2588,6 +2558,7 @@ const openInvoiceNumberDialog = (application) => {
   invoiceNumberForm.id = application.id
   invoiceNumberForm.application_no = application.application_no || ''
   invoiceNumberForm.invoice_number = application.invoice_number || ''
+  invoiceNumberFileList.value = []
   invoiceNumberDialogVisible.value = true
   nextTick(() => {
     invoiceNumberFormRef.value?.clearValidate()
@@ -2598,6 +2569,7 @@ const handleInvoiceNumberDialogClose = () => {
   invoiceNumberForm.id = null
   invoiceNumberForm.application_no = ''
   invoiceNumberForm.invoice_number = ''
+  invoiceNumberFileList.value = []
   invoiceNumberFormRef.value?.clearValidate()
 }
 
@@ -2623,20 +2595,37 @@ const handleConfirmInvoiceNumber = async () => {
     })
 
     if (response.success) {
-      ElMessage.success(response.message || '保存成功')
-      invoiceNumberDialogVisible.value = false
       invoiceDetailsForm.invoice_number = invoiceNumber
       if (currentApplication.value.id === applicationId) {
         currentApplication.value.invoice_number = invoiceNumber
       }
-      await loadData()
-      return true
+
+      for (const fileItem of invoiceNumberFileList.value) {
+        const rawFile = fileItem.raw || fileItem
+        if (rawFile) {
+          if (!beforeUpload(rawFile)) {
+            return false
+          }
+          const uploadResponse = await uploadAttachment(applicationId, rawFile, 'invoice')
+          if (!uploadResponse?.success) {
+            throw new Error(uploadResponse?.message || '发票附件上传失败')
+          }
+        }
+      }
+
+      await loadApplicationDetail(applicationId)
+      const submitted = await handleSubmit()
+      if (submitted) {
+        invoiceNumberDialogVisible.value = false
+        invoiceNumberFileList.value = []
+      }
+      return submitted
     }
     ElMessage.error(response?.message || '保存失败')
   } catch (error) {
-    if (!error?.response) return false
+    if (!error?.response && !error?.message) return false
     console.error('保存发票号码失败', error)
-    ElMessage.error(error.response?.data?.message || '保存失败')
+    ElMessage.error(error.response?.data?.message || error.message || '保存失败')
   } finally {
     invoiceNumberSubmitting.value = false
   }
@@ -2891,51 +2880,32 @@ const handleDeleteAttachment = async (attachment) => {
   }
 }
 
-// 打开盖章方式选择对话框
-const openSubmitStampDialog = () => {
-  if (!String(invoiceDetailsForm.invoice_number || '').trim()) {
-    ElMessage.warning('请先填写发票号码')
-    if (currentApplication.value?.id) {
-      openInvoiceNumberDialog(currentApplication.value)
-    }
-    return
-  }
-  
-  submitStampForm.stamp_method = 'online'
-  submitStampForm.stamp_selection = getDefaultStampSelection()
-  submitStampDialogVisible.value = true
-}
-
 // 提交审批
 const handleSubmit = async () => {
   try {
     if (!String(invoiceDetailsForm.invoice_number || '').trim()) {
       ElMessage.warning('请先填写发票号码')
-      return
+      if (currentApplication.value?.id) {
+        openInvoiceNumberDialog(currentApplication.value)
+      }
+      return false
     }
 
     await autoGenerateDeductionExcelIfNeeded()
 
-    const stampResult = submitStampSelectorRef.value?.validate?.()
-    if (stampResult && !stampResult.valid) {
-      ElMessage.warning(stampResult.message)
-      return
-    }
-
     submitting.value = true
     const response = await submitInvoiceApplication(currentApplication.value.id, {
-      stamp_method: submitStampForm.stamp_method,
-      ...(stampResult?.value || submitStampForm.stamp_selection)
+      stamp_method: 'none',
+      stamp_selection_mode: 'none'
     })
 
     if (response.success) {
       ElMessage.success(response.message || '提交成功')
-      submitStampDialogVisible.value = false
       detailDialogVisible.value = false
-      submitStampForm.stamp_method = 'online'
-      submitStampForm.stamp_selection = getDefaultStampSelection()
-      loadData()
+      await loadData()
+      return true
     }
+    ElMessage.error(response?.message || '提交失败')
   } catch (error) {
     if (error !== 'cancel') {
       console.error('提交失败', error)
@@ -2944,10 +2914,7 @@ const handleSubmit = async () => {
   } finally {
     submitting.value = false
   }
-}
-
-const handleConfirmSubmitStamp = async () => {
-  await handleSubmit()
+  return false
 }
 
 const handleSubmitFromList = async (row) => {
@@ -2961,7 +2928,7 @@ const handleSubmitFromList = async (row) => {
     return
   }
 
-  openSubmitStampDialog()
+  await handleSubmit()
 }
 
 // 格式化文件大小

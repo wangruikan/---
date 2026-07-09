@@ -110,6 +110,23 @@ export function exportSocialSecurityToExcelHTML(data, title, columns, filename, 
   window.URL.revokeObjectURL(url)
 }
 
+function normalizeSocialSecurityDynamicColumns(dynamicColumns = []) {
+  if (Array.isArray(dynamicColumns)) {
+    return {
+      companyColumns: dynamicColumns,
+      employeeColumns: dynamicColumns
+    }
+  }
+
+  const companyColumns = Array.isArray(dynamicColumns.companyColumns) ? dynamicColumns.companyColumns : []
+  const employeeColumns = Array.isArray(dynamicColumns.employeeColumns) ? dynamicColumns.employeeColumns : companyColumns
+
+  return {
+    companyColumns,
+    employeeColumns
+  }
+}
+
 /**
  * 构建HTML表格
  * @param {Array} data - 数据
@@ -119,6 +136,8 @@ export function exportSocialSecurityToExcelHTML(data, title, columns, filename, 
  * @returns {String} HTML内容
  */
 function buildHTMLTable(data, title, columns, dynamicColumns = []) {
+  const { companyColumns, employeeColumns } = normalizeSocialSecurityDynamicColumns(dynamicColumns)
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -132,12 +151,12 @@ function buildHTMLTable(data, title, columns, dynamicColumns = []) {
 <body>
   <table style="width: 100%; margin-bottom: 20px;">
     <tr>
-      <td class="title" colspan="${9 + dynamicColumns.length * 2 + 3}">${title}</td>
+      <td class="title" colspan="${13 + companyColumns.length + employeeColumns.length}">${title}</td>
     </tr>
   </table>
   <table>
-    ${buildTableHeaders(columns, dynamicColumns)}
-    ${buildTableRowsFromDisplayData(data, columns, dynamicColumns)}
+    ${buildTableHeaders(columns, { companyColumns, employeeColumns })}
+    ${buildTableRowsFromDisplayData(data, columns, { companyColumns, employeeColumns })}
   </table>
 </body>
 </html>`
@@ -152,6 +171,7 @@ function buildHTMLTable(data, title, columns, dynamicColumns = []) {
  * @returns {String} 表头HTML
  */
 function buildTableHeaders(columns, dynamicColumns = []) {
+  const { companyColumns, employeeColumns } = normalizeSocialSecurityDynamicColumns(dynamicColumns)
   // 基础列（跨两行）
   const basicColumns = [
     '序号', '姓名', '身份证号', '项目', '参保日期', '类型', '费款所属期',
@@ -169,8 +189,8 @@ function buildTableHeaders(columns, dynamicColumns = []) {
   })
   
   // 计算动态列数量
-  const companyColumnsCount = dynamicColumns.length + 1 // +1 for 单位缴纳保险合计
-  const employeeColumnsCount = dynamicColumns.length + 1 // +1 for 个人缴纳保险合计
+  const companyColumnsCount = companyColumns.length + 1 // +1 for 单位缴纳保险合计
+  const employeeColumnsCount = employeeColumns.length + 1 // +1 for 个人缴纳保险合计
   
   html += `<th colspan="${companyColumnsCount}" class="company-header">单位部分</th>`
   html += `<th colspan="${employeeColumnsCount}" class="employee-header">个人部分</th>`
@@ -182,13 +202,13 @@ function buildTableHeaders(columns, dynamicColumns = []) {
   html += '<tr class="header-row">'
   
   // 动态单位部分列
-  dynamicColumns.forEach(col => {
+  companyColumns.forEach(col => {
     html += `<th>${col.name}</th>`
   })
   html += '<th>单位缴纳保险合计</th>'
   
   // 动态个人部分列
-  dynamicColumns.forEach(col => {
+  employeeColumns.forEach(col => {
     html += `<th>${col.name}</th>`
   })
   html += '<th>个人缴纳保险合计</th>'
@@ -207,6 +227,7 @@ function buildTableHeaders(columns, dynamicColumns = []) {
  * @returns {String} 数据行HTML
  */
 function buildTableRowsFromDisplayData(data, columns, dynamicColumns = []) {
+  const { companyColumns, employeeColumns } = normalizeSocialSecurityDynamicColumns(dynamicColumns)
   let html = '<tbody>'
   
   data.forEach((row, index) => {
@@ -233,7 +254,7 @@ function buildTableRowsFromDisplayData(data, columns, dynamicColumns = []) {
       html += `<td class="total-cell">${row.social_security_base || '0.00'}</td>`
       
       // 动态单位部分列
-      dynamicColumns.forEach(col => {
+      companyColumns.forEach(col => {
         const prop = 'company_' + (col.fieldPrefix || '') + col.name
         let value = row[prop] || '0.00'
         html += `<td class="total-cell">${value}</td>`
@@ -243,7 +264,7 @@ function buildTableRowsFromDisplayData(data, columns, dynamicColumns = []) {
       html += `<td class="total-cell">${row.company_total || '0.00'}</td>`
       
       // 动态个人部分列
-      dynamicColumns.forEach(col => {
+      employeeColumns.forEach(col => {
         const prop = 'employee_' + (col.fieldPrefix || '') + col.name
         let value = row[prop] || '0.00'
         html += `<td class="total-cell">${value}</td>`
@@ -271,7 +292,7 @@ function buildTableRowsFromDisplayData(data, columns, dynamicColumns = []) {
       })
       
       // 动态单位部分列
-      dynamicColumns.forEach(col => {
+      companyColumns.forEach(col => {
         const prop = 'company_' + (col.fieldPrefix || '') + col.name
         let value = row[prop] || '0.00'
         html += `<td>${value}</td>`
@@ -282,7 +303,7 @@ function buildTableRowsFromDisplayData(data, columns, dynamicColumns = []) {
       html += `<td class="total-cell">${companyTotalValue}</td>`
       
       // 动态个人部分列
-      dynamicColumns.forEach(col => {
+      employeeColumns.forEach(col => {
         const prop = 'employee_' + (col.fieldPrefix || '') + col.name
         let value = row[prop] || '0.00'
         html += `<td>${value}</td>`

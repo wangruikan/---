@@ -3253,8 +3253,10 @@ class InsuranceChangeController extends ApiController
     {
         $policies = $this->decodeOtherInsurancePolicies($change->other_insurance_policies);
         $updated = false;
+        $updatedPolicy = null;
+        $updatedIndex = null;
 
-        foreach ($policies as &$policy) {
+        foreach ($policies as $index => &$policy) {
             if (!is_array($policy)) {
                 continue;
             }
@@ -3262,6 +3264,8 @@ class InsuranceChangeController extends ApiController
             if ((string) $this->getOtherInsurancePolicyId($policy) === (string) $insuranceId) {
                 $policy[$field] = $this->normalizeMoneyValue($amount);
                 $updated = true;
+                $updatedPolicy = $policy;
+                $updatedIndex = $index;
                 break;
             }
         }
@@ -3269,9 +3273,47 @@ class InsuranceChangeController extends ApiController
 
         if ($updated) {
             $this->saveOtherInsurancePoliciesSnapshot($change, $policies);
+            $this->syncOtherInsurancePolicyItemSnapshotAmount($change, $updatedPolicy, (int) $updatedIndex, $field, $amount);
         }
 
         return $updated;
+    }
+
+    private function syncOtherInsurancePolicyItemSnapshotAmount(
+        InsuranceChange $change,
+        ?array $policy,
+        int $index,
+        string $field,
+        $amount
+    ): void {
+        if (!$policy) {
+            return;
+        }
+
+        $policyId = $this->getOtherInsurancePolicyId($policy);
+        $category = $this->makeOtherInsurancePolicyCategory($policy, $index);
+
+        $items = $change->items()
+            ->where(function ($query) use ($category, $policyId) {
+                $query->where('category', $category);
+
+                if ($policyId !== null && $policyId !== '') {
+                    $query->orWhere('category', self::OTHER_INSURANCE_POLICY_CATEGORY_PREFIX . $policyId);
+                }
+            })
+            ->get();
+
+        foreach ($items as $item) {
+            $snapshot = $this->decodeChangeItemSnapshot($item);
+            if (empty($snapshot)) {
+                $snapshot = $policy;
+            }
+
+            $snapshot[$field] = $this->normalizeMoneyValue($amount);
+            $item->update([
+                'category_snapshot' => json_encode($snapshot, JSON_UNESCAPED_UNICODE),
+            ]);
+        }
     }
 
     private function validateOtherInsuranceSurrenderAmounts(InsuranceChange $change)
@@ -5414,6 +5456,8 @@ class InsuranceChangeController extends ApiController
             ));
         }
 
+        $autoCompletedLargeMedical = false;
+
         foreach ($categoriesToUpsert as $category) {
             $existingItem = $change->items()->where('category', $category)->first();
             $itemStatus = $this->mapChangeStatusToItemStatus($change, $category);
@@ -5422,7 +5466,7 @@ class InsuranceChangeController extends ApiController
                 ? $snapshot
                 : (is_null($snapshot) ? null : json_encode($snapshot, JSON_UNESCAPED_UNICODE));
 
-            InsuranceChangeItem::updateOrCreate(
+            $item = InsuranceChangeItem::updateOrCreate(
                 [
                     'insurance_change_id' => $change->id,
                     'category' => $category,
@@ -5444,6 +5488,10 @@ class InsuranceChangeController extends ApiController
                         : ($itemStatus === 'completed' ? $change->processed_at : null),
                 ]
             );
+
+            if ($this->autoCompleteLargeMedicalChangeItem($change, $item, $snapshot)) {
+                $autoCompletedLargeMedical = true;
+            }
         }
 
         if (!empty($otherPolicySnapshots)) {
@@ -5459,6 +5507,117 @@ class InsuranceChangeController extends ApiController
         } elseif (empty($detailCategories) && empty($activeCategories)) {
             $change->items()->delete();
         }
+
+        $largeMedicalItem = $change->items()->where('category', 'large_medical_insurance')->first();
+        if ($this->autoCompleteLargeMedicalChangeItem(
+            $change,
+            $largeMedicalItem,
+            $largeMedicalItem ? $largeMedicalItem->category_snapshot : null
+        )) {
+            $autoCompletedLargeMedical = true;
+        }
+
+        if ($autoCompletedLargeMedical) {
+            $this->syncChangeStatusFromItems($change);
+        }
+    }
+
+    private function autoCompleteLargeMedicalChangeItem(InsuranceChange $change, ?InsuranceChangeItem $item, $snapshot = null): bool
+    {
+        if (!$item || !in_array($item->status, ['pending', 'submitted'], true)) {
+            return false;
+        }
+
+        if (!$this->shouldAutoCompleteLargeMedicalChangeItem($change, $item->category, $snapshot)) {
+            return false;
+        }
+
+        $shouldApplyToPersonnel = $this->shouldApplyAutoCompletedLargeMedicalToPersonnel($change, $snapshot);
+
+        DB::transaction(function () use ($change, $item, $shouldApplyToPersonnel) {
+            if ($shouldApplyToPersonnel) {
+                $this->applyCategorySuccessToCurrentMonth($change, 'large_medical_insurance');
+            }
+
+            $item->update([
+                'status' => 'completed',
+                'processed_by' => null,
+                'processed_at' => now(),
+            ]);
+        });
+
+        return true;
+    }
+
+    private function shouldApplyAutoCompletedLargeMedicalToPersonnel(InsuranceChange $change, $snapshot = null): bool
+    {
+        if ($change->change_type === 'decrease') {
+            return true;
+        }
+
+        if ((bool) $change->large_medical_insurance_enabled) {
+            return true;
+        }
+
+        $snapshotData = $this->decodeLargeMedicalConfigSnapshot($snapshot);
+        if (array_key_exists('is_enabled', $snapshotData)) {
+            return (bool) $snapshotData['is_enabled'];
+        }
+
+        $changeSnapshot = $this->decodeLargeMedicalConfigSnapshot($change->large_medical_insurance_config);
+        if (array_key_exists('is_enabled', $changeSnapshot)) {
+            return (bool) $changeSnapshot['is_enabled'];
+        }
+
+        return false;
+    }
+
+    private function shouldAutoCompleteLargeMedicalChangeItem(InsuranceChange $change, string $category, $snapshot = null): bool
+    {
+        if ($category !== 'large_medical_insurance') {
+            return false;
+        }
+
+        $calculationType = $this->resolveLargeMedicalCalculationType($change, $snapshot);
+
+        return $calculationType !== null && $calculationType !== 'fixed';
+    }
+
+    private function resolveLargeMedicalCalculationType(InsuranceChange $change, $snapshot = null): ?string
+    {
+        $snapshotData = $this->decodeLargeMedicalConfigSnapshot($snapshot);
+        if (!empty($snapshotData['calculation_type'])) {
+            return strtolower((string) $snapshotData['calculation_type']);
+        }
+
+        $changeSnapshot = $this->decodeLargeMedicalConfigSnapshot($change->large_medical_insurance_config);
+        if (!empty($changeSnapshot['calculation_type'])) {
+            return strtolower((string) $changeSnapshot['calculation_type']);
+        }
+
+        if ($change->large_medical_insurance_config_id) {
+            $config = \App\Models\LargeMedicalInsuranceConfig::find($change->large_medical_insurance_config_id);
+            if ($config && $config->calculation_type) {
+                return strtolower((string) $config->calculation_type);
+            }
+        }
+
+        return null;
+    }
+
+    private function decodeLargeMedicalConfigSnapshot($snapshot): array
+    {
+        if (is_array($snapshot)) {
+            return $snapshot;
+        }
+
+        if (!is_string($snapshot) || trim($snapshot) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($snapshot, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     private function buildOtherInsurancePolicySnapshots(InsuranceChange $change): array

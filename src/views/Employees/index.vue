@@ -226,9 +226,9 @@
                 placement="top"
               >
                 <span class="employee-missing-document-indicator employee-missing-document-column-indicator">
-                  <el-badge :value="row.missing_required_document_names.length" type="danger">
-                    <el-icon><Warning /></el-icon>
-                  </el-badge>
+                  <span class="employee-missing-document-count">
+                    {{ row.missing_required_document_names.length }}
+                  </span>
                 </span>
               </el-tooltip>
               <el-text v-else type="info">-</el-text>
@@ -12972,17 +12972,27 @@ const getChangeComparison = (detail) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  min-width: 24px;
   height: 24px;
-  margin-right: 8px;
-  color: #f56c6c;
   cursor: help;
   vertical-align: middle;
 }
 
-.employee-missing-document-indicator :deep(.el-badge__content.is-fixed.is-dot) {
-  top: 3px;
-  right: 3px;
+.employee-missing-document-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid #fff;
+  border-radius: 999px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  box-sizing: border-box;
 }
 
 .employee-missing-document-column-indicator {

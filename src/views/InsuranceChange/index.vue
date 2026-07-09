@@ -846,6 +846,7 @@
             collapse-tags-tooltip
             placeholder="请选择处理业务"
             style="width: 100%"
+            @change="handleProcessItemChange"
           >
             <el-option
               v-for="item in processableItemOptions"
@@ -855,7 +856,30 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="处理结果">
+        <el-form-item v-if="isOtherInsuranceProcessSelected" :label="processOtherInsuranceAmountLabel">
+          <el-table
+            :data="processOtherInsuranceAmountRows"
+            size="small"
+            border
+            style="width: 100%"
+          >
+            <el-table-column prop="name" label="保险名称" min-width="180" />
+            <el-table-column prop="type" label="保险类型" min-width="120" />
+            <el-table-column :label="processOtherInsuranceAmountLabel" width="180">
+              <template #default="{ row }">
+                <el-input-number
+                  v-model="row.amount"
+                  :precision="2"
+                  :step="1"
+                  :min="0"
+                  size="small"
+                  style="width: 140px;"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-form-item>
+        <el-form-item v-if="!isOtherInsuranceProcessSelected" label="处理结果">
           <el-radio-group v-model="processForm.result">
             <el-radio-button label="success">成功</el-radio-button>
             <el-radio-button label="failed">失败</el-radio-button>
@@ -864,7 +888,14 @@
         </el-form-item>
 
         <el-alert
-          v-if="processForm.result === 'success'"
+          v-if="isOtherInsuranceProcessSelected"
+          title="其他保险默认按成功处理，确认后会先保存参保费用并完成处理。"
+          type="success"
+          :closable="false"
+          style="margin-bottom: 16px;"
+        />
+        <el-alert
+          v-else-if="processForm.result === 'success'"
           title="成功后会立即将当前所选的待处理业务一次性完成，本次不需要上传附件。"
           type="success"
           :closable="false"
@@ -910,7 +941,7 @@
           </el-table>
         </el-form-item>
 
-        <el-form-item label="上传附件" v-if="['failed', 'terminated'].includes(processForm.result)">
+        <el-form-item label="上传附件" v-if="!isOtherInsuranceProcessSelected && ['failed', 'terminated'].includes(processForm.result)">
           <el-upload
             ref="uploadRef"
             :file-list="fileList"
@@ -1361,7 +1392,7 @@
                 <span>{{ formatDate(row.policy_end_date) || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="employee_per_capita_cost" label="员工人均参保费用" width="280">
+            <el-table-column prop="employee_per_capita_cost" label="参保费用" width="280">
               <template #default="{ row }">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <!-- 不使用名额时可以编辑费用 -->
@@ -1937,6 +1968,33 @@ const getInsuranceColumnLabel = (column, side) => {
   return appendRatioToName(column.name, ratio)
 }
 
+const parseInsuranceNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return 0
+  }
+
+  const numericValue = Number(value)
+  return Number.isNaN(numericValue) ? 0 : numericValue
+}
+
+const isTruthyConfigValue = (value) => value === true || value === 1 || value === '1'
+
+const shouldShowEmployeeInsuranceColumn = (column) => {
+  if (!column) {
+    return false
+  }
+
+  if (column.onlyCompanyPay) {
+    return false
+  }
+
+  if (column.calculationType === 'fixed') {
+    return parseInsuranceNumber(column.employeeAmount) > 0
+  }
+
+  return parseInsuranceNumber(column.employeeRatio) > 0
+}
+
 // 动态列配置
 const dynamicCompanyColumns = computed(() => {
   const columns = []
@@ -1952,7 +2010,8 @@ const dynamicCompanyColumns = computed(() => {
         type: 'social_security',
         fieldPrefix: '社保_',
         companyRatio: type.company_ratio,
-        employeeRatio: type.employee_ratio
+        employeeRatio: type.employee_ratio,
+        onlyCompanyPay: isTruthyConfigValue(type.only_company_pay || type.onlyCompanyPay) || parseInsuranceNumber(type.employee_ratio) === 0
       })
     })
   }
@@ -1965,7 +2024,8 @@ const dynamicCompanyColumns = computed(() => {
         type: 'medical_insurance',
         fieldPrefix: '医保_',
         companyRatio: type.company_ratio,
-        employeeRatio: type.employee_ratio
+        employeeRatio: type.employee_ratio,
+        onlyCompanyPay: isTruthyConfigValue(type.only_company_pay || type.onlyCompanyPay) || parseInsuranceNumber(type.employee_ratio) === 0
       })
     })
   }
@@ -1975,7 +2035,10 @@ const dynamicCompanyColumns = computed(() => {
       name: '大额医疗',
       type: 'large_medical',
       companyRatio: largeMedicalConfig.company_ratio,
-      employeeRatio: largeMedicalConfig.employee_ratio
+      employeeRatio: largeMedicalConfig.employee_ratio,
+      calculationType: largeMedicalConfig.calculation_type,
+      companyAmount: largeMedicalConfig.company_amount,
+      employeeAmount: largeMedicalConfig.employee_amount
     })
   }
 
@@ -1983,7 +2046,7 @@ const dynamicCompanyColumns = computed(() => {
 })
 
 const dynamicEmployeeColumns = computed(() => {
-  return dynamicCompanyColumns.value // 员工列和公司列使用相同的配置
+  return dynamicCompanyColumns.value.filter(shouldShowEmployeeInsuranceColumn)
 })
 
 const getHousingFundRatioFromDetails = (side) => {
@@ -4118,7 +4181,10 @@ const exportSocialSecurityExcel = async () => {
       getSocialSecurityTitle(),
       columns,
       filename,
-      dynamicCompanyColumns.value
+      {
+        companyColumns: dynamicCompanyColumns.value,
+        employeeColumns: dynamicEmployeeColumns.value
+      }
     )
     
     ElMessage.success('导出成功')
@@ -4365,6 +4431,8 @@ const processForm = ref({
   item_ids: [],
   result: 'success'
 })
+const previousProcessItemIds = ref([])
+const processOtherInsuranceAmountRows = ref([])
 
 const uploadFormRef = ref()
 const viewFilesFormRef = ref()
@@ -4376,16 +4444,34 @@ const processableItems = computed(() => {
     return []
   }
 
-  return currentChange.value.change_items.filter((item) => ['pending', 'submitted'].includes(item.status))
+  const pendingItems = currentChange.value.change_items.filter((item) => ['pending', 'submitted'].includes(item.status))
+  const hasOtherInsurancePolicyItems = pendingItems.some((item) => isOtherInsurancePolicyCategory(item?.category))
+
+  return pendingItems.filter((item) => {
+    return !(hasOtherInsurancePolicyItems && item?.category === 'other_insurance')
+  })
 })
 
 const getProcessItemLabel = (item) => {
   if (isOtherInsurancePolicyCategory(item?.category)) {
     const policy = parseOtherInsurancePolicySnapshot(item?.category_snapshot)
-    return policy ? getOtherInsurancePolicyLabel(policy) : '其他保险'
+    return policy ? getOtherInsuranceProcessItemLabel(policy) : '其他保险'
   }
 
   return getCategoryText(item?.category)
+}
+
+const getOtherInsuranceProcessItemLabel = (policy = {}) => {
+  const typeName = resolveOtherInsuranceTypeName(policy)
+  const policyName = getOtherInsurancePolicyLabel(policy)
+
+  if (typeName && typeName !== '其他保险') {
+    return policyName && policyName !== typeName && policyName !== '其他保险'
+      ? `${typeName}（${policyName}）`
+      : typeName
+  }
+
+  return policyName || '其他保险'
 }
 
 const processableItemOptions = computed(() => {
@@ -4396,6 +4482,119 @@ const processableItemOptions = computed(() => {
       label: getProcessItemLabel(item)
   }))
 })
+
+const isOtherInsuranceProcessItem = (item) => {
+  return item?.category === 'other_insurance' || isOtherInsurancePolicyCategory(item?.category)
+}
+
+const getProcessItemById = (id) => {
+  const numericId = Number(id)
+  return processableItems.value.find((item) => Number(item?.id) === numericId) || null
+}
+
+const selectedProcessItems = computed(() => {
+  return (processForm.value.item_ids || [])
+    .map((id) => getProcessItemById(id))
+    .filter(Boolean)
+})
+
+const isOtherInsuranceProcessSelected = computed(() => {
+  return selectedProcessItems.value.some((item) => isOtherInsuranceProcessItem(item))
+})
+
+const processOtherInsuranceAmountLabel = computed(() => {
+  return currentChange.value?.change_type === 'decrease' ? '退保金额' : '参保费用'
+})
+
+const getPolicyByProcessItem = (item) => {
+  const snapshotPolicy = parseOtherInsurancePolicySnapshot(item?.category_snapshot)
+  if (snapshotPolicy) {
+    return snapshotPolicy
+  }
+
+  const policies = parseOtherInsurancePolicies(currentChange.value)
+  return policies.find((policy, index) => getOtherInsurancePolicyCategory(policy, index) === item?.category) || {}
+}
+
+const buildProcessOtherInsuranceAmountRows = () => {
+  const selectedOtherItems = selectedProcessItems.value.filter((item) => isOtherInsuranceProcessItem(item))
+  const rows = []
+
+  selectedOtherItems.forEach((item) => {
+    if (item.category === 'other_insurance') {
+      parseOtherInsurancePolicies(currentChange.value).forEach((policy, index) => {
+        rows.push(buildProcessOtherInsuranceAmountRow(policy, item, index))
+      })
+      return
+    }
+
+    rows.push(buildProcessOtherInsuranceAmountRow(getPolicyByProcessItem(item), item, rows.length))
+  })
+
+  const uniqueRows = []
+  const usedKeys = new Set()
+  rows.forEach((row) => {
+    const key = row.policy_id || row.item_id || `${row.name}:${row.index}`
+    if (usedKeys.has(key)) {
+      return
+    }
+    usedKeys.add(key)
+    uniqueRows.push(row)
+  })
+
+  processOtherInsuranceAmountRows.value = uniqueRows
+}
+
+const buildProcessOtherInsuranceAmountRow = (policy = {}, item = {}, index = 0) => {
+  const amountField = currentChange.value?.change_type === 'decrease'
+    ? 'surrender_amount'
+    : 'employee_per_capita_cost'
+
+  return {
+    item_id: item?.id ? Number(item.id) : null,
+    policy_id: getOtherInsurancePolicyId(policy),
+    name: getOtherInsurancePolicyLabel(policy),
+    type: resolveOtherInsuranceTypeName(policy),
+    amount: Number(policy?.[amountField] ?? 0),
+    index
+  }
+}
+
+const handleProcessItemChange = (ids = []) => {
+  const selectedIds = (ids || []).map((id) => Number(id)).filter(Boolean)
+  const selectedItems = selectedIds.map((id) => getProcessItemById(id)).filter(Boolean)
+  const hasOtherInsurance = selectedItems.some((item) => isOtherInsuranceProcessItem(item))
+  const hasNormalInsurance = selectedItems.some((item) => !isOtherInsuranceProcessItem(item))
+  let nextIds = selectedIds
+
+  if (hasOtherInsurance && hasNormalInsurance) {
+    const previousItems = previousProcessItemIds.value.map((id) => getProcessItemById(id)).filter(Boolean)
+    const previousHadOtherInsurance = previousItems.some((item) => isOtherInsuranceProcessItem(item))
+    nextIds = selectedItems
+      .filter((item) => previousHadOtherInsurance ? !isOtherInsuranceProcessItem(item) : isOtherInsuranceProcessItem(item))
+      .map((item) => Number(item.id))
+  }
+
+  processForm.value.item_ids = nextIds
+
+  if (nextIds.some((id) => isOtherInsuranceProcessItem(getProcessItemById(id)))) {
+    processForm.value.result = 'success'
+    fileList.value = []
+  }
+
+  previousProcessItemIds.value = [...nextIds]
+  buildProcessOtherInsuranceAmountRows()
+}
+
+const getDefaultProcessItemIdsFromChange = (change) => {
+  const items = Array.isArray(change?.change_items)
+    ? change.change_items.filter((item) => item?.id && ['pending', 'submitted'].includes(item.status))
+    : []
+  const normalItems = items.filter((item) => !isOtherInsuranceProcessItem(item))
+  const defaultItems = normalItems.length > 0 ? normalItems : []
+
+  return defaultItems.map((item) => Number(item.id))
+}
 
 const currentProcessAttachments = computed(() => {
   if (!currentChange.value) {
@@ -4720,6 +4919,7 @@ const getProcessableItemIdsFromChange = (change) => {
 
 const showProcessDialog = async (change) => {
   fileList.value = []
+  processOtherInsuranceAmountRows.value = []
 
   try {
     const latestChange = await refreshCurrentChangeData(change.id)
@@ -4728,10 +4928,13 @@ const showProcessDialog = async (change) => {
     currentChange.value = change
   }
 
+  const defaultItemIds = getDefaultProcessItemIdsFromChange(currentChange.value)
   processForm.value = {
-    item_ids: getProcessableItemIdsFromChange(currentChange.value),
+    item_ids: defaultItemIds,
     result: 'success'
   }
+  previousProcessItemIds.value = [...defaultItemIds]
+  buildProcessOtherInsuranceAmountRows()
 
   showUploadDialogFlag.value = true
 }
@@ -4827,6 +5030,52 @@ const handleDeleteAttachment = async (attachment) => {
   }
 }
 
+const saveProcessOtherInsuranceAmounts = async () => {
+  if (!currentChange.value?.id || !isOtherInsuranceProcessSelected.value) {
+    return
+  }
+
+  if (processOtherInsuranceAmountRows.value.length === 0) {
+    ElMessage.warning('请填写其他保险金额')
+    throw new Error('请填写其他保险金额')
+  }
+
+  const url = currentChange.value.change_type === 'decrease'
+    ? `/insurance-changes/${currentChange.value.id}/update-surrender-amount`
+    : `/insurance-changes/${currentChange.value.id}/update-per-capita-cost`
+  const amountField = currentChange.value.change_type === 'decrease'
+    ? 'surrender_amount'
+    : 'employee_per_capita_cost'
+
+  for (const row of processOtherInsuranceAmountRows.value) {
+    if (!row.policy_id) {
+      throw new Error(`无法获取"${row.name || '其他保险'}"的保单ID`)
+    }
+
+    const amount = Number(row.amount)
+    if (Number.isNaN(amount) || amount < 0) {
+      throw new Error(`请正确填写"${row.name || '其他保险'}"的${processOtherInsuranceAmountLabel.value}`)
+    }
+
+    const response = await request({
+      url,
+      method: 'post',
+      data: {
+        insurance_id: row.policy_id,
+        [amountField]: amount
+      }
+    })
+
+    if (!response.success) {
+      throw new Error(response.message || '其他保险金额保存失败')
+    }
+
+    if (response.data) {
+      currentChange.value = response.data
+    }
+  }
+}
+
 const submitProcess = async () => {
   if (!currentChange.value?.id) {
     return
@@ -4845,7 +5094,13 @@ const submitProcess = async () => {
   processingChangeId.value = currentChange.value.id
 
   try {
-    if (['failed', 'terminated'].includes(processForm.value.result) && fileList.value.length > 0) {
+    const isOtherInsuranceProcess = isOtherInsuranceProcessSelected.value
+    if (isOtherInsuranceProcess) {
+      processForm.value.result = 'success'
+      await saveProcessOtherInsuranceAmounts()
+    }
+
+    if (!isOtherInsuranceProcess && ['failed', 'terminated'].includes(processForm.value.result) && fileList.value.length > 0) {
       const formData = new FormData()
       fileList.value.forEach((file) => {
         formData.append('attachments[]', file.raw)
@@ -4864,14 +5119,14 @@ const submitProcess = async () => {
       fileList.value = []
     }
 
-    if (['failed', 'terminated'].includes(processForm.value.result) && currentProcessAttachments.value.length === 0) {
+    if (!isOtherInsuranceProcess && ['failed', 'terminated'].includes(processForm.value.result) && currentProcessAttachments.value.length === 0) {
       ElMessage.warning(processForm.value.result === 'terminated' ? '终结时必须上传处理附件' : '失败时必须上传处理附件')
       return
     }
 
     const response = await request.put(`/insurance-changes/${currentChange.value.id}/confirm-process`, {
       item_ids: processForm.value.item_ids,
-      result: processForm.value.result
+      result: isOtherInsuranceProcess ? 'success' : processForm.value.result
     })
 
     if (!response.success) {

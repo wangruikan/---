@@ -16,6 +16,10 @@
           <div class="quick-title">待办任务</div>
           <div class="quick-desc">查看当前需要处理的事项</div>
         </div>
+        <div class="quick-count">
+          <div class="quick-count-value">{{ quickStats.pendingTasks }}</div>
+          <div class="quick-count-label">待处理</div>
+        </div>
       </div>
       <div class="quick-card" @click="navigateTo('/approvals')">
         <div class="quick-icon done">
@@ -25,6 +29,10 @@
           <div class="quick-title">我的已办</div>
           <div class="quick-desc">查看已处理审批记录</div>
         </div>
+        <div class="quick-count">
+          <div class="quick-count-value">{{ quickStats.approved }}</div>
+          <div class="quick-count-label">已处理</div>
+        </div>
       </div>
       <div class="quick-card" @click="openApprovalLauncher">
         <div class="quick-icon launch">
@@ -33,6 +41,10 @@
         <div class="quick-content">
           <div class="quick-title">发起审批</div>
           <div class="quick-desc">进入汇总申请并发起流程</div>
+        </div>
+        <div class="quick-count">
+          <div class="quick-count-value">{{ quickStats.initiated }}</div>
+          <div class="quick-count-label">已发起</div>
         </div>
       </div>
     </div>
@@ -415,7 +427,8 @@ import dayjs from 'dayjs'
 import { markReminderAsRead, getDashboardData } from '@/api/dashboard'
 import { getProcessRecordStats } from '@/api/processRecord'
 import { getAssessmentRecords } from '@/api/assessment'
-import { getMyTasks } from '@/api/approvalFlow'
+import { getMyTasks, getMyApproved, getMyInitiated } from '@/api/approvalFlow'
+import { getPendingTasksStatistics } from '@/api/pendingTasks'
 import { submitInvoiceReason } from '@/api/invoiceReminder'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { useUserStore } from '@/stores/user'
@@ -451,6 +464,11 @@ const assessmentRecords = ref([])
 const myTaskList = ref([])
 const myTaskTotal = ref(0)
 const myTaskLoading = ref(false)
+const quickStats = ref({
+  pendingTasks: 0,
+  approved: 0,
+  initiated: 0
+})
 const monthlyWorkStats = ref({
   total: 0,
   pending: 0,
@@ -758,6 +776,39 @@ const loadMyTasks = async () => {
   }
 }
 
+const resetQuickStats = () => {
+  quickStats.value = {
+    pendingTasks: 0,
+    approved: 0,
+    initiated: 0
+  }
+}
+
+const loadQuickStats = async () => {
+  if (!accountSetStore.currentAccountSet?.id) {
+    resetQuickStats()
+    return
+  }
+
+  const [pendingResult, approvedResult, initiatedResult] = await Promise.allSettled([
+    getPendingTasksStatistics(),
+    getMyApproved({ page: 1, per_page: 1 }),
+    getMyInitiated({ page: 1, per_page: 1 })
+  ])
+
+  quickStats.value = {
+    pendingTasks: pendingResult.status === 'fulfilled'
+      ? Number(pendingResult.value?.data?.pending || 0)
+      : 0,
+    approved: approvedResult.status === 'fulfilled'
+      ? Number(approvedResult.value?.total || 0)
+      : 0,
+    initiated: initiatedResult.status === 'fulfilled'
+      ? Number(initiatedResult.value?.total || 0)
+      : 0
+  }
+}
+
 const goToMyTasks = (row) => {
   const query = { tab: 'my-tasks' }
   if (row?.id) {
@@ -776,6 +827,7 @@ const loadDashboardData = async () => {
       console.warn('未选择账套，无法加载 Dashboard 数据')
       myTaskList.value = []
       myTaskTotal.value = 0
+      resetQuickStats()
       return
     }
 
@@ -810,15 +862,20 @@ const loadDashboardData = async () => {
 
       // 我的待办（审批管理同源）
       await loadMyTasks()
+
+      // 顶部快捷卡片数量
+      await loadQuickStats()
     } else {
       console.error('获取 Dashboard 数据失败:', response.message)
       ElMessage.error(response.message || '获取 Dashboard 数据失败')
       await loadMyTasks()
+      await loadQuickStats()
     }
   } catch (error) {
     console.error('Load dashboard data error:', error)
     ElMessage.error('获取 Dashboard 数据失败')
     await loadMyTasks()
+    await loadQuickStats()
   }
 }
 
@@ -1417,6 +1474,11 @@ onMounted(async () => {
   transform: translateY(-1px);
 }
 
+.quick-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .quick-icon {
   width: 42px;
   height: 42px;
@@ -1450,6 +1512,24 @@ onMounted(async () => {
 
 .quick-desc {
   margin-top: 2px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.quick-count {
+  min-width: 56px;
+  text-align: right;
+}
+
+.quick-count-value {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 700;
+  color: #303133;
+}
+
+.quick-count-label {
+  margin-top: 4px;
   font-size: 12px;
   color: #909399;
 }

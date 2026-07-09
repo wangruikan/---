@@ -341,12 +341,15 @@
                     </div>
                   </template>
                   
+                  <div class="table-title detail-table-title">{{ getSocialSecurityTitle() }}</div>
+
                   <el-table 
-                    :data="socialSecurityDetailsWithTitle" 
+                    :data="socialSecurityDetails" 
                     size="small" 
                     border 
                     class="detail-table"
                     :span-method="socialSecuritySpanMethod"
+                    :row-class-name="detailSummaryRowClassName"
                   >
                     <el-table-column prop="serial_number" label="序号" width="60" align="center">
                       <template #default="{ row, $index }">
@@ -398,7 +401,7 @@
                       <template v-for="column in dynamicCompanyColumns" :key="'company_' + column.name">
                         <el-table-column 
                           :prop="'company_' + (column.fieldPrefix || '') + column.name" 
-                          :label="column.name" 
+                          :label="getInsuranceColumnLabel(column, 'company')" 
                           width="120" 
                           align="right"
                         >
@@ -419,7 +422,7 @@
                       <template v-for="column in dynamicEmployeeColumns" :key="'employee_' + column.name">
                         <el-table-column 
                           :prop="'employee_' + (column.fieldPrefix || '') + column.name" 
-                          :label="column.name" 
+                          :label="getInsuranceColumnLabel(column, 'employee')" 
                           width="120" 
                           align="right"
                         >
@@ -627,12 +630,15 @@
                     </div>
                   </template>
                   
+                  <div class="table-title detail-table-title">{{ getHousingFundTitle() }}</div>
+
                   <el-table 
-                    :data="housingFundDetailsWithTitle" 
+                    :data="housingFundDetails" 
                     size="small" 
                     border 
                     class="detail-table"
                     :span-method="housingFundSpanMethod"
+                    :row-class-name="detailSummaryRowClassName"
                   >
                     <el-table-column prop="serial_number" label="序号" width="60" align="center">
                       <template #default="{ row, $index }">
@@ -678,8 +684,8 @@
                         <span class="ratio-amount">{{ row.ratio }}</span>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="company_portion" label="单位部分" width="120" align="right" />
-                    <el-table-column prop="employee_portion" label="个人部分" width="120" align="right" />
+                    <el-table-column prop="company_portion" :label="housingFundCompanyPortionLabel" width="120" align="right" />
+                    <el-table-column prop="employee_portion" :label="housingFundEmployeePortionLabel" width="120" align="right" />
                     <el-table-column prop="housing_fund_total" label="公积金合计" width="120" align="right">
                       <template #default="{ row }">
                         <span class="grand-total">{{ row.housing_fund_total }}</span>
@@ -1747,6 +1753,31 @@ const getCurrentLargeMedicalConfig = () => {
   return largeMedicalConfigs.value.find(config => config.region_name === detailFilterForm.value.region_name) || null
 }
 
+const formatRatioLabel = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return ''
+  }
+
+  const numericValue = Number(value)
+  if (Number.isNaN(numericValue)) {
+    return ''
+  }
+
+  const percentage = Math.abs(numericValue) <= 1 ? numericValue * 100 : numericValue
+  const fixedValue = percentage.toFixed(4).replace(/\.?0+$/, '')
+  return `${fixedValue}%`
+}
+
+const appendRatioToName = (name, ratio) => {
+  const ratioLabel = formatRatioLabel(ratio)
+  return ratioLabel ? `${name}（${ratioLabel}）` : name
+}
+
+const getInsuranceColumnLabel = (column, side) => {
+  const ratio = side === 'company' ? column.companyRatio : column.employeeRatio
+  return appendRatioToName(column.name, ratio)
+}
+
 // 动态列配置
 const dynamicCompanyColumns = computed(() => {
   const columns = []
@@ -1760,7 +1791,9 @@ const dynamicCompanyColumns = computed(() => {
       columns.push({
         name: type.name,
         type: 'social_security',
-        fieldPrefix: '社保_'
+        fieldPrefix: '社保_',
+        companyRatio: type.company_ratio,
+        employeeRatio: type.employee_ratio
       })
     })
   }
@@ -1771,7 +1804,9 @@ const dynamicCompanyColumns = computed(() => {
       columns.push({
         name: type.name,
         type: 'medical_insurance',
-        fieldPrefix: '医保_'
+        fieldPrefix: '医保_',
+        companyRatio: type.company_ratio,
+        employeeRatio: type.employee_ratio
       })
     })
   }
@@ -1779,7 +1814,9 @@ const dynamicCompanyColumns = computed(() => {
   if (largeMedicalConfig && Number(largeMedicalConfig.status) === 1) {
     columns.push({
       name: '大额医疗',
-      type: 'large_medical'
+      type: 'large_medical',
+      companyRatio: largeMedicalConfig.company_ratio,
+      employeeRatio: largeMedicalConfig.employee_ratio
     })
   }
 
@@ -1789,6 +1826,42 @@ const dynamicCompanyColumns = computed(() => {
 const dynamicEmployeeColumns = computed(() => {
   return dynamicCompanyColumns.value // 员工列和公司列使用相同的配置
 })
+
+const getHousingFundRatioFromDetails = (side) => {
+  const detail = details.value.find(item => item?.insurance_personnel?.housing_fund_params)
+  const params = detail?.insurance_personnel?.housing_fund_params
+  if (!params) {
+    return ''
+  }
+
+  try {
+    const parsedParams = typeof params === 'string' ? JSON.parse(params) : params
+    return side === 'company' ? parsedParams?.company_ratio : parsedParams?.employee_ratio
+  } catch (error) {
+    console.error('解析公积金比例失败:', error)
+    return ''
+  }
+}
+
+const housingFundCompanyPortionLabel = computed(() => {
+  return appendRatioToName('单位部分', getHousingFundRatioFromDetails('company'))
+})
+
+const housingFundEmployeePortionLabel = computed(() => {
+  return appendRatioToName('个人部分', getHousingFundRatioFromDetails('employee'))
+})
+
+const detailSummaryRowClassName = ({ row }) => {
+  if (row?.isTotalRow) {
+    return 'detail-total-row'
+  }
+
+  if (row?.isSummaryRow) {
+    return 'detail-summary-row'
+  }
+
+  return ''
+}
 
 const buildSocialSecurityDetailRow = (detail, serialNumber, typeLabel) => {
   const employee = detail.employee || {}
@@ -6152,6 +6225,10 @@ watch(showExportDialog, (newVal) => {
   display: block;
 }
 
+.detail-table-title {
+  margin-bottom: 12px;
+}
+
 .tabs-container {
   margin-top: 20px;
 }
@@ -6351,6 +6428,18 @@ watch(showExportDialog, (newVal) => {
   background-color: #f8fafc !important;
   font-weight: 600;
   color: #374151;
+}
+
+:deep(.detail-table .detail-summary-row > td) {
+  background-color: #fff7e6 !important;
+  color: #7a4f01;
+  font-weight: 600;
+}
+
+:deep(.detail-table .detail-total-row > td) {
+  background-color: #e8f3ff !important;
+  color: #1d4ed8;
+  font-weight: 700;
 }
 
 /* 标签页头部样式 */

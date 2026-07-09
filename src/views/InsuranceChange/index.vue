@@ -179,18 +179,42 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="其他保险种类" min-width="220">
+              <el-table-column label="其他保险细分" min-width="240">
                 <template #default="{ row }">
-                  <div v-if="getOtherInsuranceTypeNames(row).length > 0" class="other-insurance-name-list">
-                    <el-tag
-                      v-for="name in getOtherInsuranceTypeNames(row)"
-                      :key="name"
-                      size="small"
-                      type="info"
-                      effect="plain"
+                  <div v-if="getOtherInsuranceDetailRows(row).length > 0" class="other-insurance-detail-list">
+                    <div
+                      v-for="detail in getOtherInsuranceDetailRows(row)"
+                      :key="detail.key"
+                      class="other-insurance-detail-row"
                     >
-                      {{ name }}
-                    </el-tag>
+                      <span class="other-insurance-detail-name">{{ detail.label }}</span>
+                      <span
+                        v-if="isSuccessStatus(detail.status)"
+                        class="category-status-icon success"
+                      >
+                        √
+                      </span>
+                      <span
+                        v-else-if="isFailedStatus(detail.status)"
+                        class="category-status-icon failed"
+                      >
+                        ×
+                      </span>
+                      <span
+                        v-else-if="isTerminatedStatus(detail.status)"
+                        class="category-status-icon terminated"
+                      >
+                        ▲
+                      </span>
+                      <el-tag
+                        v-else-if="detail.status"
+                        :type="getStatusTagType(detail.status)"
+                        size="small"
+                      >
+                        {{ getStatusText(detail.status) }}
+                      </el-tag>
+                      <span v-else>-</span>
+                    </div>
                   </div>
                   <span v-else>-</span>
                 </template>
@@ -810,7 +834,7 @@
         </el-form-item>
         <el-form-item label="处理业务">
           <el-select
-            v-model="processForm.categories"
+            v-model="processForm.item_ids"
             multiple
             collapse-tags
             collapse-tags-tooltip
@@ -818,7 +842,7 @@
             style="width: 100%"
           >
             <el-option
-              v-for="item in processableCategoryOptions"
+              v-for="item in processableItemOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -1519,19 +1543,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="是否启用" width="100">
-              <template #default>
-                <el-switch
-                  v-model="currentChange.large_medical_insurance_enabled"
-                  :disabled="isLargeMedicalSwitchDisabled"
-                  @change="handleLargeMedicalSwitch"
-                />
-              </template>
-            </el-table-column>
           </el-table>
-          <div class="form-tip">
-            大额医疗保险开关：开启后员工将参保大额医疗保险。
-          </div>
         </div>
       </div>
     </el-dialog>
@@ -1616,26 +1628,6 @@ const currentAccountSetCompanyName = computed(() => accountSetStore.currentAccou
 const getCompanyNameWithRegion = (regionName = detailFilterForm.value.region_name || '全部地区') => {
   return `${currentAccountSetCompanyName.value}（${regionName}）`
 }
-
-// 判断是否是"开启大额医疗保险"任务
-const isLargeMedicalEnableTask = computed(() => {
-  if (!currentChange.value) return false
-  // 通过 change_summary 判断是否是开启大额的任务
-  return currentChange.value.change_summary === '开启大额医疗保险'
-})
-
-// 判断大额医疗保险开关是否应该禁用
-const isLargeMedicalSwitchDisabled = computed(() => {
-  if (!currentChange.value) return true
-  
-  // 待处理和待确认状态都可以操作开关，已处理状态禁用
-  if (currentChange.value.status === 'pending' || currentChange.value.status === 'submitted') {
-    return false
-  }
-  
-  // 其他状态（已处理）禁用
-  return true
-})
 
 // 格式化日期 - 只显示年月日
 const formatDate = (date) => {
@@ -2322,8 +2314,7 @@ const insuranceCategoryColumns = [
   { key: 'social_security', label: '社保' },
   { key: 'medical_insurance', label: '医保' },
   { key: 'housing_fund', label: '公积金' },
-  { key: 'large_medical_insurance', label: '大额医疗' },
-  { key: 'other_insurance', label: '其他保险' }
+  { key: 'large_medical_insurance', label: '大额医疗' }
 ]
 
 const getCategoryItem = (change, category) => {
@@ -2389,7 +2380,12 @@ const getChangeLeaveReason = (change) => {
 const parseOtherInsurancePolicies = (change) => {
   const policySources = [
     change?.other_insurance_policies,
-    getCategoryItem(change, 'other_insurance')?.category_snapshot
+    getCategoryItem(change, 'other_insurance')?.category_snapshot,
+    ...(Array.isArray(change?.change_items)
+      ? change.change_items
+        .filter((item) => isOtherInsurancePolicyCategory(item?.category))
+        .map((item) => item.category_snapshot)
+      : [])
   ]
 
   for (const source of policySources) {
@@ -2417,6 +2413,97 @@ const parseOtherInsurancePolicies = (change) => {
   }
 
   return []
+}
+
+const OTHER_INSURANCE_POLICY_CATEGORY_PREFIX = 'other_policy:'
+
+const isOtherInsurancePolicyCategory = (category) => {
+  return typeof category === 'string' && category.startsWith(OTHER_INSURANCE_POLICY_CATEGORY_PREFIX)
+}
+
+const getOtherInsurancePolicyId = (policy = {}) => {
+  return policy?.id ?? policy?.policy_id ?? ''
+}
+
+const getOtherInsurancePolicyCategory = (policy = {}, index = 0) => {
+  const policyId = getOtherInsurancePolicyId(policy)
+  return `${OTHER_INSURANCE_POLICY_CATEGORY_PREFIX}${policyId || `idx${index}`}`
+}
+
+const parseOtherInsurancePolicySnapshot = (source) => {
+  if (!source) return null
+
+  let parsed = source
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch (error) {
+      return null
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return parsed[0] && typeof parsed[0] === 'object' ? parsed[0] : null
+  }
+
+  if (parsed && Array.isArray(parsed.other_insurance_policies)) {
+    return parsed.other_insurance_policies[0] || null
+  }
+
+  return parsed && typeof parsed === 'object' ? parsed : null
+}
+
+const getOtherInsurancePolicyLabel = (policy = {}) => {
+  const candidates = [
+    policy.policy_name,
+    policy.name,
+    policy.type_name,
+    policy.insurance_type_name,
+    policy.insurance_type_text,
+    policy.policy_type_name,
+    policy.type
+  ]
+
+  for (const candidate of candidates) {
+    const name = normalizeOtherInsuranceTypeValue(candidate)
+    if (name && name !== '[object Object]') {
+      return name
+    }
+  }
+
+  return '其他保险'
+}
+
+const getOtherInsuranceDetailRows = (change) => {
+  const items = Array.isArray(change?.change_items) ? change.change_items : []
+  const policyItems = items.filter((item) => isOtherInsurancePolicyCategory(item?.category))
+  const policies = parseOtherInsurancePolicies(change)
+
+  if (policyItems.length > 0) {
+    return policyItems.map((item, index) => {
+      const snapshotPolicy = parseOtherInsurancePolicySnapshot(item.category_snapshot)
+      const policy = snapshotPolicy || policies.find((candidate, policyIndex) => {
+        return getOtherInsurancePolicyCategory(candidate, policyIndex) === item.category
+      }) || {}
+
+      return {
+        key: item.id || item.category || index,
+        label: getOtherInsurancePolicyLabel(policy),
+        status: item.status || ''
+      }
+    })
+  }
+
+  const fallbackItem = getCategoryItem(change, 'other_insurance')
+  return policies.map((policy, index) => {
+    const category = getOtherInsurancePolicyCategory(policy, index)
+    const item = getCategoryItem(change, category) || fallbackItem
+    return {
+      key: item?.id || category,
+      label: getOtherInsurancePolicyLabel(policy),
+      status: item?.status || (Array.isArray(change?.change_items) && change.change_items.length > 0 ? '' : (change?.status || 'pending'))
+    }
+  })
 }
 
 const getOtherInsuranceTypeNames = (change) => {
@@ -3840,7 +3927,7 @@ const currentChange = ref(null)
 const processingChangeId = ref(null)
 
 const processForm = ref({
-  categories: [],
+  item_ids: [],
   result: 'success'
 })
 
@@ -3857,16 +3944,21 @@ const processableItems = computed(() => {
   return currentChange.value.change_items.filter((item) => ['pending', 'submitted'].includes(item.status))
 })
 
-const processableCategoryOptions = computed(() => {
-  const categories = Array.from(new Set(
-    processableItems.value
-      .map((item) => item?.category)
-      .filter(Boolean)
-  ))
+const getProcessItemLabel = (item) => {
+  if (isOtherInsurancePolicyCategory(item?.category)) {
+    const policy = parseOtherInsurancePolicySnapshot(item?.category_snapshot)
+    return policy ? getOtherInsurancePolicyLabel(policy) : '其他保险'
+  }
 
-  return categories.map((category) => ({
-    value: category,
-    label: getCategoryText(category)
+  return getCategoryText(item?.category)
+}
+
+const processableItemOptions = computed(() => {
+  return processableItems.value
+    .filter((item) => item?.id)
+    .map((item) => ({
+      value: Number(item.id),
+      label: getProcessItemLabel(item)
   }))
 })
 
@@ -3894,11 +3986,8 @@ const loadChanges = async () => {
       account_set_id: currentAccountSetId.value,
       ...filterForm.value
     })
-      if (response.success) {
-        // 设置初始化标志位，防止数据加载时触发开关事件
-        isInitializing.value = true
-        
-        changes.value = response.data
+    if (response.success) {
+      changes.value = response.data
         
         // 确保所有记录的大额医疗保险状态都是布尔值
         changes.value.forEach(change => {
@@ -3927,10 +4016,6 @@ const loadChanges = async () => {
     ElMessage.error('加载参保人员列表失败')
   } finally {
     loading.value = false
-    // 使用nextTick确保数据加载完成后再重置标志位
-    await nextTick(() => {
-      isInitializing.value = false
-    })
   }
 }
 
@@ -4188,17 +4273,14 @@ const refreshCurrentChangeData = async (changeId) => {
   return null
 }
 
-const getProcessableCategoriesFromChange = (change) => {
+const getProcessableItemIdsFromChange = (change) => {
   if (!Array.isArray(change?.change_items)) {
     return []
   }
 
-  return Array.from(new Set(
-    change.change_items
-      .filter((item) => ['pending', 'submitted'].includes(item.status))
-      .map((item) => item?.category)
-      .filter(Boolean)
-  ))
+  return change.change_items
+    .filter((item) => item?.id && ['pending', 'submitted'].includes(item.status))
+    .map((item) => Number(item.id))
 }
 
 const showProcessDialog = async (change) => {
@@ -4212,7 +4294,7 @@ const showProcessDialog = async (change) => {
   }
 
   processForm.value = {
-    categories: getProcessableCategoriesFromChange(currentChange.value),
+    item_ids: getProcessableItemIdsFromChange(currentChange.value),
     result: 'success'
   }
 
@@ -4315,7 +4397,7 @@ const submitProcess = async () => {
     return
   }
 
-  if (!processForm.value.categories || processForm.value.categories.length === 0) {
+  if (!processForm.value.item_ids || processForm.value.item_ids.length === 0) {
     ElMessage.warning('请选择处理业务')
     return
   }
@@ -4353,7 +4435,7 @@ const submitProcess = async () => {
     }
 
     const response = await request.put(`/insurance-changes/${currentChange.value.id}/confirm-process`, {
-      categories: processForm.value.categories,
+      item_ids: processForm.value.item_ids,
       result: processForm.value.result
     })
 
@@ -4443,9 +4525,6 @@ const viewDetails = async (change) => {
   console.log('change对象:', change)
   
   try {
-    // 设置初始化标志位，防止开关自动触发
-    isInitializing.value = true
-    
     // 重新从API获取最新数据，添加时间戳防止缓存
     console.log('准备调用show API，ID:', change.id)
     const response = await request.get(`/insurance-changes/${change.id}?t=${Date.now()}`)
@@ -4487,22 +4566,12 @@ const viewDetails = async (change) => {
       console.warn('API调用失败，使用列表数据')
       console.warn('列表数据中的大额医疗保险状态:', change.large_medical_insurance_enabled)
     }
-    
-    // 使用nextTick确保DOM更新完成后再重置标志位
-    await nextTick(() => {
-      isInitializing.value = false
-    })
   } catch (error) {
     console.error('获取详情失败:', error)
     // 如果API调用失败，使用列表中的数据作为备选
     currentChange.value = change
     console.warn('API调用失败，使用列表数据')
     console.warn('列表数据中的大额医疗保险状态:', change.large_medical_insurance_enabled)
-    
-    // 确保在错误情况下也重置标志位
-    await nextTick(() => {
-      isInitializing.value = false
-    })
   }
   
   showDetailDialogFlag.value = true
@@ -5700,157 +5769,6 @@ const saveSurrenderAmount = async (row) => {
 }
 
 // 使用名额
-// 防止递归调用的标志位
-const isHandlingLargeMedicalSwitch = ref(false)
-// 防止自动触发的标志位
-const isInitializing = ref(false)
-// 用户点击标志位
-const userClickedSwitch = ref(false)
-
-// 用户点击开关
-const onSwitchClick = () => {
-  console.log('用户点击了开关')
-  console.log('当前开关状态:', currentChange.value?.large_medical_insurance_enabled)
-  console.log('当前状态:', currentChange.value?.status)
-  console.log('是否正在初始化:', isInitializing.value)
-  
-  // 只有在非初始化状态下才允许点击
-  if (!isInitializing.value) {
-    userClickedSwitch.value = true
-    console.log('设置用户点击标志为true')
-    // 不在这里重置标志位，让handleLargeMedicalSwitch的finally块来处理
-  } else {
-    console.log('正在初始化中，忽略点击事件')
-  }
-}
-
-// 阻止自动触发开关事件
-const beforeLargeMedicalSwitch = () => {
-  console.log('beforeLargeMedicalSwitch 被调用')
-  console.log('isInitializing.value:', isInitializing.value)
-  console.log('isHandlingLargeMedicalSwitch.value:', isHandlingLargeMedicalSwitch.value)
-  console.log('userClickedSwitch.value:', userClickedSwitch.value)
-  
-  // 如果正在初始化数据，阻止触发
-  if (isInitializing.value) {
-    console.log('阻止开关事件：正在初始化数据')
-    return false
-  }
-  
-  // 如果正在处理开关事件，阻止触发
-  if (isHandlingLargeMedicalSwitch.value) {
-    console.log('阻止开关事件：正在处理开关事件')
-    return false
-  }
-  
-  // 如果用户没有点击开关，阻止触发
-  if (!userClickedSwitch.value) {
-    console.log('阻止开关事件：用户没有点击开关')
-    return false
-  }
-  
-  console.log('允许开关事件：用户主动操作')
-  return true
-}
-
-// 处理大额医疗保险开关
-const handleLargeMedicalSwitch = async () => {
-  console.log('handleLargeMedicalSwitch 被调用')
-  console.log('currentChange.value:', currentChange.value)
-  
-  // 防止递归调用
-  if (isHandlingLargeMedicalSwitch.value) {
-    console.log('正在处理中，跳过')
-    return
-  }
-  
-  // 如果正在初始化数据，跳过
-  if (isInitializing.value) {
-    console.log('正在初始化数据，跳过')
-    return
-  }
-  
-  isHandlingLargeMedicalSwitch.value = true
-  
-  try {
-    if (!currentChange.value || !currentChange.value.id) {
-      console.log('currentChange 数据不完整:', currentChange.value)
-      ElMessage.error('无法获取参保记录信息')
-      return
-    }
-
-    // 如果是启用大额医疗，需要校验员工是否填写了大额参保日期
-    if (currentChange.value.large_medical_insurance_enabled) {
-      const employee = currentChange.value.employee
-      if (!employee || !employee.large_medical_enrollment_date) {
-        ElMessage.warning('该员工未填写大额医疗参保日期，请先在人员档案中填写后再启用')
-        // 恢复开关状态
-        currentChange.value.large_medical_insurance_enabled = false
-        return
-      }
-    }
-
-    const action = currentChange.value.large_medical_insurance_enabled ? '启用' : '停用'
-    // 直接执行操作，不显示确认对话框
-
-    // 调用后端API更新开关状态
-    console.log('准备调用API，参数:', {
-      id: currentChange.value.id,
-      is_enabled: currentChange.value.large_medical_insurance_enabled
-    })
-    
-    const response = await request.put(
-      `/insurance-changes/${currentChange.value.id}/toggle-large-medical`,
-      {
-        is_enabled: currentChange.value.large_medical_insurance_enabled
-      }
-    )
-    
-    console.log('API响应:', response)
-    console.log('API响应中的large_medical_insurance_enabled:', response.data?.change?.large_medical_insurance_enabled)
-
-    if (response.success) {
-      ElMessage.success(`${action}成功`)
-      // 直接更新当前变更记录的状态
-      if (response.data && response.data.change) {
-        console.log('更新前状态:', currentChange.value.large_medical_insurance_enabled)
-        // 确保将数字转换为布尔值
-        const newStatus = Boolean(response.data.change.large_medical_insurance_enabled)
-        currentChange.value.large_medical_insurance_enabled = newStatus
-        console.log('更新后状态:', currentChange.value.large_medical_insurance_enabled)
-        
-        // 同时更新列表中的对应记录
-        const changeIndex = changes.value.findIndex(c => c.id === currentChange.value.id)
-        if (changeIndex !== -1) {
-          changes.value[changeIndex].large_medical_insurance_enabled = newStatus
-          console.log('列表记录也已更新')
-        }
-      }
-      // 强制刷新列表数据，确保数据同步
-      console.log('准备刷新列表数据...')
-      await loadChanges()
-      console.log('列表数据刷新完成')
-    } else {
-      throw new Error(response.message || `${action}失败`)
-    }
-  } catch (error) {
-    console.error('切换大额医疗保险失败:', error)
-    console.error('错误详情:', {
-      message: error.message,
-      response: error.response,
-      status: error.response?.status,
-      data: error.response?.data
-    })
-    
-    ElMessage.error(error.response?.data?.message || error.message || '操作失败')
-    // 恢复开关状态
-    currentChange.value.large_medical_insurance_enabled = !currentChange.value.large_medical_insurance_enabled
-  } finally {
-    // 重置标志位
-    isHandlingLargeMedicalSwitch.value = false
-  }
-}
-
 const useQuota = async (row) => {
   try {
     await ElMessageBox.confirm(
@@ -5985,22 +5903,12 @@ watch(changeStatusTab, () => {
 })
 
 onMounted(async () => {
-  // 设置初始化标志位，防止页面加载时触发开关事件
-  isInitializing.value = true
-  
-  try {
-    // 先加载各类地区配置
-    await loadSocialSecurityRegions()
-    await loadMedicalInsuranceRegions()
-    await loadLargeMedicalConfigs()
-    // 再加载参保人员列表
-    await loadChanges()
-  } finally {
-    // 使用nextTick确保所有数据加载完成后再重置标志位
-    await nextTick(() => {
-      isInitializing.value = false
-    })
-  }
+  // 先加载各类地区配置
+  await loadSocialSecurityRegions()
+  await loadMedicalInsuranceRegions()
+  await loadLargeMedicalConfigs()
+  // 再加载参保人员列表
+  await loadChanges()
 })
 
 // ==================== 导出功能 ====================
@@ -6208,10 +6116,25 @@ watch(showExportDialog, (newVal) => {
   color: #e6a23c;
 }
 
-.other-insurance-name-list {
+.other-insurance-detail-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
+}
+
+.other-insurance-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.other-insurance-detail-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 表格内标题样式 */

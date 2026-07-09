@@ -476,6 +476,24 @@ class AccountSetController extends Controller
             ], 404);
         }
 
+        if (!is_null($request->approval_level)) {
+            $exists = \DB::table('account_set_users')
+                ->where('account_set_id', $id)
+                ->where('approval_level', $request->approval_level)
+                ->where('user_id', '<>', $userId)
+                ->exists();
+
+            if ($exists) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该审批级别已设置给其他人员，每个审批节点只能设置1个人',
+                    'errors' => [
+                        'approval_level' => ['该审批级别已设置给其他人员，每个审批节点只能设置1个人']
+                    ]
+                ], 422);
+            }
+        }
+
         // 更新审批级别
         \DB::table('account_set_users')
             ->where('account_set_id', $id)

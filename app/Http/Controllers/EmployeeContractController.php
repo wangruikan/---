@@ -81,6 +81,7 @@ class EmployeeContractController extends Controller
             'template_id' => 'nullable|exists:contract_templates,id',
             'notes' => 'nullable|string',
             'termination_reason' => 'nullable|string|max:255',
+            'resignation_date' => 'nullable|date',
         ]);
 
         $this->appendTerminationReasonValidation($validator, $request);
@@ -982,6 +983,8 @@ class EmployeeContractController extends Controller
                 'notes' => $request->notes,
             ]);
 
+            $this->syncEmployeeResignationDate($request);
+
             \Log::info('storeWithFile: 完成', [
                 'contract_id' => $contract->id,
                 'contract_file' => $contract->contract_file,
@@ -1015,6 +1018,7 @@ class EmployeeContractController extends Controller
             'contract_type' => 'required|in:labor,termination,retirement,confidentiality,other',
             'notes' => 'nullable|string',
             'termination_reason' => 'nullable|string|max:255',
+            'resignation_date' => 'nullable|date',
         ]);
 
         $this->appendTerminationReasonValidation($validator, $request);
@@ -1113,6 +1117,7 @@ class EmployeeContractController extends Controller
                         'contract_start_date' => $employee->contract_start_date?->format('Y-m-d'),
                         'contract_end_date' => $employee->contract_end_date?->format('Y-m-d'),
                         'contract_months' => $employee->contract_months,
+                        'resignation_date' => $this->normalizeResignationDate($request->input('resignation_date')) ?: ($employee->resignation_date ? (string) $employee->resignation_date : ''),
                         'contract_start_year' => $contractStartYear,
                         'contract_start_month' => $contractStartMonth,
                         'contract_start_day' => $contractStartDay,
@@ -1284,6 +1289,7 @@ class EmployeeContractController extends Controller
             'filled_pdf' => 'required|file|mimes:pdf|max:10240', // 10MB限制
             'notes' => 'nullable|string',
             'termination_reason' => 'nullable|string|max:255',
+            'resignation_date' => 'nullable|date',
         ]);
 
         $this->appendTerminationReasonValidation($validator, $request);
@@ -1371,6 +1377,8 @@ class EmployeeContractController extends Controller
                 'notes' => $request->notes,
                 'signature_positions' => !empty($contractPlaceholderPositions) ? $contractPlaceholderPositions : null,
             ]);
+
+            $this->syncEmployeeResignationDate($request, $employee);
 
             \Log::info('saveFilledContract: 完成', [
                 'contract_id' => $contract->id,
@@ -1510,6 +1518,8 @@ class EmployeeContractController extends Controller
                 'signature_positions' => !empty($contractPlaceholderPositions) ? $contractPlaceholderPositions : null,
             ]);
 
+            $this->syncEmployeeResignationDate($request, $employee);
+
             \Log::info('storeWithTemplate: 完成', [
                 'contract_id' => $contract->id,
                 'contract_file' => $contract->contract_file,
@@ -1629,6 +1639,7 @@ class EmployeeContractController extends Controller
             'target_status' => 'nullable|in:employee_signed,completed',
             'notes' => 'nullable|string',
             'termination_reason' => 'nullable|string|max:255',
+            'resignation_date' => 'nullable|date',
         ], [
             'contract_file.required' => '请上传合同文件',
             'contract_file.max' => '合同文件大小不能超过10MB',
@@ -1687,6 +1698,7 @@ class EmployeeContractController extends Controller
             }
 
             $contract = EmployeeContract::create($contractData);
+            $this->syncEmployeeResignationDate($request, $employee);
 
             if ($targetStatus === 'completed') {
                 app(ApprovalService::class)->handleEmployeeContractCompleted($contract);
@@ -1784,6 +1796,10 @@ class EmployeeContractController extends Controller
             if ($this->normalizeTerminationReason($request->input('termination_reason')) === null) {
                 $validator->errors()->add('termination_reason', '请选择离职原因');
             }
+
+            if ($this->normalizeResignationDate($request->input('resignation_date')) === null) {
+                $validator->errors()->add('resignation_date', '请选择离职日期');
+            }
         });
     }
 
@@ -1791,5 +1807,39 @@ class EmployeeContractController extends Controller
     {
         $value = trim((string) ($value ?? ''));
         return $value === '' ? null : $value;
+    }
+
+    private function normalizeResignationDate($value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value)->format('Y-m-d');
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    private function syncEmployeeResignationDate(Request $request, ?Employee $employee = null): void
+    {
+        if (!in_array($request->input('contract_type'), ['termination', 'retirement'], true)) {
+            return;
+        }
+
+        $resignationDate = $this->normalizeResignationDate($request->input('resignation_date'));
+        if ($resignationDate === null) {
+            return;
+        }
+
+        $employee = $employee ?: Employee::find($request->employee_id);
+        if (!$employee) {
+            return;
+        }
+
+        $employee->resignation_date = $resignationDate;
+        $employee->save();
     }
 }

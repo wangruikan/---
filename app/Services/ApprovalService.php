@@ -1332,8 +1332,12 @@ class ApprovalService
         $hasTerminationDate = Schema::hasColumn('employees', 'termination_date');
         $hasTerminationReason = Schema::hasColumn('employees', 'termination_reason');
         $hasRetirementDate = Schema::hasColumn('employees', 'retirement_date');
+        $hasResignationDate = Schema::hasColumn('employees', 'resignation_date');
         $hasIsRetired = Schema::hasColumn('employees', 'is_retired');
         $terminationReason = trim((string) ($contract->termination_reason ?? ''));
+        $effectiveResignationDate = $hasResignationDate && $employee->resignation_date
+            ? \Carbon\Carbon::parse($employee->resignation_date)
+            : now();
 
         if ($contract->contract_type === 'labor') {
             $employee->update(['contract_status' => 'active']);
@@ -1348,7 +1352,10 @@ class ApprovalService
         if ($contract->contract_type === 'termination') {
             $updateData = ['contract_status' => 'terminated'];
             if ($hasTerminationDate) {
-                $updateData['termination_date'] = now();
+                $updateData['termination_date'] = $effectiveResignationDate;
+            }
+            if ($hasResignationDate) {
+                $updateData['resignation_date'] = $effectiveResignationDate;
             }
             if ($hasTerminationReason && $terminationReason !== '') {
                 $updateData['termination_reason'] = $terminationReason;
@@ -1361,6 +1368,7 @@ class ApprovalService
                 'contract_id' => $contract->id,
                 'contract_type' => 'termination',
                 'termination_reason' => $terminationReason,
+                'resignation_date' => $effectiveResignationDate->format('Y-m-d'),
                 'has_termination_date_field' => $hasTerminationDate
             ]);
 
@@ -1375,6 +1383,9 @@ class ApprovalService
         }
 
         $employee->contract_status = 'terminated';
+        if ($hasResignationDate) {
+            $employee->resignation_date = $effectiveResignationDate;
+        }
         if ($hasTerminationReason && $terminationReason !== '') {
             $employee->termination_reason = $terminationReason;
         }
@@ -1396,11 +1407,11 @@ class ApprovalService
 
         try {
             if ($hasRetirementDate) {
-                $employee->retirement_date = now();
+                $employee->retirement_date = $effectiveResignationDate;
             } else {
                 DB::table('employees')
                     ->where('id', $employee->id)
-                    ->update(['retirement_date' => now()]);
+                    ->update(['retirement_date' => $effectiveResignationDate]);
             }
         } catch (\Exception $e) {
             Log::warning('更新 retirement_date 字段失败', [
@@ -1417,6 +1428,7 @@ class ApprovalService
             'contract_id' => $contract->id,
             'contract_type' => 'retirement',
             'termination_reason' => $terminationReason,
+            'resignation_date' => $effectiveResignationDate->format('Y-m-d'),
             'has_is_retired_field' => $hasIsRetired,
             'has_retirement_date_field' => $hasRetirementDate,
             'is_retired' => $employee->is_retired ?? 'N/A',

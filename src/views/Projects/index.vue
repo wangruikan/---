@@ -44,7 +44,7 @@
           <el-card shadow="hover" class="stat-card">
             <div class="stat-item">
               <div class="stat-value" style="color: #e6a23c;">{{ projectStats.inactive }}</div>
-              <div class="stat-label">已停用项目</div>
+              <div class="stat-label">已终止项目</div>
             </div>
           </el-card>
         </el-col>
@@ -81,7 +81,7 @@
             >
               <el-option label="进行中" value="active" />
               <el-option label="已结束" value="completed" />
-              <el-option label="已停用" value="inactive" />
+              <el-option label="已终止" value="terminated" />
             </el-select>
           </el-form-item>
           
@@ -104,15 +104,8 @@
         <el-checkbox label="basic">&#22522;&#30784;&#37197;&#32622;</el-checkbox>
         <el-checkbox label="invoice">&#24320;&#31080;&#20449;&#24687;</el-checkbox>
         <el-checkbox label="insurance">&#20445;&#38505;&#35774;&#32622;</el-checkbox>
+        <el-checkbox label="project_users">项目人员</el-checkbox>
       </el-checkbox-group>
-      <el-button
-        type="success"
-        size="small"
-        :disabled="!roleUsersEntryProject || !canManageRoleUsers(roleUsersEntryProject)"
-        @click="handleRoleUsersEntry"
-      >
-        负责人
-      </el-button>
     </div>
     </div>
 
@@ -130,8 +123,8 @@
           <el-table-column prop="name" label="&#39033;&#30446;&#21517;&#31216;" width="200" fixed="left" />
           <el-table-column v-if="isColumnGroupVisible('basic')" prop="status" label="&#29366;&#24577;" width="100">
             <template #default="{ row }">
-              <el-tag :type="getStatusType(row.status)">
-                {{ getStatusText(row.status) }}
+              <el-tag :type="getProjectStatusType(row)">
+                {{ getProjectStatusText(row) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -147,8 +140,8 @@
           </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('basic')" label="剩余天数" width="110" align="center">
             <template #default="{ row }">
-              <span :class="{ 'remaining-days-text': isRemainingDaysWarning(row.end_date) }">
-                {{ getRemainingDaysText(row.end_date) }}
+              <span :class="{ 'remaining-days-text': isRemainingDaysWarning(row) }">
+                {{ getRemainingDaysText(row) }}
               </span>
             </template>
           </el-table-column>
@@ -208,13 +201,40 @@
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险类别" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">{{ getOtherInsurancePoliciesSummaryText(row) }}</template>
           </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险细分数量" width="150" align="center">
+            <template #default="{ row }">{{ getOtherInsurancePoliciesDetailCount(row) }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="负责人设置人" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ getProjectRoleUserNames(row, 'role_manager') }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="保险负责人" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ getProjectRoleUserNames(row, 'insurance') }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="薪资员" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ getProjectRoleUserNames(row, 'salary') }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="交付员" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ getProjectRoleUserNames(row, 'delivery') }}</template>
+          </el-table-column>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="项目人员" width="120" align="center">
+            <template #default="{ row }">
+              <el-button
+                type="success"
+                size="small"
+                :disabled="!canManageRoleUsers(row)"
+                @click="handleRoleUsers(row)"
+              >
+                设置
+              </el-button>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="520" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
               </el-button>
-              <el-button v-if="row.status === 'active'" type="danger" size="small" @click="handleDeactivate(row)">
-                停用
+              <el-button v-if="getProjectStatusValue(row) === 'active'" type="danger" size="small" @click="handleTerminate(row)">
+                终止
               </el-button>
               <el-button type="success" size="small" @click="handleNoticeSettings(row)">
                 须知设置
@@ -1385,7 +1405,7 @@
 
     <el-dialog
       v-model="showRoleUsersDialog"
-      title="负责人设置"
+      title="项目人员"
       width="640px"
       @close="resetRoleUsersForm"
     >
@@ -1491,7 +1511,7 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
-import { getProjects, getProject, createProject, updateProject, deleteProject, getProjectCodePreview, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
+import { getProjects, createProject, updateProject, terminateProject, deleteProject, getProjectCodePreview, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
 import { getUsers } from '@/api/user'
 import { getSharedFiles } from '@/api/sharedFiles'
 import { addContractTemplate, getDefaultTemplates, getContractTemplates, setDefaultTemplate, deleteContractTemplate } from '@/api/contractTemplates'
@@ -2464,7 +2484,7 @@ const loadProjects = async () => {
         total: response.stats?.total || 0,
         active: response.stats?.active || 0,
         completed: response.stats?.completed || 0,
-        inactive: response.stats?.inactive || 0
+        inactive: response.stats?.terminated ?? response.stats?.inactive ?? 0
       }
       console.log('Loaded projects:', projects.value.length)
       console.log('Projects data:', projects.value)
@@ -2865,12 +2885,12 @@ const canManageRoleUsers = (row) => {
 
 const handleRoleUsersEntry = () => {
   if (!roleUsersEntryProject.value) {
-    ElMessage.warning('请先筛选到单个项目后再设置负责人')
+    ElMessage.warning('请先筛选到单个项目后再设置项目人员')
     return
   }
 
   if (!canManageRoleUsers(roleUsersEntryProject.value)) {
-    ElMessage.warning('当前没有可设置负责人的权限')
+    ElMessage.warning('当前没有可设置项目人员的权限')
     return
   }
 
@@ -2927,8 +2947,8 @@ const handleRoleUsers = async (row) => {
     roleUsersForm.salary_user_ids = roles.salary?.user_ids || []
     roleUsersForm.delivery_user_ids = roles.delivery?.user_ids || []
   } catch (error) {
-    console.error('加载项目负责人失败:', error)
-    ElMessage.error(error.response?.data?.message || '加载负责人失败')
+    console.error('加载项目人员失败:', error)
+    ElMessage.error(error.response?.data?.message || '加载项目人员失败')
     showRoleUsersDialog.value = false
     resetRoleUsersForm()
   } finally {
@@ -2948,13 +2968,13 @@ const submitRoleUsersForm = async () => {
       delivery_user_ids: roleUsersForm.delivery_user_ids
     })
 
-    ElMessage.success('负责人保存成功')
+    ElMessage.success('项目人员保存成功')
     showRoleUsersDialog.value = false
     resetRoleUsersForm()
     loadProjects()
   } catch (error) {
-    console.error('保存项目负责人失败:', error)
-    ElMessage.error(error.response?.data?.message || '保存负责人失败')
+    console.error('保存项目人员失败:', error)
+    ElMessage.error(error.response?.data?.message || '保存项目人员失败')
   } finally {
     savingRoleUsers.value = false
   }
@@ -3074,49 +3094,22 @@ const handleDelete = async (row) => {
   }
 }
 
-const handleDeactivate = async (row) => {
+const handleTerminate = async (row) => {
   try {
-    await ElMessageBox.confirm('停用后会自动把项目结束时间改成昨天，并立即结束该项目，是否继续？', '确认停用', {
+    await ElMessageBox.confirm('终止后项目状态将变为已终止，不会修改结束时间，是否继续？', '确认终止', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     })
 
-    const detailResponse = await getProject(row.id)
-    const project = detailResponse?.data || row
-    const normalizedInvoiceInfos = normalizeProjectInvoiceInfos(project.invoice_infos, project)
+    await terminateProject(row.id)
 
-    await updateProject(row.id, {
-      name: project.name,
-      code: project.code,
-      description: project.description,
-      status: 'completed',
-      start_date: formatDate(project.start_date),
-      end_date: getYesterdayDate(),
-      invoice_infos: normalizedInvoiceInfos,
-      social_security_location: project.social_security_location || '',
-      insurance_types: Array.isArray(project.insurance_types) ? project.insurance_types : [],
-      salary_payment_date: project.salary_payment_date,
-      salary_payment_month: project.salary_payment_month || 'current',
-      insurance_import_month: project.insurance_import_month || 'current',
-      requires_attendance: Boolean(project.requires_attendance),
-      requires_salary_basis: Boolean(project.requires_salary_basis),
-      requires_attendance_basis: Boolean(project.requires_attendance_basis),
-      registration_form_type: project.registration_form_type || 'onboarding',
-      delivery_frequency: project.delivery_frequency || 'monthly',
-      delivery_method: project.delivery_method || 'electronic',
-      social_security_regions: extractRelationIds(project.social_security_regions),
-      housing_fund_regions: extractRelationIds(project.housing_fund_regions),
-      medical_insurance_regions: extractRelationIds(project.medical_insurance_regions),
-      other_insurance_policies: extractRelationIds(project.other_insurance_policies)
-    })
-
-    ElMessage.success('项目已结束')
+    ElMessage.success('项目已终止')
     loadProjects()
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('Deactivate project error:', error)
-      ElMessage.error(error.response?.data?.message || '停用失败')
+      console.error('Terminate project error:', error)
+      ElMessage.error(error.response?.data?.message || '终止失败')
     }
   }
 }
@@ -3579,22 +3572,59 @@ const handleDialogClose = () => {
   formRef.value?.clearValidate?.()
 }
 
-const getStatusType = (status) => {
+const parseLocalDate = (dateValue) => {
+  const text = formatDate(dateValue)
+  if (text === '-') return null
+
+  const [year, month, day] = text.split('-').map(Number)
+  if (!year || !month || !day) return null
+
+  const date = new Date(year, month - 1, day)
+  date.setHours(0, 0, 0, 0)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const getTodayDate = () => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+const getProjectStatusValue = (row) => {
+  const status = String(row?.status || '')
+
+  if (status === 'terminated' || status === 'inactive') {
+    return 'terminated'
+  }
+
+  if (status === 'completed') {
+    return 'completed'
+  }
+
+  const endDate = parseLocalDate(row?.end_date)
+  if (endDate && endDate.getTime() < getTodayDate().getTime()) {
+    return 'completed'
+  }
+
+  return 'active'
+}
+
+const getProjectStatusType = (row) => {
   const types = {
     active: 'success',
     completed: 'info',
-    inactive: 'danger'
+    terminated: 'danger'
   }
-  return types[status] || 'info'
+  return types[getProjectStatusValue(row)] || 'info'
 }
 
-const getStatusText = (status) => {
+const getProjectStatusText = (row) => {
   const texts = {
     active: '进行中',
     completed: '已结束',
-    inactive: '已停用'
+    terminated: '已终止'
   }
-  return texts[status] || '未知'
+  return texts[getProjectStatusValue(row)] || '未知'
 }
 
 const getDeliveryFrequencyText = (frequency) => {
@@ -3644,39 +3674,6 @@ const extractDisplayNames = (list, preferredKeys = ['name']) => {
 
 const toDisplayText = (names) => (names.length > 0 ? names.join('\u3001') : '-')
 
-const extractRelationIds = (list) => {
-  if (!Array.isArray(list)) {
-    return []
-  }
-
-  return list.map((item) => {
-    if (typeof item === 'number') {
-      return item
-    }
-
-    if (typeof item === 'string' && item.trim() !== '' && !Number.isNaN(Number(item))) {
-      return Number(item)
-    }
-
-    if (item && typeof item === 'object' && item.id) {
-      return Number(item.id)
-    }
-
-    return null
-  }).filter((item) => Number.isInteger(item) && item > 0)
-}
-
-const getYesterdayDate = () => {
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  const year = yesterday.getFullYear()
-  const month = String(yesterday.getMonth() + 1).padStart(2, '0')
-  const day = String(yesterday.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
-
 const getSocialSecurityRegionsText = (row) => {
   const names = extractDisplayNames(row?.social_security_regions_data, ['name', 'region_name'])
   if (names.length > 0) return toDisplayText(names)
@@ -3711,6 +3708,16 @@ const getOtherInsurancePoliciesSummaryText = (row) => {
   return `${typeNames.join('、')}（${count}）`
 }
 
+const getOtherInsurancePoliciesDetailCount = (row) => {
+  const policies = Array.isArray(row?.other_insurance_policies) ? row.other_insurance_policies : []
+  return policies.length
+}
+
+const getProjectRoleUserNames = (row, roleType) => {
+  const users = row?.role_users?.[roleType]?.users
+  return toDisplayText(extractDisplayNames(Array.isArray(users) ? users : [], ['name', 'nickname', 'username']))
+}
+
 const formatFileSize = (size) => {
   if (!size) return '-'
   if (size < 1024) return size + ' B'
@@ -3739,28 +3746,29 @@ const formatDate = (dateValue) => {
   return String(dateValue).slice(0, 10)
 }
 
-const getRemainingDays = (endDate) => {
+const getRemainingDays = (row) => {
+  const endDate = row?.end_date ?? row
   if (!endDate) return '-'
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const targetDate = parseLocalDate(endDate)
+  if (!targetDate) return '-'
 
-  const targetDate = new Date(endDate)
-  if (Number.isNaN(targetDate.getTime())) {
-    return '-'
-  }
-
-  targetDate.setHours(0, 0, 0, 0)
-  return Math.ceil((targetDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+  return Math.ceil((targetDate.getTime() - getTodayDate().getTime()) / (24 * 60 * 60 * 1000))
 }
 
-const isRemainingDaysWarning = (endDate) => {
-  const diffDays = getRemainingDays(endDate)
+const isRemainingDaysWarning = (row) => {
+  if (getProjectStatusValue(row) !== 'active') return false
+
+  const diffDays = getRemainingDays(row)
   return typeof diffDays === 'number' && diffDays >= 0 && diffDays < 30
 }
 
-const getRemainingDaysText = (endDate) => {
-  const diffDays = getRemainingDays(endDate)
+const getRemainingDaysText = (row) => {
+  const status = getProjectStatusValue(row)
+  if (status === 'terminated') return '已终止'
+  if (status === 'completed') return '已结束'
+
+  const diffDays = getRemainingDays(row)
 
   if (diffDays === '-') {
     return '-'

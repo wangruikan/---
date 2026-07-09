@@ -65,6 +65,16 @@
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column prop="project_name" label="开票项目名称" min-width="180">
+          <template #default="{ row }">
+            {{ row.project_name || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="company_name" label="开票单位" min-width="220">
+          <template #default="{ row }">
+            {{ row.company_name || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column label="项目" min-width="220">
           <template #default="{ row }">
             {{ formatContentProjectNames(row.content_items || row.contentItems) }}
@@ -83,16 +93,6 @@
         <el-table-column prop="tax_amount" label="税金" width="120" align="right">
           <template #default="{ row }">
             ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="project_name" label="开票项目名称" min-width="180">
-          <template #default="{ row }">
-            {{ row.project_name || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="company_name" label="开票单位" min-width="220">
-          <template #default="{ row }">
-            {{ row.company_name || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="status_text" label="状态" width="100" align="center">
@@ -577,169 +577,6 @@
       @close="handleDetailDialogClose"
     >
       <el-tabs v-model="activeTab">
-        <!-- 明细项 -->
-        <el-tab-pane label="扣除明细" name="items">
-          <div class="items-section">
-            <!-- 基本信息 -->
-            <el-descriptions :column="2" border style="margin-bottom: 20px">
-              <el-descriptions-item label="申请单号">
-                {{ currentApplication.application_no }}
-              </el-descriptions-item>
-              <el-descriptions-item label="期间">
-                {{ currentApplication.year }}-{{ String(currentApplication.month).padStart(2, '0') }}
-              </el-descriptions-item>
-          <el-descriptions-item label="商品名称/项目" :span="2">
-                <span>{{ currentApplication.project_name || '-' }}</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="状态">
-                <el-tag :type="getStatusType(currentApplication.status)">
-                  {{ currentApplication.status_text }}
-                </el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item label="总金额">
-                ¥{{ Number(currentApplication.total_amount || 0).toFixed(2) }}
-              </el-descriptions-item>
-            </el-descriptions>
-
-            <div class="section-header">
-              <span>扣除明细项</span>
-              <el-button
-                v-if="canEdit"
-                type="primary"
-                size="small"
-                @click="handleAddItem"
-                :disabled="currentApplication.invoice_method !== 'full' && currentApplication.invoice_method !== 'diff'"
-              >
-                <el-icon><Plus /></el-icon>
-                添加明细
-              </el-button>
-            </div>
-
-            <el-table :data="currentApplication.items" border style="margin-top: 10px">
-              <el-table-column prop="sequence" label="序号" width="70" align="center" />
-              <el-table-column prop="project_name" label="模板项目" width="150" />
-              <el-table-column prop="item_name" label="项目名称" width="160" />
-              <el-table-column prop="amount" label="金额" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.amount).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
-              <el-table-column v-if="canEdit" label="操作" width="150" align="center">
-                <template #default="{ row }">
-                  <el-button type="primary" link @click="handleEditItem(row)">编辑</el-button>
-                  <el-button
-                    type="danger"
-                    link
-                    @click="handleDeleteItem(row)"
-                    :disabled="currentApplication.invoice_method !== 'none' && currentApplication.items.length <= 1"
-                  >
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <div class="total-amount">
-              合计金额：<span>¥{{ totalAmount.toFixed(2) }}</span>
-            </div>
-
-          </div>
-        </el-tab-pane>
-
-        <!-- 开票内容明细 -->
-        <el-tab-pane label="开票内容明细" name="content_items">
-          <div class="invoice-content-items-section">
-            <div class="section-header">
-              <span>开票内容明细项</span>
-            </div>
-            <el-table
-              :data="currentApplication.content_items || []"
-              border
-              class="invoice-content-items-table"
-              style="margin-top: 10px"
-            >
-              <el-table-column prop="sequence" label="序号" width="70" align="center" />
-              <el-table-column prop="project_name" label="项目名称" width="180" show-overflow-tooltip />
-              <el-table-column prop="invoice_amount" label="开票金额" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.invoice_amount || 0).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="tax_rate" label="税率" width="100" align="center">
-                <template #default="{ row }">
-                  {{ formatInvoiceItemRate(row.tax_rate) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="deduction_amount" label="扣除额" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.deduction_amount || 0).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="amount_excluding_tax" label="不含税金额" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.amount_excluding_tax || 0).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="tax_amount" label="税金" width="130" align="right">
-                <template #default="{ row }">
-                  ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </el-tab-pane>
-
-        <!-- 附件 -->
-        <el-tab-pane label="附件上传" name="attachments">
-          <div class="attachments-section">
-            <div class="section-header">
-              <span>附件列表（必须上传）</span>
-              <el-upload
-                v-if="canEdit"
-                :http-request="handleUploadRequest"
-                :on-success="handleUploadSuccess"
-                :on-error="handleUploadError"
-                :show-file-list="false"
-                :before-upload="beforeUpload"
-              >
-                <el-button type="primary" size="small">
-                  <el-icon><Upload /></el-icon>
-                  上传附件
-                </el-button>
-              </el-upload>
-            </div>
-
-            <el-table :data="currentApplication.attachments" border style="margin-top: 10px">
-              <el-table-column type="index" label="序号" width="70" align="center" />
-              <el-table-column prop="filename" label="文件名" min-width="250" />
-              <el-table-column prop="size" label="大小" width="120">
-                <template #default="{ row }">
-                  {{ formatFileSize(row.size) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="uploaded_at" label="上传时间" width="180">
-                <template #default="{ row }">
-                  {{ formatDateTime(row.uploaded_at) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150" align="center">
-                <template #default="{ row }">
-                  <el-button type="primary" link @click="handleDownload(row)">下载</el-button>
-                  <el-button 
-                    v-if="canEdit" 
-                    type="danger" 
-                    link 
-                    @click="handleDeleteAttachment(row)"
-                  >
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </el-tab-pane>
-
         <!-- 开票详情 -->
         <el-tab-pane label="开票详情" name="invoice_details">
           <div class="invoice-details-section">
@@ -981,6 +818,169 @@
                 </el-col>
               </el-row>
             </el-form>
+          </div>
+        </el-tab-pane>
+
+        <!-- 开票内容明细 -->
+        <el-tab-pane label="开票内容明细" name="content_items">
+          <div class="invoice-content-items-section">
+            <div class="section-header">
+              <span>开票内容明细项</span>
+            </div>
+            <el-table
+              :data="currentApplication.content_items || []"
+              border
+              class="invoice-content-items-table"
+              style="margin-top: 10px"
+            >
+              <el-table-column prop="sequence" label="序号" width="70" align="center" />
+              <el-table-column prop="project_name" label="项目名称" width="180" show-overflow-tooltip />
+              <el-table-column prop="invoice_amount" label="开票金额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.invoice_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="tax_rate" label="税率" width="100" align="center">
+                <template #default="{ row }">
+                  {{ formatInvoiceItemRate(row.tax_rate) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="deduction_amount" label="扣除额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.deduction_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="amount_excluding_tax" label="不含税金额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.amount_excluding_tax || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="tax_amount" label="税金" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.tax_amount || 0).toFixed(2) }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
+        <!-- 明细项 -->
+        <el-tab-pane label="扣除明细" name="items">
+          <div class="items-section">
+            <!-- 基本信息 -->
+            <el-descriptions :column="2" border style="margin-bottom: 20px">
+              <el-descriptions-item label="申请单号">
+                {{ currentApplication.application_no }}
+              </el-descriptions-item>
+              <el-descriptions-item label="期间">
+                {{ currentApplication.year }}-{{ String(currentApplication.month).padStart(2, '0') }}
+              </el-descriptions-item>
+          <el-descriptions-item label="商品名称/项目" :span="2">
+                <span>{{ currentApplication.project_name || '-' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="状态">
+                <el-tag :type="getStatusType(currentApplication.status)">
+                  {{ currentApplication.status_text }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="总金额">
+                ¥{{ Number(currentApplication.total_amount || 0).toFixed(2) }}
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <div class="section-header">
+              <span>扣除明细项</span>
+              <el-button
+                v-if="canEdit"
+                type="primary"
+                size="small"
+                @click="handleAddItem"
+                :disabled="currentApplication.invoice_method !== 'full' && currentApplication.invoice_method !== 'diff'"
+              >
+                <el-icon><Plus /></el-icon>
+                添加明细
+              </el-button>
+            </div>
+
+            <el-table :data="currentApplication.items" border style="margin-top: 10px">
+              <el-table-column prop="sequence" label="序号" width="70" align="center" />
+              <el-table-column prop="project_name" label="模板项目" width="150" />
+              <el-table-column prop="item_name" label="项目名称" width="160" />
+              <el-table-column prop="amount" label="金额" width="130" align="right">
+                <template #default="{ row }">
+                  ¥{{ Number(row.amount).toFixed(2) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
+              <el-table-column v-if="canEdit" label="操作" width="150" align="center">
+                <template #default="{ row }">
+                  <el-button type="primary" link @click="handleEditItem(row)">编辑</el-button>
+                  <el-button
+                    type="danger"
+                    link
+                    @click="handleDeleteItem(row)"
+                    :disabled="currentApplication.invoice_method !== 'none' && currentApplication.items.length <= 1"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="total-amount">
+              合计金额：<span>¥{{ totalAmount.toFixed(2) }}</span>
+            </div>
+
+          </div>
+        </el-tab-pane>
+
+        <!-- 附件 -->
+        <el-tab-pane label="文件上传" name="attachments">
+          <div class="attachments-section">
+            <div class="section-header">
+              <span>附件列表（必须上传）</span>
+              <el-upload
+                v-if="canEdit"
+                :http-request="handleUploadRequest"
+                :on-success="handleUploadSuccess"
+                :on-error="handleUploadError"
+                :show-file-list="false"
+                :before-upload="beforeUpload"
+              >
+                <el-button type="primary" size="small">
+                  <el-icon><Upload /></el-icon>
+                  上传附件
+                </el-button>
+              </el-upload>
+            </div>
+
+            <el-table :data="currentApplication.attachments" border style="margin-top: 10px">
+              <el-table-column type="index" label="序号" width="70" align="center" />
+              <el-table-column prop="filename" label="文件名" min-width="250" />
+              <el-table-column prop="size" label="大小" width="120">
+                <template #default="{ row }">
+                  {{ formatFileSize(row.size) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="uploaded_at" label="上传时间" width="180">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.uploaded_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="150" align="center">
+                <template #default="{ row }">
+                  <el-button type="primary" link @click="handleDownload(row)">下载</el-button>
+                  <el-button 
+                    v-if="canEdit" 
+                    type="danger" 
+                    link 
+                    @click="handleDeleteAttachment(row)"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
         </el-tab-pane>
 
@@ -1473,6 +1473,8 @@ const validateCreateExtraData = () => {
   }
 
   if (createNeedsDeductionAmount.value) {
+    syncCreateItemAmountsFromRemark()
+
     if (!createItems.value.length) {
       ElMessage.warning('\u8bf7\u81f3\u5c11\u6dfb\u52a01\u6761\u6263\u9664\u660e\u7ec6')
       return false
@@ -1498,7 +1500,7 @@ const validateCreateExtraData = () => {
 
 const detailDialogVisible = ref(false)
 const detailDialogTitle = ref('')
-const activeTab = ref('items')
+const activeTab = ref('invoice_details')
 const currentApplication = ref({})
 const isEditMode = ref(false)
 const submitting = ref(false)
@@ -1607,6 +1609,54 @@ const roundAmount = (value) => {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
 }
 
+const parseAmountFromText = (value) => {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+
+  const normalized = text.replace(/[,\s￥¥]/g, '')
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return null
+
+  const amount = Number(normalized)
+  return Number.isFinite(amount) && amount > 0 ? roundAmount(amount) : null
+}
+
+const shouldUseRemarkAsAmount = (item = {}) => {
+  return Number(item.amount || 0) <= 0 && parseAmountFromText(item.remark) !== null
+}
+
+const getInvoiceItemAmount = (item = {}) => {
+  const amount = Number(item.amount ?? 0)
+  if (Number.isFinite(amount) && amount > 0) {
+    return roundAmount(amount)
+  }
+
+  return parseAmountFromText(item.remark) ?? 0
+}
+
+const getInvoiceItemRemark = (item = {}) => {
+  return shouldUseRemarkAsAmount(item) ? '' : (item.remark || '')
+}
+
+const syncCreateItemAmountsFromRemark = () => {
+  let changed = false
+  const nextItems = createItems.value.map(item => {
+    if (!shouldUseRemarkAsAmount(item)) {
+      return item
+    }
+
+    changed = true
+    return {
+      ...item,
+      amount: getInvoiceItemAmount(item),
+      remark: ''
+    }
+  })
+
+  if (changed) {
+    createItems.value = nextItems
+  }
+}
+
 const formatInvoiceItemRate = (value) => {
   return `${roundAmount(Number(value || 0) * 100)}%`
 }
@@ -1704,8 +1754,8 @@ const buildCreateItemFromSource = (item = {}) => {
   return {
     invoice_project_id: item.invoice_project_id || item.invoice_project?.id || null,
     item_name: item.item_name || '',
-    amount: Number(item.amount || 0),
-    remark: item.remark || ''
+    amount: getInvoiceItemAmount(item),
+    remark: getInvoiceItemRemark(item)
   }
 }
 
@@ -1824,8 +1874,8 @@ const buildInvoiceItemFromProject = (project) => {
   return {
     invoice_project_id: project.id,
     item_name: project.project_name || '',
-    amount: Number(project.amount || 0),
-    remark: ''
+    amount: getInvoiceItemAmount(project),
+    remark: getInvoiceItemRemark(project)
   }
 }
 
@@ -2341,6 +2391,9 @@ const handleConfirmCreate = async () => {
       return
     }
 
+    syncCreateItemAmountsFromRemark()
+    syncCreateCalculatedAmounts()
+
     const normalizedContentItems = normalizeCreateContentItems()
     const contentTotals = sumCreateContentItems(normalizedContentItems)
     createForm.invoice_amount = contentTotals.invoice_amount
@@ -2528,7 +2581,7 @@ const handleSaveInvoiceDetails = async () => {
 // 详情对话框关闭
 const handleDetailDialogClose = () => {
   currentApplication.value = {}
-  activeTab.value = 'items'
+  activeTab.value = 'invoice_details'
 }
 
 const openInvoiceNumberDialog = (application) => {

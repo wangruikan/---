@@ -82,24 +82,36 @@ class UserController extends Controller
         }
 
         // 从角色表获取所有有效角色
-        $validRoles = \App\Models\Role::pluck('name')->toArray();
+        $validRoles = \App\Models\Role::where('name', '!=', 'super_admin')->pluck('name')->toArray();
         $validRolesStr = implode(',', $validRoles);
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:191',
+            'name' => 'required|string|max:191|unique:users,name',
             'nickname' => 'nullable|string|max:100',
             'email' => 'nullable|email|unique:users,email',
             'password' => 'required|string|min:6',
             'role' => 'required|in:' . $validRolesStr,
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'nullable|string|max:20|unique:users,phone',
             'avatar' => 'nullable|string|max:500',
             'current_account_set_id' => 'required|exists:account_sets,id',
+        ], [
+            'name.required' => '请输入用户名',
+            'name.unique' => '用户名已存在',
+            'email.email' => '邮箱格式不正确',
+            'email.unique' => '邮箱已存在',
+            'password.required' => '请输入密码',
+            'password.min' => '密码至少6位',
+            'role.required' => '请选择角色',
+            'role.in' => '不能创建该角色用户',
+            'phone.unique' => '手机号已存在',
+            'current_account_set_id.required' => '请先选择账套',
+            'current_account_set_id.exists' => '账套不存在',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => '验证失败',
+                'message' => $validator->errors()->first(),
                 'errors' => $validator->errors()
             ], 422);
         }

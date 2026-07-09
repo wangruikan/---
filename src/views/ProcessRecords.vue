@@ -69,7 +69,7 @@
           <el-form-item label="业务类型">
             <el-select v-model="filterForm.business_type" placeholder="请选择业务类型" clearable style="width: 180px">
               <el-option label="员工合同" value="employee_contract" />
-              <el-option label="发票申请" value="invoice_application" />
+              <el-option label="发票申请" value="发票申请" />
               <el-option label="工资表审批" value="salary_approval" />
               <el-option label="付款申请" value="payment_application" />
             </el-select>

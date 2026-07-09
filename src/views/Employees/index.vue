@@ -32,7 +32,7 @@
           @click="openArchiveReminderDialog"
         >
           <el-icon><Warning /></el-icon>
-          档案提醒汇总
+          档案提醒汇总 ({{ archiveReminderTotalCount }})
         </el-button>
         <el-button type="success" @click="handleDownloadTemplate">
           <el-icon><Download /></el-icon>
@@ -772,13 +772,12 @@
               <el-date-picker
                 v-model="form.resignation_date"
                 type="date"
-                placeholder="离职日期（可不填）"
+                placeholder="由解除/退休合同自动引用"
                 style="width: 100%"
-                :disabled="isViewMode"
-                clearable
+                disabled
               />
               <div class="form-tip" style="color: #909399; font-size: 12px; margin-top: 4px;">
-                💡 填写后系统将在月底检查离职合同审批情况
+                由解除协议合同或退休解除协议合同中的离职日期自动引用
               </div>
             </el-form-item>
           </el-col>
@@ -1348,9 +1347,9 @@
               <el-date-picker
                 v-model="form.resignation_date"
                 type="date"
-                placeholder="请选择离职日期"
+                placeholder="由解除/退休合同自动引用"
                 style="width: 100%"
-                :disabled="isViewMode"
+                disabled
               />
             </el-form-item>
           </el-col>
@@ -1923,9 +1922,7 @@
                 style="width: 100%"
                 :disabled="isViewMode"
                 @change="handleMedicalInsuranceRegionChange"
-                clearable
               >
-                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableMedicalInsuranceRegions"
                   :key="region.id"
@@ -1944,9 +1941,7 @@
                 style="width: 100%"
                 :disabled="isViewMode"
                 @change="handleHousingFundRegionChange"
-                clearable
               >
-                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableHousingFundRegions"
                   :key="region.id"
@@ -3362,12 +3357,12 @@
               <el-date-picker
                 v-model="form.resignation_date"
                 type="date"
-                placeholder="离职日期（可不填）"
+                placeholder="由解除/退休合同自动引用"
                 style="width: 100%"
-                clearable
+                disabled
               />
               <div class="form-tip" style="color: #909399; font-size: 12px; margin-top: 4px;">
-                💡 填写后系统将在月底检查离职合同审批情况
+                由解除协议合同或退休解除协议合同中的离职日期自动引用
               </div>
             </el-form-item>
           </el-col>
@@ -3763,9 +3758,7 @@
                 placeholder="请选择医保参保地区"
                 style="width: 100%"
                 @change="handleMedicalInsuranceRegionChange"
-                clearable
               >
-                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableMedicalInsuranceRegions"
                   :key="region.id"
@@ -3783,9 +3776,7 @@
                 placeholder="请选择公积金参保地区"
                 style="width: 100%"
                 @change="handleHousingFundRegionChange"
-                clearable
               >
-                <el-option label="无（不参保）" :value="NO_INSURANCE_OPTION_VALUE" />
                 <el-option
                   v-for="region in availableHousingFundRegions"
                   :key="region.id"
@@ -5331,6 +5322,20 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item
+          v-if="needsTerminationReason(uploadForm.contract_type)"
+          label="离职日期"
+          required
+        >
+          <el-date-picker
+            v-model="uploadForm.resignation_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择离职日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+
         <el-form-item label="选择模板" required v-if="uploadForm.contract_type && uploadForm.stamp_method !== 'offline'">
           <el-select
             v-model="uploadForm.template_id"
@@ -5440,6 +5445,20 @@
               :value="reason"
             />
           </el-select>
+        </el-form-item>
+
+        <el-form-item
+          v-if="needsTerminationReason(uploadSignedForm.contract_type)"
+          label="离职日期"
+          required
+        >
+          <el-date-picker
+            v-model="uploadSignedForm.resignation_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择离职日期"
+            style="width: 100%"
+          />
         </el-form-item>
         
         <el-form-item label="合同文件" required>
@@ -5783,6 +5802,17 @@
         <el-table-column label="提醒说明" min-width="280" show-overflow-tooltip>
           <template #default="{ row }">
             {{ getArchiveReminderRemark(row, archiveReminderActiveTab) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="110" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              @click="handleArchiveReminderAction(row, archiveReminderActiveTab)"
+            >
+              {{ getArchiveReminderActionText(archiveReminderActiveTab) }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -6827,7 +6857,7 @@ const archiveReminderSummaryItems = computed(() => {
     },
     {
       key: 'pending_stamp',
-      label: '签了未盖章',
+      label: '已签未盖章',
       rows: rows.filter(row => isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_stamp')
     },
     {
@@ -6856,6 +6886,10 @@ const archiveReminderSummaryItems = computed(() => {
 
 const currentArchiveReminderItem = computed(() => {
   return archiveReminderSummaryItems.value.find(item => item.key === archiveReminderActiveTab.value) || archiveReminderSummaryItems.value[0] || null
+})
+
+const archiveReminderTotalCount = computed(() => {
+  return archiveReminderSummaryItems.value.reduce((total, item) => total + item.rows.length, 0)
 })
 
 const archiveReminderSummaryText = computed(() => {
@@ -8391,33 +8425,99 @@ const handleLargeMedicalActionInDialog = async () => {
 }
 
 // 处理项目选择变化
-const handleProjectIdsChange = async (projectIds, { preserveDocumentSet = false } = {}) => {
-  await loadProjectDocumentSets(projectIds?.[0], preserveDocumentSet ? form.project_document_set_id : null)
+const handleProjectIdsChange = async (
+  projectIds,
+  { preserveDocumentSet = false, preserveInsuranceSelections = false } = {}
+) => {
+  const normalizedProjectIds = Array.isArray(projectIds) ? projectIds.filter(Boolean) : []
+  const projectId = normalizedProjectIds[0] || null
+  const preservedSelections = preserveInsuranceSelections
+    ? {
+        socialSecurityRegionId: form.social_security_region_id,
+        medicalInsuranceRegionId: form.medical_insurance_region_id,
+        housingFundRegionId: form.housing_fund_region_id,
+        housingFundConfigId: form.housing_fund_config_id,
+        otherInsurancePolicyIds: [...normalizeOtherInsurancePolicyIds(form.other_insurance_policy_ids)]
+      }
+    : null
 
-  // 加载社保、医保和公积金地区
-  await loadProjectSocialSecurityRegions(projectIds)
-  await loadProjectMedicalInsuranceRegions(projectIds)
-  await loadProjectHousingFundRegions(projectIds)
-  
-  // 加载其他保险信息
-  await loadProjectOtherInsurancePolicies(projectIds)
-  await loadProjectLargeMedicalInsuranceConfigs(projectIds)
-  
-  // 清空已选择的参保地区（因为项目变了）
-  form.social_security_region_id = null
-  form.medical_insurance_region_id = null
-  form.housing_fund_region_id = null
-  form.housing_fund_config_id = null
-  form.large_medical_insurance_config_id = null
-  form.large_medical_enrollment_date = null
-  form.large_medical_base = null
-  form.large_medical_company_base = null
+  if (!preserveInsuranceSelections) {
+    form.social_security_region_id = null
+    form.medical_insurance_region_id = null
+    form.housing_fund_region_id = null
+    form.housing_fund_config_id = null
+    form.large_medical_insurance_config_id = null
+    form.large_medical_enrollment_date = null
+    form.large_medical_base = null
+    form.large_medical_company_base = null
+    form.other_insurance_policy_ids = []
+  }
+
   selectedSocialSecurityRegion.value = null
   selectedMedicalInsuranceRegion.value = null
   selectedHousingFundRegion.value = null
   selectedHousingFundConfig.value = null
   selectedLargeMedicalInsuranceConfig.value = null
+  availableSocialSecurityRegions.value = []
+  availableMedicalInsuranceRegions.value = []
+  availableHousingFundRegions.value = []
   availableHousingFundConfigs.value = []
+  availableLargeMedicalInsuranceConfigs.value = []
+  projectOtherInsurancePolicies.value = []
+
+  await loadProjectDocumentSets(projectId, preserveDocumentSet ? form.project_document_set_id : null)
+
+  if (!projectId) {
+    if (!isEdit.value && !isViewMode.value) {
+      form.employee_number = ''
+    }
+    await triggerDateAndInsuranceValidation()
+    return
+  }
+
+  await loadProjectSocialSecurityRegions(normalizedProjectIds)
+  await loadProjectMedicalInsuranceRegions(normalizedProjectIds)
+  await loadProjectHousingFundRegions(normalizedProjectIds)
+  await loadProjectOtherInsurancePolicies(normalizedProjectIds)
+  await loadProjectLargeMedicalInsuranceConfigs(normalizedProjectIds)
+
+  if (preserveInsuranceSelections && preservedSelections) {
+    const socialSecurityRegion = availableSocialSecurityRegions.value.find(
+      item => Number(item.id) === Number(preservedSelections.socialSecurityRegionId)
+    )
+    form.social_security_region_id = socialSecurityRegion ? preservedSelections.socialSecurityRegionId : null
+    selectedSocialSecurityRegion.value = socialSecurityRegion || null
+
+    const medicalInsuranceRegion = availableMedicalInsuranceRegions.value.find(
+      item => Number(item.id) === Number(preservedSelections.medicalInsuranceRegionId)
+    )
+    form.medical_insurance_region_id = medicalInsuranceRegion ? preservedSelections.medicalInsuranceRegionId : null
+    selectedMedicalInsuranceRegion.value = medicalInsuranceRegion || null
+
+    const housingFundRegion = availableHousingFundRegions.value.find(
+      item => Number(item.id) === Number(preservedSelections.housingFundRegionId)
+    )
+    form.housing_fund_region_id = housingFundRegion ? preservedSelections.housingFundRegionId : null
+    selectedHousingFundRegion.value = housingFundRegion || null
+
+    if (housingFundRegion) {
+      await loadHousingFundConfigs(form.housing_fund_region_id)
+      const housingFundConfig = availableHousingFundConfigs.value.find(
+        item => Number(item.id) === Number(preservedSelections.housingFundConfigId)
+      )
+      form.housing_fund_config_id = housingFundConfig ? preservedSelections.housingFundConfigId : null
+      selectedHousingFundConfig.value = housingFundConfig || null
+    } else {
+      form.housing_fund_config_id = null
+    }
+
+    applyOtherInsuranceSelectionByPolicies(preservedSelections.otherInsurancePolicyIds)
+    syncLargeMedicalSelectionFromMedicalInsurance()
+  }
+
+  if (!isEdit.value && !isViewMode.value) {
+    await generateEmployeeNumber(projectId)
+  }
   await triggerDateAndInsuranceValidation()
 }
 
@@ -8730,10 +8830,12 @@ const handleView = async (row) => {
     const rowData = convertNumericFields(row)
     Object.assign(form, {
       ...rowData,
+      other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(rowData.other_insurance_policy_ids),
       project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
       salary_items: []
     })
     availableProjectDocumentSets.value = []
+    projectOtherInsurancePolicies.value = []
     form.project_document_set_id = null
     applySalaryStateToForm(rowData)
     onboardingForm.value = null
@@ -8863,10 +8965,12 @@ const handleEdit = async (row) => {
       const rowData = convertNumericFields(row)
       Object.assign(form, {
         ...rowData,
+        other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(rowData.other_insurance_policy_ids),
         project_ids: row.project_ids || row.projects?.map(p => p.id) || [],
         salary_items: []
       })
       availableProjectDocumentSets.value = []
+      projectOtherInsurancePolicies.value = []
       form.project_document_set_id = null
       applySalaryStateToForm(rowData)
       onboardingForm.value = null
@@ -9067,6 +9171,35 @@ const getArchiveReminderRemark = (row, categoryKey) => {
   }
 
   return '-'
+}
+
+const getArchiveReminderActionText = (categoryKey) => {
+  if (categoryKey === 'missing_documents') {
+    return '补资料'
+  }
+
+  if (['unsigned_contract', 'offline_contract_upload', 'pending_stamp', 'contract_expiring', 'contract_expired'].includes(categoryKey)) {
+    return '合同管理'
+  }
+
+  return '查看'
+}
+
+const handleArchiveReminderAction = async (row, categoryKey) => {
+  showArchiveReminderDialogVisible.value = false
+
+  if (categoryKey === 'missing_documents') {
+    await handleEdit(row)
+    activeTab.value = 'documents'
+    return
+  }
+
+  if (['unsigned_contract', 'offline_contract_upload', 'pending_stamp', 'contract_expiring', 'contract_expired'].includes(categoryKey)) {
+    await handleContractManage(row)
+    return
+  }
+
+  await handleView(row)
 }
 
 // 标记合同已上传
@@ -9566,7 +9699,7 @@ const handleRemoveFromBatch = (index) => {
     {
       type: 'warning'
     }
-  ).then(() => {
+  ).then(async () => {
     batchEmployees.value.splice(index, 1)
     ElMessage.success('已移除')
   }).catch(() => {})
@@ -9745,6 +9878,7 @@ const handleSubmit = async () => {
           await updateEmployee(form.id, submitPayload)
           ElMessage.success('更新成功')
         } else {
+          submitPayload.employee_number = ''
           console.log('开始创建员工...')
           
           // 工号由后端自动生成，不需要前端检查
@@ -9833,7 +9967,7 @@ const fillSampleData = () => {
       cancelButtonText: '取消',
       type: 'warning'
     }
-  ).then(() => {
+  ).then(async () => {
     // 自动选择第一个有保险配置的项目（如果有项目的话）
     let selectedProjectId = null
     if (projects.value.length > 0) {
@@ -9852,6 +9986,7 @@ const fillSampleData = () => {
     // 基础信息
     Object.assign(form, {
       name: '张三',
+      employee_number: '',
       // employee_number 由后端自动生成，不需要填充
       position: '软件工程师',
       id_number: uniqueIdNumber,
@@ -9952,7 +10087,7 @@ const fillSampleData = () => {
     
     // 如果选择了项目，触发项目变更以加载保险配置
     if (projectIds.length > 0) {
-      handleProjectIdsChange(projectIds)
+      await handleProjectIdsChange(projectIds)
     }
     
     ElMessage.success('示例数据填充完成')
@@ -9978,7 +10113,7 @@ const handleDialogClose = () => {
         confirmButtonText: '确定关闭',
         cancelButtonText: '取消'
     }
-  ).then(() => {
+  ).then(async () => {
       // 用户确认关闭
       if (!isEdit.value && !isViewMode.value) employeeDraft.save()
       resetDialogState()
@@ -10211,7 +10346,8 @@ const getMissingRequiredDocumentsTooltip = (row) => {
     return '资料已上传完整'
   }
 
-  return `未上传资料：${row.missing_required_document_names.join('、')}`
+  const names = row.missing_required_document_names
+  return `未上传资料（${names.length}项）：${names.join('、')}`
 }
 
 // ========== 合同管理相关 ==========
@@ -10240,6 +10376,7 @@ const uploadSignedForm = reactive({
   employee_id: null,
   contract_type: '',
   termination_reason: '',
+  resignation_date: '',
   notes: ''
 })
 const signedContractFile = ref(null)
@@ -10284,6 +10421,7 @@ const uploadForm = reactive({
   employee_id: null,
   contract_type: '',
   termination_reason: '',
+  resignation_date: '',
   stamp_method: 'online',
   template_id: null,
   notes: ''
@@ -10607,6 +10745,7 @@ const handleContractTypeSelect = async (contractType) => {
   uploadForm.contract_type = contractType
   uploadForm.employee_id = currentEmployee.value?.id || null
   uploadForm.termination_reason = ''
+  uploadForm.resignation_date = ''
   uploadForm.stamp_method = 'online'
   uploadForm.template_id = null
   uploadForm.notes = ''
@@ -10666,6 +10805,7 @@ const handleContractTypeChange = async (contractType) => {
 
   if (!needsTerminationReason(contractType)) {
     uploadForm.termination_reason = ''
+    uploadForm.resignation_date = ''
   }
   
   if (!contractType || !currentEmployee.value) return
@@ -10731,6 +10871,11 @@ const handleCreateContract = async () => {
     return
   }
 
+  if (needsTerminationReason(uploadForm.contract_type) && !uploadForm.resignation_date) {
+    ElMessage.warning('请选择离职日期')
+    return
+  }
+
   uploading.value = true
   try {
     if (uploadForm.stamp_method === 'offline') {
@@ -10756,6 +10901,7 @@ const handleCreateContract = async () => {
         employee_id: uploadForm.employee_id,
         contract_type: uploadForm.contract_type,
         termination_reason: uploadForm.termination_reason || '',
+        resignation_date: uploadForm.resignation_date || '',
         contract_file: selectedFile,
         target_status: 'employee_signed',
         notes: uploadForm.notes || ''
@@ -10772,11 +10918,13 @@ const handleCreateContract = async () => {
       )
       showUploadDialog.value = false
       uploadForm.termination_reason = ''
+      uploadForm.resignation_date = ''
       fileList.value = []
       if (uploadRef.value) {
         uploadRef.value.clearFiles()
       }
       await loadEmployeeContracts(currentEmployee.value.id)
+      await loadEmployees()
       return
     }
 
@@ -10792,6 +10940,7 @@ const handleCreateContract = async () => {
       employee_id: uploadForm.employee_id,
       contract_type: uploadForm.contract_type,
       termination_reason: uploadForm.termination_reason || '',
+      resignation_date: uploadForm.resignation_date || '',
       stamp_method: uploadForm.stamp_method,
       template_id: uploadForm.template_id,
       notes: uploadForm.notes || ''
@@ -10824,6 +10973,7 @@ const handleCreateContract = async () => {
     formData.append('template_id', uploadForm.template_id)
     formData.append('contract_type', uploadForm.contract_type)
     formData.append('termination_reason', uploadForm.termination_reason || '')
+    formData.append('resignation_date', uploadForm.resignation_date || '')
     formData.append('stamp_method', uploadForm.stamp_method)
     formData.append('notes', uploadForm.notes || '')
     formData.append('filled_pdf', filledPdfBlob, 'filled_contract.pdf')
@@ -10839,8 +10989,10 @@ const handleCreateContract = async () => {
       ElMessage.success('合同创建成功，数据已自动填充')
       showUploadDialog.value = false
       uploadForm.termination_reason = ''
+      uploadForm.resignation_date = ''
       // 刷新合同列表
       await loadEmployeeContracts(currentEmployee.value.id)
+      await loadEmployees()
     } else {
       throw new Error(saveResponse.message || '保存合同失败')
     }
@@ -10909,6 +11061,7 @@ const handleSubmitApproval = async (contract) => {
 const handleUploadSignedContractTypeChange = (contractType) => {
   if (!needsTerminationReason(contractType)) {
     uploadSignedForm.termination_reason = ''
+    uploadSignedForm.resignation_date = ''
   }
 }
 
@@ -11141,6 +11294,11 @@ const handleUploadSignedContract = async () => {
     return
   }
 
+  if (needsTerminationReason(uploadSignedForm.contract_type) && !uploadSignedForm.resignation_date) {
+    ElMessage.warning('请选择离职日期')
+    return
+  }
+
   if (!signedContractFile.value) {
     ElMessage.warning('请选择合同文件')
     return
@@ -11166,6 +11324,7 @@ const handleUploadSignedContract = async () => {
       employee_id: currentEmployee.value.id,
       contract_type: uploadSignedForm.contract_type,
       termination_reason: uploadSignedForm.termination_reason || '',
+      resignation_date: uploadSignedForm.resignation_date || '',
       contract_file: signedContractFile.value,
       notes: uploadSignedForm.notes || ''
     }
@@ -11178,6 +11337,7 @@ const handleUploadSignedContract = async () => {
       // 重置表单
       uploadSignedForm.contract_type = ''
       uploadSignedForm.termination_reason = ''
+      uploadSignedForm.resignation_date = ''
       uploadSignedForm.notes = ''
       signedContractFile.value = null
       if (uploadSignedRef.value) {
@@ -11979,6 +12139,7 @@ onMounted(async () => {
   loadProjects()
   checkExpiredIdCards()
   loadPendingContractUpload() // 加载待上传合同列表
+  loadArchiveReminderEmployees()
 })
 
 onBeforeUnmount(() => {
@@ -12002,66 +12163,36 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
     loadProjects()
     checkExpiredIdCards()
     loadPendingContractUpload() // 加载待上传合同列表
+    loadArchiveReminderEmployees()
   }
 })
 
 // 添加生成工号的方法
-const generateEmployeeNumber = async () => {
-  if (!currentAccountSetId.value) {
-    ElMessage.warning('请先选择账套')
-    // 即使没有账套ID，也尝试生成一个默认工号
-    const defaultId = '1'
-    const timestamp = new Date().getTime().toString().slice(-4)
-    form.employee_number = `E${defaultId}-${timestamp}`
-    return form.employee_number
+const generateEmployeeNumber = async (projectId = form.project_ids?.[0] || null) => {
+  if (!currentAccountSetId.value || !projectId) {
+    form.employee_number = ''
+    return ''
   }
-  
+
   try {
-    // 前端自行生成工号，不依赖后端API
-    console.log('开始生成工号，当前账套ID:', currentAccountSetId.value)
-    console.log('当前员工列表:', employees.value.length, '名员工')
-    
-    // 1. 获取当前员工列表中的最大序号
-    let maxNumber = 0
-    
-    // 遍历现有员工，查找最大工号
-    if (employees.value && employees.value.length > 0) {
-      employees.value.forEach(emp => {
-        // 检查员工是否有工号
-        console.log('检查员工工号:', emp.name, emp.employee_number)
-        
-        if (emp.employee_number && emp.employee_number !== '未设置') {
-          // 尝试提取数字部分
-          if (emp.employee_number.includes('-')) {
-            const numStr = emp.employee_number.split('-')[1]
-            if (numStr) {
-              const num = parseInt(numStr, 10)
-              if (!isNaN(num) && num > maxNumber) {
-                maxNumber = num
-                console.log('找到更大的工号序号:', num)
-              }
-            }
-          }
-        }
-      })
-    } else {
-      console.log('没有现有员工，从001开始')
+    const response = await request.get('/employees/generate-employee-number', {
+      params: {
+        account_set_id: currentAccountSetId.value,
+        project_id: projectId
+      }
+    })
+
+    if (response.success) {
+      form.employee_number = response.data?.employee_number || ''
+      return form.employee_number
     }
-    
-    // 生成新的序号（当前最大序号+1）
-    const nextNumber = maxNumber > 0 ? maxNumber + 1 : 1
-    const employeeNumber = `E${currentAccountSetId.value}-${nextNumber.toString().padStart(3, '0')}`
-    form.employee_number = employeeNumber
-    console.log('最终生成的工号:', employeeNumber)
-    return employeeNumber
+
+    form.employee_number = ''
+    return ''
   } catch (error) {
-    console.error('生成工号错误:', error)
-    // 如果出错，生成一个基于时间戳的工号
-    const timestamp = new Date().getTime().toString().slice(-4)
-    const employeeNumber = `E${currentAccountSetId.value}-${timestamp}`
-    form.employee_number = employeeNumber
-    console.log('出错后生成的备用工号:', employeeNumber)
-    return employeeNumber
+    console.error('生成工号失败:', error)
+    form.employee_number = ''
+    return ''
   }
 }
 
@@ -12112,7 +12243,10 @@ const handleNewEmployee = async () => {
     formRef.value?.resetFields()
   }
   if (form.project_ids?.[0]) {
-    await loadProjectDocumentSets(form.project_ids[0], form.project_document_set_id)
+    await handleProjectIdsChange(form.project_ids, {
+      preserveDocumentSet: true,
+      preserveInsuranceSelections: restored
+    })
   }
   pendingSalaryAdjustment.value = null
   currentSalarySnapshot.value = {
@@ -12544,6 +12678,12 @@ const getChangeComparison = (detail) => {
   color: #909399;
   margin-top: 6px;
   line-height: 1.4;
+}
+
+.other-insurance-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
 }
 
 .registration-photo-editor {

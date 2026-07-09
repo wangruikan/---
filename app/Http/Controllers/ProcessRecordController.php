@@ -62,6 +62,9 @@ class ProcessRecordController extends Controller
             $formattedRecords = $records->getCollection()->map(function ($instance) {
                 // 获取当前待审批记录
                 $currentRecord = $instance->getCurrentPendingRecord();
+                if (!$currentRecord && $instance->business_type === '发票申请') {
+                    $currentRecord = $instance->records->firstWhere('step_order', $instance->current_step);
+                }
                 
                 // 获取所有审批记录的摘要
                 $approvalSummary = $instance->records->map(function($record) {
@@ -241,6 +244,7 @@ class ProcessRecordController extends Controller
             'employee_registration_form_update' => '登记表修改审批',
             'personnel_change' => '人员汇总申请',
             'invoice_application' => '发票申请',
+            '发票申请' => '发票申请',
             'salary_approval' => '工资表审批',
             'payment_application' => '付款申请',
             'reimbursement' => '报销申请',

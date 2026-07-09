@@ -58,7 +58,11 @@ class ProjectController extends Controller
     {
         $explicitStatus = $projectData['status'] ?? null;
 
-        if (in_array($explicitStatus, ['active', 'completed', 'inactive'], true)) {
+        if ($explicitStatus === 'terminated' || $explicitStatus === 'inactive') {
+            return 'terminated';
+        }
+
+        if ($explicitStatus === 'completed') {
             return $explicitStatus;
         }
 
@@ -87,7 +91,28 @@ class ProjectController extends Controller
         }
 
         if ($request->has('status') && $request->status) {
-            $query->where('status', $request->status);
+            $status = (string) $request->status;
+            $today = Carbon::today('Asia/Shanghai')->toDateString();
+
+            if ($status === 'terminated' || $status === 'inactive') {
+                $query->whereIn('status', ['terminated', 'inactive']);
+            } elseif ($status === 'completed') {
+                $query->where(function ($statusQuery) use ($today) {
+                    $statusQuery->where('status', 'completed')
+                        ->orWhere(function ($endedQuery) use ($today) {
+                            $endedQuery->whereNotIn('status', ['terminated', 'inactive'])
+                                ->whereDate('end_date', '<', $today);
+                        });
+                });
+            } elseif ($status === 'active') {
+                $query->whereNotIn('status', ['completed', 'terminated', 'inactive'])
+                    ->where(function ($activeQuery) use ($today) {
+                        $activeQuery->whereNull('end_date')
+                            ->orWhereDate('end_date', '>=', $today);
+                    });
+            } else {
+                $query->where('status', $status);
+            }
         }
 
         if ($request->has('search') && $request->search) {
@@ -181,7 +206,7 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'status' => 'nullable|in:active,completed,inactive',
+            'status' => 'nullable|in:active,completed,inactive,terminated',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'social_security_location' => 'nullable|string',
@@ -379,15 +404,29 @@ class ProjectController extends Controller
     {
         $service = app(ProjectRoleUserService::class);
         $roles = [];
+        $loadedAssignments = $project->relationLoaded('roleAssignments')
+            ? $project->roleAssignments->filter(fn ($assignment) => $assignment->user)
+            : null;
 
         foreach (ProjectRoleUserService::roleLabels() as $roleType => $label) {
-            $users = $service->getProjectRoleUsers($project, $roleType)
-                ->map(fn ($user) => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                ])
-                ->values()
-                ->all();
+            if ($loadedAssignments !== null) {
+                $users = $loadedAssignments
+                    ->where('role_type', $roleType)
+                    ->map(fn ($assignment) => [
+                        'id' => $assignment->user->id,
+                        'name' => $assignment->user->name,
+                    ])
+                    ->values()
+                    ->all();
+            } else {
+                $users = $service->getProjectRoleUsers($project, $roleType)
+                    ->map(fn ($user) => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                    ])
+                    ->values()
+                    ->all();
+            }
 
             $roles[$roleType] = [
                 'label' => $label,
@@ -423,6 +462,7 @@ class ProjectController extends Controller
     {
         $projects->each(function (Project $project) use ($request) {
             $project->can_manage_role_users = $this->currentUserCanManageProjectRoleUsers($request, $project);
+            $project->setAttribute('role_users', $this->formatProjectRoleUsers($project));
         });
 
         return $projects;
@@ -448,13 +488,14 @@ class ProjectController extends Controller
                     $query->where('employee_projects.status', 'inactive');
                 },
             ])
-            ->with(['medicalInsuranceRegions', 'otherInsurancePolicies.type', 'largeMedicalInsuranceConfigs']);
+            ->with(['medicalInsuranceRegions', 'otherInsurancePolicies.type', 'largeMedicalInsuranceConfigs', 'roleAssignments.user:id,name']);
 
+        $today = Carbon::today('Asia/Shanghai')->toDateString();
         $stats = $statsQuery->selectRaw("
                 COUNT(*) as total_count,
-                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
-                SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactive_count
+                SUM(CASE WHEN status NOT IN ('completed', 'inactive', 'terminated') AND (end_date IS NULL OR end_date >= '{$today}') THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'completed' OR (status NOT IN ('inactive', 'terminated') AND end_date < '{$today}') THEN 1 ELSE 0 END) as completed_count,
+                SUM(CASE WHEN status IN ('inactive', 'terminated') THEN 1 ELSE 0 END) as terminated_count
             ")
             ->first();
 
@@ -491,7 +532,8 @@ class ProjectController extends Controller
                 'total' => intval($stats->total_count ?? 0),
                 'active' => intval($stats->active_count ?? 0),
                 'completed' => intval($stats->completed_count ?? 0),
-                'inactive' => intval($stats->inactive_count ?? 0),
+                'inactive' => intval($stats->terminated_count ?? 0),
+                'terminated' => intval($stats->terminated_count ?? 0),
             ]
         ]);
     }
@@ -680,6 +722,26 @@ class ProjectController extends Controller
             'success' => true,
             'message' => '项目更新成功',
             'data' => $project
+        ]);
+    }
+
+    public function terminate(Request $request, $id)
+    {
+        if ($response = $this->checkPermission('projects.update')) {
+            return $response;
+        }
+
+        $project = Project::findOrFail($id);
+        $this->checkProjectAccess($request, $project);
+
+        $project->update([
+            'status' => 'terminated',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => '项目已终止',
+            'data' => $project->fresh(),
         ]);
     }
 

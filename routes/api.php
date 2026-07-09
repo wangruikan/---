@@ -333,7 +333,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}/registration-form-update-status', [EmployeeController::class, 'getRegistrationFormUpdateStatus']);
         Route::post('/{id}/registration-form-update-approval', [EmployeeController::class, 'submitRegistrationFormUpdateApproval']);
         Route::post('/registration-form-photo/upload', [EmployeeController::class, 'uploadRegistrationFormPhoto']);
-        
+        // 生成工号（必须在 /{id} 之前）
+        Route::get('/generate-employee-number', [EmployeeController::class, 'generateEmployeeNumberApi']);
+
         Route::get('/{id}', [EmployeeController::class, 'show']);
         Route::put('/{id}', [EmployeeController::class, 'update']);
         Route::delete('/{id}', [EmployeeController::class, 'destroy']);
@@ -346,9 +348,6 @@ Route::middleware('auth:sanctum')->group(function () {
         // 线下入职相关
         Route::post('/{id}/offline-onboarding', [App\Http\Controllers\OfflineOnboardingController::class, 'submitOfflineOnboarding']);
         Route::post('/{id}/mark-contract-uploaded', [App\Http\Controllers\OfflineOnboardingController::class, 'markContractUploaded']);
-        
-        // 新增生成工号路由
-        Route::get('/generate-employee-number', [EmployeeController::class, 'generateEmployeeNumberApi']);
         
         // 批量下载员工资料
         Route::post('/batch-download-documents', [EmployeeController::class, 'batchDownloadDocuments']);
@@ -425,6 +424,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/generate-code-preview', [ProjectController::class, 'generateCodePreview']);
         Route::get('/{id}', [ProjectController::class, 'show']);
         Route::put('/{id}', [ProjectController::class, 'update']);
+        Route::put('/{id}/terminate', [ProjectController::class, 'terminate']);
         Route::delete('/{id}', [ProjectController::class, 'destroy']);
         Route::get('/{id}/statistics', [ProjectController::class, 'getStatistics']);
         Route::get('/{id}/role-users', [ProjectController::class, 'getRoleUsers']);

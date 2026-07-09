@@ -44,6 +44,14 @@ export function updateProject(id, data) {
   })
 }
 
+// terminate project
+export function terminateProject(id) {
+  return request({
+    url: `/projects/${id}/terminate`,
+    method: 'put'
+  })
+}
+
 // delete project
 export function deleteProject(id) {
   return request({

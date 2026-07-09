@@ -35,6 +35,8 @@ class InsuranceChangeController extends ApiController
      */
     private $otherInsurancePolicyCache = [];
 
+    private const OTHER_INSURANCE_POLICY_CATEGORY_PREFIX = 'other_policy:';
+
     /**
      * Runtime cache for historical region name -> region id mapping.
      *
@@ -1664,9 +1666,28 @@ class InsuranceChangeController extends ApiController
             $user = $request->user();
             $category = $this->normalizeChangeCategory($request->input('category'));
             $categories = $this->normalizeChangeCategories($request->input('categories'), $category);
+            $itemIds = $this->normalizeChangeItemIds($request->input('item_ids'));
             $result = $this->normalizeProcessResult($request->input('result'));
 
             if ($this->isChangeItemsEnabled()) {
+                if ($request->has('item_ids')) {
+                    if (empty($itemIds)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => '请选择处理业务'
+                        ], 422);
+                    }
+
+                    if ($result === 'failed') {
+                        return $this->failProcessByItems($change, $itemIds, $user);
+                    }
+                    if ($result === 'terminated') {
+                        return $this->terminateProcessByItems($change, $itemIds, $user);
+                    }
+
+                    return $this->confirmProcessByItems($change, $itemIds, $user);
+                }
+
                 if ($request->has('categories')) {
                     if (empty($categories)) {
                         return response()->json([
@@ -1801,6 +1822,10 @@ class InsuranceChangeController extends ApiController
             return null;
         }
 
+        if ($this->isOtherInsurancePolicyCategory($category)) {
+            return $category;
+        }
+
         $allowed = [
             'social_security',
             'medical_insurance',
@@ -1831,6 +1856,176 @@ class InsuranceChangeController extends ApiController
         }, $normalized);
 
         return array_values(array_unique(array_filter($normalized)));
+    }
+
+    private function normalizeChangeItemIds($itemIds): array
+    {
+        if (is_array($itemIds)) {
+            $normalized = $itemIds;
+        } elseif (is_numeric($itemIds)) {
+            $normalized = [$itemIds];
+        } else {
+            $normalized = [];
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $normalized))));
+    }
+
+    private function getProcessableItemsByIds(InsuranceChange $change, array $itemIds)
+    {
+        $this->syncChangeItems($change);
+
+        $items = $change->items()
+            ->whereIn('id', $itemIds)
+            ->get()
+            ->keyBy('id');
+
+        $missingIds = array_values(array_diff($itemIds, $items->keys()->map(fn ($id) => (int) $id)->all()));
+        if (!empty($missingIds)) {
+            return [
+                'items' => collect(),
+                'response' => response()->json([
+                    'success' => false,
+                    'message' => '未找到可处理的业务项'
+                ], 400),
+            ];
+        }
+
+        $unprocessable = $items->filter(function ($item) {
+            return !in_array($item->status, ['pending', 'submitted'], true);
+        });
+
+        if ($unprocessable->isNotEmpty()) {
+            $labels = $unprocessable->map(function ($item) {
+                return $this->getChangeItemDisplayText($item);
+            })->implode('、');
+
+            return [
+                'items' => collect(),
+                'response' => response()->json([
+                    'success' => false,
+                    'message' => '以下业务当前不能处理：' . $labels
+                ], 400),
+            ];
+        }
+
+        return [
+            'items' => collect($itemIds)->map(fn ($id) => $items->get($id))->filter()->values(),
+            'response' => null,
+        ];
+    }
+
+    private function confirmProcessByItems(InsuranceChange $change, array $itemIds, $user)
+    {
+        ['items' => $items, 'response' => $response] = $this->getProcessableItemsByIds($change, $itemIds);
+        if ($response) {
+            return $response;
+        }
+
+        foreach ($items as $item) {
+            if ($validationResponse = $this->validateChangeItemBeforeSuccess($change, $item)) {
+                return $validationResponse;
+            }
+        }
+
+        DB::transaction(function () use ($change, $items, $user) {
+            foreach ($items as $item) {
+                $this->applyChangeItemSuccessToCurrentMonth($change, $item);
+
+                $item->update([
+                    'status' => 'completed',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncOtherInsuranceProcessedFlag($change);
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '业务处理成功',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function failProcessByItems(InsuranceChange $change, array $itemIds, $user)
+    {
+        ['items' => $items, 'response' => $response] = $this->getProcessableItemsByIds($change, $itemIds);
+        if ($response) {
+            return $response;
+        }
+
+        $hasGeneralAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->whereNull('insurance_change_item_id')
+            ->exists();
+
+        if (!$hasGeneralAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '失败时必须上传处理附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $items, $user) {
+            foreach ($items as $item) {
+                $this->createNextMonthCarryoverChange($change, $item->category, $user);
+
+                $item->update([
+                    'status' => 'failed',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncOtherInsuranceProcessedFlag($change);
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记失败，并生成下月续办任务',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
+    }
+
+    private function terminateProcessByItems(InsuranceChange $change, array $itemIds, $user)
+    {
+        ['items' => $items, 'response' => $response] = $this->getProcessableItemsByIds($change, $itemIds);
+        if ($response) {
+            return $response;
+        }
+
+        $hasGeneralAttachment = InsuranceChangeAttachment::where('insurance_change_id', $change->id)
+            ->whereNull('insurance_change_item_id')
+            ->exists();
+
+        if (!$hasGeneralAttachment) {
+            return response()->json([
+                'success' => false,
+                'message' => '终结时必须上传处理附件'
+            ], 422);
+        }
+
+        DB::transaction(function () use ($change, $items, $user) {
+            foreach ($items as $item) {
+                $item->update([
+                    'status' => 'terminated',
+                    'processed_by' => $user && $user->id ? $user->id : null,
+                    'processed_at' => now(),
+                ]);
+            }
+
+            $this->syncOtherInsuranceProcessedFlag($change);
+            $this->syncChangeStatusFromItems($change, $user);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '已标记终结',
+            'data' => $change->fresh()->load(['attachments', 'items.attachments', 'items.processor'])
+        ]);
     }
 
     private function confirmProcessByCategory(InsuranceChange $change, string $category, $user)
@@ -2180,24 +2375,15 @@ class InsuranceChangeController extends ApiController
             ], 400);
         }
 
-        if ($items->contains(function ($item) {
-            return $item->category === 'other_insurance';
-        })) {
-            $validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change);
-            if ($validationResponse) {
+        foreach ($items as $item) {
+            if ($validationResponse = $this->validateChangeItemBeforeSuccess($change, $item)) {
                 return $validationResponse;
             }
         }
 
         DB::transaction(function () use ($change, $items, $user) {
             foreach ($items as $item) {
-                $this->applyCategorySuccessToCurrentMonth($change, $item->category);
-
-                if ($item->category === 'other_insurance') {
-                    $change->update([
-                        'other_insurance_processed' => 1,
-                    ]);
-                }
+                $this->applyChangeItemSuccessToCurrentMonth($change, $item);
 
                 $item->update([
                     'status' => 'completed',
@@ -2206,6 +2392,7 @@ class InsuranceChangeController extends ApiController
                 ]);
             }
 
+            $this->syncOtherInsuranceProcessedFlag($change);
             $this->syncChangeStatusFromItems($change, $user);
         });
 
@@ -2362,6 +2549,16 @@ class InsuranceChangeController extends ApiController
 
     private function applyCategorySuccessToCurrentMonth(InsuranceChange $change, string $category): void
     {
+        if ($this->isOtherInsurancePolicyCategory($category)) {
+            $item = $change->items()->where('category', $category)->first();
+            if (!$item) {
+                throw new \RuntimeException('未找到可处理的其他保险细分');
+            }
+
+            $this->applyOtherInsurancePolicySuccessToCurrentMonth($change, $item);
+            return;
+        }
+
         if ($category === 'other_insurance' && ($validationResponse = $this->validateOtherInsuranceSurrenderAmounts($change))) {
             throw new \RuntimeException($validationResponse->getData(true)['message'] ?? '请先填写其他保险退保金额');
         }
@@ -2401,6 +2598,108 @@ class InsuranceChangeController extends ApiController
             $categoryChange = $this->buildCategoryOnlyChange($change, $category);
             $this->applyOtherInsuranceCoverageAmountChanges($categoryChange);
         }
+    }
+
+    private function validateChangeItemBeforeSuccess(InsuranceChange $change, InsuranceChangeItem $item)
+    {
+        if ($item->category === 'other_insurance') {
+            return $this->validateOtherInsuranceSurrenderAmounts($change);
+        }
+
+        if (!$this->isOtherInsurancePolicyCategory($item->category)) {
+            return null;
+        }
+
+        $policy = $this->getPolicyFromChangeItem($item);
+        if (!$policy || $change->change_type !== 'decrease') {
+            return null;
+        }
+
+        if (!$this->hasMoneyValue($policy['surrender_amount'] ?? null)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先填写其他保险的退保金额',
+            ], 422);
+        }
+
+        return null;
+    }
+
+    private function applyChangeItemSuccessToCurrentMonth(InsuranceChange $change, InsuranceChangeItem $item): void
+    {
+        if ($this->isOtherInsurancePolicyCategory($item->category)) {
+            $this->applyOtherInsurancePolicySuccessToCurrentMonth($change, $item);
+            return;
+        }
+
+        $this->applyCategorySuccessToCurrentMonth($change, $item->category);
+    }
+
+    private function applyOtherInsurancePolicySuccessToCurrentMonth(InsuranceChange $change, InsuranceChangeItem $item): void
+    {
+        $policy = $this->getPolicyFromChangeItem($item);
+        if (!$policy) {
+            throw new \RuntimeException('未找到可处理的其他保险细分');
+        }
+
+        $currentPersonnel = $this->getCurrentPersonnelQuery($change)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $state = $this->buildPersonnelStateFromPersonnel($currentPersonnel);
+        $currentPolicies = $this->decodeOtherInsurancePolicies($state['other_insurance_policies'] ?? null);
+
+        if ($change->change_type === 'decrease') {
+            $state['other_insurance_policies'] = $this->serializeOtherInsurancePolicies(
+                $this->removeOtherInsurancePolicyFromList($currentPolicies, $policy)
+            );
+        } else {
+            $state['other_insurance_policies'] = $this->serializeOtherInsurancePolicies(
+                $this->mergeOtherInsurancePolicyIntoList($currentPolicies, $policy)
+            );
+        }
+
+        if (!$this->hasActivePersonnelState($state)) {
+            if ($currentPersonnel) {
+                $currentPersonnel->delete();
+            }
+            $this->deleteCurrentMonthDetailRecord($change);
+
+            $categoryChange = $this->buildCategoryOnlyChange($change, 'other_insurance');
+            $categoryChange->other_insurance_policies = $this->serializeOtherInsurancePolicies([$policy]);
+            $this->applyOtherInsuranceCoverageAmountChanges($categoryChange);
+            return;
+        }
+
+        $syntheticChange = $this->buildSyntheticChangeFromState($change, $state);
+        $personnel = InsurancePersonnel::getOrCreateFromInsuranceChange($syntheticChange);
+        if ($personnel) {
+            InsuranceDetailRecord::generateFromPersonnel($personnel, (int) date('Y'), (int) date('n'));
+            $this->syncCurrentMonthDetailOtherInsurancePolicies($change, $state['other_insurance_policies']);
+        }
+
+        $categoryChange = $this->buildCategoryOnlyChange($change, 'other_insurance');
+        $categoryChange->other_insurance_policies = $this->serializeOtherInsurancePolicies([$policy]);
+        $this->applyOtherInsuranceCoverageAmountChanges($categoryChange);
+    }
+
+    private function syncCurrentMonthDetailOtherInsurancePolicies(InsuranceChange $change, $policies): void
+    {
+        $record = InsuranceDetailRecord::where('employee_id', $change->employee_id)
+            ->where('project_id', $change->project_id)
+            ->where('account_set_id', $change->account_set_id)
+            ->where('record_year', (int) date('Y'))
+            ->where('record_month', (int) date('n'))
+            ->first();
+
+        if (!$record) {
+            return;
+        }
+
+        $record->other_insurance_policies = $policies ?: '';
+        $record->calculateAmounts();
+        $record->save();
     }
 
     private function buildPersonnelStateFromPersonnel($personnel): array
@@ -2522,6 +2821,7 @@ class InsuranceChangeController extends ApiController
             ->where('project_id', $change->project_id)
             ->where('account_set_id', $change->account_set_id)
             ->where('change_type', $change->change_type)
+            ->whereKeyNot($change->id)
             ->whereIn('status', ['pending', 'submitted']);
 
         if (InsuranceChange::supportsTaskMonth()) {
@@ -2594,6 +2894,15 @@ class InsuranceChangeController extends ApiController
 
     private function applyCategoryStateFromChangeToChange(InsuranceChange $target, InsuranceChange $source, string $category): void
     {
+        if ($this->isOtherInsurancePolicyCategory($category)) {
+            $policy = $this->getPolicyForOtherInsuranceCategory($source, $category);
+            $target->other_insurance_policies = $policy
+                ? $this->serializeOtherInsurancePolicies([$policy])
+                : null;
+            $target->used_quotas = $source->used_quotas;
+            return;
+        }
+
         foreach ($this->getCategoryFieldMap()[$category] ?? [] as $field) {
             $target->setAttribute($field, $source->{$field});
         }
@@ -2694,6 +3003,22 @@ class InsuranceChangeController extends ApiController
 
     private function getCategoryDisplayText(string $category): string
     {
+        if ($this->isOtherInsurancePolicyCategory($category)) {
+            $policyId = $this->getOtherInsurancePolicyCategoryKey($category);
+            if ($policyId && ctype_digit((string) $policyId)) {
+                if (!array_key_exists((int) $policyId, $this->otherInsurancePolicyCache)) {
+                    $this->otherInsurancePolicyCache[(int) $policyId] = OtherInsurancePolicy::find((int) $policyId);
+                }
+
+                $policy = $this->otherInsurancePolicyCache[(int) $policyId];
+                if ($policy) {
+                    return $policy->policy_name ?: ($policy->name ?? '其他保险');
+                }
+            }
+
+            return '其他保险';
+        }
+
         $categoryMap = [
             'social_security' => '社保',
             'medical_insurance' => '医保',
@@ -2736,6 +3061,176 @@ class InsuranceChangeController extends ApiController
         }
 
         return null;
+    }
+
+    private function isOtherInsurancePolicyCategory($category): bool
+    {
+        return is_string($category)
+            && str_starts_with($category, self::OTHER_INSURANCE_POLICY_CATEGORY_PREFIX)
+            && strlen($category) > strlen(self::OTHER_INSURANCE_POLICY_CATEGORY_PREFIX);
+    }
+
+    private function getOtherInsurancePolicyCategoryKey(string $category): ?string
+    {
+        if (!$this->isOtherInsurancePolicyCategory($category)) {
+            return null;
+        }
+
+        return substr($category, strlen(self::OTHER_INSURANCE_POLICY_CATEGORY_PREFIX));
+    }
+
+    private function makeOtherInsurancePolicyCategory($policy, int $index = 0): string
+    {
+        $policyId = $this->getOtherInsurancePolicyId($policy);
+        $key = $policyId !== null && $policyId !== ''
+            ? (string) $policyId
+            : 'idx' . $index;
+
+        return self::OTHER_INSURANCE_POLICY_CATEGORY_PREFIX . $key;
+    }
+
+    private function getOtherInsurancePolicyCompareKey($policy, ?int $index = null): string
+    {
+        $policyId = $this->getOtherInsurancePolicyId($policy);
+        if ($policyId !== null && $policyId !== '') {
+            return 'id:' . $policyId;
+        }
+
+        if (is_array($policy)) {
+            $name = $policy['policy_name'] ?? $policy['name'] ?? $policy['type_name'] ?? '';
+            $start = $policy['policy_start_date'] ?? $policy['start_date'] ?? '';
+            $end = $policy['policy_end_date'] ?? $policy['end_date'] ?? '';
+            $fallback = trim((string) $name . '|' . (string) $start . '|' . (string) $end);
+            if ($fallback !== '||') {
+                return 'text:' . $fallback;
+            }
+        }
+
+        return 'idx:' . ($index ?? 0);
+    }
+
+    private function getOtherInsurancePolicyDisplayName($policy): string
+    {
+        if (is_array($policy)) {
+            foreach (['policy_name', 'name', 'type_name', 'insurance_type_name', 'type'] as $field) {
+                $value = $policy[$field] ?? null;
+                if (is_array($value)) {
+                    $value = $value['name'] ?? $value['type_name'] ?? null;
+                }
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            }
+        }
+
+        return '其他保险';
+    }
+
+    private function serializeOtherInsurancePolicies(array $policies): ?string
+    {
+        $policies = array_values(array_filter($policies, fn ($policy) => is_array($policy) && !empty($policy)));
+        return empty($policies)
+            ? null
+            : json_encode($policies, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function mergeOtherInsurancePolicyIntoList(array $policies, array $policy): array
+    {
+        $targetKey = $this->getOtherInsurancePolicyCompareKey($policy);
+        $merged = [];
+        $updated = false;
+
+        foreach ($policies as $index => $existingPolicy) {
+            if (!is_array($existingPolicy)) {
+                continue;
+            }
+
+            if ($this->getOtherInsurancePolicyCompareKey($existingPolicy, $index) === $targetKey) {
+                $merged[] = $policy;
+                $updated = true;
+            } else {
+                $merged[] = $existingPolicy;
+            }
+        }
+
+        if (!$updated) {
+            $merged[] = $policy;
+        }
+
+        return $merged;
+    }
+
+    private function removeOtherInsurancePolicyFromList(array $policies, array $policy): array
+    {
+        $targetKey = $this->getOtherInsurancePolicyCompareKey($policy);
+
+        return array_values(array_filter($policies, function ($existingPolicy, $index) use ($targetKey) {
+            return is_array($existingPolicy)
+                && $this->getOtherInsurancePolicyCompareKey($existingPolicy, $index) !== $targetKey;
+        }, ARRAY_FILTER_USE_BOTH));
+    }
+
+    private function decodeChangeItemSnapshot(InsuranceChangeItem $item): array
+    {
+        $snapshot = $item->category_snapshot;
+        if (is_string($snapshot)) {
+            $decoded = json_decode($snapshot, true);
+            $snapshot = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($snapshot)) {
+            return [];
+        }
+
+        if (isset($snapshot['other_insurance_policies']) && is_array($snapshot['other_insurance_policies'])) {
+            return $snapshot['other_insurance_policies'][0] ?? [];
+        }
+
+        if (array_is_list($snapshot)) {
+            return $snapshot[0] ?? [];
+        }
+
+        return $snapshot;
+    }
+
+    private function getPolicyFromChangeItem(InsuranceChangeItem $item): ?array
+    {
+        if (!$this->isOtherInsurancePolicyCategory($item->category)) {
+            return null;
+        }
+
+        $snapshot = $this->decodeChangeItemSnapshot($item);
+        return !empty($snapshot) ? $snapshot : null;
+    }
+
+    private function getPolicyForOtherInsuranceCategory(InsuranceChange $change, string $category): ?array
+    {
+        $item = $change->items()->where('category', $category)->first();
+        if ($item) {
+            return $this->getPolicyFromChangeItem($item);
+        }
+
+        $categoryKey = $this->getOtherInsurancePolicyCategoryKey($category);
+        foreach ($this->decodeOtherInsurancePolicies($change->other_insurance_policies) as $index => $policy) {
+            if (!is_array($policy)) {
+                continue;
+            }
+            if ($this->makeOtherInsurancePolicyCategory($policy, $index) === $category || (string) $this->getOtherInsurancePolicyId($policy) === (string) $categoryKey) {
+                return $policy;
+            }
+        }
+
+        return null;
+    }
+
+    private function getChangeItemDisplayText(InsuranceChangeItem $item): string
+    {
+        if ($this->isOtherInsurancePolicyCategory($item->category)) {
+            $policy = $this->getPolicyFromChangeItem($item);
+            return $policy ? $this->getOtherInsurancePolicyDisplayName($policy) : '其他保险';
+        }
+
+        return $this->getCategoryDisplayText($item->category);
     }
 
     private function hasMoneyValue($value): bool
@@ -4885,13 +5380,13 @@ class InsuranceChangeController extends ApiController
             return;
         }
 
+        $otherPolicySnapshots = $this->buildOtherInsurancePolicySnapshots($change);
         $snapshotByCategory = [
             'social_security' => $change->social_security_types,
             'medical_insurance' => $change->medical_insurance_types,
             'housing_fund' => $change->housing_fund_params,
             'large_medical_insurance' => $change->large_medical_insurance_config,
-            'other_insurance' => $change->other_insurance_policies,
-        ];
+        ] + $otherPolicySnapshots;
 
         $detailCategories = $this->extractChangeDetailCategories($change);
         $existingCategories = $change->items()
@@ -4902,6 +5397,8 @@ class InsuranceChangeController extends ApiController
             ->values()
             ->all();
 
+        $detailCategories = $this->expandOtherInsuranceDetailCategories($change, $detailCategories, array_keys($otherPolicySnapshots));
+
         $categoriesToUpsert = !empty($detailCategories)
             ? $detailCategories
             : $this->resolveActiveChangeItemCategories($snapshotByCategory);
@@ -4909,6 +5406,13 @@ class InsuranceChangeController extends ApiController
         $activeCategories = !empty($detailCategories)
             ? array_values(array_unique(array_merge($existingCategories, $detailCategories)))
             : $categoriesToUpsert;
+
+        if (!empty($otherPolicySnapshots)) {
+            $activeCategories = array_values(array_filter(
+                $activeCategories,
+                fn ($category) => $category !== 'other_insurance'
+            ));
+        }
 
         foreach ($categoriesToUpsert as $category) {
             $existingItem = $change->items()->where('category', $category)->first();
@@ -4942,6 +5446,12 @@ class InsuranceChangeController extends ApiController
             );
         }
 
+        if (!empty($otherPolicySnapshots)) {
+            $change->items()
+                ->where('category', 'other_insurance')
+                ->delete();
+        }
+
         if (empty($detailCategories) && !empty($activeCategories)) {
             $change->items()
                 ->whereNotIn('category', $activeCategories)
@@ -4949,6 +5459,38 @@ class InsuranceChangeController extends ApiController
         } elseif (empty($detailCategories) && empty($activeCategories)) {
             $change->items()->delete();
         }
+    }
+
+    private function buildOtherInsurancePolicySnapshots(InsuranceChange $change): array
+    {
+        $snapshots = [];
+        foreach ($this->decodeOtherInsurancePolicies($change->other_insurance_policies) as $index => $policy) {
+            if (!is_array($policy) || empty($policy)) {
+                continue;
+            }
+
+            $snapshots[$this->makeOtherInsurancePolicyCategory($policy, $index)] = $policy;
+        }
+
+        return $snapshots;
+    }
+
+    private function expandOtherInsuranceDetailCategories(InsuranceChange $change, array $detailCategories, array $otherPolicyCategories): array
+    {
+        if (empty($detailCategories) || empty($otherPolicyCategories)) {
+            return $detailCategories;
+        }
+
+        $expanded = [];
+        foreach ($detailCategories as $category) {
+            if ($category === 'other_insurance') {
+                array_push($expanded, ...$otherPolicyCategories);
+            } else {
+                $expanded[] = $category;
+            }
+        }
+
+        return array_values(array_unique($expanded));
     }
 
     private function extractChangeDetailCategories(InsuranceChange $change): array
@@ -5012,10 +5554,31 @@ class InsuranceChangeController extends ApiController
             return 'terminated';
         }
 
-        if ($category === 'other_insurance' && (int) ($change->other_insurance_processed ?? 0) === 1) {
+        if (($category === 'other_insurance' || $this->isOtherInsurancePolicyCategory($category)) && (int) ($change->other_insurance_processed ?? 0) === 1) {
             return 'completed';
         }
 
         return $change->status === 'submitted' ? 'submitted' : 'pending';
+    }
+
+    private function syncOtherInsuranceProcessedFlag(InsuranceChange $change): void
+    {
+        $this->syncChangeItems($change);
+
+        $otherItems = $change->items()
+            ->where(function ($query) {
+                $query->where('category', 'other_insurance')
+                    ->orWhere('category', 'like', self::OTHER_INSURANCE_POLICY_CATEGORY_PREFIX . '%');
+            })
+            ->get();
+
+        if ($otherItems->isEmpty()) {
+            return;
+        }
+
+        $allCompleted = $otherItems->every(fn ($item) => $item->status === 'completed');
+        $change->update([
+            'other_insurance_processed' => $allCompleted ? 1 : 0,
+        ]);
     }
 }

@@ -8,15 +8,18 @@ use App\Models\InvoiceContentItem;
 use App\Models\InvoiceItem;
 use App\Models\InvoiceProject;
 use App\Models\ProcessApproval;
+use App\Models\ApprovalAttachment;
+use App\Models\ApprovalInstance;
 use App\Models\ApprovalNode;
+use App\Models\ApprovalRecord;
 use App\Models\ApprovalFlowConfig;
 use App\Services\PendingTaskService;
-use App\Services\ApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -97,11 +100,9 @@ class InvoiceApplicationController extends Controller
         $applications->getCollection()->transform(function ($application) use ($user) {
             $application->total_amount = $application->items->sum('amount');
             
-            // 添加审批状态
-            if ($application->approvalInstance) {
+            // 创建任务时会预生成流程记录；未真正提交前仍按未提交显示，避免影响填写发票信息。
+            if (!$application->approval_status && $application->submitted_at && $application->approvalInstance) {
                 $application->approval_status = $application->approvalInstance->status;
-            } else {
-                $application->approval_status = null;
             }
             
             // 确保 can_resubmit 字段被包含（通过访问 accessor 触发计算）
@@ -570,6 +571,8 @@ class InvoiceApplicationController extends Controller
                 ]);
             }
 
+            $application = $application->fresh();
+            $this->ensureInvoiceApplicationProcessRecord($application, (int) $user->id);
             PendingTaskService::createInvoiceFillTask($application->fresh());
 
             return $application;
@@ -1219,23 +1222,26 @@ class InvoiceApplicationController extends Controller
                 'message' => '发票申请流程未配置后续审批节点'
             ], 400);
         }
-        $approvalOptions = array_merge($stampOptions, [
-            'start_approval_level' => $firstApprovalLevel + 1,
-            'initiator_step_name' => ApprovalFlowConfig::formatLevelName($firstApprovalLevel),
-        ]);
+
+        $nextApprovers = ApprovalFlowConfig::getEnabledApprovers(
+            $accountSetId,
+            '发票申请',
+            $firstApprovalLevel + 1
+        );
+        if ($nextApprovers->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => '发票申请流程未配置后续审批节点'
+            ], 400);
+        }
 
         DB::beginTransaction();
         try {
-            $instance = app(ApprovalService::class)->createApprovalInstanceWithApprovedInitiator(
-                $accountSetId,
-                '发票申请',
-                $application->id,
-                $user->id,
-                $user->name,
-                $this->buildApprovalAttachments($application),
+            $instance = $this->submitInvoiceApplicationProcessRecord(
+                $application,
+                $user,
                 $stampMethod,
-                '经办提交，自动通过',
-                $approvalOptions
+                $stampOptions
             );
 
             // 更新审批状态为审批中，业务状态保持不变
@@ -1321,6 +1327,12 @@ class InvoiceApplicationController extends Controller
         // 删除明细项
         $application->items()->delete();
         $application->contentItems()->delete();
+
+        if ($application->approval_instance_id) {
+            ApprovalAttachment::where('instance_id', $application->approval_instance_id)->delete();
+            ApprovalRecord::where('instance_id', $application->approval_instance_id)->delete();
+            ApprovalInstance::where('id', $application->approval_instance_id)->delete();
+        }
 
         // 删除申请
         $application->delete();
@@ -1772,6 +1784,193 @@ class InvoiceApplicationController extends Controller
                 'type' => pathinfo($filename, PATHINFO_EXTENSION),
             ];
         }, $attachments);
+    }
+
+    private function ensureInvoiceApplicationProcessRecord(InvoiceApplication $application, int $createdBy): ?ApprovalInstance
+    {
+        if ($application->approval_instance_id) {
+            $existingInstance = ApprovalInstance::find($application->approval_instance_id);
+            if ($existingInstance) {
+                return $existingInstance;
+            }
+        }
+
+        $accountSetId = (int) $application->account_set_id;
+        $firstApprovalLevel = $this->getInvoiceFillApprovalLevel($accountSetId);
+        if (!$firstApprovalLevel) {
+            \Log::warning('发票申请创建流程记录失败：未配置填写节点', [
+                'invoice_application_id' => $application->id,
+                'account_set_id' => $accountSetId,
+            ]);
+            return null;
+        }
+
+        $handler = PendingTaskService::getInvoiceFillHandler($application);
+        if (!$handler) {
+            \Log::warning('发票申请创建流程记录失败：未找到填写处理人', [
+                'invoice_application_id' => $application->id,
+                'account_set_id' => $accountSetId,
+            ]);
+            return null;
+        }
+
+        $nextApprovers = ApprovalFlowConfig::getEnabledApprovers(
+            $accountSetId,
+            '发票申请',
+            $firstApprovalLevel + 1
+        );
+
+        $instance = ApprovalInstance::create([
+            'account_set_id' => $accountSetId,
+            'business_type' => '发票申请',
+            'business_id' => $application->id,
+            'current_step' => 1,
+            'total_steps' => $nextApprovers->count() + 1,
+            'status' => 'pending',
+            'created_by' => $createdBy,
+        ]);
+
+        ApprovalRecord::create([
+            'instance_id' => $instance->id,
+            'step_order' => 1,
+            'step_name' => ApprovalFlowConfig::formatLevelName($firstApprovalLevel),
+            'approver_id' => $handler->id,
+            'approver_name' => $handler->name,
+            'status' => 'waiting',
+        ]);
+
+        foreach ($nextApprovers as $index => $approver) {
+            ApprovalRecord::create([
+                'instance_id' => $instance->id,
+                'step_order' => $index + 2,
+                'step_name' => $approver->level_name,
+                'approver_id' => $approver->user_id,
+                'approver_name' => $approver->user_name,
+                'status' => 'waiting',
+            ]);
+        }
+
+        $application->update([
+            'approval_instance_id' => $instance->id,
+        ]);
+
+        return $instance;
+    }
+
+    private function submitInvoiceApplicationProcessRecord(
+        InvoiceApplication $application,
+        $user,
+        string $stampMethod,
+        array $stampOptions
+    ): ApprovalInstance {
+        $instance = $this->ensureInvoiceApplicationProcessRecord($application, (int) $application->created_by);
+        if (!$instance) {
+            throw new \RuntimeException('发票申请流程未创建，请检查审批流程配置');
+        }
+
+        $firstRecord = ApprovalRecord::where('instance_id', $instance->id)
+            ->orderBy('step_order')
+            ->first();
+
+        if (!$firstRecord) {
+            throw new \RuntimeException('发票申请流程记录不完整，请重新创建开票任务');
+        }
+
+        $firstApprovalLevel = $this->getInvoiceFillApprovalLevel((int) $application->account_set_id);
+        $currentHandler = PendingTaskService::getInvoiceFillHandler($application);
+        if (!$firstApprovalLevel || !$currentHandler) {
+            throw new \RuntimeException('未配置发票申请的填写节点');
+        }
+
+        $firstRecord->update([
+            'step_name' => ApprovalFlowConfig::formatLevelName($firstApprovalLevel),
+            'approver_id' => $currentHandler->id,
+            'approver_name' => $currentHandler->name,
+        ]);
+
+        if ((int) $currentHandler->id !== (int) $user->id) {
+            throw new \RuntimeException('只有第一个有效审批节点人员才能填写并提交审批');
+        }
+
+        $nextApprovers = ApprovalFlowConfig::getEnabledApprovers(
+            (int) $application->account_set_id,
+            '发票申请',
+            ((int) $firstApprovalLevel) + 1
+        );
+        if ($nextApprovers->isEmpty()) {
+            throw new \RuntimeException('发票申请流程未配置后续审批节点');
+        }
+
+        ApprovalRecord::where('instance_id', $instance->id)
+            ->where('step_order', '>', $firstRecord->step_order)
+            ->delete();
+
+        foreach ($nextApprovers as $index => $approver) {
+            ApprovalRecord::create([
+                'instance_id' => $instance->id,
+                'step_order' => $index + 2,
+                'step_name' => $approver->level_name,
+                'approver_id' => $approver->user_id,
+                'approver_name' => $approver->user_name,
+                'status' => 'waiting',
+            ]);
+        }
+
+        $instanceUpdateData = [
+            'status' => 'pending',
+            'completed_at' => null,
+            'stamp_method' => $stampMethod,
+        ];
+
+        if (Schema::hasColumn('approval_instances', 'stamp_selection_mode')) {
+            $instanceUpdateData['stamp_selection_mode'] = $stampOptions['stamp_selection_mode'] ?? 'none';
+            $instanceUpdateData['stamp_company'] = $stampOptions['stamp_company'] ?? null;
+            $instanceUpdateData['stamp_type'] = $stampOptions['stamp_type'] ?? null;
+            $instanceUpdateData['stamp_id'] = $stampOptions['stamp_id'] ?? null;
+        }
+
+        $instance->update($instanceUpdateData);
+        $this->syncInvoiceApplicationApprovalAttachments($instance, $application);
+
+        $firstRecord->update([
+            'status' => 'approved',
+            'comment' => '经办提交，自动通过',
+            'approved_at' => now(),
+        ]);
+
+        $nextRecord = ApprovalRecord::where('instance_id', $instance->id)
+            ->where('step_order', '>', $firstRecord->step_order)
+            ->orderBy('step_order')
+            ->first();
+
+        if (!$nextRecord) {
+            throw new \RuntimeException('发票申请流程未配置后续审批节点');
+        }
+
+        $nextRecord->update(['status' => 'pending']);
+
+        $instance->update([
+            'current_step' => $nextRecord->step_order,
+            'total_steps' => ApprovalRecord::where('instance_id', $instance->id)->count(),
+        ]);
+
+        return $instance->fresh(['records', 'attachments']);
+    }
+
+    private function syncInvoiceApplicationApprovalAttachments(ApprovalInstance $instance, InvoiceApplication $application): void
+    {
+        ApprovalAttachment::where('instance_id', $instance->id)->delete();
+
+        foreach ($this->buildApprovalAttachments($application) as $attachment) {
+            ApprovalAttachment::create([
+                'instance_id' => $instance->id,
+                'file_path' => $attachment['path'] ?? null,
+                'file_name' => $attachment['name'] ?? null,
+                'file_size' => $attachment['size'] ?? null,
+                'file_type' => $attachment['type'] ?? null,
+                'uploaded_by' => null,
+            ]);
+        }
     }
 
     private function canFillApprovedInvoice(InvoiceApplication $application, $user)

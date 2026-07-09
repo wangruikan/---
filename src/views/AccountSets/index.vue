@@ -899,7 +899,7 @@ const handleApprovalLevelChange = async (user) => {
     await loadAccountSetUsers(currentAccountSetId.value)
   } catch (error) {
     console.error('Set approval level error:', error)
-    ElMessage.error('设置失败')
+    ElMessage.error(error.response?.data?.message || '设置失败')
     await loadAccountSetUsers(currentAccountSetId.value)
   }
 }

@@ -213,7 +213,8 @@ class InvoiceProjectController extends Controller
                 'unit_price',
                 'amount',
                 'tax_rate',
-                'tax_amount'
+                'tax_amount',
+                'remark'
             ]);
 
         return response()->json([

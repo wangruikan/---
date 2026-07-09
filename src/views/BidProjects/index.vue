@@ -130,6 +130,28 @@
         <el-table-column prop="project_code" label="项目编号" width="160" fixed />
         <el-table-column prop="project_name" label="项目名称" min-width="200" show-overflow-tooltip />
         <el-table-column prop="client_name" label="招标单位" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="bid_opening_time" label="开标时间" width="160">
+          <template #default="scope">
+            <span>{{ scope.row.bid_opening_time ? formatDateTime(scope.row.bid_opening_time) : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="responsible_person" label="负责人" width="120" show-overflow-tooltip>
+          <template #default="scope">
+            <span>{{ scope.row.responsible_person || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="bond_paid_at" label="保证金是否缴纳" width="130" align="center">
+          <template #default="scope">
+            <el-tag :type="scope.row.bond_paid_at ? 'success' : 'info'" size="small">
+              {{ scope.row.bond_paid_at ? '已缴纳' : '未缴纳' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="creator.name" label="创建人" width="110" show-overflow-tooltip>
+          <template #default="scope">
+            <span>{{ scope.row.creator?.name || '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="project_budget" label="项目预算" width="130" align="right">
           <template #default="scope">
             <span v-if="scope.row.project_budget">{{ formatMoney(scope.row.project_budget) }}</span>
@@ -207,9 +229,18 @@
       >
         <el-tabs v-model="activeTab">
           <el-tab-pane label="基本信息" name="basic">
-            <el-form-item label="项目名称" prop="project_name">
-              <el-input v-model="form.project_name" placeholder="请输入项目名称" />
-            </el-form-item>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="项目编号" prop="project_code">
+                  <el-input v-model="form.project_code" placeholder="请输入项目编号" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="项目名称" prop="project_name">
+                  <el-input v-model="form.project_name" placeholder="请输入项目名称" />
+                </el-form-item>
+              </el-col>
+            </el-row>
 
             <el-row :gutter="20">
               <el-col :span="12">
@@ -299,6 +330,8 @@
                     <el-option label="竞争性谈判" value="竞争性谈判" />
                     <el-option label="竞争性磋商" value="竞争性磋商" />
                     <el-option label="单一来源" value="单一来源" />
+                    <el-option label="询价" value="询价" />
+                    <el-option label="框架协议采购" value="框架协议采购" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -484,6 +517,7 @@ const activeTab = ref('basic')
 const formRef = ref(null)
 const form = reactive({
   id: null,
+  project_code: '',
   project_name: '',
   client_name: '',
   client_contact: '',
@@ -504,6 +538,7 @@ const form = reactive({
 })
 
 const formRules = {
+  project_code: [{ required: true, message: '请输入项目编号', trigger: 'blur' }],
   project_name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }]
 }
 
@@ -671,7 +706,9 @@ const handleSubmit = async () => {
     }
   } catch (error) {
     console.error('Submit error:', error)
-    ElMessage.error(form.id ? '更新失败' : '创建失败')
+    if (!error?.response) {
+      ElMessage.error(form.id ? '更新失败' : '创建失败')
+    }
   } finally {
     submitLoading.value = false
   }

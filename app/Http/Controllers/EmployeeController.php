@@ -614,6 +614,48 @@ class EmployeeController extends ApiController
         return null;
     }
 
+    private function checkInsuranceRequiredFieldsByRegion(Request $request): ?string
+    {
+        $groups = [
+            [
+                'region' => 'social_security_region_id',
+                'fields' => [
+                    'social_security_base' => '社保基数',
+                    'social_insurance_enrollment_date' => '社保参保日期',
+                ],
+            ],
+            [
+                'region' => 'medical_insurance_region_id',
+                'fields' => [
+                    'medical_insurance_base' => '医保基数',
+                    'medical_insurance_enrollment_date' => '医保参保日期',
+                ],
+            ],
+            [
+                'region' => 'housing_fund_region_id',
+                'fields' => [
+                    'housing_fund_base' => '公积金基数',
+                    'provident_fund_enrollment_date' => '公积金参保日期',
+                    'housing_fund_config_id' => '公积金配置',
+                ],
+            ],
+        ];
+
+        foreach ($groups as $group) {
+            if (!$request->filled($group['region'])) {
+                continue;
+            }
+
+            foreach ($group['fields'] as $field => $label) {
+                if (!$request->filled($field)) {
+                    return "{$label}不能为空";
+                }
+            }
+        }
+
+        return null;
+    }
+
     private function normalizeInsuranceBindingId($value): ?int
     {
         if ($value === null || $value === '') {
@@ -941,16 +983,16 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
-            'social_security_base' => 'required|numeric|min:0',
-            'medical_insurance_base' => 'required|numeric|min:0',
-            'housing_fund_base' => 'required|numeric|min:0',
-            'social_security_region_id' => 'required|integer|exists:social_security_regions,id',
-            'medical_insurance_region_id' => 'required|integer|exists:medical_insurance_regions,id',
-            'housing_fund_region_id' => 'required|integer|exists:housing_fund_regions,id',
-            'housing_fund_config_id' => 'required|integer|exists:housing_fund_configs,id',
-            'social_insurance_enrollment_date' => 'required|date',
-            'medical_insurance_enrollment_date' => 'required|date',
-            'provident_fund_enrollment_date' => 'required|date',
+            'social_security_base' => 'nullable|numeric|min:0',
+            'medical_insurance_base' => 'nullable|numeric|min:0',
+            'housing_fund_base' => 'nullable|numeric|min:0',
+            'social_security_region_id' => 'nullable|integer|exists:social_security_regions,id',
+            'medical_insurance_region_id' => 'nullable|integer|exists:medical_insurance_regions,id',
+            'housing_fund_region_id' => 'nullable|integer|exists:housing_fund_regions,id',
+            'housing_fund_config_id' => 'nullable|integer|exists:housing_fund_configs,id',
+            'social_insurance_enrollment_date' => 'nullable|date',
+            'medical_insurance_enrollment_date' => 'nullable|date',
+            'provident_fund_enrollment_date' => 'nullable|date',
             'other_insurance_policy_ids' => 'nullable|array',
             'other_insurance_policy_ids.*' => 'integer|exists:other_insurance_policies,id',
         ], [
@@ -1040,6 +1082,14 @@ class EmployeeController extends ApiController
                 return response()->json([
                     'success' => false,
                     'message' => $insuranceFieldError
+                ], 422);
+            }
+
+            $insuranceRequiredError = $this->checkInsuranceRequiredFieldsByRegion($request);
+            if ($insuranceRequiredError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $insuranceRequiredError
                 ], 422);
             }
         }
@@ -1327,16 +1377,16 @@ class EmployeeController extends ApiController
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
-            'social_security_base' => 'sometimes|required|numeric|min:0',
-            'medical_insurance_base' => 'sometimes|required|numeric|min:0',
-            'housing_fund_base' => 'sometimes|required|numeric|min:0',
-            'social_security_region_id' => 'sometimes|required|integer|exists:social_security_regions,id',
-            'medical_insurance_region_id' => 'sometimes|required|integer|exists:medical_insurance_regions,id',
-            'housing_fund_region_id' => 'sometimes|required|integer|exists:housing_fund_regions,id',
-            'housing_fund_config_id' => 'sometimes|required|integer|exists:housing_fund_configs,id',
-            'social_insurance_enrollment_date' => 'sometimes|required|date',
-            'medical_insurance_enrollment_date' => 'sometimes|required|date',
-            'provident_fund_enrollment_date' => 'sometimes|required|date',
+            'social_security_base' => 'nullable|numeric|min:0',
+            'medical_insurance_base' => 'nullable|numeric|min:0',
+            'housing_fund_base' => 'nullable|numeric|min:0',
+            'social_security_region_id' => 'nullable|integer|exists:social_security_regions,id',
+            'medical_insurance_region_id' => 'nullable|integer|exists:medical_insurance_regions,id',
+            'housing_fund_region_id' => 'nullable|integer|exists:housing_fund_regions,id',
+            'housing_fund_config_id' => 'nullable|integer|exists:housing_fund_configs,id',
+            'social_insurance_enrollment_date' => 'nullable|date',
+            'medical_insurance_enrollment_date' => 'nullable|date',
+            'provident_fund_enrollment_date' => 'nullable|date',
             'other_insurance_policy_ids' => 'nullable|array',
             'other_insurance_policy_ids.*' => 'integer|exists:other_insurance_policies,id',
         ], [
@@ -1384,6 +1434,14 @@ class EmployeeController extends ApiController
                 return response()->json([
                     'success' => false,
                     'message' => $insuranceFieldError
+                ], 422);
+            }
+
+            $insuranceRequiredError = $this->checkInsuranceRequiredFieldsByRegion($request);
+            if ($insuranceRequiredError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $insuranceRequiredError
                 ], 422);
             }
 

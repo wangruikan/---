@@ -28,7 +28,8 @@ class BidProjectController extends Controller
         $user = Auth::user();
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
-        $query = BidProject::where('account_set_id', $accountSetId);
+        $query = BidProject::where('account_set_id', $accountSetId)
+            ->with('creator:id,name');
 
         // 搜索条件
         if ($request->has('keyword') && $request->keyword) {
@@ -137,6 +138,7 @@ class BidProjectController extends Controller
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
         $validator = Validator::make($request->all(), [
+            'project_code' => 'required|string|max:50',
             'project_name' => 'required|string|max:200',
             'project_category' => 'nullable|string|max:50',
             'client_name' => 'nullable|string|max:200',
@@ -165,14 +167,20 @@ class BidProjectController extends Controller
             ], 422);
         }
 
+        $codeExists = BidProject::where('account_set_id', $accountSetId)
+            ->where('project_code', $request->project_code)
+            ->exists();
+        if ($codeExists) {
+            return response()->json([
+                'success' => false,
+                'message' => '项目编号已存在'
+            ], 422);
+        }
+
         DB::beginTransaction();
         try {
-            // 生成项目编号
-            $projectCode = BidProject::generateProjectCode();
-
             $project = BidProject::create(array_merge($request->all(), [
                 'account_set_id' => $accountSetId,
-                'project_code' => $projectCode,
                 'status' => BidProject::STATUS_PREPARING,
                 'created_by' => $user->id,
             ]));
@@ -230,6 +238,7 @@ class BidProjectController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
+            'project_code' => 'required|string|max:50',
             'project_name' => 'required|string|max:200',
             'project_category' => 'nullable|string|max:50',
             'client_name' => 'nullable|string|max:200',
@@ -256,6 +265,17 @@ class BidProjectController extends Controller
                 'success' => false,
                 'message' => '验证失败',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $codeExists = BidProject::where('account_set_id', $accountSetId)
+            ->where('project_code', $request->project_code)
+            ->where('id', '!=', $project->id)
+            ->exists();
+        if ($codeExists) {
+            return response()->json([
+                'success' => false,
+                'message' => '项目编号已存在'
             ], 422);
         }
 

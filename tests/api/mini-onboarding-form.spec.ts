@@ -122,6 +122,8 @@ function buildOnboardingPayload(overrides?: Record<string, any>) {
     name: '测试员工',
     gender: 'male',
     id_number: '110101199001011234',
+    id_card_valid_from: '2020-01-01',
+    id_card_valid_until: '2040-01-01',
     education_type: '统招',
     signature: 'uploads/signatures/test_sig.png',
     birth_date: '1990-01-01',
@@ -389,6 +391,34 @@ test.describe('入职登记表 API 测试', () => {
       const data = await response.json();
       expect(data.success).toBe(true);
     });
+
+    test('身份证有效期提交后同步到人员档案', async ({ request }) => {
+      const idCardValidFrom = '2021-02-03';
+      const idCardValidUntil = '2041-02-03';
+
+      const response = await request.post(`${BASE_URL}/mini/onboarding-form`, {
+        headers: miniHeaders(),
+        data: buildOnboardingPayload({
+          id_card_valid_from: idCardValidFrom,
+          id_card_valid_until: idCardValidUntil,
+        }),
+      });
+      expect(response.status()).toBe(200);
+
+      const miniRes = await request.get(`${BASE_URL}/mini/onboarding-form`, {
+        headers: miniHeaders(),
+      });
+      const miniData = await miniRes.json();
+      expect(String(miniData.data.id_card_valid_from).slice(0, 10)).toBe(idCardValidFrom);
+      expect(String(miniData.data.id_card_valid_until).slice(0, 10)).toBe(idCardValidUntil);
+
+      const employeeRes = await request.get(`${BASE_URL}/employees/${miniEmployeeId}`, {
+        headers: adminHeaders(),
+      });
+      const employeeData = await employeeRes.json();
+      expect(String(employeeData.data.id_card_valid_from).slice(0, 10)).toBe(idCardValidFrom);
+      expect(String(employeeData.data.id_card_valid_until).slice(0, 10)).toBe(idCardValidUntil);
+    });
   });
 
   // ============================================================
@@ -601,6 +631,12 @@ test.describe('入职登记表 API 测试', () => {
         expect(adminData.data.name).toBe(miniData.data.name);
         expect(adminData.data.id_number).toBe(miniData.data.id_number);
         expect(adminData.data.gender).toBe(miniData.data.gender);
+        expect(String(adminData.data.id_card_valid_from).slice(0, 10)).toBe(
+          String(miniData.data.id_card_valid_from).slice(0, 10)
+        );
+        expect(String(adminData.data.id_card_valid_until).slice(0, 10)).toBe(
+          String(miniData.data.id_card_valid_until).slice(0, 10)
+        );
       }
     });
   });

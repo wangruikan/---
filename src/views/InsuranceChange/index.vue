@@ -1553,6 +1553,165 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- 社保汇总表预览 -->
+    <el-dialog
+      v-model="showSummaryPreviewDialog"
+      title="社保汇总表预览"
+      width="90%"
+      top="5vh"
+      :close-on-click-modal="false"
+    >
+      <div class="summary-preview-wrapper">
+        <table class="summary-preview-table">
+          <thead>
+            <tr>
+              <th :colspan="summaryTableColumnCount" class="main-title">
+                {{ getCompanyNameWithRegion() }}{{ summaryPreviewMeta.monthText }}社保汇总表
+              </th>
+            </tr>
+            <tr>
+              <th :colspan="summaryTableColumnCount" class="sub-title">
+                社保编号:{{ summaryPreviewMeta.socialSecurityCode || '未设置' }}
+              </th>
+            </tr>
+            <tr>
+              <th :colspan="summaryTableColumnCount" class="sub-title">
+                医保编号:{{ summaryPreviewMeta.medicalInsuranceCode || '未设置' }}
+              </th>
+            </tr>
+            <tr>
+              <th rowspan="2">项目名称</th>
+              <th rowspan="2">社保缴费人数</th>
+              <th rowspan="2">医保缴费人数</th>
+              <th rowspan="2">类别</th>
+              <th rowspan="2">所属期</th>
+              <th :colspan="dynamicCompanyColumns.length">单位部分</th>
+              <th :colspan="dynamicEmployeeColumns.length">个人部分</th>
+              <th colspan="2">实缴金额</th>
+              <th rowspan="2">合计</th>
+            </tr>
+            <tr>
+              <th v-for="column in dynamicCompanyColumns" :key="'preview-company-head-' + column.name">
+                {{ column.name }}
+              </th>
+              <th v-for="column in dynamicEmployeeColumns" :key="'preview-employee-head-' + column.name">
+                {{ column.name }}
+              </th>
+              <th>单位本金</th>
+              <th>个人本金</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(item, index) in summaryPreviewRows"
+              :key="'summary-preview-' + index"
+              :class="getSummaryPreviewRowClass(item)"
+            >
+              <td>{{ item.project_name }}</td>
+              <td>{{ item.counts?.social ?? '-' }}</td>
+              <td>{{ item.counts?.medical ?? '-' }}</td>
+              <td>{{ item.category }}</td>
+              <td>{{ item.period || '-' }}</td>
+              <td v-for="column in dynamicCompanyColumns" :key="'preview-company-' + index + '-' + column.name">
+                {{ getSummaryCompanyCell(item, column) }}
+              </td>
+              <td v-for="column in dynamicEmployeeColumns" :key="'preview-employee-' + index + '-' + column.name">
+                {{ getSummaryEmployeeCell(item, column) }}
+              </td>
+              <td>{{ getSummaryCompanyTotalCell(item) }}</td>
+              <td>{{ getSummaryEmployeeTotalCell(item) }}</td>
+              <td>{{ getSummaryGrandTotalCell(item) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <template #footer>
+        <el-button @click="showSummaryPreviewDialog = false">关闭</el-button>
+        <el-button type="primary" @click="handleSummaryPreviewExport" :loading="exportLoading">
+          <el-icon><Download /></el-icon>
+          导出Excel
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 滞留金填写 -->
+    <el-dialog
+      v-model="showSummaryRetentionDialog"
+      title="填写滞留金"
+      width="90%"
+      top="8vh"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        title="不需要填写的字段可以留空，导出时会显示为 -。"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 12px;"
+      />
+
+      <div class="summary-preview-wrapper">
+        <table class="summary-preview-table summary-retention-table">
+          <thead>
+            <tr>
+              <th rowspan="2">项目名称</th>
+              <th rowspan="2">社保缴费人数</th>
+              <th rowspan="2">医保缴费人数</th>
+              <th rowspan="2">类别</th>
+              <th rowspan="2">所属期</th>
+              <th :colspan="dynamicCompanyColumns.length">单位部分</th>
+              <th :colspan="dynamicEmployeeColumns.length">个人部分</th>
+              <th colspan="2">实缴金额</th>
+              <th rowspan="2">合计</th>
+            </tr>
+            <tr>
+              <th v-for="column in dynamicCompanyColumns" :key="'retention-company-head-' + column.name">
+                {{ column.name }}
+              </th>
+              <th v-for="column in dynamicEmployeeColumns" :key="'retention-employee-head-' + column.name">
+                {{ column.name }}
+              </th>
+              <th>单位本金</th>
+              <th>个人本金</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><el-input v-model="summaryRetentionForm.project_name" placeholder="不填为-" size="small" /></td>
+              <td><el-input v-model="summaryRetentionForm.social_count" placeholder="不填为-" size="small" /></td>
+              <td><el-input v-model="summaryRetentionForm.medical_count" placeholder="不填为-" size="small" /></td>
+              <td><el-input v-model="summaryRetentionForm.category" placeholder="不填为-" size="small" /></td>
+              <td><el-input v-model="summaryRetentionForm.period" placeholder="不填为-" size="small" /></td>
+              <td v-for="column in dynamicCompanyColumns" :key="'retention-company-' + column.name">
+                <el-input
+                  v-model="summaryRetentionForm.company[getSummaryCompanyField(column)]"
+                  placeholder="不填为-"
+                  size="small"
+                />
+              </td>
+              <td v-for="column in dynamicEmployeeColumns" :key="'retention-employee-' + column.name">
+                <el-input
+                  v-model="summaryRetentionForm.employee[getSummaryEmployeeField(column)]"
+                  placeholder="不填为-"
+                  size="small"
+                />
+              </td>
+              <td><el-input v-model="summaryRetentionForm.company_principal" placeholder="不填为-" size="small" /></td>
+              <td><el-input v-model="summaryRetentionForm.employee_principal" placeholder="不填为-" size="small" /></td>
+              <td><el-input v-model="summaryRetentionForm.total_amount" placeholder="不填为-" size="small" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <template #footer>
+        <el-button @click="showSummaryRetentionDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmSummaryRetentionExport" :loading="exportLoading">
+          确认导出
+        </el-button>
+      </template>
+    </el-dialog>
     
     <!-- 导出数据对话框 -->
     <el-dialog 
@@ -2301,6 +2460,28 @@ const toggleCollapse = (employeeId) => {
 const summaryLoading = ref(false)
 const processing = ref(false)
 const processingOtherInsurance = ref(false)
+const showSummaryPreviewDialog = ref(false)
+const showSummaryRetentionDialog = ref(false)
+const summaryPreviewRows = ref([])
+const summaryPreviewMeta = ref({
+  monthText: '',
+  socialSecurityCode: '',
+  medicalInsuranceCode: ''
+})
+const createEmptySummaryRetentionForm = () => ({
+  project_name: '滞留金',
+  social_count: '',
+  medical_count: '',
+  category: '滞留金',
+  period: '',
+  company: {},
+  employee: {},
+  company_principal: '',
+  employee_principal: '',
+  total_amount: ''
+})
+const summaryRetentionForm = ref(createEmptySummaryRetentionForm())
+const summaryTableColumnCount = computed(() => 5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3)
 
 // 数据
 const changes = ref([])
@@ -3324,10 +3505,15 @@ const generateSummaryTable = async () => {
       medicalInsuranceCode = details.value[0].medical_insurance_code || ''
     }
     
-    // 导出汇总表
-    await exportSummaryTableToExcel(summaryData, monthText, socialSecurityCode, medicalInsuranceCode)
-    
-    ElMessage.success('汇总表生成成功')
+    summaryPreviewRows.value = summaryData
+    summaryPreviewMeta.value = {
+      monthText,
+      socialSecurityCode,
+      medicalInsuranceCode
+    }
+    showSummaryPreviewDialog.value = true
+
+    ElMessage.success('汇总表已生成，可预览后导出')
   } catch (error) {
     console.error('生成汇总表失败:', error)
     ElMessage.error('生成汇总表失败，请重试')
@@ -3503,6 +3689,189 @@ const calculateGrandTotal = (totalNormal, totalSupplementary) => {
   return grandTotal
 }
 
+const getSummaryCompanyField = (column) => {
+  return 'company_' + (column.fieldPrefix || '') + column.name
+}
+
+const getSummaryEmployeeField = (column) => {
+  return 'employee_' + (column.fieldPrefix || '') + column.name
+}
+
+const normalizeSummaryInput = (value) => {
+  if (value === null || value === undefined) {
+    return '-'
+  }
+
+  const text = String(value).trim()
+  return text === '' ? '-' : text
+}
+
+const formatSummaryAmountCell = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value.toFixed(2) : '-'
+  }
+
+  const text = String(value).trim()
+  if (text === '' || text === '-') {
+    return '-'
+  }
+
+  const numericValue = Number(text)
+  return Number.isNaN(numericValue) ? text : numericValue.toFixed(2)
+}
+
+const getSummaryCompanyCell = (item, column) => {
+  return formatSummaryAmountCell(item.company?.[getSummaryCompanyField(column)])
+}
+
+const getSummaryEmployeeCell = (item, column) => {
+  return formatSummaryAmountCell(item.employee?.[getSummaryEmployeeField(column)])
+}
+
+const getSummaryCompanyTotalCell = (item) => {
+  if (item.isRetentionRow) {
+    return formatSummaryAmountCell(item.company_principal)
+  }
+
+  const total = Object.values(item.company || {}).reduce((sum, value) => sum + (Number(value) || 0), 0)
+  return total.toFixed(2)
+}
+
+const getSummaryEmployeeTotalCell = (item) => {
+  if (item.isRetentionRow) {
+    return formatSummaryAmountCell(item.employee_principal)
+  }
+
+  const total = Object.values(item.employee || {}).reduce((sum, value) => sum + (Number(value) || 0), 0)
+  return total.toFixed(2)
+}
+
+const getSummaryGrandTotalCell = (item) => {
+  if (item.isRetentionRow) {
+    return formatSummaryAmountCell(item.total_amount)
+  }
+
+  const companyTotal = Object.values(item.company || {}).reduce((sum, value) => sum + (Number(value) || 0), 0)
+  const employeeTotal = Object.values(item.employee || {}).reduce((sum, value) => sum + (Number(value) || 0), 0)
+  return (companyTotal + employeeTotal).toFixed(2)
+}
+
+const getSummaryPreviewRowClass = (item) => {
+  if (item?.project_name === '合计') {
+    return 'total-row'
+  }
+
+  if (item?.project_name === '小计') {
+    return 'subtotal-row'
+  }
+
+  if (item?.isRetentionRow) {
+    return 'retention-row'
+  }
+
+  return 'data-row'
+}
+
+const insertBeforeGrandTotal = (rows, insertedRow) => {
+  const result = [...rows]
+  const totalIndex = result.findIndex(item => item.project_name === '合计')
+  if (totalIndex >= 0) {
+    result.splice(totalIndex, 0, insertedRow)
+  } else {
+    result.push(insertedRow)
+  }
+
+  return result
+}
+
+const buildRetentionSummaryRow = () => {
+  const form = summaryRetentionForm.value
+
+  return {
+    isRetentionRow: true,
+    project_name: normalizeSummaryInput(form.project_name),
+    category: normalizeSummaryInput(form.category),
+    period: normalizeSummaryInput(form.period),
+    counts: {
+      social: normalizeSummaryInput(form.social_count),
+      medical: normalizeSummaryInput(form.medical_count)
+    },
+    company: { ...form.company },
+    employee: { ...form.employee },
+    company_principal: normalizeSummaryInput(form.company_principal),
+    employee_principal: normalizeSummaryInput(form.employee_principal),
+    total_amount: normalizeSummaryInput(form.total_amount)
+  }
+}
+
+const handleSummaryPreviewExport = async () => {
+  if (!summaryPreviewRows.value.length) {
+    ElMessage.warning('没有可导出的汇总表数据')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '是否需要填写滞留金？',
+      '导出确认',
+      {
+        confirmButtonText: '需要填写',
+        cancelButtonText: '不需要，直接导出',
+        distinguishCancelAndClose: true,
+        type: 'warning'
+      }
+    )
+
+    summaryRetentionForm.value = createEmptySummaryRetentionForm()
+    showSummaryRetentionDialog.value = true
+  } catch (action) {
+    if (action === 'cancel') {
+      await exportSummaryTableToExcel(
+        summaryPreviewRows.value,
+        summaryPreviewMeta.value.monthText,
+        summaryPreviewMeta.value.socialSecurityCode,
+        summaryPreviewMeta.value.medicalInsuranceCode
+      )
+      ElMessage.success('导出成功')
+    }
+  }
+}
+
+const confirmSummaryRetentionExport = async () => {
+  const rows = insertBeforeGrandTotal(summaryPreviewRows.value, buildRetentionSummaryRow())
+
+  exportLoading.value = true
+  try {
+    await exportSummaryTableToExcel(
+      rows,
+      summaryPreviewMeta.value.monthText,
+      summaryPreviewMeta.value.socialSecurityCode,
+      summaryPreviewMeta.value.medicalInsuranceCode
+    )
+    showSummaryRetentionDialog.value = false
+    showSummaryPreviewDialog.value = false
+    ElMessage.success('导出成功')
+  } catch (error) {
+    console.error('导出汇总表失败:', error)
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+const escapeHtml = (value) => {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // 导出汇总表到Excel（使用HTML格式，与明细表相同）
 const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityCode = '', medicalInsuranceCode = '') => {
   // 构建HTML表格
@@ -3576,6 +3945,13 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
       color: #333;
       height: 40px;
     }
+    .retention-row {
+      background-color: #E3F2FD;
+      font-weight: bold;
+      font-size: 14px;
+      color: #1E3A8A;
+      height: 40px;
+    }
     .footer-info {
       margin-top: 30px;
       font-size: 14px;
@@ -3589,13 +3965,13 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
   <table>
     <thead>
       <tr>
-        <th colspan="${5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3}" class="main-title">${getCompanyNameWithRegion()}${monthText}社保汇总表</th>
+        <th colspan="${summaryTableColumnCount.value}" class="main-title">${getCompanyNameWithRegion()}${monthText}社保汇总表</th>
       </tr>
       <tr>
-        <th colspan="${5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3}" class="sub-title">社保编号:${socialSecurityCode || '未设置'}</th>
+        <th colspan="${summaryTableColumnCount.value}" class="sub-title">社保编号:${socialSecurityCode || '未设置'}</th>
       </tr>
       <tr>
-        <th colspan="${5 + dynamicCompanyColumns.value.length + dynamicEmployeeColumns.value.length + 3}" class="sub-title">医保编号:${medicalInsuranceCode || '未设置'}</th>
+        <th colspan="${summaryTableColumnCount.value}" class="sub-title">医保编号:${medicalInsuranceCode || '未设置'}</th>
       </tr>
       <tr>
         <th rowspan="2">项目名称</th>
@@ -3630,41 +4006,27 @@ const exportSummaryTableToExcel = async (summaryData, monthText, socialSecurityC
   
   // 添加数据行
   summaryData.forEach(item => {
-    // 判断行类型
-    let rowClass = 'data-row'
-    if (item.project_name === '小计') {
-      rowClass = 'subtotal-row'
-    } else if (item.project_name === '合计') {
-      rowClass = 'total-row'
-    }
+    const rowClass = getSummaryPreviewRowClass(item)
     
     html += `<tr class="${rowClass}">`
-    html += `<td>${item.project_name}</td>`
-    html += `<td>${item.counts.social}</td>`
-    html += `<td>${item.counts.medical}</td>`
-    html += `<td>${item.category}</td>`
-    html += `<td>${item.period}</td>`
+    html += `<td>${escapeHtml(item.project_name)}</td>`
+    html += `<td>${escapeHtml(item.counts?.social ?? '-')}</td>`
+    html += `<td>${escapeHtml(item.counts?.medical ?? '-')}</td>`
+    html += `<td>${escapeHtml(item.category)}</td>`
+    html += `<td>${escapeHtml(item.period || '-')}</td>`
     
     // 添加动态列数据
     dynamicCompanyColumns.value.forEach(column => {
-      const fieldName = 'company_' + (column.fieldPrefix || '') + column.name
-      const amount = (item.company[fieldName] || 0).toFixed(2)
-      html += `<td>${amount}</td>`
+      html += `<td>${escapeHtml(getSummaryCompanyCell(item, column))}</td>`
     })
     
     dynamicEmployeeColumns.value.forEach(column => {
-      const fieldName = 'employee_' + (column.fieldPrefix || '') + column.name
-      const amount = (item.employee[fieldName] || 0).toFixed(2)
-      html += `<td>${amount}</td>`
+      html += `<td>${escapeHtml(getSummaryEmployeeCell(item, column))}</td>`
     })
     
-    // 计算单位本金和个人本金
-    const companyTotal = Object.values(item.company).reduce((sum, val) => sum + (val || 0), 0)
-    const employeeTotal = Object.values(item.employee).reduce((sum, val) => sum + (val || 0), 0)
-    
-    html += `<td>${companyTotal.toFixed(2)}</td>`
-    html += `<td>${employeeTotal.toFixed(2)}</td>`
-    html += `<td>${(companyTotal + employeeTotal).toFixed(2)}</td>`
+    html += `<td>${escapeHtml(getSummaryCompanyTotalCell(item))}</td>`
+    html += `<td>${escapeHtml(getSummaryEmployeeTotalCell(item))}</td>`
+    html += `<td>${escapeHtml(getSummaryGrandTotalCell(item))}</td>`
     html += `</tr>`
   })
   
@@ -6440,6 +6802,73 @@ watch(showExportDialog, (newVal) => {
   background-color: #e8f3ff !important;
   color: #1d4ed8;
   font-weight: 700;
+}
+
+.summary-preview-wrapper {
+  width: 100%;
+  overflow: auto;
+  max-height: 70vh;
+}
+
+.summary-preview-table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: #303133;
+}
+
+.summary-preview-table th,
+.summary-preview-table td {
+  border: 1px solid #dcdfe6;
+  padding: 8px 10px;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.summary-preview-table th {
+  background-color: #f5f7fa;
+  font-weight: 600;
+}
+
+.summary-preview-table .main-title {
+  background-color: #e8f5e9;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.summary-preview-table .sub-title {
+  background-color: #f0f9eb;
+  text-align: left;
+  font-weight: 600;
+}
+
+.summary-preview-table .subtotal-row td {
+  background-color: #fff7e6;
+  color: #7a4f01;
+  font-weight: 600;
+}
+
+.summary-preview-table .total-row td {
+  background-color: #ffe082;
+  color: #7a4f01;
+  font-weight: 700;
+}
+
+.summary-preview-table .retention-row td {
+  background-color: #e8f3ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.summary-retention-table :deep(.el-input__wrapper) {
+  box-shadow: none;
+  padding: 0 4px;
+}
+
+.summary-retention-table :deep(.el-input__inner) {
+  text-align: center;
 }
 
 /* 标签页头部样式 */

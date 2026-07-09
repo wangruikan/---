@@ -1603,6 +1603,8 @@ class MiniController extends Controller
                     'bank_account_holder' => $employee->bank_account_holder ?? '',
                     'bank_name' => $employee->bank_name ?? '',
                     'bank_branch' => $employee->bank_branch ?? '',
+                    'id_card_valid_from' => $employee->id_card_valid_from,
+                    'id_card_valid_until' => $employee->id_card_valid_until,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -1987,6 +1989,17 @@ class MiniController extends Controller
                 }
 
                 $form = $formData;
+            }
+
+            if (!$form) {
+                $form = [
+                    'bank_account' => $employee->bank_account ?? '',
+                    'bank_account_holder' => $employee->bank_account_holder ?? '',
+                    'bank_name' => $employee->bank_name ?? '',
+                    'bank_branch' => $employee->bank_branch ?? '',
+                    'id_card_valid_from' => $employee->id_card_valid_from,
+                    'id_card_valid_until' => $employee->id_card_valid_until,
+                ];
             }
 
             return response()->json([

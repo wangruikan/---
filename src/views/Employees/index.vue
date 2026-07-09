@@ -211,7 +211,29 @@
           <el-table-column type="selection" width="55" fixed="left" />
           <!-- 始终显示的列 -->
           <el-table-column prop="employee_number" label="工号" width="120" fixed="left" />
-          <el-table-column prop="name" label="姓名" width="100" fixed="left" />
+          <el-table-column prop="name" label="姓名" width="100" fixed="left">
+            <template #default="{ row }">
+              <span :class="{ 'employee-name-missing-documents': hasMissingRequiredDocuments(row) }">
+                {{ row.name }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="资料提示" width="100" fixed="left" align="center">
+            <template #default="{ row }">
+              <el-tooltip
+                v-if="hasMissingRequiredDocuments(row)"
+                :content="getMissingRequiredDocumentsTooltip(row)"
+                placement="top"
+              >
+                <span class="employee-missing-document-indicator employee-missing-document-column-indicator">
+                  <el-badge :value="row.missing_required_document_names.length" type="danger">
+                    <el-icon><Warning /></el-icon>
+                  </el-badge>
+                </span>
+              </el-tooltip>
+              <el-text v-else type="info">-</el-text>
+            </template>
+          </el-table-column>
           <el-table-column prop="projects" label="所属项目" width="200" fixed="left">
             <template #default="{ row }">
               <el-tag
@@ -460,17 +482,6 @@
           
           <el-table-column label="操作" width="760" fixed="right">
             <template #default="{ row }">
-              <el-tooltip
-                v-if="hasMissingRequiredDocuments(row)"
-                :content="getMissingRequiredDocumentsTooltip(row)"
-                placement="top"
-              >
-                <span class="employee-missing-document-indicator">
-                  <el-badge is-dot type="danger">
-                    <el-icon><Warning /></el-icon>
-                  </el-badge>
-                </span>
-              </el-tooltip>
               <el-button type="primary" size="small" @click="handleView(row)">
                 查看
               </el-button>
@@ -1744,6 +1755,71 @@
             :rules="formRules"
             label-width="120px"
           >
+        <!-- 参保地区选择 -->
+        <el-divider content-position="left">保险信息</el-divider>
+        <el-row :gutter="30">
+          <el-col :span="8">
+            <el-form-item label="社保参保地区" prop="social_security_region_id">
+              <el-select
+                v-model="form.social_security_region_id"
+                placeholder="请选择社保参保地区"
+                style="width: 100%"
+                :disabled="isViewMode"
+                @change="handleSocialSecurityRegionChange"
+              >
+                <el-option label="无" :value="NO_INSURANCE_OPTION_VALUE" />
+                <el-option
+                  v-for="region in availableSocialSecurityRegions"
+                  :key="region.id"
+                  :label="region.region_name"
+                  :value="region.id"
+                />
+              </el-select>
+              <div class="form-tip">先选择是否参保；选择无时无需填写社保日期和基数</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="医保参保地区" prop="medical_insurance_region_id">
+              <el-select
+                v-model="form.medical_insurance_region_id"
+                placeholder="请选择医保参保地区"
+                style="width: 100%"
+                :disabled="isViewMode"
+                @change="handleMedicalInsuranceRegionChange"
+              >
+                <el-option label="无" :value="NO_INSURANCE_OPTION_VALUE" />
+                <el-option
+                  v-for="region in availableMedicalInsuranceRegions"
+                  :key="region.id"
+                  :label="region.region_name"
+                  :value="region.id"
+                />
+              </el-select>
+              <div class="form-tip">先选择是否参保；选择无时无需填写医保日期和基数</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="公积金参保地区" prop="housing_fund_region_id">
+              <el-select
+                v-model="form.housing_fund_region_id"
+                placeholder="请选择公积金参保地区"
+                style="width: 100%"
+                :disabled="isViewMode"
+                @change="handleHousingFundRegionChange"
+              >
+                <el-option label="无" :value="NO_INSURANCE_OPTION_VALUE" />
+                <el-option
+                  v-for="region in availableHousingFundRegions"
+                  :key="region.id"
+                  :label="region.region_name"
+                  :value="region.id"
+                />
+              </el-select>
+              <div class="form-tip">先选择是否参保；选择无时无需填写公积金日期、基数和配置</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <!-- 保险基数信息 -->
         <el-divider content-position="left">保险基数</el-divider>
         <el-row :gutter="30">
@@ -1756,7 +1832,7 @@
                 :precision="2"
                 placeholder="请输入社保基数"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('social_security_region_id', form.social_security_region_id)"
                 :controls="false"
               />
               <div class="form-tip">用于社保缴费计算的基数</div>
@@ -1771,7 +1847,7 @@
                 :precision="2"
                 placeholder="请输入医保基数"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('medical_insurance_region_id', form.medical_insurance_region_id)"
                 :controls="false"
               />
               <div class="form-tip">用于医保缴费计算的基数</div>
@@ -1789,7 +1865,7 @@
                 :precision="2"
                 placeholder="请输入公积金基数"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('housing_fund_region_id', form.housing_fund_region_id)"
                 :controls="false"
               />
               <div class="form-tip">用于公积金缴费计算的基数</div>
@@ -1847,8 +1923,8 @@
           <!-- 固定金额类型：不显示基数 -->
         </el-row>
         
-        <!-- 参保地区选择 -->
-        <el-divider content-position="left">保险信息</el-divider>
+        <!-- 参保日期 -->
+        <el-divider content-position="left">参保日期</el-divider>
         <el-row :gutter="30">
           <el-col :span="8">
             <el-form-item label="社保参保日期" prop="social_insurance_enrollment_date">
@@ -1857,7 +1933,7 @@
                 type="month"
                 placeholder="请选择社保参保日期"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('social_security_region_id', form.social_security_region_id)"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -1871,7 +1947,7 @@
                 type="month"
                 placeholder="请选择公积金参保日期"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('housing_fund_region_id', form.housing_fund_region_id)"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -1885,7 +1961,7 @@
                 type="month"
                 placeholder="请选择医保参保日期"
                 style="width: 100%"
-                :disabled="isInsuranceFieldsLocked"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('medical_insurance_region_id', form.medical_insurance_region_id)"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -1893,67 +1969,7 @@
             </el-form-item>
           </el-col>
         </el-row>
-        
-        <el-row :gutter="30">
-          <el-col :span="8">
-            <el-form-item label="社保参保地区" prop="social_security_region_id">
-              <el-select
-                v-model="form.social_security_region_id"
-                placeholder="请选择社保参保地区"
-                style="width: 100%"
-                :disabled="isViewMode"
-                @change="handleSocialSecurityRegionChange"
-              >
-                <el-option
-                  v-for="region in availableSocialSecurityRegions"
-                  :key="region.id"
-                  :label="region.region_name"
-                  :value="region.id"
-                />
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的社保地区中选择</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="医保参保地区" prop="medical_insurance_region_id">
-              <el-select
-                v-model="form.medical_insurance_region_id"
-                placeholder="请选择医保参保地区"
-                style="width: 100%"
-                :disabled="isViewMode"
-                @change="handleMedicalInsuranceRegionChange"
-              >
-                <el-option
-                  v-for="region in availableMedicalInsuranceRegions"
-                  :key="region.id"
-                  :label="region.region_name"
-                  :value="region.id"
-                />
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的医保地区中选择</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="公积金参保地区" prop="housing_fund_region_id">
-              <el-select
-                v-model="form.housing_fund_region_id"
-                placeholder="请选择公积金参保地区"
-                style="width: 100%"
-                :disabled="isViewMode"
-                @change="handleHousingFundRegionChange"
-              >
-                <el-option
-                  v-for="region in availableHousingFundRegions"
-                  :key="region.id"
-                  :label="region.region_name"
-                  :value="region.id"
-                />
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的公积金地区中选择</div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        
+
         <!-- 公积金配置选择 -->
         <el-row :gutter="30" v-if="selectedHousingFundRegion">
           <el-col :span="8">
@@ -3588,6 +3604,71 @@
           </el-col>
         </el-row>
         
+        <!-- 参保地区选择 -->
+        <el-divider content-position="left">保险信息</el-divider>
+        <el-row :gutter="30">
+          <el-col :span="8">
+            <el-form-item label="社保参保地区" prop="social_security_region_id">
+              <el-select
+                v-model="form.social_security_region_id"
+                placeholder="请选择社保参保地区"
+                style="width: 100%"
+                :disabled="isViewMode"
+                @change="handleSocialSecurityRegionChange"
+              >
+                <el-option label="无" :value="NO_INSURANCE_OPTION_VALUE" />
+                <el-option
+                  v-for="region in availableSocialSecurityRegions"
+                  :key="region.id"
+                  :label="region.region_name"
+                  :value="region.id"
+                />
+              </el-select>
+              <div class="form-tip">先选择是否参保；选择无时无需填写社保日期和基数</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="医保参保地区" prop="medical_insurance_region_id">
+              <el-select
+                v-model="form.medical_insurance_region_id"
+                placeholder="请选择医保参保地区"
+                style="width: 100%"
+                :disabled="isViewMode"
+                @change="handleMedicalInsuranceRegionChange"
+              >
+                <el-option label="无" :value="NO_INSURANCE_OPTION_VALUE" />
+                <el-option
+                  v-for="region in availableMedicalInsuranceRegions"
+                  :key="region.id"
+                  :label="region.region_name"
+                  :value="region.id"
+                />
+              </el-select>
+              <div class="form-tip">先选择是否参保；选择无时无需填写医保日期和基数</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="公积金参保地区" prop="housing_fund_region_id">
+              <el-select
+                v-model="form.housing_fund_region_id"
+                placeholder="请选择公积金参保地区"
+                style="width: 100%"
+                :disabled="isViewMode"
+                @change="handleHousingFundRegionChange"
+              >
+                <el-option label="无" :value="NO_INSURANCE_OPTION_VALUE" />
+                <el-option
+                  v-for="region in availableHousingFundRegions"
+                  :key="region.id"
+                  :label="region.region_name"
+                  :value="region.id"
+                />
+              </el-select>
+              <div class="form-tip">先选择是否参保；选择无时无需填写公积金日期、基数和配置</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <!-- 保险基数信息 -->
         <el-divider content-position="left">保险基数</el-divider>
         <el-row :gutter="30">
@@ -3600,6 +3681,7 @@
                 :precision="2"
                 placeholder="请输入社保基数"
                 style="width: 100%"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('social_security_region_id', form.social_security_region_id)"
                 :controls="false"
               />
               <div class="form-tip">用于社保缴费计算的基数</div>
@@ -3614,6 +3696,7 @@
                 :precision="2"
                 placeholder="请输入医保基数"
                 style="width: 100%"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('medical_insurance_region_id', form.medical_insurance_region_id)"
                 :controls="false"
               />
               <div class="form-tip">用于医保缴费计算的基数</div>
@@ -3631,6 +3714,7 @@
                 :precision="2"
                 placeholder="请输入公积金基数"
                 style="width: 100%"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('housing_fund_region_id', form.housing_fund_region_id)"
                 :controls="false"
               />
               <div class="form-tip">用于公积金缴费计算的基数</div>
@@ -3688,8 +3772,8 @@
           <!-- 固定金额类型：不显示基数 -->
         </el-row>
         
-        <!-- 参保地区选择 -->
-        <el-divider content-position="left">保险信息</el-divider>
+        <!-- 参保日期 -->
+        <el-divider content-position="left">参保日期</el-divider>
         <el-row :gutter="30">
           <el-col :span="8">
             <el-form-item label="社保参保日期" prop="social_insurance_enrollment_date">
@@ -3698,6 +3782,7 @@
                 type="month"
                 placeholder="请选择社保参保日期"
                 style="width: 100%"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('social_security_region_id', form.social_security_region_id)"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -3711,6 +3796,7 @@
                 type="month"
                 placeholder="请选择公积金参保日期"
                 style="width: 100%"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('housing_fund_region_id', form.housing_fund_region_id)"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -3724,6 +3810,7 @@
                 type="month"
                 placeholder="请选择医保参保日期"
                 style="width: 100%"
+                :disabled="isInsuranceFieldsLocked || !isFilledInsuranceField('medical_insurance_region_id', form.medical_insurance_region_id)"
                 format="YYYY-MM"
                 value-format="YYYY-MM-DD"
               />
@@ -3731,64 +3818,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        
-        <el-row :gutter="30">
-          <el-col :span="8">
-            <el-form-item label="社保参保地区" prop="social_security_region_id">
-              <el-select
-                v-model="form.social_security_region_id"
-                placeholder="请选择社保参保地区"
-                style="width: 100%"
-                @change="handleSocialSecurityRegionChange"
-              >
-                <el-option
-                  v-for="region in availableSocialSecurityRegions"
-                  :key="region.id"
-                  :label="region.region_name"
-                  :value="region.id"
-                />
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的社保地区中选择</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="医保参保地区" prop="medical_insurance_region_id">
-              <el-select
-                v-model="form.medical_insurance_region_id"
-                placeholder="请选择医保参保地区"
-                style="width: 100%"
-                @change="handleMedicalInsuranceRegionChange"
-              >
-                <el-option
-                  v-for="region in availableMedicalInsuranceRegions"
-                  :key="region.id"
-                  :label="region.region_name"
-                  :value="region.id"
-                />
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的医保地区中选择</div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="公积金参保地区" prop="housing_fund_region_id">
-              <el-select
-                v-model="form.housing_fund_region_id"
-                placeholder="请选择公积金参保地区"
-                style="width: 100%"
-                @change="handleHousingFundRegionChange"
-              >
-                <el-option
-                  v-for="region in availableHousingFundRegions"
-                  :key="region.id"
-                  :label="region.region_name"
-                  :value="region.id"
-                />
-              </el-select>
-              <div class="form-tip">只能从员工所属项目设置的公积金地区中选择</div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        
         <!-- 公积金配置选择 -->
         <el-row :gutter="30" v-if="selectedHousingFundRegion">
           <el-col :span="8">
@@ -6516,6 +6545,16 @@ const insurancePairFieldMeta = {
   provident_fund_enrollment_date: { pairedField: 'housing_fund_region_id', regionLabel: '公积金地区', dateLabel: '公积金参保日期', fieldType: 'date' }
 }
 
+const insuranceRequirementMeta = {
+  social_security_base: { regionField: 'social_security_region_id', message: '请输入社保基数' },
+  medical_insurance_base: { regionField: 'medical_insurance_region_id', message: '请输入医保基数' },
+  housing_fund_base: { regionField: 'housing_fund_region_id', message: '请输入公积金基数' },
+  social_insurance_enrollment_date: { regionField: 'social_security_region_id', message: '请选择社保参保日期' },
+  medical_insurance_enrollment_date: { regionField: 'medical_insurance_region_id', message: '请选择医保参保日期' },
+  provident_fund_enrollment_date: { regionField: 'housing_fund_region_id', message: '请选择公积金参保日期' },
+  housing_fund_config_id: { regionField: 'housing_fund_region_id', message: '请选择公积金配置' }
+}
+
 const isFilledInsuranceField = (field, value) => {
   if (field === 'social_security_region_id' || field === 'medical_insurance_region_id' || field === 'housing_fund_region_id') {
     return value !== null && value !== undefined && value !== '' && value !== NO_INSURANCE_OPTION_VALUE
@@ -6524,9 +6563,21 @@ const isFilledInsuranceField = (field, value) => {
   return value !== null && value !== undefined && value !== ''
 }
 
+const isInsuranceRegionField = (field) => (
+  field === 'social_security_region_id' ||
+  field === 'medical_insurance_region_id' ||
+  field === 'housing_fund_region_id'
+)
+
 const validateInsurancePairCompleteness = (rule, value, callback) => {
   const meta = insurancePairFieldMeta[rule.field]
   if (!meta) {
+    callback()
+    return
+  }
+
+  const regionField = isInsuranceRegionField(rule.field) ? rule.field : meta.pairedField
+  if (!isFilledInsuranceField(regionField, form[regionField])) {
     callback()
     return
   }
@@ -6541,6 +6592,24 @@ const validateInsurancePairCompleteness = (rule, value, callback) => {
 
   if (!currentFilled && pairedFilled) {
     callback(new Error(meta.fieldType === 'region' ? `请选择${meta.regionLabel}` : `请选择${meta.dateLabel}`))
+    return
+  }
+
+  callback()
+}
+
+const isInsuranceRegionSelected = (value) => value !== null && value !== undefined && value !== ''
+const isInsuranceRequiredByRegion = (regionField) => isFilledInsuranceField(regionField, form[regionField])
+
+const validateRequiredByInsuranceRegion = (rule, value, callback) => {
+  const meta = insuranceRequirementMeta[rule.field]
+  if (!meta || !isInsuranceRequiredByRegion(meta.regionField)) {
+    callback()
+    return
+  }
+
+  if (!isFilledInsuranceField(rule.field, value)) {
+    callback(new Error(meta.message))
     return
   }
 
@@ -6568,7 +6637,7 @@ const insuranceRegionLabels = {
 }
 
 const validateRequiredInsuranceRegion = (rule, value, callback) => {
-  if (!isFilledInsuranceField(rule.field, value)) {
+  if (!isInsuranceRegionSelected(value)) {
     callback(new Error(`请选择${insuranceRegionLabels[rule.field] || '参保地区'}`))
     return
   }
@@ -6584,10 +6653,14 @@ const triggerDateAndInsuranceValidation = async () => {
     'contract_start_date',
     'social_security_region_id',
     'social_insurance_enrollment_date',
+    'social_security_base',
     'medical_insurance_region_id',
     'medical_insurance_enrollment_date',
+    'medical_insurance_base',
     'housing_fund_region_id',
-    'provident_fund_enrollment_date'
+    'provident_fund_enrollment_date',
+    'housing_fund_base',
+    'housing_fund_config_id'
   ]
   fields.forEach((field) => {
     formRef.value?.validateField?.(field)
@@ -6773,7 +6846,17 @@ const buildEmployeeSubmitPayload = (source) => {
   }
 
   if (!payload.housing_fund_region_id) {
+    payload.housing_fund_base = null
+    payload.provident_fund_enrollment_date = null
     payload.housing_fund_config_id = null
+  }
+  if (!payload.social_security_region_id) {
+    payload.social_security_base = null
+    payload.social_insurance_enrollment_date = null
+  }
+  if (!payload.medical_insurance_region_id) {
+    payload.medical_insurance_base = null
+    payload.medical_insurance_enrollment_date = null
   }
   delete payload.comprehensive_salary
   delete payload.probation_salary
@@ -7190,14 +7273,14 @@ const formRules = {
     { required: true, message: '请选择合同结束日期', trigger: 'change' }
   ],
   medical_insurance_base: [
-    { required: true, message: '请输入医保基数', trigger: 'change' },
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
     { validator: validateMedicalInsuranceBaseForLargeMedical, trigger: 'change' }
   ],
   social_security_base: [
-    { required: true, message: '请输入社保基数', trigger: 'change' }
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' }
   ],
   housing_fund_base: [
-    { required: true, message: '请输入公积金基数', trigger: 'change' }
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' }
   ],
   project_ids: [
     { required: true, message: '请选择所属项目', trigger: 'change' }
@@ -7207,7 +7290,7 @@ const formRules = {
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   social_insurance_enrollment_date: [
-    { required: true, message: '请选择社保参保日期', trigger: 'change' },
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   medical_insurance_region_id: [
@@ -7215,7 +7298,7 @@ const formRules = {
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   medical_insurance_enrollment_date: [
-    { required: true, message: '请选择医保参保日期', trigger: 'change' },
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   housing_fund_region_id: [
@@ -7223,10 +7306,10 @@ const formRules = {
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ],
   housing_fund_config_id: [
-    { required: true, message: '请选择公积金配置', trigger: 'change' }
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' }
   ],
   provident_fund_enrollment_date: [
-    { required: true, message: '请选择公积金参保日期', trigger: 'change' },
+    { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
     { validator: validateInsurancePairCompleteness, trigger: 'change' }
   ]
 }
@@ -8578,6 +8661,9 @@ const loadProjectLargeMedicalInsuranceConfigs = async (projectIds) => {
 const handleSocialSecurityRegionChange = (regionId) => {
   if (isNoInsuranceSelected(regionId)) {
     selectedSocialSecurityRegion.value = null
+    form.social_security_base = null
+    form.social_insurance_enrollment_date = null
+    triggerDateAndInsuranceValidation()
     return
   }
   if (regionId) {
@@ -8585,13 +8671,17 @@ const handleSocialSecurityRegionChange = (regionId) => {
   } else {
     selectedSocialSecurityRegion.value = null
   }
+  triggerDateAndInsuranceValidation()
 }
 
 // 处理医保地区变化
 const handleMedicalInsuranceRegionChange = (regionId) => {
   if (isNoInsuranceSelected(regionId)) {
     selectedMedicalInsuranceRegion.value = null
+    form.medical_insurance_base = null
+    form.medical_insurance_enrollment_date = null
     syncLargeMedicalSelectionFromMedicalInsurance()
+    triggerDateAndInsuranceValidation()
     return
   }
   if (regionId) {
@@ -8600,6 +8690,7 @@ const handleMedicalInsuranceRegionChange = (regionId) => {
     selectedMedicalInsuranceRegion.value = null
   }
   syncLargeMedicalSelectionFromMedicalInsurance()
+  triggerDateAndInsuranceValidation()
 }
 
 // 处理公积金地区变化
@@ -8608,7 +8699,10 @@ const handleHousingFundRegionChange = async (regionId) => {
     selectedHousingFundRegion.value = null
     availableHousingFundConfigs.value = []
     form.housing_fund_config_id = null
+    form.housing_fund_base = null
+    form.provident_fund_enrollment_date = null
     selectedHousingFundConfig.value = null
+    triggerDateAndInsuranceValidation()
     return
   }
   if (regionId) {
@@ -8624,6 +8718,7 @@ const handleHousingFundRegionChange = async (regionId) => {
     form.housing_fund_config_id = null
     selectedHousingFundConfig.value = null
   }
+  triggerDateAndInsuranceValidation()
 }
 
 // 加载公积金配置
@@ -11971,7 +12066,7 @@ const handleSignatureComplete = async (signatureData) => {
       stamp_selection: stampResult?.value || signatureData.stamp_selection
     })
 
-    ElMessage.success('盖章完成，已直接提交二级审批')
+    ElMessage.success('合同已提交审批，请等待处理')
     await loadEmployeeContracts(currentEmployee.value.id)
   } catch (error) {
     console.error('Signature complete error:', error)
@@ -12888,6 +12983,15 @@ const getChangeComparison = (detail) => {
 .employee-missing-document-indicator :deep(.el-badge__content.is-fixed.is-dot) {
   top: 3px;
   right: 3px;
+}
+
+.employee-missing-document-column-indicator {
+  margin-right: 0;
+}
+
+.employee-name-missing-documents {
+  color: #f56c6c;
+  font-weight: 600;
 }
 
 .danger-text {

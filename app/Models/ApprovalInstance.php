@@ -98,7 +98,30 @@ class ApprovalInstance extends Model
     {
         switch ($this->business_type) {
             case 'employee_contract':
-                return \App\Models\EmployeeContract::with(['employee.projects'])->find($this->business_id);
+                $contract = \App\Models\EmployeeContract::with(['employee.projects', 'contractTemplate'])->find($this->business_id);
+                if (!$contract || $contract->contractTemplate || $contract->contract_template_id) {
+                    return $contract;
+                }
+
+                $projectId = collect($contract->employee?->project_ids ?? [])->filter()->first();
+                if (!$projectId || !$contract->original_filename) {
+                    return $contract;
+                }
+
+                $templates = \App\Models\ContractTemplate::query()
+                    ->where('project_id', $projectId)
+                    ->where('contract_type', $contract->contract_type)
+                    ->whereHas('sharedFile', function ($query) use ($contract) {
+                        $query->where('name', $contract->original_filename);
+                    })
+                    ->limit(2)
+                    ->get();
+
+                if ($templates->count() === 1) {
+                    $contract->setRelation('contractTemplate', $templates->first());
+                }
+
+                return $contract;
             case 'offline_onboarding':
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
             case '保险汇总':

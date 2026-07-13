@@ -46,6 +46,7 @@ class EmployeeContract extends Model
         'employee_id',
         'account_set_id',
         'contract_type',
+        'contract_template_id',
         'termination_reason',
         'stamp_method',  // 盖章方式：online-线上盖章，offline-线下盖章
         'contract_file',
@@ -83,6 +84,11 @@ class EmployeeContract extends Model
     public function employee()
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function contractTemplate()
+    {
+        return $this->belongsTo(ContractTemplate::class, 'contract_template_id');
     }
 
     /**

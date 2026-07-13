@@ -1177,7 +1177,12 @@ const parsePlaceholderPositions = (positions) => {
 
 const getCompanyStampPositions = () => {
   const contract = currentApproval.value?.instance?.business_data || currentApproval.value?.business_data
-  return parsePlaceholderPositions(contract?.signature_positions)
+  const contractTemplate = contract?.contract_template || contract?.contractTemplate
+  const positions = contractTemplate
+    ? parsePlaceholderPositions(contractTemplate.placeholder_positions)
+    : parsePlaceholderPositions(contract?.signature_positions)
+
+  return positions
     .filter(position => position?.type === 'company_stamp')
 }
 
@@ -1202,7 +1207,10 @@ const normalizeStampImageUrl = (stamp) => {
 }
 
 const hasFiniteNumber = (value) => {
-  return Number.isFinite(Number(value))
+  return value !== null
+    && value !== undefined
+    && value !== ''
+    && Number.isFinite(Number(value))
 }
 
 const clampNumber = (value, min, max) => {
@@ -1210,21 +1218,37 @@ const clampNumber = (value, min, max) => {
 }
 
 const calculatePlaceholderStampRect = (position, pageWidth, pageHeight) => {
+  const hasPercentageRect = [
+    position?.x_percent,
+    position?.y_percent,
+    position?.width_percent,
+    position?.height_percent
+  ].every(hasFiniteNumber)
   const savedPageWidth = hasFiniteNumber(position?.page_width) ? Number(position.page_width) : null
   const savedPageHeight = hasFiniteNumber(position?.page_height) ? Number(position.page_height) : null
   const renderScale = Number(position?.render_scale) > 0 ? Number(position.render_scale) : 1
   const scaleX = savedPageWidth ? pageWidth / savedPageWidth : 1 / renderScale
   const scaleY = savedPageHeight ? pageHeight / savedPageHeight : 1 / renderScale
-  const x = Number(position?.x || 0) * scaleX
-  const topY = Number(position?.y || 0) * scaleY
-  const width = Number(position?.width || 150) * scaleX
-  const height = Number(position?.height || 150) * scaleY
+  const x = hasPercentageRect
+    ? pageWidth * Number(position.x_percent) / 100
+    : Number(position?.x || 0) * scaleX
+  const topY = hasPercentageRect
+    ? pageHeight * Number(position.y_percent) / 100
+    : Number(position?.y || 0) * scaleY
+  const width = hasPercentageRect
+    ? pageWidth * Number(position.width_percent) / 100
+    : Number(position?.width || 150) * scaleX
+  const height = hasPercentageRect
+    ? pageHeight * Number(position.height_percent) / 100
+    : Number(position?.height || 150) * scaleY
+  const safeWidth = clampNumber(width, 1, pageWidth)
+  const safeHeight = clampNumber(height, 1, pageHeight)
 
   return {
-    x: clampNumber(x, 0, pageWidth),
-    y: clampNumber(pageHeight - topY - height, 0, pageHeight),
-    width: clampNumber(width, 1, pageWidth),
-    height: clampNumber(height, 1, pageHeight)
+    x: clampNumber(x, 0, pageWidth - safeWidth),
+    y: clampNumber(pageHeight - topY - safeHeight, 0, pageHeight - safeHeight),
+    width: safeWidth,
+    height: safeHeight
   }
 }
 

@@ -445,7 +445,7 @@
           @click="openPDFEditor"
         >
           <el-icon><Edit /></el-icon>
-          {{ approvalStampPreviewReady ? '已确认盖章' : '签名盖章' }}
+          {{ approvalStampPreviewReady ? '已预览' : '签名盖章' }}
         </el-button>
         <el-button 
           type="success" 
@@ -726,6 +726,7 @@ const selectedPDFIndex = ref(0)
 const selectedAttachmentId = ref(null) // 记录用户选择的附件ID
 const pendingSignedPDFBlob = ref(null)
 const pendingSignedPDFMeta = ref(null)
+const approvalStampPreviewOpened = ref(false)
 const actionType = ref('')
 const currentApproval = ref(null)
 const currentDetail = ref(null)
@@ -831,14 +832,14 @@ const requiresApprovalStampBeforeApprove = computed(() => {
 const requiresStampPreviewBeforeApprove = requiresApprovalStampBeforeApprove
 
 const approvalStampPreviewReady = computed(() => {
-  return !!pendingSignedPDFBlob.value && !!pendingSignedPDFMeta.value?.attachmentId
+  return approvalStampPreviewOpened.value || (!!pendingSignedPDFBlob.value && !!pendingSignedPDFMeta.value?.attachmentId)
 })
 
 const approvalStampAlertTitle = computed(() => {
   if (approvalStampPreviewReady.value) {
-    return '已确认签名盖章文件，点击“通过”后系统将上传并继续审批。'
+    return '已进入签名盖章预览，点击“通过”后系统会按占位符自动盖章并继续审批。'
   }
-  return '当前是最后一个审批节点且已选择公司章，请先点击“签名盖章”进入预览并确认，再点击“通过”。'
+  return '当前是最后一个审批节点且已选择公司章，请先点击一次“签名盖章”，再点击“通过”。'
 })
 
 const actionFormRules = computed(() => {
@@ -940,6 +941,7 @@ const handleApprove = async (row) => {
   actionType.value = 'approve'
     pendingSignedPDFBlob.value = null
     pendingSignedPDFMeta.value = null
+    approvalStampPreviewOpened.value = false
     selectedAttachmentId.value = null
     
     // 加载完整的审批实例数据（包括附件）
@@ -990,13 +992,16 @@ const handleActionSubmit = async (type) => {
       // 如果是审批通过
         if (type === 'approve') {
         if (requiresStampPreviewBeforeApprove.value && !approvalStampPreviewReady.value) {
-          ElMessage.warning('当前审批已选择公司章，请先点击“签名盖章”进入预览并确认后，再点击“通过”')
+          ElMessage.warning('当前审批已选择公司章，请先点击一次“签名盖章”后，再点击“通过”')
           return
         }
 
         if (requiresStampPreviewBeforeApprove.value && approvalStampPreviewReady.value) {
-          ElMessage.info('正在上传已确认的签名盖章文件，请稍候...')
-          await uploadPendingPreviewStampedPDF()
+          ElMessage.info('正在处理签名盖章文件，请稍候...')
+          const hasAutoStamped = await stampApprovalContractByPlaceholder()
+          if (!hasAutoStamped && pendingSignedPDFBlob.value && pendingSignedPDFMeta.value?.attachmentId) {
+            await uploadPendingPreviewStampedPDF()
+          }
         } else if ((actionForm.use_signature || actionForm.selected_seal_id) && currentApproval.value.instance) {
           const instance = currentApproval.value.instance
           if (instance.business_type === 'employee_contract' && instance.attachments && instance.attachments.length > 0) {
@@ -1149,6 +1154,164 @@ const mergePDFAndUpload = async (recordId, attachment, signature, seal, stepOrde
   }
 }
 
+const parsePlaceholderPositions = (positions) => {
+  if (!positions) {
+    return []
+  }
+
+  if (Array.isArray(positions)) {
+    return positions
+  }
+
+  if (typeof positions === 'string') {
+    try {
+      const parsed = JSON.parse(positions)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (error) {
+      console.warn('解析合同占位符失败:', error)
+    }
+  }
+
+  return []
+}
+
+const getCompanyStampPositions = () => {
+  const contract = currentApproval.value?.instance?.business_data || currentApproval.value?.business_data
+  return parsePlaceholderPositions(contract?.signature_positions)
+    .filter(position => position?.type === 'company_stamp')
+}
+
+const getDefaultApprovalPdfAttachment = () => {
+  const attachments = getApprovalPdfAttachments(currentApproval.value?.instance)
+  return selectedAttachmentId.value
+    ? attachments.find(attachment => attachment.id === selectedAttachmentId.value) || attachments[0]
+    : attachments[0]
+}
+
+const normalizeStampImageUrl = (stamp) => {
+  const url = stamp?.image_url || stamp?.url || stamp?.image_path || ''
+  if (!url) {
+    return ''
+  }
+
+  if (url.includes('localhost:8000')) {
+    return url.replace('http://localhost:8000', '')
+  }
+
+  return url
+}
+
+const hasFiniteNumber = (value) => {
+  return Number.isFinite(Number(value))
+}
+
+const clampNumber = (value, min, max) => {
+  return Math.min(max, Math.max(min, Number(value)))
+}
+
+const calculatePlaceholderStampRect = (position, pageWidth, pageHeight) => {
+  const renderScale = Number(position?.render_scale) > 0 ? Number(position.render_scale) : 1
+  const x = hasFiniteNumber(position?.x_percent)
+    ? pageWidth * Number(position.x_percent) / 100
+    : Number(position?.x || 0) / renderScale
+  const topY = hasFiniteNumber(position?.y_percent)
+    ? pageHeight * Number(position.y_percent) / 100
+    : Number(position?.y || 0) / renderScale
+  const width = hasFiniteNumber(position?.width_percent)
+    ? pageWidth * Number(position.width_percent) / 100
+    : Number(position?.width || 150) / renderScale
+  const height = hasFiniteNumber(position?.height_percent)
+    ? pageHeight * Number(position.height_percent) / 100
+    : Number(position?.height || 150) / renderScale
+
+  return {
+    x: clampNumber(x, 0, pageWidth),
+    y: clampNumber(pageHeight - topY - height, 0, pageHeight),
+    width: clampNumber(width, 1, pageWidth),
+    height: clampNumber(height, 1, pageHeight)
+  }
+}
+
+const embedStampImage = async (pdfDoc, stampUrl) => {
+  const response = await fetch(stampUrl, {
+    credentials: 'include',
+    mode: 'cors'
+  })
+
+  if (!response.ok) {
+    throw new Error(`下载印章失败: ${response.status}`)
+  }
+
+  const imageBytes = await response.arrayBuffer()
+  const contentType = response.headers.get('content-type') || ''
+  const isJpg = contentType.includes('jpeg')
+    || stampUrl.toLowerCase().endsWith('.jpg')
+    || stampUrl.toLowerCase().endsWith('.jpeg')
+
+  return isJpg ? pdfDoc.embedJpg(imageBytes) : pdfDoc.embedPng(imageBytes)
+}
+
+const stampApprovalContractByPlaceholder = async () => {
+  const stampPositions = getCompanyStampPositions()
+  if (stampPositions.length === 0) {
+    return false
+  }
+
+  const stampUrl = normalizeStampImageUrl(selectedApprovalStamp.value)
+  if (!stampUrl) {
+    throw new Error('未找到公司印章图片')
+  }
+
+  const attachment = getDefaultApprovalPdfAttachment()
+  if (!pendingSignedPDFBlob.value && !attachment) {
+    throw new Error('未找到可盖章的合同PDF')
+  }
+
+  const originalPdfBytes = pendingSignedPDFBlob.value
+    ? await pendingSignedPDFBlob.value.arrayBuffer()
+    : await (await downloadApprovalAttachment(resolveAttachmentInstanceId(attachment), attachment.id)).arrayBuffer()
+
+  const pdfDoc = await PDFDocument.load(originalPdfBytes)
+  const pages = pdfDoc.getPages()
+  const stampImage = await embedStampImage(pdfDoc, stampUrl)
+
+  stampPositions.forEach(position => {
+    const pageIndex = clampNumber(Math.floor(Number(position?.page) || 0), 0, pages.length - 1)
+    const page = pages[pageIndex]
+    const { width: pageWidth, height: pageHeight } = page.getSize()
+    const rect = calculatePlaceholderStampRect(position, pageWidth, pageHeight)
+
+    page.drawImage(stampImage, {
+      ...rect,
+      opacity: 0.7
+    })
+  })
+
+  const signedPdfBytes = await pdfDoc.save()
+  const stampedPdfBlob = new Blob([signedPdfBytes], { type: 'application/pdf' })
+  const formData = new FormData()
+  formData.append('signed_pdf', stampedPdfBlob, 'signed.pdf')
+
+  if (attachment?.id) {
+    formData.append('attachment_id', attachment.id)
+  } else if (pendingSignedPDFMeta.value?.attachmentId) {
+    formData.append('attachment_id', pendingSignedPDFMeta.value.attachmentId)
+  }
+
+  const response = await request({
+    url: `/approvals/records/${currentApproval.value.id}/upload-signed-pdf`,
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+
+  if (!response?.success) {
+    throw new Error(response?.message || '占位符盖章上传失败')
+  }
+
+  return true
+}
+
 const uploadPendingPreviewStampedPDF = async () => {
   if (!pendingSignedPDFBlob.value || !pendingSignedPDFMeta.value?.attachmentId) {
     return true
@@ -1220,6 +1383,7 @@ const handleActionDialogClose = () => {
   actionForm.selected_seal_id = null
   pendingSignedPDFBlob.value = null
   pendingSignedPDFMeta.value = null
+  approvalStampPreviewOpened.value = false
   selectedAttachmentId.value = null
   actionFormRef.value?.resetFields()
 }
@@ -1363,6 +1527,8 @@ const openPDFEditor = async () => {
     ElMessage.warning('未找到可签名盖章的PDF文件')
     return
   }
+
+  approvalStampPreviewOpened.value = true
   
   // 如果只有一个PDF附件，直接打开
   if (pdfAttachments.length === 1) {
@@ -1481,7 +1647,7 @@ const handlePDFEditorConfirm = async (data) => {
     // 关闭PDF编辑器，返回审批操作对话框
     showPDFEditor.value = false
     await exitNativeFullscreen()
-    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '签名盖章已确认，请点击“通过”继续审批' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
+    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '已进入签名盖章预览，请点击“通过”继续审批' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
     
   } catch (error) {
     console.error('PDF处理失败:', error)

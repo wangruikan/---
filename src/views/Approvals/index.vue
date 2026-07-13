@@ -1210,19 +1210,15 @@ const clampNumber = (value, min, max) => {
 }
 
 const calculatePlaceholderStampRect = (position, pageWidth, pageHeight) => {
+  const savedPageWidth = hasFiniteNumber(position?.page_width) ? Number(position.page_width) : null
+  const savedPageHeight = hasFiniteNumber(position?.page_height) ? Number(position.page_height) : null
   const renderScale = Number(position?.render_scale) > 0 ? Number(position.render_scale) : 1
-  const x = hasFiniteNumber(position?.x_percent)
-    ? pageWidth * Number(position.x_percent) / 100
-    : Number(position?.x || 0) / renderScale
-  const topY = hasFiniteNumber(position?.y_percent)
-    ? pageHeight * Number(position.y_percent) / 100
-    : Number(position?.y || 0) / renderScale
-  const width = hasFiniteNumber(position?.width_percent)
-    ? pageWidth * Number(position.width_percent) / 100
-    : Number(position?.width || 150) / renderScale
-  const height = hasFiniteNumber(position?.height_percent)
-    ? pageHeight * Number(position.height_percent) / 100
-    : Number(position?.height || 150) / renderScale
+  const scaleX = savedPageWidth ? pageWidth / savedPageWidth : 1 / renderScale
+  const scaleY = savedPageHeight ? pageHeight / savedPageHeight : 1 / renderScale
+  const x = Number(position?.x || 0) * scaleX
+  const topY = Number(position?.y || 0) * scaleY
+  const width = Number(position?.width || 150) * scaleX
+  const height = Number(position?.height || 150) * scaleY
 
   return {
     x: clampNumber(x, 0, pageWidth),

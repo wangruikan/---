@@ -168,7 +168,17 @@ class AttendanceController extends Controller
 
             $projectsQuery = Project::where('account_set_id', $accountSetId)
                 ->where('status', 'active')
-                ->select('id', 'name', 'code', 'require_attendance', 'requires_attendance', 'requires_attendance_basis');
+                ->select(
+                    'id',
+                    'name',
+                    'code',
+                    'start_date',
+                    'end_date',
+                    'salary_payment_month',
+                    'require_attendance',
+                    'requires_attendance',
+                    'requires_attendance_basis'
+                );
 
             app(ProjectRoleUserService::class)->applyManagedProjectFilter(
                 $projectsQuery,
@@ -182,8 +192,9 @@ class AttendanceController extends Controller
             $projects = $projectsQuery
                 ->orderBy('name')
                 ->get()
-                ->filter(function (Project $project) use ($existingProjectIds) {
+                ->filter(function (Project $project) use ($existingProjectIds, $month) {
                     return $this->projectRequiresAttendance($project)
+                        && $project->isPayrollBusinessMonthAvailable($month)
                         && !in_array($project->id, $existingProjectIds);
                 })
                 ->map(function (Project $project) use ($accountSetId, $month) {
@@ -258,6 +269,13 @@ class AttendanceController extends Controller
 
             // 获取项目信息
             $project = Project::find($request->project_id);
+
+            if ($project && !$project->isPayrollBusinessMonthAvailable($request->month)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该月份暂未到可处理时间，请按项目的工资发放设置选择业务月份'
+                ], 422);
+            }
             
             // 检查是否需要上传考勤依据
             if ($project && $project->requires_attendance_basis) {

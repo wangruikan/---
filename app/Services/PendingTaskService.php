@@ -867,7 +867,7 @@ class PendingTaskService
      * 为工资依据创建待办任务
      * 每月1日检查上个月的依据是否已上传
      */
-    public static function createSalaryBasisTask($accountSetId, $projectId, $month)
+    public static function createSalaryBasisTask($accountSetId, $projectId, $month, $processingMonth = null)
     {
         try {
             $project = \App\Models\Project::find($projectId);
@@ -887,6 +887,8 @@ class PendingTaskService
                 return null;
             }
 
+            $routeMonth = $processingMonth ?: $month;
+
             $handlers = self::resolveProjectHandlers(
                 $accountSetId,
                 $projectId,
@@ -904,7 +906,7 @@ class PendingTaskService
                     'status' => 'pending',
                     'route_name' => 'salary-basis',
                 ], collect(), [
-                    'month' => $month,
+                    'month' => $routeMonth,
                     'project_id' => $projectId,
                 ]);
             }
@@ -926,7 +928,7 @@ class PendingTaskService
                 'status' => 'pending',
                 'route_name' => 'salary-basis',
             ], $handlers, [
-                'month' => $month,
+                'month' => $routeMonth,
                 'project_id' => $projectId,
             ]);
 
@@ -952,7 +954,7 @@ class PendingTaskService
      * 为考勤依据创建待办任务
      * 每月1日检查上个月的依据是否已上传
      */
-    public static function createAttendanceBasisTask($accountSetId, $projectId, $month)
+    public static function createAttendanceBasisTask($accountSetId, $projectId, $month, $processingMonth = null)
     {
         try {
             $project = \App\Models\Project::find($projectId);
@@ -972,6 +974,8 @@ class PendingTaskService
                 return null;
             }
 
+            $routeMonth = $processingMonth ?: $month;
+
             $handlers = self::resolveProjectHandlers(
                 $accountSetId,
                 $projectId,
@@ -989,7 +993,7 @@ class PendingTaskService
                     'status' => 'pending',
                     'route_name' => 'attendance-basis',
                 ], collect(), [
-                    'month' => $month,
+                    'month' => $routeMonth,
                     'project_id' => $projectId,
                 ]);
             }
@@ -1011,7 +1015,7 @@ class PendingTaskService
                 'status' => 'pending',
                 'route_name' => 'attendance-basis',
             ], $handlers, [
-                'month' => $month,
+                'month' => $routeMonth,
                 'project_id' => $projectId,
             ]);
 
@@ -1048,13 +1052,18 @@ class PendingTaskService
             return;
         }
 
-        // 使用简单的 LIKE 匹配月份值
+        $project = $basisRecord->project ?: \App\Models\Project::find($basisRecord->project_id);
+        $processingMonth = $project
+            ? $project->resolveBasisProcessingMonth($basisRecord->month)
+            : $basisRecord->month;
+
+        // 待办路由保存的是处理月，依据记录保存的是实际业务月
         $tasks = PendingTask::where('account_set_id', $basisRecord->account_set_id)
             ->where('task_type', 'salary_basis')
             ->where('related_id', $basisRecord->project_id)
             ->where('related_type', 'Project')
             ->where('status', 'pending')
-            ->where('route_params', 'LIKE', '%' . $basisRecord->month . '%')
+            ->where('route_params', 'LIKE', '%' . $processingMonth . '%')
             ->get();
 
         foreach ($tasks as $task) {
@@ -1081,13 +1090,18 @@ class PendingTaskService
             return;
         }
 
-        // 使用简单的 LIKE 匹配月份值
+        $project = $basisRecord->project ?: \App\Models\Project::find($basisRecord->project_id);
+        $processingMonth = $project
+            ? $project->resolveBasisProcessingMonth($basisRecord->month)
+            : $basisRecord->month;
+
+        // 待办路由保存的是处理月，依据记录保存的是实际业务月
         $tasks = PendingTask::where('account_set_id', $basisRecord->account_set_id)
             ->where('task_type', 'attendance_basis')
             ->where('related_id', $basisRecord->project_id)
             ->where('related_type', 'Project')
             ->where('status', 'pending')
-            ->where('route_params', 'LIKE', '%' . $basisRecord->month . '%')
+            ->where('route_params', 'LIKE', '%' . $processingMonth . '%')
             ->get();
 
         foreach ($tasks as $task) {
@@ -1328,7 +1342,9 @@ class PendingTaskService
             ->get()
             ->filter(function($task) use ($attendanceSheet) {
                 // 解析 route_params 中的 month 字段进行精确匹配
-                $routeParams = json_decode($task->route_params, true);
+                $routeParams = is_array($task->route_params)
+                    ? $task->route_params
+                    : json_decode((string) $task->route_params, true);
                 return isset($routeParams['month']) && $routeParams['month'] === $attendanceSheet->month;
             });
 
@@ -1363,7 +1379,9 @@ class PendingTaskService
             ->get()
             ->filter(function($task) use ($salaryApproval) {
                 // 解析 route_params 中的 month 字段进行精确匹配
-                $routeParams = json_decode($task->route_params, true);
+                $routeParams = is_array($task->route_params)
+                    ? $task->route_params
+                    : json_decode((string) $task->route_params, true);
                 return isset($routeParams['month']) && $routeParams['month'] === $salaryApproval->month;
             });
 

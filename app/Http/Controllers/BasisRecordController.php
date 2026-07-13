@@ -23,7 +23,7 @@ class BasisRecordController extends Controller
     {
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
         $type = $request->input('type'); // 'attendance' or 'salary'
-        app(DynamicScheduledTaskService::class)->syncBasisTasks(
+        app(DynamicScheduledTaskService::class)->syncBasisTasksForReferenceMonth(
             $accountSetId,
             $request->input('month')
         );
@@ -41,7 +41,12 @@ class BasisRecordController extends Controller
         }
         
         if ($request->has('month') && $request->month) {
-            $query->where('month', $request->month);
+            $this->applyProcessingMonthFilter(
+                $query,
+                (int) $accountSetId,
+                $request->month,
+                $request->input('project_id')
+            );
         }
         
         $records = $query->orderBy('month', 'desc')
@@ -112,10 +117,18 @@ class BasisRecordController extends Controller
                 'message' => '该项目未设置需要上传工资依据'
             ], 400);
         }
+
+        $basisMonth = $project->resolveBasisMonth($request->month);
+        if (!$project->isPayrollBusinessMonthAvailable($basisMonth, $request->month)) {
+            return response()->json([
+                'success' => false,
+                'message' => '该处理月份没有可创建的依据任务'
+            ], 422);
+        }
         
         // 检查是否已存在相同项目、月份、类型的依据
         $existing = BasisRecord::where('project_id', $request->project_id)
-            ->where('month', $request->month)
+            ->where('month', $basisMonth)
             ->where('type', $request->type)
             ->first();
         
@@ -130,7 +143,7 @@ class BasisRecordController extends Controller
             'account_set_id' => $accountSetId,
             'project_id' => $request->project_id,
             'type' => $request->type,
-            'month' => $request->month,
+            'month' => $basisMonth,
             'description' => $request->description,
             'created_by' => Auth::id(),
         ]);
@@ -159,6 +172,7 @@ class BasisRecordController extends Controller
             'type' => 'required|in:attendance,salary',
             'month' => 'required|date_format:Y-m',
             'description' => 'nullable|string',
+            'month_is_basis' => 'nullable|boolean',
         ]);
 
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('current_account_set_id');
@@ -178,13 +192,27 @@ class BasisRecordController extends Controller
             ], 400);
         }
 
+        $basisMonth = $request->boolean('month_is_basis')
+            ? $request->month
+            : $project->resolveBasisMonth($request->month);
+        $processingMonth = $request->boolean('month_is_basis')
+            ? $project->resolveBasisProcessingMonth($basisMonth)
+            : $request->month;
+
+        if (!$project->isPayrollBusinessMonthAvailable($basisMonth, $processingMonth)) {
+            return response()->json([
+                'success' => false,
+                'message' => '该月份没有可复制的依据任务'
+            ], 422);
+        }
+
         $existing = BasisRecord::where('account_set_id', $accountSetId)
             ->where('project_id', $request->project_id)
-            ->where('month', $request->month)
+            ->where('month', $basisMonth)
             ->where('type', $request->type)
             ->first();
 
-        $previousMonth = Carbon::createFromFormat('Y-m', $request->month)->subMonth()->format('Y-m');
+        $previousMonth = Carbon::createFromFormat('Y-m', $basisMonth)->subMonth()->format('Y-m');
 
         $sourceRecord = BasisRecord::with('attachments')
             ->where('account_set_id', $accountSetId)
@@ -211,7 +239,7 @@ class BasisRecordController extends Controller
             'account_set_id' => $accountSetId,
             'project_id' => $request->project_id,
             'type' => $request->type,
-            'month' => $request->month,
+            'month' => $basisMonth,
             'description' => $request->description ?: "复制上月({$previousMonth})",
             'created_by' => Auth::id(),
         ]);
@@ -253,7 +281,7 @@ class BasisRecordController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "{$messagePrefix}（{$previousMonth} -> {$request->month}）",
+            'message' => "{$messagePrefix}（{$previousMonth} -> {$basisMonth}）",
             'data' => $record->load(['project', 'creator', 'attachments'])
         ]);
     }
@@ -397,9 +425,12 @@ class BasisRecordController extends Controller
             'month' => 'required|date_format:Y-m',
             'type' => 'required|in:attendance,salary',
         ]);
+
+        $project = Project::findOrFail($request->project_id);
+        $basisMonth = $project->resolveBasisMonth($request->month);
         
         $exists = BasisRecord::where('project_id', $request->project_id)
-            ->where('month', $request->month)
+            ->where('month', $basisMonth)
             ->where('type', $request->type)
             ->exists();
         
@@ -407,6 +438,34 @@ class BasisRecordController extends Controller
             'success' => true,
             'exists' => $exists
         ]);
+    }
+
+    private function applyProcessingMonthFilter($query, int $accountSetId, string $processingMonth, $projectId = null): void
+    {
+        if ($projectId) {
+            $project = Project::where('account_set_id', $accountSetId)->find($projectId);
+            $query->where('month', $project ? $project->resolveBasisMonth($processingMonth) : $processingMonth);
+            return;
+        }
+
+        $previousMonth = Carbon::createFromFormat('Y-m', $processingMonth)->subMonth()->format('Y-m');
+
+        $query->where(function ($monthQuery) use ($processingMonth, $previousMonth) {
+            $monthQuery->where(function ($currentMonthQuery) use ($processingMonth) {
+                $currentMonthQuery->where('month', $processingMonth)
+                    ->whereHas('project', function ($projectQuery) {
+                        $projectQuery->where(function ($settingQuery) {
+                            $settingQuery->whereNull('salary_payment_month')
+                                ->orWhere('salary_payment_month', '!=', 'next');
+                        });
+                    });
+            })->orWhere(function ($nextMonthQuery) use ($previousMonth) {
+                $nextMonthQuery->where('month', $previousMonth)
+                    ->whereHas('project', function ($projectQuery) {
+                        $projectQuery->where('salary_payment_month', 'next');
+                    });
+            });
+        });
     }
 }
 

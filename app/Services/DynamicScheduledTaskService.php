@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\BasisRecord;
+use App\Models\PendingTask;
 use App\Models\Project;
 use App\Models\ProjectDeliveryConfig;
 use App\Models\SalaryApproval;
@@ -21,7 +22,7 @@ class DynamicScheduledTaskService
 
         $accountSetId = (int) $accountSetId;
 
-        $this->syncBasisTasks($accountSetId, $month);
+        $this->syncBasisTasksForReferenceMonth($accountSetId, $month);
         $this->syncSheetTasksForReferenceMonth($accountSetId, $month);
         $this->syncDocumentDeliveries($accountSetId, $month);
         $this->syncSpecialDeductions($accountSetId, $month);
@@ -34,7 +35,21 @@ class DynamicScheduledTaskService
             return;
         }
 
-        $accountSetId = (int) $accountSetId;
+        $this->syncBasisRecords((int) $accountSetId, $month);
+    }
+
+    public function syncBasisTasksForReferenceMonth($accountSetId, ?string $month = null): void
+    {
+        $month = $this->normalizeMonth($month);
+        if (!$accountSetId || !$month || $this->isFutureMonth($month)) {
+            return;
+        }
+
+        $this->syncBasisRecords((int) $accountSetId, $month, $month);
+    }
+
+    private function syncBasisRecords(int $accountSetId, string $month, ?string $processingMonth = null): void
+    {
         $creatorId = $this->resolveCreatorId($accountSetId);
         if (!$creatorId) {
             Log::warning('动态补齐依据任务失败：未找到账套用户', [
@@ -51,18 +66,33 @@ class DynamicScheduledTaskService
                     ->orWhere('requires_attendance_basis', true);
             })
             ->get()
-            ->each(function (Project $project) use ($accountSetId, $month, $creatorId) {
+            ->each(function (Project $project) use ($accountSetId, $month, $processingMonth, $creatorId) {
+                $basisMonth = $processingMonth
+                    ? $project->resolveBasisMonth($processingMonth)
+                    : $month;
+
+                if (!$project->isPayrollBusinessMonthAvailable($basisMonth, $processingMonth)) {
+                    return;
+                }
+
                 if ($project->requires_salary_basis) {
                     $this->firstOrCreateBasisRecord(
                         $accountSetId,
                         (int) $project->id,
                         'salary',
-                        $month,
+                        $basisMonth,
                         '系统自动创建，待上传工资依据附件',
                         $creatorId
                     );
 
-                    PendingTaskService::createSalaryBasisTask($accountSetId, $project->id, $month);
+                    if ($processingMonth) {
+                        PendingTaskService::createSalaryBasisTask(
+                            $accountSetId,
+                            $project->id,
+                            $basisMonth,
+                            $processingMonth
+                        );
+                    }
                 }
 
                 if ($project->requires_attendance_basis) {
@@ -70,12 +100,19 @@ class DynamicScheduledTaskService
                         $accountSetId,
                         (int) $project->id,
                         'attendance',
-                        $month,
+                        $basisMonth,
                         '系统自动创建，待上传考勤依据附件',
                         $creatorId
                     );
 
-                    PendingTaskService::createAttendanceBasisTask($accountSetId, $project->id, $month);
+                    if ($processingMonth) {
+                        PendingTaskService::createAttendanceBasisTask(
+                            $accountSetId,
+                            $project->id,
+                            $basisMonth,
+                            $processingMonth
+                        );
+                    }
                 }
             });
     }
@@ -98,6 +135,10 @@ class DynamicScheduledTaskService
             ->where('status', 'active')
             ->get()
             ->each(function (Project $project) use ($accountSetId, $month, $salaryHistoryProjectIds) {
+                if (!$project->isPayrollBusinessMonthAvailable($month)) {
+                    return;
+                }
+
                 if ($project->require_attendance) {
                     PendingTaskService::createAttendanceSheetTask($accountSetId, $project->id, $month);
                 }
@@ -130,22 +171,69 @@ class DynamicScheduledTaskService
             ->where('status', 'active')
             ->get()
             ->each(function (Project $project) use ($accountSetId, $month, $salaryHistoryProjectIds) {
-                if ($project->require_attendance) {
-                    PendingTaskService::createAttendanceSheetTask($accountSetId, $project->id, $month);
+                $businessMonth = $project->resolveBasisMonth($month);
+                if (!$project->isPayrollBusinessMonthAvailable($businessMonth, $month)) {
+                    return;
                 }
 
-                $salaryMonth = $project->resolveSalaryTaskMonth($month);
+                if ($project->require_attendance) {
+                    PendingTaskService::createAttendanceSheetTask($accountSetId, $project->id, $businessMonth);
+                }
+
                 $hasSalaryHistory = in_array((int) $project->id, $salaryHistoryProjectIds, true);
 
                 if (
-                    !$project->canCreateSalaryForMonth($salaryMonth, $hasSalaryHistory, $month)
-                    || $this->hasSubmittedSalaryApproval($accountSetId, (int) $project->id, $salaryMonth)
+                    !$project->canCreateSalaryForMonth($businessMonth, $hasSalaryHistory, $month)
+                    || $this->hasSubmittedSalaryApproval($accountSetId, (int) $project->id, $businessMonth)
                 ) {
                     return;
                 }
 
-                PendingTaskService::createSalarySheetTask($accountSetId, $project->id, $salaryMonth, $month);
+                PendingTaskService::createSalarySheetTask($accountSetId, $project->id, $businessMonth, $month);
             });
+    }
+
+    public function reconcileProjectTasksForReferenceMonth(
+        Project $project,
+        ?string $previousSalaryPaymentMonth,
+        ?string $month = null
+    ): void
+    {
+        $month = $this->normalizeMonth($month);
+        if (!$month || $this->isFutureMonth($month)) {
+            return;
+        }
+
+        $previousBusinessMonth = $previousSalaryPaymentMonth === 'next'
+            ? Carbon::createFromFormat('Y-m', $month)->subMonth()->format('Y-m')
+            : $month;
+        $currentBusinessMonth = $project->resolveBasisMonth($month);
+        $sheetMonths = array_values(array_unique([$previousBusinessMonth, $currentBusinessMonth]));
+
+        PendingTask::where('account_set_id', $project->account_set_id)
+            ->where('related_type', 'Project')
+            ->where('related_id', $project->id)
+            ->where('status', 'pending')
+            ->whereIn('task_type', [
+                'salary_basis',
+                'attendance_basis',
+                'salary_sheet',
+                'attendance_sheet',
+            ])
+            ->get()
+            ->each(function (PendingTask $task) use ($month, $sheetMonths) {
+                $routeParams = is_array($task->route_params) ? $task->route_params : [];
+                $routeMonth = $routeParams['month'] ?? null;
+                $isBasisTask = in_array($task->task_type, ['salary_basis', 'attendance_basis'], true);
+
+                if (($isBasisTask && $routeMonth === $month)
+                    || (!$isBasisTask && in_array($routeMonth, $sheetMonths, true))) {
+                    $task->delete();
+                }
+            });
+
+        $this->syncBasisTasksForReferenceMonth($project->account_set_id, $month);
+        $this->syncSheetTasksForReferenceMonth($project->account_set_id, $month);
     }
 
     public function syncDocumentDeliveries($accountSetId, ?string $month = null): void

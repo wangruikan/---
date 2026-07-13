@@ -543,6 +543,7 @@ const handleCopyLastMonth = async (row) => {
     const response = await copyLastMonthBasisRecord({
       project_id: row.project_id || row.project?.id,
       month: row.month,
+      month_is_basis: true,
       type: 'salary',
       description: row.description || ''
     })

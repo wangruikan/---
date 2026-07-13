@@ -251,6 +251,43 @@ class Project extends Model
             ->format('Y-m');
     }
 
+    public function resolveBasisMonth(?string $processingMonth = null): string
+    {
+        return $this->resolveSalaryTaskMonth($processingMonth);
+    }
+
+    public function resolveBasisProcessingMonth(string $basisMonth): string
+    {
+        if (!$this->usesNextMonthSalary()) {
+            return $basisMonth;
+        }
+
+        return Carbon::createFromFormat('Y-m', $basisMonth, 'Asia/Shanghai')
+            ->addMonth()
+            ->format('Y-m');
+    }
+
+    public function isPayrollBusinessMonthAvailable(string $businessMonth, ?string $processingMonth = null): bool
+    {
+        $processingMonth = $processingMonth ?: Carbon::now('Asia/Shanghai')->format('Y-m');
+
+        if (!$this->isSalaryPeriodReleased($businessMonth, $processingMonth)) {
+            return false;
+        }
+
+        $startMonth = $this->getSalaryStartMonth();
+        if ($startMonth && $businessMonth < $startMonth) {
+            return false;
+        }
+
+        $endMonth = $this->getSalaryEndMonth();
+        if ($endMonth && $businessMonth > $endMonth) {
+            return false;
+        }
+
+        return true;
+    }
+
     public static function syncLegacyInvoiceFields(array &$data, array $invoiceInfos): void
     {
         $primaryInvoiceInfo = $invoiceInfos[0] ?? [];

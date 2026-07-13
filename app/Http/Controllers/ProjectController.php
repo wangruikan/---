@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Project;
+use App\Services\DynamicScheduledTaskService;
 use App\Services\ProjectRoleUserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -679,6 +680,7 @@ class ProjectController extends Controller
         }
         
         $project = Project::findOrFail($id);
+        $previousSalaryPaymentMonth = $project->salary_payment_month;
         
         $requestData = $this->buildProjectPayload($request->all(), $project);
 
@@ -716,7 +718,26 @@ class ProjectController extends Controller
             }
         }
 
-        $project->update($updateData);
+        DB::transaction(function () use ($project, $updateData, $previousSalaryPaymentMonth) {
+            $project->update($updateData);
+
+            if ($project->wasChanged([
+                'salary_payment_month',
+                'requires_salary_basis',
+                'requires_attendance_basis',
+                'requires_attendance',
+                'require_attendance',
+                'start_date',
+                'end_date',
+                'status',
+            ])) {
+                app(DynamicScheduledTaskService::class)->reconcileProjectTasksForReferenceMonth(
+                    $project->fresh(),
+                    $previousSalaryPaymentMonth,
+                    Carbon::now('Asia/Shanghai')->format('Y-m')
+                );
+            }
+        });
 
         return response()->json([
             'success' => true,

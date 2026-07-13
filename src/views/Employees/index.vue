@@ -6919,6 +6919,20 @@ const isActiveEmployeeForReminder = (row) => {
   return getDisplayPersonnelStatus(row) === 'active'
 }
 
+const hasSignedSeparationContract = (row) => {
+  const contract = row?.latest_employee_contract || row?.latestEmployeeContract
+  return ['termination', 'retirement'].includes(contract?.contract_type)
+    && ['employee_signed', 'in_approval', 'completed'].includes(contract?.status)
+}
+
+const needsExpiredContractSeparationReminder = (row) => {
+  const remainingDays = getContractRemainingDays(row)
+  return isActiveEmployeeForReminder(row)
+    && remainingDays !== null
+    && remainingDays < 0
+    && !hasSignedSeparationContract(row)
+}
+
 const archiveReminderSummaryItems = computed(() => {
   const rows = archiveReminderEmployees.value
 
@@ -6959,10 +6973,7 @@ const archiveReminderSummaryItems = computed(() => {
     {
       key: 'contract_expired',
       label: '合同已到期',
-      rows: rows.filter(row => {
-        const remainingDays = getContractRemainingDays(row)
-        return isActiveEmployeeForReminder(row) && remainingDays !== null && remainingDays < 0
-      })
+      rows: rows.filter(row => needsExpiredContractSeparationReminder(row))
     }
   ]
 })

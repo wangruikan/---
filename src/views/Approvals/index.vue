@@ -726,7 +726,6 @@ const selectedPDFIndex = ref(0)
 const selectedAttachmentId = ref(null) // 记录用户选择的附件ID
 const pendingSignedPDFBlob = ref(null)
 const pendingSignedPDFMeta = ref(null)
-const approvalAutoStampConfirmed = ref(false)
 const actionType = ref('')
 const currentApproval = ref(null)
 const currentDetail = ref(null)
@@ -832,14 +831,14 @@ const requiresApprovalStampBeforeApprove = computed(() => {
 const requiresStampPreviewBeforeApprove = requiresApprovalStampBeforeApprove
 
 const approvalStampPreviewReady = computed(() => {
-  return approvalAutoStampConfirmed.value || (!!pendingSignedPDFBlob.value && !!pendingSignedPDFMeta.value?.attachmentId)
+  return !!pendingSignedPDFBlob.value && !!pendingSignedPDFMeta.value?.attachmentId
 })
 
 const approvalStampAlertTitle = computed(() => {
   if (approvalStampPreviewReady.value) {
-    return '已确认使用合同占位符自动盖章，点击“通过”后系统将自动完成盖章。'
+    return '已确认签名盖章文件，点击“通过”后系统将上传并继续审批。'
   }
-  return '当前是最后一个审批节点且已选择公司章，请先点击“签名盖章”确认自动盖章，再点击“通过”。'
+  return '当前是最后一个审批节点且已选择公司章，请先点击“签名盖章”进入预览并确认，再点击“通过”。'
 })
 
 const actionFormRules = computed(() => {
@@ -941,7 +940,6 @@ const handleApprove = async (row) => {
   actionType.value = 'approve'
     pendingSignedPDFBlob.value = null
     pendingSignedPDFMeta.value = null
-    approvalAutoStampConfirmed.value = false
     selectedAttachmentId.value = null
     
     // 加载完整的审批实例数据（包括附件）
@@ -992,17 +990,13 @@ const handleActionSubmit = async (type) => {
       // 如果是审批通过
         if (type === 'approve') {
         if (requiresStampPreviewBeforeApprove.value && !approvalStampPreviewReady.value) {
-          ElMessage.warning('当前审批已选择公司章，请先点击“签名盖章”确认自动盖章后，再点击“通过”')
+          ElMessage.warning('当前审批已选择公司章，请先点击“签名盖章”进入预览并确认后，再点击“通过”')
           return
         }
 
         if (requiresStampPreviewBeforeApprove.value && approvalStampPreviewReady.value) {
-          ElMessage.info('正在自动完成盖章，请稍候...')
-          if (pendingSignedPDFBlob.value && pendingSignedPDFMeta.value?.attachmentId) {
-            await uploadPendingPreviewStampedPDF()
-          } else {
-            await stampApprovalContractByPlaceholder()
-          }
+          ElMessage.info('正在上传已确认的签名盖章文件，请稍候...')
+          await uploadPendingPreviewStampedPDF()
         } else if ((actionForm.use_signature || actionForm.selected_seal_id) && currentApproval.value.instance) {
           const instance = currentApproval.value.instance
           if (instance.business_type === 'employee_contract' && instance.attachments && instance.attachments.length > 0) {
@@ -1189,181 +1183,6 @@ const getApprovalPdfAttachments = (instance) => {
   })
 }
 
-const parsePlaceholderPositions = (positions) => {
-  if (Array.isArray(positions)) {
-    return positions
-  }
-
-  if (typeof positions === 'string' && positions.trim()) {
-    try {
-      const parsed = JSON.parse(positions)
-      return Array.isArray(parsed) ? parsed : []
-    } catch (error) {
-      console.warn('解析合同占位符失败:', error)
-      return []
-    }
-  }
-
-  return []
-}
-
-const getCompanyStampPositions = () => {
-  const positions = parsePlaceholderPositions(currentApproval.value?.instance?.business_data?.signature_positions)
-  return positions.filter(position => position && position.type === 'company_stamp')
-}
-
-const getDefaultApprovalPdfAttachment = () => {
-  const instance = currentApproval.value?.instance
-  const pdfAttachments = getApprovalPdfAttachments(instance)
-  return pdfAttachments.find(attachment => attachment.id === selectedAttachmentId.value) || pdfAttachments[0] || null
-}
-
-const normalizeStampImageUrl = (url) => {
-  const value = String(url || '').trim()
-  if (!value) {
-    return ''
-  }
-
-  return value.includes('localhost:8000')
-    ? value.replace('http://localhost:8000', '')
-    : value
-}
-
-const clampNumber = (value, min, max) => {
-  return Math.min(Math.max(value, min), max)
-}
-
-const hasFiniteNumber = (value) => {
-  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
-}
-
-const calculatePlaceholderStampRect = (position, pageWidth, pageHeight) => {
-  const renderScale = Number(position.render_scale) || 1.5
-
-  const stampWidth = hasFiniteNumber(position.width_percent) && Number(position.width_percent) > 0
-    ? (Number(position.width_percent) / 100) * pageWidth
-    : (Number(position.width) || 150) / renderScale
-  const stampHeight = hasFiniteNumber(position.height_percent) && Number(position.height_percent) > 0
-    ? (Number(position.height_percent) / 100) * pageHeight
-    : (Number(position.height) || 150) / renderScale
-
-  const topLeftX = hasFiniteNumber(position.x_percent)
-    ? (Number(position.x_percent) / 100) * pageWidth
-    : (Number(position.x) || 0) / renderScale
-  const topLeftY = hasFiniteNumber(position.y_percent)
-    ? (Number(position.y_percent) / 100) * pageHeight
-    : (Number(position.y) || 0) / renderScale
-
-  return {
-    x: clampNumber(topLeftX, 0, Math.max(0, pageWidth - stampWidth)),
-    y: clampNumber(pageHeight - topLeftY - stampHeight, 0, Math.max(0, pageHeight - stampHeight)),
-    width: stampWidth,
-    height: stampHeight
-  }
-}
-
-const confirmApprovalAutoStamp = () => {
-  if (!selectedApprovalStamp.value?.image_url) {
-    ElMessage.warning('未找到本次审批选择的印章，请检查发起审批时的用章配置')
-    return
-  }
-
-  const positions = getCompanyStampPositions()
-  if (positions.length === 0) {
-    ElMessage.warning('当前合同没有配置“公司盖章”占位符，请先在合同模板中配置')
-    return
-  }
-
-  const attachment = getDefaultApprovalPdfAttachment()
-  if (!attachment) {
-    ElMessage.warning('未找到可自动盖章的合同PDF')
-    return
-  }
-
-  selectedAttachmentId.value = attachment.id
-  approvalAutoStampConfirmed.value = true
-  actionForm.selected_seal_id = selectedApprovalStamp.value.id
-  ElMessage.success('已确认自动盖章，点击“通过”后系统将按占位符完成盖章')
-}
-
-const stampApprovalContractByPlaceholder = async () => {
-  const stamp = selectedApprovalStamp.value
-  if (!stamp?.image_url) {
-    throw new Error('未找到本次审批选择的印章')
-  }
-
-  const positions = getCompanyStampPositions()
-  if (positions.length === 0) {
-    throw new Error('当前合同没有配置“公司盖章”占位符')
-  }
-
-  const attachment = getDefaultApprovalPdfAttachment()
-  if (!attachment) {
-    throw new Error('未找到可自动盖章的合同PDF')
-  }
-
-  const instanceId = resolveAttachmentInstanceId(attachment)
-  if (!instanceId) {
-    throw new Error('审批实例ID缺失，无法下载合同PDF')
-  }
-
-  const sourcePdfBlob = await downloadApprovalAttachment(instanceId, attachment.id)
-  const sourcePdfBytes = await sourcePdfBlob.arrayBuffer()
-  const pdfDoc = await PDFDocument.load(sourcePdfBytes)
-  const pageCount = pdfDoc.getPageCount()
-
-  const stampUrl = normalizeStampImageUrl(stamp.image_url)
-  if (!stampUrl) {
-    throw new Error('印章图片地址为空')
-  }
-
-  const imageResponse = await fetch(stampUrl, {
-    credentials: 'include',
-    mode: 'cors'
-  })
-  if (!imageResponse.ok) {
-    throw new Error(`下载印章图片失败: HTTP ${imageResponse.status}`)
-  }
-
-  const imageBytes = await imageResponse.arrayBuffer()
-  const contentType = imageResponse.headers.get('content-type') || ''
-  const stampImage = contentType.includes('image/jpeg') || /\.(jpg|jpeg)(\?.*)?$/i.test(stampUrl)
-    ? await pdfDoc.embedJpg(imageBytes)
-    : await pdfDoc.embedPng(imageBytes)
-
-  positions.forEach(position => {
-    const pageIndex = clampNumber(Number(position.page) || 0, 0, pageCount - 1)
-    const page = pdfDoc.getPage(pageIndex)
-    const { width: pageWidth, height: pageHeight } = page.getSize()
-    const rect = calculatePlaceholderStampRect(position, pageWidth, pageHeight)
-
-    page.drawImage(stampImage, {
-      ...rect,
-      opacity: 0.7
-    })
-  })
-
-  const signedPdfBytes = await pdfDoc.save()
-  const signedPdfBlob = new Blob([signedPdfBytes], { type: 'application/pdf' })
-  const formData = new FormData()
-  formData.append('signed_pdf', signedPdfBlob, attachment.file_name || attachment.original_name || 'signed.pdf')
-  formData.append('attachment_id', attachment.id)
-
-  const response = await request({
-    url: `/approvals/records/${currentApproval.value.id}/upload-signed-pdf`,
-    method: 'post',
-    data: formData,
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
-
-  if (!response?.success) {
-    throw new Error(response?.message || '自动盖章PDF上传失败')
-  }
-
-  actionForm.selected_seal_id = stamp.id
-  return true
-}
-
 const enterNativeFullscreen = async (targetRef) => {
   await nextTick()
   const target = targetRef.value
@@ -1401,7 +1220,6 @@ const handleActionDialogClose = () => {
   actionForm.selected_seal_id = null
   pendingSignedPDFBlob.value = null
   pendingSignedPDFMeta.value = null
-  approvalAutoStampConfirmed.value = false
   selectedAttachmentId.value = null
   actionFormRef.value?.resetFields()
 }
@@ -1530,11 +1348,6 @@ const openPDFEditor = async () => {
     return
   }
 
-  if (requiresApprovalStampBeforeApprove.value) {
-    confirmApprovalAutoStamp()
-    return
-  }
-  
   const instance = currentApproval.value.instance
   if (!instance.attachments || instance.attachments.length === 0) {
     ElMessage.error('未找到附件')
@@ -1668,7 +1481,7 @@ const handlePDFEditorConfirm = async (data) => {
     // 关闭PDF编辑器，返回审批操作对话框
     showPDFEditor.value = false
     await exitNativeFullscreen()
-    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '盖章预览已确认，请点击“通过”自动完成盖章' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
+    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '签名盖章已确认，请点击“通过”继续审批' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
     
   } catch (error) {
     console.error('PDF处理失败:', error)

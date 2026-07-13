@@ -566,6 +566,7 @@
                 :disabled="form.id && !isEdit"
                 clearable
               >
+                <el-option label="-" :value="null" />
                 <el-option
                   v-for="day in 31"
                   :key="day"
@@ -587,6 +588,7 @@
           <el-col :span="12">
             <el-form-item label="工资发放" prop="salary_payment_month">
               <el-select v-model="form.salary_payment_month" placeholder="请选择工资发放月份" :disabled="form.id && !isEdit">
+                <el-option label="-" :value="null" />
                 <el-option label="本月" value="current" />
                 <el-option label="次月" value="next" />
               </el-select>
@@ -611,6 +613,8 @@
               <el-select v-model="form.delivery_frequency" placeholder="请选择交付频率" :disabled="form.id && !isEdit">
                 <el-option label="月度" value="monthly" />
                 <el-option label="季度" value="quarterly" />
+                <el-option label="半年" value="semiannual" />
+                <el-option label="年度" value="annual" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -1719,6 +1723,7 @@ const availablePlaceholderFields = ref({
   position: '岗位',
   previous_company: '上个公司',
   employee_number: '工号',
+  contract_number: '合同编号（引用工号）',
   email: '邮箱',
   bank_name: '开户银行',
   bank_account: '银行卡号',
@@ -1749,7 +1754,8 @@ const availablePlaceholderFields = ref({
   residence_address: '居住地址',
   contact_address: '通讯地址',
   employee_signature: '员工签字',
-  company_stamp: '公司盖章'
+  company_stamp: '公司盖章',
+  slash_placeholder: '/占位符'
 })
 
 const ensureLaborStampPlaceholderField = (fields, contractType) => {
@@ -2293,12 +2299,8 @@ const formRules = {
     { type: 'array', required: true, min: 1, message: '请至少选择一个医保参保地区', trigger: 'change' }
   ],
   other_insurance_policies: [],
-  salary_payment_date: [
-    { required: true, message: '请选择工资发放日期', trigger: 'change' }
-  ],
-  salary_payment_month: [
-    { required: true, message: '请选择工资发放设置', trigger: 'change' }
-  ],
+  salary_payment_date: [],
+  salary_payment_month: [],
   insurance_import_month: [
     { required: true, message: '请选择保险导入设置', trigger: 'change' }
   ],
@@ -3630,7 +3632,9 @@ const getProjectStatusText = (row) => {
 const getDeliveryFrequencyText = (frequency) => {
   const texts = {
     monthly: '月度',
-    quarterly: '季度'
+    quarterly: '季度',
+    semiannual: '半年',
+    annual: '年度'
   }
   return texts[frequency] || '未知'
 }

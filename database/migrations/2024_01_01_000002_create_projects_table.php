@@ -22,7 +22,7 @@ return new class extends Migration
             $table->date('salary_payment_date')->nullable(); // 工资发放日期
             $table->boolean('requires_attendance')->default(true); // 是否需要考勤表
             $table->json('delivery_requirements')->nullable(); // 交付资料要求
-            $table->enum('delivery_frequency', ['monthly', 'quarterly'])->default('monthly'); // 交付频率
+            $table->enum('delivery_frequency', ['monthly', 'quarterly', 'semiannual', 'annual'])->default('monthly'); // 交付频率
             $table->enum('delivery_method', ['express', 'electronic'])->default('electronic'); // 交付方式
             $table->timestamps();
         });

@@ -1350,7 +1350,10 @@ class ApprovalService
         }
 
         if ($contract->contract_type === 'termination') {
-            $updateData = ['contract_status' => 'terminated'];
+            $updateData = [
+                'contract_status' => 'terminated',
+                'personnel_status' => 'resigned',
+            ];
             if ($hasTerminationDate) {
                 $updateData['termination_date'] = $effectiveResignationDate;
             }
@@ -1383,6 +1386,7 @@ class ApprovalService
         }
 
         $employee->contract_status = 'terminated';
+        $employee->personnel_status = 'retired';
         if ($hasResignationDate) {
             $employee->resignation_date = $effectiveResignationDate;
         }

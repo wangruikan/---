@@ -73,6 +73,7 @@ export class PdfFillService {
         'position': employeeData.position,
         'previous_company': employeeData.previous_company,
         'employee_number': employeeData.employee_number,
+        'contract_number': employeeData.contract_number || employeeData.employee_number,
         'email': employeeData.email,
         'bank_name': employeeData.bank_name,
         'bank_account': employeeData.bank_account,
@@ -94,6 +95,7 @@ export class PdfFillService {
         'household_address': employeeData.household_address,
         'residence_address': employeeData.residence_address,
         'contact_address': employeeData.contact_address,
+        'slash_placeholder': '/',
         'signature': employeeData.signature || employeeData.signature_url
       }
 

@@ -32,6 +32,7 @@ return new class extends Migration
             $table->string('gender', 10)->nullable()->comment('性别');
             $table->string('height', 20)->nullable()->comment('身高');
             $table->date('birth_date')->nullable()->comment('出生日期');
+            $table->string('photo')->nullable()->comment('一寸照片路径');
             $table->string('political_status', 50)->nullable()->comment('政治面貌');
             $table->string('education_level', 50)->nullable()->comment('文化程度');
             $table->string('native_place', 100)->nullable()->comment('籍贯');

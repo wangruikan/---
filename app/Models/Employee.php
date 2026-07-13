@@ -444,6 +444,12 @@ class Employee extends Model
             ->latestOfMany('id');
     }
 
+    public function latestEmployeeContract()
+    {
+        return $this->hasOne(EmployeeContract::class)
+            ->latestOfMany('id');
+    }
+
     public function insuranceRecords()
     {
         return $this->hasMany(InsuranceRecord::class);

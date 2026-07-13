@@ -170,6 +170,7 @@ const fieldExamples = {
   position: '工程师',
   previous_company: '上个公司',
   employee_number: 'EMP001',
+  contract_number: 'EMP001',
   email: 'example@email.com',
   bank_name: '中国工商银行',
   bank_account: '6222021234567890123',
@@ -196,7 +197,8 @@ const fieldExamples = {
   residence_address: '北京市朝阳区',
   contact_address: '北京市朝阳区XX路',
   employee_signature: '[签名]',
-  company_stamp: '[公司盖章]'
+  company_stamp: '[公司盖章]',
+  slash_placeholder: '/'
 }
 
 const fallbackLabels = {
@@ -212,6 +214,7 @@ const fallbackLabels = {
   position: '岗位',
   previous_company: '上个公司',
   employee_number: '工号',
+  contract_number: '合同编号（引用工号）',
   email: '邮箱',
   bank_name: '开户银行',
   bank_account: '银行卡号',
@@ -238,7 +241,8 @@ const fallbackLabels = {
   residence_address: '居住地址',
   contact_address: '通讯地址',
   employee_signature: '员工签字',
-  company_stamp: '公司盖章'
+  company_stamp: '公司盖章',
+  slash_placeholder: '/占位符'
 }
 
 const resolvePlaceholderLabel = (type) => {
@@ -586,6 +590,7 @@ const getPlaceholderLabel = (type) => {
     position: '岗位',
     previous_company: '上个公司',
     employee_number: '工号',
+    contract_number: '合同编号（引用工号）',
     email: '邮箱',
     bank_name: '开户银行',
     bank_account: '银行卡号',
@@ -608,7 +613,8 @@ const getPlaceholderLabel = (type) => {
     residence_address: '居住地址',
     contact_address: '通讯地址',
     employee_signature: '员工签字',
-    company_stamp: '公司盖章'
+    company_stamp: '公司盖章',
+    slash_placeholder: '/占位符'
   }
   return labels[type] || type
 }

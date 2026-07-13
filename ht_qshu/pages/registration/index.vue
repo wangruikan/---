@@ -128,6 +128,17 @@
 				<view class="picker disabled">{{ formatDateDisplay(formData.birth_date) || '输入身份证后自动获取' }}</view>
 			</view>
 
+			<view class="form-item photo-item">
+				<text class="label">一寸照片</text>
+				<view class="photo-upload" @click="choosePhoto">
+					<image v-if="formData.photo" :src="formData.photo" mode="aspectFill" class="photo-preview" />
+					<view v-else class="photo-placeholder">
+						<text class="photo-icon">📷</text>
+						<text class="photo-text">点击上传</text>
+					</view>
+				</view>
+			</view>
+
 			<view class="form-item">
 				<text class="label">政治面貌</text>
 				<picker :range="politicalOptions" :value="politicalIndex" @change="onPoliticalChange">
@@ -561,6 +572,7 @@
 <script>
 import SignatureCanvas from '@/components/SignatureCanvas.vue'
 import { getMyRegistrationForm, submitRegistrationForm } from '@/api/registration.js'
+import { BASE_URL } from '@/utils/request.js'
 
 export default {
 	components: { SignatureCanvas },
@@ -585,6 +597,8 @@ export default {
 				gender: 'male',
 				height: '',
 				birth_date: '',
+				photo: '',
+				photoPath: '',
 				political_status: '',
 				education_level: '',
 				education_type: '',
@@ -710,8 +724,24 @@ export default {
 							}
 						}
 					}
+					if (data.photo) {
+						this.formData.photo = data.photo
+						if (data.photo.includes('/uploads/')) {
+							const match = data.photo.match(/\/uploads\/(.+)$/)
+							if (match) {
+								this.formData.photoPath = 'uploads/' + match[1]
+							}
+						} else if (data.photo.includes('/storage/')) {
+							const match = data.photo.match(/\/storage\/(.+)$/)
+							if (match) {
+								this.formData.photoPath = match[1]
+							}
+						} else if (data.photo.indexOf('uploads/') === 0) {
+							this.formData.photoPath = data.photo
+						}
+					}
 					// 复制其他数据
-					const { signature, ...otherData } = data
+					const { signature, photo, ...otherData } = data
 					this.formData = { ...this.formData, ...otherData }
 					this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
 					this.formData.id_card_valid_from = data.id_card_valid_from || ''
@@ -806,6 +836,57 @@ export default {
 		},
 		onEducationTypeChange(e) {
 			this.formData.education_type = this.normalizeEducationType(e.detail.value)
+		},
+		choosePhoto() {
+			uni.chooseImage({
+				count: 1,
+				sizeType: ['compressed'],
+				sourceType: ['album', 'camera'],
+				success: async (res) => {
+					const tempFilePath = res.tempFilePaths[0]
+					uni.showLoading({ title: '上传中...', mask: true })
+
+					try {
+						const uploadRes = await this.uploadPhoto(tempFilePath)
+						uni.hideLoading()
+
+						if (uploadRes.success) {
+							this.formData.photo = uploadRes.data.url
+							this.formData.photoPath = uploadRes.data.path
+							uni.showToast({ title: '上传成功', icon: 'success' })
+						} else {
+							uni.showToast({ title: uploadRes.message || '上传失败', icon: 'none' })
+						}
+					} catch (error) {
+						uni.hideLoading()
+						console.error('上传照片失败:', error)
+						uni.showToast({ title: '上传失败', icon: 'none' })
+					}
+				}
+			})
+		},
+		uploadPhoto(filePath) {
+			return new Promise((resolve, reject) => {
+				const token = uni.getStorageSync('token')
+
+				uni.uploadFile({
+					url: BASE_URL + '/upload-photo',
+					filePath,
+					name: 'photo',
+					header: {
+						'Authorization': 'Bearer ' + token,
+						'X-Auth-Token': token
+					},
+					success: (res) => {
+						try {
+							resolve(JSON.parse(res.data))
+						} catch (e) {
+							reject(e)
+						}
+					},
+					fail: reject
+				})
+			})
 		},
 		onNativePlaceChange(e) {
 			const value = Array.isArray(e.detail.value) ? e.detail.value : []
@@ -1047,6 +1128,11 @@ export default {
 				return false
 			}
 
+			if (!this.formData.photoPath && !this.formData.photo) {
+				uni.showToast({ title: '请上传一寸照片', icon: 'none' })
+				return false
+			}
+
 			if (!this.formData.signaturePath) {
 				uni.showToast({ title: '请先完成手写签名', icon: 'none' })
 				return false
@@ -1217,6 +1303,10 @@ export default {
 				submitData.id_card_valid_until = this.formData.id_card_valid_until || ''
 				submitData.signature = this.formData.signaturePath
 				delete submitData.signaturePath
+				if (this.formData.photoPath) {
+					submitData.photo = this.formData.photoPath
+				}
+				delete submitData.photoPath
 				
 				const res = await submitRegistrationForm(submitData)
 				
@@ -1337,6 +1427,45 @@ export default {
 }
 
 .picker.disabled {
+	color: #999;
+}
+
+.photo-item {
+	align-items: flex-start;
+}
+
+.photo-upload {
+	width: 200rpx;
+	height: 260rpx;
+	border: 2rpx dashed #ccc;
+	border-radius: 8rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: #fafafa;
+	overflow: hidden;
+}
+
+.photo-preview {
+	width: 100%;
+	height: 100%;
+}
+
+.photo-placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.photo-icon {
+	font-size: 60rpx;
+	margin-bottom: 10rpx;
+}
+
+.photo-text {
+	font-size: 24rpx;
 	color: #999;
 }
 

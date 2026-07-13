@@ -1966,6 +1966,16 @@ class MiniController extends Controller
                     }
                 }
 
+                if (!empty($formData['photo'])) {
+                    if (strpos($formData['photo'], 'http') === 0) {
+                        // 已经是完整URL，不处理
+                    } elseif (strpos($formData['photo'], 'uploads/') === 0) {
+                        $formData['photo'] = asset($formData['photo']);
+                    } else {
+                        $formData['photo'] = asset('storage/' . $formData['photo']);
+                    }
+                }
+
                 $formData['native_place_province'] = $employee->household_province ?? ($formData['native_place_province'] ?? '');
                 $formData['native_place_city'] = $employee->household_city ?? ($formData['native_place_city'] ?? '');
                 $formData['native_place_district'] = $employee->household_district ?? ($formData['native_place_district'] ?? '');
@@ -2046,6 +2056,7 @@ class MiniController extends Controller
             'gender' => 'required|in:male,female',
             'height' => 'required|string|max:20',
             'birth_date' => 'required|date',
+            'photo' => 'nullable|string',
             'political_status' => 'required|string|max:50',
             'education_level' => 'required|string|max:50',
             'education_type' => 'required|in:统招,非统招',
@@ -2298,6 +2309,7 @@ class MiniController extends Controller
                     'gender' => $request->gender,
                     'height' => $request->height,
                     'birth_date' => $request->birth_date,
+                    'photo' => $request->photo,
                     'political_status' => $request->political_status,
                     'education_level' => $request->education_level,
                     'education_type' => $educationType,

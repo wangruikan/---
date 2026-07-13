@@ -239,6 +239,16 @@ class EmployeeController extends ApiController
     protected function resolveEmployeeLaborContractStatus(Employee $employee): string
     {
         $latestLaborContract = $employee->latestLaborContract;
+        $displayPersonnelStatus = $this->resolveEmployeePersonnelStatus($employee);
+        $latestEmployeeContract = $employee->latestEmployeeContract;
+
+        if (
+            in_array($displayPersonnelStatus, ['resigned', 'retired'], true)
+            && $latestEmployeeContract
+            && in_array($latestEmployeeContract->contract_type, ['termination', 'retirement'], true)
+        ) {
+            $latestLaborContract = $latestEmployeeContract;
+        }
 
         if (!$latestLaborContract) {
             return 'pending_signature';
@@ -816,7 +826,8 @@ class EmployeeController extends ApiController
                         'onboardingForm',
                         'registrationForm',
                         'documents',
-                        'latestLaborContract.approvalInstance'
+                        'latestLaborContract.approvalInstance',
+                        'latestEmployeeContract.approvalInstance'
                     ]);
                     
                     // 【账套过滤】根据当前账套过滤员工
@@ -1210,9 +1221,18 @@ class EmployeeController extends ApiController
         }
         
         // 转换日期格式
-        $dateFields = ['birth_date', 'hire_date', 'contract_start_date', 'contract_end_date', 'probation_end_date'];
+        $dateFields = [
+            'birth_date', 'hire_date', 'contract_start_date', 'contract_end_date', 'probation_end_date',
+            'id_card_valid_from', 'id_card_valid_until',
+            'social_insurance_enrollment_date', 'provident_fund_enrollment_date',
+            'medical_insurance_enrollment_date', 'large_medical_enrollment_date',
+            'employment_date', 'resignation_date', 'first_entry_date', 'expected_departure_date'
+        ];
         foreach ($dateFields as $field) {
-            if (isset($employeeData[$field]) && strpos($employeeData[$field], 'T') !== false) {
+            if (array_key_exists($field, $employeeData) && $employeeData[$field] === '') {
+                $employeeData[$field] = null;
+            }
+            if (isset($employeeData[$field]) && $employeeData[$field] && (strpos((string) $employeeData[$field], 'T') !== false || strpos((string) $employeeData[$field], 'Z') !== false)) {
                 $employeeData[$field] = date('Y-m-d', strtotime($employeeData[$field]));
             }
         }
@@ -4432,6 +4452,16 @@ class EmployeeController extends ApiController
                     }
                 }
 
+                if (!empty($formData['photo'])) {
+                    if (strpos($formData['photo'], 'http') === 0) {
+                        // 已经是完整URL，不处理
+                    } elseif (strpos($formData['photo'], 'uploads/') === 0) {
+                        $formData['photo'] = $host . '/' . $formData['photo'];
+                    } else {
+                        $formData['photo'] = $host . '/storage/' . $formData['photo'];
+                    }
+                }
+
                 $formData['bank_account'] = $formData['bank_account'] ?? $employee->bank_account;
                 $formData['bank_account_holder'] = $formData['bank_account_holder'] ?? $employee->bank_account_holder;
                 $formData['bank_name'] = $formData['bank_name'] ?? $employee->bank_name;
@@ -5090,10 +5120,16 @@ class EmployeeController extends ApiController
             ->where('probation_end_date', '>=', $today)
             ->count();
         
-        // 合同已到期人数（合同结束日期小于等于今天，不限制合同状态）
-        $contractExpired = (clone $query)
+        // 合同到期未签解除/退休协议人数
+        $contractExpiredQuery = clone $query;
+        $this->applyActivePersonnelFilter($contractExpiredQuery);
+        $contractExpired = $contractExpiredQuery
             ->whereNotNull('contract_end_date')
             ->where('contract_end_date', '<', $today)
+            ->whereDoesntHave('latestEmployeeContract', function ($contractQuery) {
+                $contractQuery->whereIn('contract_type', ['termination', 'retirement'])
+                    ->whereIn('status', ['employee_signed', 'in_approval', 'completed']);
+            })
             ->count();
         
         return [

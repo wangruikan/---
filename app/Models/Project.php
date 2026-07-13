@@ -295,6 +295,7 @@ class Project extends Model
             'position' => '岗位',
             'previous_company' => '上个公司',
             'employee_number' => '工号',
+            'contract_number' => '合同编号（引用工号）',
             'email' => '邮箱',
             'bank_name' => '开户银行',
             'bank_account' => '银行卡号',
@@ -329,6 +330,7 @@ class Project extends Model
             'contact_address' => '通讯地址',
             'employee_signature' => '员工签字',
             'company_stamp' => '公司盖章',
+            'slash_placeholder' => '/占位符',
         ];
     }
 

@@ -1097,6 +1097,7 @@ class EmployeeContractController extends Controller
                         'education' => $employee->education,
                         'position' => $employee->position,
                         'employee_number' => $employee->employee_number,
+                        'contract_number' => $employee->employee_number,
                         'email' => $employee->email_address ?: $employee->email,
                         'bank_name' => $employee->bank_name,
                         'bank_account' => $employee->bank_account,
@@ -1110,8 +1111,8 @@ class EmployeeContractController extends Controller
                         // 条件性打勾字段
                         'gender_male_check' => $this->isMaleGender($employee->gender) ? '√' : '',
                         'gender_female_check' => $this->isFemaleGender($employee->gender) ? '√' : '',
-                        'household_agricultural_check' => $employee->household_type === 'agricultural' ? '√' : '',
-                        'household_non_agricultural_check' => $employee->household_type === 'non_agricultural' ? '√' : '',
+                        'household_agricultural_check' => $this->isAgriculturalHousehold($employee->household_type) ? '√' : '',
+                        'household_non_agricultural_check' => $this->isNonAgriculturalHousehold($employee->household_type) ? '√' : '',
                         'hire_date' => $employee->hire_date?->format('Y-m-d'),
                         'contract_sign_date' => now()->format('Y-m-d'),
                         'contract_start_date' => $employee->contract_start_date?->format('Y-m-d'),
@@ -1130,6 +1131,7 @@ class EmployeeContractController extends Controller
                         'residence_address' => $employee->residence_address,
                         'contact_address' => $employee->contact_address,
                         'previous_company' => $employee->previous_company ?? '',
+                        'slash_placeholder' => '/',
                     ],
                     'contract_type' => $request->contract_type,
                     'notes' => $request->notes,
@@ -1177,13 +1179,25 @@ class EmployeeContractController extends Controller
     private function isMaleGender($gender): bool
     {
         $value = strtolower(trim((string)($gender ?? '')));
-        return in_array($value, ['male', 'm', '1', '男'], true);
+        return in_array($value, ['male', 'm', 'man', '1', '男', '男性'], true);
     }
 
     private function isFemaleGender($gender): bool
     {
         $value = strtolower(trim((string)($gender ?? '')));
-        return in_array($value, ['female', 'f', '2', '女'], true);
+        return in_array($value, ['female', 'f', 'woman', '2', '女', '女性'], true);
+    }
+
+    private function isAgriculturalHousehold($householdType): bool
+    {
+        $value = strtolower(trim((string)($householdType ?? '')));
+        return in_array($value, ['agricultural', 'rural', '农业', '农村', '非城镇'], true);
+    }
+
+    private function isNonAgriculturalHousehold($householdType): bool
+    {
+        $value = strtolower(trim((string)($householdType ?? '')));
+        return in_array($value, ['non_agricultural', 'urban', 'non-agricultural', '非农业', '城镇'], true);
     }
 
     /**

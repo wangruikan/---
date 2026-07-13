@@ -1047,7 +1047,7 @@ class EmployeeContractController extends Controller
             $employee = \App\Models\Employee::findOrFail($request->employee_id);
             
             // 验证员工是否属于该模板的项目
-            if (!$employee->project_ids || !in_array($template->project_id, $employee->project_ids)) {
+            if (!$employee->projects()->where('projects.id', $template->project_id)->exists()) {
                 return response()->json([
                     'success' => false,
                     'message' => '员工不属于该模板的项目'
@@ -1451,7 +1451,7 @@ class EmployeeContractController extends Controller
             \Log::info('storeWithTemplate: 员工信息', ['employee_id' => $employee->id, 'employee_name' => $employee->name]);
             
             // 验证员工是否属于该模板的项目
-            if (!$employee->project_ids || !in_array($template->project_id, $employee->project_ids)) {
+            if (!$employee->projects()->where('projects.id', $template->project_id)->exists()) {
                 \Log::warning('storeWithTemplate: 员工不属于模板项目', [
                     'employee_projects' => $employee->project_ids,
                     'template_project' => $template->project_id,

@@ -10469,6 +10469,7 @@ const showContractDialog = ref(false)
 const showUploadDialog = ref(false)
 const showUploadSignedDialog = ref(false)
 const currentEmployee = ref(null)
+const contractProjectId = ref(null)
 const contracts = ref([])
 const contractTableRef = ref()
 const contractSelection = ref([])
@@ -10604,6 +10605,7 @@ const handleContractManage = async (row) => {
   console.log('当前账套ID:', accountSetStore.currentAccountSetId)
   
   currentEmployee.value = row
+  contractProjectId.value = getDisplayProjects(row)[0]?.id || row.project_ids?.[0] || null
   showContractDialog.value = true
   await loadEmployeeContracts(row.id)
 }
@@ -10924,17 +10926,14 @@ const handleContractTypeChange = async (contractType) => {
   
   if (!contractType || !currentEmployee.value) return
   
-  // 获取员工的项目
-  const employeeProjects = currentEmployee.value.project_ids || []
-  console.log('📋 员工项目列表:', employeeProjects)
-  
-  if (employeeProjects.length === 0) {
+  const projectId = contractProjectId.value
+  console.log('📋 合同所属项目:', projectId)
+
+  if (!projectId) {
     ElMessage.warning('该员工未分配项目，无法获取合同模板')
     return
   }
-  
-  // 获取第一个项目的所有模板
-  const projectId = employeeProjects[0]
+
   console.log('🎯 使用项目ID:', projectId)
   
   try {
@@ -11364,6 +11363,7 @@ const handleDeleteContract = async (contract) => {
 // 关闭合同管理对话框
 const handleContractDialogClose = () => {
   currentEmployee.value = null
+  contractProjectId.value = null
   contracts.value = []
   contractSelection.value = []
   showUploadDialog.value = false

@@ -746,7 +746,9 @@ class EmployeeController extends ApiController
     private function syncLargeMedicalWithMedical(array &$data, ?Employee $employee = null): void
     {
         $medicalRegionId = $this->normalizeInsuranceBindingId(
-            $data['medical_insurance_region_id'] ?? ($employee->medical_insurance_region_id ?? null)
+            array_key_exists('medical_insurance_region_id', $data)
+                ? $data['medical_insurance_region_id']
+                : ($employee->medical_insurance_region_id ?? null)
         );
 
         if (!$medicalRegionId) {
@@ -768,10 +770,12 @@ class EmployeeController extends ApiController
             return;
         }
 
-        $medicalEnrollmentDate = $data['medical_insurance_enrollment_date']
-            ?? ($employee->medical_insurance_enrollment_date ?? null);
-        $medicalBase = $data['medical_insurance_base']
-            ?? ($employee->medical_insurance_base ?? null);
+        $medicalEnrollmentDate = array_key_exists('medical_insurance_enrollment_date', $data)
+            ? $data['medical_insurance_enrollment_date']
+            : ($employee->medical_insurance_enrollment_date ?? null);
+        $medicalBase = array_key_exists('medical_insurance_base', $data)
+            ? $data['medical_insurance_base']
+            : ($employee->medical_insurance_base ?? null);
 
         $data['large_medical_insurance_config_id'] = $largeMedicalConfig->id;
         $data['large_medical_enrollment_date'] = $medicalEnrollmentDate ?: null;

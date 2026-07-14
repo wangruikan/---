@@ -108,7 +108,9 @@
             </el-tabs>
 
             <el-table 
+              ref="changeTableRef"
               :data="filteredChanges" 
+              :max-height="changeTableMaxHeight"
               v-loading="loading" 
               stripe
               @selection-change="handleTaskSelectionChange"
@@ -1801,7 +1803,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DocumentAdd, Download, Warning, Plus, Minus, Edit, InfoFilled, ArrowDown, ArrowRight, Check, Document } from '@element-plus/icons-vue'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -2089,6 +2091,21 @@ const detailSummaryRowClassName = ({ row }) => {
   return ''
 }
 
+const formatDisplayBase = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') {
+      continue
+    }
+
+    const amount = Number(value)
+    if (Number.isFinite(amount)) {
+      return amount.toFixed(2)
+    }
+  }
+
+  return '0.00'
+}
+
 const buildSocialSecurityDetailRow = (detail, serialNumber, typeLabel) => {
   const employee = detail.employee || {}
   const project = detail.project || {}
@@ -2119,8 +2136,16 @@ const buildSocialSecurityDetailRow = (detail, serialNumber, typeLabel) => {
     enrollment_date: formatEnrollmentDate(detail.social_insurance_enrollment_date || employee.social_insurance_enrollment_date || detail.created_at),
     type: typeLabel,
     period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
-    medical_base: detail.employee_medical_insurance_base || '0.00',
-    social_security_base: detail.employee_social_security_base || '0.00',
+    medical_base: formatDisplayBase(
+      detail.display_employee_medical_insurance_base,
+      employee.medical_insurance_base,
+      detail.employee_medical_insurance_base
+    ),
+    social_security_base: formatDisplayBase(
+      detail.display_employee_social_security_base,
+      employee.social_security_base,
+      detail.employee_social_security_base
+    ),
     social_security_total: socialSecurityTotal.toFixed(2),
     remarks: ''
   }
@@ -2260,7 +2285,11 @@ const housingFundDetails = computed(() => {
       enrollment_date: formatEnrollmentDate(detail.provident_fund_enrollment_date || employee.provident_fund_enrollment_date || detail.created_at),
       type: '正常',
       period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
-      housing_fund_base: detail.employee_housing_fund_base || '0.00',
+      housing_fund_base: formatDisplayBase(
+        detail.display_employee_housing_fund_base,
+        employee.housing_fund_base,
+        detail.employee_housing_fund_base
+      ),
       employee_housing_fund_base: detail.employee_housing_fund_base,
       ratio: totalRatio + '%',
       company_portion: companyPortion.toFixed(2),
@@ -2307,7 +2336,11 @@ const housingFundDetails = computed(() => {
       enrollment_date: formatEnrollmentDate(detail.provident_fund_enrollment_date || employee.provident_fund_enrollment_date || detail.created_at),
       type: '补交',
       period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
-      housing_fund_base: detail.employee_housing_fund_base || '0.00',
+      housing_fund_base: formatDisplayBase(
+        detail.display_employee_housing_fund_base,
+        employee.housing_fund_base,
+        detail.employee_housing_fund_base
+      ),
       employee_housing_fund_base: detail.employee_housing_fund_base,
       ratio: totalRatio + '%',
       company_portion: companyPortion.toFixed(2),
@@ -2497,6 +2530,8 @@ const housingFundCompensationDetails = computed(() => {
 // 响应式数据
 const activeTab = ref('changes')
 const changeStatusTab = ref('increase')
+const changeTableRef = ref(null)
+const changeTableMaxHeight = ref(360)
 const selectedProjectName = ref('')
 const detailScopedCategory = ref('')
 const detailActiveTab = ref('social') // 明细分类标签页
@@ -6551,9 +6586,24 @@ const getReplacedPersonName = (row) => {
   return null
 }
 
+const updateChangeTableMaxHeight = () => {
+  nextTick(() => {
+    if (activeTab.value !== 'changes') return
+
+    const tableElement = changeTableRef.value?.$el || changeTableRef.value
+    if (!tableElement?.getBoundingClientRect) return
+
+    const tableTop = tableElement.getBoundingClientRect().top
+    const availableHeight = document.documentElement.clientHeight - tableTop - 80
+    changeTableMaxHeight.value = Math.max(180, Math.floor(availableHeight))
+  })
+}
+
 // 监听标签页切换
 const handleTabChange = (tab) => {
-  if (tab === 'details') {
+  if (tab === 'changes') {
+    updateChangeTableMaxHeight()
+  } else if (tab === 'details') {
     loadActiveDetailData()
   } else if (tab === 'summaries') {
     loadSummaries()
@@ -6594,15 +6644,24 @@ watch(projectOptions, (options) => {
 
 watch(changeStatusTab, () => {
   selectedTasks.value = []
+  updateChangeTableMaxHeight()
 })
 
+watch(() => filteredChanges.value.length, updateChangeTableMaxHeight)
+
 onMounted(async () => {
+  window.addEventListener('resize', updateChangeTableMaxHeight)
   // 先加载各类地区配置
   await loadSocialSecurityRegions()
   await loadMedicalInsuranceRegions()
   await loadLargeMedicalConfigs()
   // 再加载参保人员列表
   await loadChanges()
+  updateChangeTableMaxHeight()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateChangeTableMaxHeight)
 })
 
 // ==================== 导出功能 ====================

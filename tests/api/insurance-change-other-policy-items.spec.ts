@@ -40,7 +40,7 @@ interface ChangeItem {
 let ctx: SeedContext;
 
 function mysqlArgs(sql: string): string[] {
-  const args = ['-N', '-B', '-h', DB_HOST, '-P', DB_PORT, '-u', DB_USERNAME];
+  const args = ['-N', '-B', '--default-character-set=utf8mb4', '-h', DB_HOST, '-P', DB_PORT, '-u', DB_USERNAME];
   if (DB_PASSWORD !== '') {
     args.push(`-p${DB_PASSWORD}`);
   }
@@ -415,7 +415,7 @@ function seedInsuranceChange(employeeId: number, employeeName: string): number {
     INSERT INTO insurance_changes (
       employee_id, employee_name, employee_id_number, employee_gender, employee_birth_date,
       employee_phone, employee_status, project_id, account_set_id, change_type, status,
-      fully_confirmed, other_insurance_processed, other_insurance_policies, change_summary,
+      task_month, fully_confirmed, other_insurance_processed, other_insurance_policies, change_summary,
       change_details, created_by, created_at, updated_at
     ) VALUES (
       ${employeeId},
@@ -429,6 +429,7 @@ function seedInsuranceChange(employeeId: number, employeeName: string): number {
       ${ctx.accountSetId},
       'increase',
       'pending',
+      DATE_FORMAT(CURDATE(), '%Y-%m'),
       0,
       0,
       ${sqlValue(JSON.stringify(policies))},

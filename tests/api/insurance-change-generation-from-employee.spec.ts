@@ -14,6 +14,10 @@ const USER_PASSWORD = process.env.E2E_INSURANCE_CHANGE_PASSWORD || 'Pass123456';
 
 const RUN_ID = String(Date.now());
 const PREFIX = `api-ins-gen-${RUN_ID}`;
+const TEST_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64'
+);
 
 interface SeedContext {
   userId: number;
@@ -35,7 +39,7 @@ interface SeedContext {
 let ctx: SeedContext;
 
 function mysqlArgs(sql: string): string[] {
-  const args = ['-N', '-B', '-h', DB_HOST, '-P', DB_PORT, '-u', DB_USERNAME];
+  const args = ['-N', '-B', '--default-character-set=utf8mb4', '-h', DB_HOST, '-P', DB_PORT, '-u', DB_USERNAME];
   if (DB_PASSWORD !== '') {
     args.push(`-p${DB_PASSWORD}`);
   }
@@ -94,6 +98,12 @@ function sqlValue(value: string | number | null): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 }
 
+function addOneMonth(yearMonth: string): string {
+  const [year, month] = yearMonth.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 function apiUrl(path: string): string {
   return `${BASE_URL}/${path.replace(/^\/+/, '')}`;
 }
@@ -124,6 +134,7 @@ function cleanupSeedData(): void {
   const policySubquery = `SELECT id FROM other_insurance_policies WHERE account_set_id IN (${accountSetSubquery})`;
 
   const statements = [
+    `DELETE FROM employee_contracts WHERE account_set_id IN (${accountSetSubquery})`,
     `DELETE FROM insurance_change_attachments WHERE insurance_change_id IN (${changeSubquery})`,
     `DELETE FROM insurance_change_items WHERE insurance_change_id IN (${changeSubquery})`,
     `DELETE FROM insurance_detail_records WHERE account_set_id IN (${accountSetSubquery})`,
@@ -672,10 +683,56 @@ async function processCategories(
   expect(body.success).toBe(true);
 }
 
-async function listVisibleChanges(request: APIRequestContext): Promise<any[]> {
+async function uploadGeneralAttachment(request: APIRequestContext, changeId: number): Promise<void> {
+  const response = await request.post(apiUrl(`insurance-changes/${changeId}/upload-attachment`), {
+    headers: authHeaders(),
+    multipart: {
+      'attachments[]': {
+        name: 'process-proof.png',
+        mimeType: 'image/png',
+        buffer: TEST_PNG,
+      },
+    },
+  });
+  const body = await response.json();
+  expect(response.status(), JSON.stringify(body)).toBe(200);
+  expect(body.success).toBe(true);
+}
+
+async function failCategories(
+  request: APIRequestContext,
+  changeId: number,
+  categories: string[]
+): Promise<void> {
+  const response = await request.put(apiUrl(`insurance-changes/${changeId}/confirm-process`), {
+    headers: authHeaders(),
+    data: { categories, result: 'failed' },
+  });
+  const body = await response.json();
+  expect(response.status(), JSON.stringify(body)).toBe(200);
+  expect(body.success).toBe(true);
+}
+
+function completeEmployeeContractBusiness(contractId: number): void {
+  const script = [
+    "require 'vendor/autoload.php';",
+    "$app = require 'bootstrap/app.php';",
+    "$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();",
+    `$contract = App\\Models\\EmployeeContract::findOrFail(${contractId});`,
+    'app(App\\Services\\ApprovalService::class)->handleEmployeeContractCompleted($contract);',
+  ].join(' ');
+
+  execFileSync('php', ['-r', script], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+async function listVisibleChanges(request: APIRequestContext, params: Record<string, string | number> = {}): Promise<any[]> {
   const response = await request.get(apiUrl('insurance-changes'), {
     headers: authHeaders(),
-    params: { account_set_id: ctx.accountSetId },
+    params: { account_set_id: ctx.accountSetId, ...params },
   });
   const body = await response.json();
   expect(response.status(), JSON.stringify(body)).toBe(200);
@@ -726,7 +783,7 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       ]
     );
 
-    const visible = await listVisibleChanges(request);
+    const visible = await listVisibleChanges(request, { status: 'pending' });
     expect(visible.some((item: any) => Number(item.id) === changeId)).toBe(true);
   });
 
@@ -858,6 +915,10 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       social_security: 'completed',
     });
 
+    let visible = await listVisibleChanges(request);
+    let visibleForEmployee = visible.filter((item: any) => item.employee_name === employeeName);
+    expect(visibleForEmployee.map((item: any) => Number(item.id))).toEqual([changeId]);
+
     await processCategories(request, changeId, ['housing_fund']);
     rows = getDbChangeRows(employeeId);
     expect(rows[0][2]).toBe('completed');
@@ -883,9 +944,259 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       social_security: 'pending',
     });
 
-    const visible = await listVisibleChanges(request);
+    visible = await listVisibleChanges(request);
+    visibleForEmployee = visible.filter((item: any) => item.employee_name === employeeName);
+    expect(visibleForEmployee.map((item: any) => Number(item.id))).toEqual([changeId]);
     const visibleChange = visible.find((item: any) => Number(item.id) === changeId);
     expect(visibleChange?.employee_name).toBe(employeeName);
+  });
+
+  test('同月社保已成功后补医保，应复用原任务且不重置社保', async ({ request }) => {
+    const employeeName = `${PREFIX}-社保成功后补医保`;
+    const employeeId = await createEmployee(request, {
+      ...baseEmployeePayload(12, employeeName),
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 6200,
+      social_insurance_enrollment_date: '2026-07-01',
+    });
+
+    const initialRows = getDbChangeRows(employeeId);
+    expect(initialRows).toHaveLength(1);
+    const changeId = Number(initialRows[0][0]);
+
+    let items = await syncAndGetItems(request, changeId);
+    expect(items.map((item: any) => item.category)).toEqual(['social_security']);
+
+    await processCategories(request, changeId, ['social_security']);
+    let rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0][2]).toBe('completed');
+    expect(Number(rows[0][11])).toBe(1);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      medical_insurance_region_id: ctx.medicalRegionId,
+      medical_insurance_base: 6300,
+      medical_insurance_enrollment_date: '2026-07-01',
+    });
+
+    rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0][0])).toBe(changeId);
+    expect(rows[0][2]).toBe('pending');
+    expect(Number(rows[0][3])).toBe(ctx.socialRegionId);
+    expect(Number(rows[0][4])).toBe(ctx.medicalRegionId);
+    expect(Number(rows[0][7])).toBe(ctx.largeMedicalConfigId);
+    expect(Number(rows[0][11])).toBe(0);
+
+    items = await syncAndGetItems(request, changeId);
+    expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
+      large_medical_insurance: 'completed',
+      medical_insurance: 'pending',
+      social_security: 'completed',
+    });
+
+    const visible = await listVisibleChanges(request, { status: 'pending' });
+    const visibleForEmployee = visible.filter((item: any) => item.employee_name === employeeName);
+    expect(visibleForEmployee.map((item: any) => Number(item.id))).toEqual([changeId]);
+  });
+
+  test('社保处理失败后，应生成下月续办任务', async ({ request }) => {
+    expect(columnExists('insurance_changes', 'task_month')).toBe(true);
+
+    const employeeName = `${PREFIX}-失败续办`;
+    const employeeId = await createEmployee(request, {
+      ...baseEmployeePayload(13, employeeName),
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 6400,
+      social_insurance_enrollment_date: '2026-07-01',
+    });
+
+    const initialRows = getDbChangeRows(employeeId);
+    expect(initialRows).toHaveLength(1);
+    const changeId = Number(initialRows[0][0]);
+    const taskMonth = queryRows(`
+      SELECT task_month
+      FROM insurance_changes
+      WHERE id = ${changeId}
+      LIMIT 1
+    `)[0][0];
+    const nextTaskMonth = addOneMonth(taskMonth);
+
+    await syncAndGetItems(request, changeId);
+    await uploadGeneralAttachment(request, changeId);
+    await failCategories(request, changeId, ['social_security']);
+
+    const changeRows = queryRows(`
+      SELECT id, change_type, status, task_month, change_summary, employee_name
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changeRows).toHaveLength(2);
+
+    const original = changeRows.find((row) => Number(row[0]) === changeId);
+    expect(original).toBeTruthy();
+    expect(original![1]).toBe('increase');
+    expect(original![2]).toBe('failed');
+    expect(original![3]).toBe(taskMonth);
+
+    const carryover = changeRows.find((row) => Number(row[0]) !== changeId);
+    expect(carryover).toBeTruthy();
+    const carryoverId = Number(carryover![0]);
+    expect(carryover![1]).toBe('increase');
+    expect(carryover![2]).toBe('pending');
+    expect(carryover![3]).toBe(nextTaskMonth);
+    expect(carryover![4]).toContain('社保');
+    expect(carryover![4]).toContain('下月续办');
+    expect(carryover![5]).toBe(employeeName);
+
+    let items = await syncAndGetItems(request, changeId);
+    expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
+      social_security: 'failed',
+    });
+
+    items = await syncAndGetItems(request, carryoverId);
+    expect(items.map((item: any) => item.category)).toEqual(['social_security']);
+    expect(items[0].status).toBe('pending');
+
+    const nextMonthResponse = await request.get(apiUrl('insurance-changes'), {
+      headers: authHeaders(),
+      params: { account_set_id: ctx.accountSetId, month: nextTaskMonth },
+    });
+    const nextMonthBody = await nextMonthResponse.json();
+    expect(nextMonthResponse.status(), JSON.stringify(nextMonthBody)).toBe(200);
+    expect(nextMonthBody.success).toBe(true);
+    const nextMonthForEmployee = nextMonthBody.data.filter((item: any) => item.employee_name === employeeName);
+    expect(nextMonthForEmployee.map((item: any) => Number(item.id))).toEqual([carryoverId]);
+  });
+
+  test('已参保人员档案移除保险信息，应生成一条减少任务并拆分对应险种', async ({ request }) => {
+    const employeeName = `${PREFIX}-档案移除参保`;
+    const employeeId = await createEmployee(request, {
+      ...baseEmployeePayload(14, employeeName),
+      ...fullInsurancePayload(),
+    });
+
+    const initialRows = getDbChangeRows(employeeId);
+    expect(initialRows).toHaveLength(1);
+    const increaseChangeId = Number(initialRows[0][0]);
+    const initialItems = await syncAndGetItems(request, increaseChangeId);
+    const pendingInitialCategories = initialItems
+      .filter((item: any) => ['pending', 'submitted'].includes(item.status))
+      .map((item: any) => item.category);
+    expectCategories(
+      pendingInitialCategories,
+      [
+        'social_security',
+        'medical_insurance',
+        'housing_fund',
+        `other_policy:${ctx.policyIds[0]}`,
+        `other_policy:${ctx.policyIds[1]}`,
+      ]
+    );
+
+    await processCategories(request, increaseChangeId, pendingInitialCategories);
+    let items = await syncAndGetItems(request, increaseChangeId);
+    expect(items.every((item: any) => item.status === 'completed')).toBe(true);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      social_security_region_id: null,
+      social_security_base: null,
+      social_insurance_enrollment_date: null,
+      medical_insurance_region_id: null,
+      medical_insurance_base: null,
+      medical_insurance_enrollment_date: null,
+      housing_fund_region_id: null,
+      housing_fund_config_id: null,
+      housing_fund_base: null,
+      provident_fund_enrollment_date: null,
+      other_insurance_policy_ids: [],
+    });
+
+    const rows = queryRows(`
+      SELECT id, change_type, status, employee_name
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(rows).toHaveLength(2);
+    expect(rows[0][1]).toBe('increase');
+    expect(rows[0][2]).toBe('completed');
+    expect(rows[1][1]).toBe('decrease');
+    expect(rows[1][2]).toBe('pending');
+    expect(rows[1][3]).toBe(employeeName);
+
+    const decreaseChangeId = Number(rows[1][0]);
+    items = await syncAndGetItems(request, decreaseChangeId);
+    expectCategories(
+      items.map((item: any) => item.category),
+      [
+        'social_security',
+        'medical_insurance',
+        'housing_fund',
+        'large_medical_insurance',
+        `other_policy:${ctx.policyIds[0]}`,
+        `other_policy:${ctx.policyIds[1]}`,
+      ]
+    );
+
+    const statusByCategory = Object.fromEntries(items.map((item: any) => [item.category, item.status]));
+    expect(statusByCategory.social_security).toBe('pending');
+    expect(statusByCategory.medical_insurance).toBe('pending');
+    expect(statusByCategory.housing_fund).toBe('pending');
+    expect(statusByCategory.large_medical_insurance).toBe('completed');
+    expect(statusByCategory[`other_policy:${ctx.policyIds[0]}`]).toBe('pending');
+    expect(statusByCategory[`other_policy:${ctx.policyIds[1]}`]).toBe('pending');
+
+    const visible = await listVisibleChanges(request, { status: 'pending' });
+    const visibleForEmployee = visible.filter((item: any) => item.employee_name === employeeName);
+    expect(visibleForEmployee.map((item: any) => Number(item.id))).toEqual([decreaseChangeId]);
+  });
+
+  test('参保明细应直接显示人员档案基数，未处理险种仍不生成缴费金额', async ({ request }) => {
+    const employeeId = await createEmployee(request, {
+      ...baseEmployeePayload(10, `${PREFIX}-基数直接展示`),
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 6100,
+      social_insurance_enrollment_date: '2026-07-01',
+      medical_insurance_region_id: ctx.medicalRegionId,
+      medical_insurance_base: 6200,
+      medical_insurance_enrollment_date: '2026-07-01',
+      housing_fund_region_id: ctx.housingRegionId,
+      housing_fund_config_id: ctx.housingConfigId,
+      housing_fund_base: 6300,
+      provident_fund_enrollment_date: '2026-07-01',
+    });
+
+    const rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    const changeId = Number(rows[0][0]);
+    await syncAndGetItems(request, changeId);
+    await processCategories(request, changeId, ['social_security']);
+
+    const response = await request.get(apiUrl('insurance-changes/details'), {
+      headers: authHeaders(),
+      params: { account_set_id: ctx.accountSetId },
+    });
+    const body = await response.json();
+    expect(response.status(), JSON.stringify(body)).toBe(200);
+    expect(body.success).toBe(true);
+
+    const detail = body.data.find((item: any) => Number(item.employee_id) === employeeId);
+    expect(detail).toBeTruthy();
+    expect(Number(detail.display_employee_social_security_base)).toBe(6100);
+    expect(Number(detail.display_employee_medical_insurance_base)).toBe(6200);
+    expect(Number(detail.display_employee_housing_fund_base)).toBe(6300);
+    expect(Number(detail.employee_medical_insurance_base)).toBe(0);
+    expect(Number(detail.employee_housing_fund_base)).toBe(0);
+    expect(Number(detail.medical_insurance_company_amount)).toBe(0);
+    expect(Number(detail.medical_insurance_employee_amount)).toBe(0);
   });
 
   test('只修改已有绑定的基数，在没有参保人员记录时仍应沉淀为待处理任务', async ({ request }) => {
@@ -1035,5 +1346,151 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
     expect(rightResponse.status(), JSON.stringify(rightBody)).toBe(200);
     expect(rightBody.success).toBe(true);
     expect(rightBody.data.some((item: any) => Number(item.id) === changeId)).toBe(true);
+  });
+
+  test('创建解除合同应立即生成减少任务，审批完成后不得再次触发', async ({ request }) => {
+    const employeeName = `${PREFIX}-创建离职合同即减保`;
+    const employeeId = await createEmployee(request, baseEmployeePayload(11, employeeName));
+
+    runSql(`
+      INSERT INTO insurance_personnel (
+        employee_id, employee_name, employee_id_number, employee_gender, employee_birth_date,
+        employee_status, project_id, account_set_id, social_security_region_id,
+        employee_social_security_base, social_security_types, status,
+        first_confirmation_date, last_updated_at, created_at, updated_at
+      ) VALUES (
+        ${employeeId},
+        ${sqlValue(employeeName)},
+        ${sqlValue(idNumber(11))},
+        1,
+        '1990-01-01',
+        1,
+        ${ctx.projectId},
+        ${ctx.accountSetId},
+        ${ctx.socialRegionId},
+        6000,
+        ${sqlValue(JSON.stringify([{ name: '养老保险', company_ratio: 0.16, employee_ratio: 0.08 }]))},
+        'active',
+        '2026-07-01',
+        NOW(),
+        NOW(),
+        NOW()
+      )
+    `);
+
+    const createContract = await request.post(apiUrl('employees/contracts'), {
+      headers: authHeaders(),
+      multipart: {
+        employee_id: String(employeeId),
+        current_account_set_id: String(ctx.accountSetId),
+        contract_type: 'termination',
+        termination_reason: '个人原因离职',
+        resignation_date: '2026-07-15',
+        stamp_method: 'online',
+        contract_file: {
+          name: `${PREFIX}-termination.pdf`,
+          mimeType: 'application/pdf',
+          buffer: Buffer.from('%PDF-1.4\n%%EOF\n'),
+        },
+      },
+    });
+    const contractBody = await createContract.json();
+    expect(createContract.status(), JSON.stringify(contractBody)).toBe(200);
+    expect(contractBody.success).toBe(true);
+    const contractId = Number(contractBody.data.id);
+
+    let changes = queryRows(`
+      SELECT id, change_type, status, notes
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changes).toHaveLength(1);
+    expect(changes[0][1]).toBe('decrease');
+    expect(changes[0][2]).toBe('pending');
+    expect(changes[0][3]).toBe('个人原因离职');
+
+    const decreaseChangeId = Number(changes[0][0]);
+    runSql(`
+      UPDATE insurance_changes
+      SET status = 'completed', fully_confirmed = 1, completed_at = NOW()
+      WHERE id = ${decreaseChangeId}
+    `);
+    runSql(`UPDATE employee_contracts SET status = 'completed' WHERE id = ${contractId}`);
+
+    completeEmployeeContractBusiness(contractId);
+
+    changes = queryRows(`
+      SELECT id, change_type, status
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changes).toEqual([[String(decreaseChangeId), 'decrease', 'completed']]);
+
+    const employeeStatus = queryRows(`
+      SELECT contract_status, personnel_status
+      FROM employees
+      WHERE id = ${employeeId}
+    `);
+    expect(employeeStatus).toEqual([['terminated', 'resigned']]);
+  });
+
+  test('创建退休合同应立即生成减少任务', async ({ request }) => {
+    const employeeName = `${PREFIX}-创建退休合同即减保`;
+    const employeeId = await createEmployee(request, {
+      ...baseEmployeePayload(15, employeeName),
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 6000,
+      social_insurance_enrollment_date: '2026-07-01',
+    });
+
+    const increaseRows = getDbChangeRows(employeeId);
+    expect(increaseRows).toHaveLength(1);
+    const increaseChangeId = Number(increaseRows[0][0]);
+    await syncAndGetItems(request, increaseChangeId);
+    await processCategories(request, increaseChangeId, ['social_security']);
+
+    const createContract = await request.post(apiUrl('employees/contracts'), {
+      headers: authHeaders(),
+      multipart: {
+        employee_id: String(employeeId),
+        current_account_set_id: String(ctx.accountSetId),
+        contract_type: 'retirement',
+        termination_reason: '退休',
+        resignation_date: '2026-07-31',
+        stamp_method: 'online',
+        contract_file: {
+          name: `${PREFIX}-retirement.pdf`,
+          mimeType: 'application/pdf',
+          buffer: Buffer.from('%PDF-1.4\n%%EOF\n'),
+        },
+      },
+    });
+    const contractBody = await createContract.json();
+    expect(createContract.status(), JSON.stringify(contractBody)).toBe(200);
+    expect(contractBody.success).toBe(true);
+
+    const changes = queryRows(`
+      SELECT id, change_type, status, notes
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changes).toHaveLength(2);
+    expect(changes[0][1]).toBe('increase');
+    expect(changes[0][2]).toBe('completed');
+    expect(changes[1][1]).toBe('decrease');
+    expect(changes[1][2]).toBe('pending');
+    expect(changes[1][3]).toBe('退休');
+
+    const decreaseItems = await syncAndGetItems(request, Number(changes[1][0]));
+    expect(decreaseItems.map((item: any) => item.category)).toEqual(['social_security']);
   });
 });

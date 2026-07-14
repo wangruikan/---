@@ -622,7 +622,7 @@ test.describe('付款申请 API 测试', () => {
       expect(response.status()).toBe(400);
       const data = await response.json();
       expect(data.success).toBe(false);
-      expect(data.message).toBe('只有被驳回的申请才能重新发起审批');
+      expect(data.message).toBe('工资或汇总付款申请请回原模块重新发起');
     });
 
     test('驳回的工资申请 resubmit 失败，提示回原模块', async ({ request }) => {

@@ -160,7 +160,7 @@ test.describe('参保增减 - 子任务分险种确认', () => {
         'other_insurance',
       ];
       for (const item of data.data) {
-        expect(allowed).toContain(item.category);
+        expect(allowed.includes(item.category) || /^other_policy:\d+$/.test(item.category)).toBe(true);
       }
     });
 

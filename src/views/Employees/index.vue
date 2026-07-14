@@ -560,6 +560,7 @@
       v-model="showCreateDialog"
       :title="isViewMode ? '查看员工' : (isEdit ? '编辑员工' : '新增员工')"
       width="1000px"
+      @opened="handleEmployeeDialogOpened"
       @close="handleDialogClose"
     >
       <el-tabs v-model="activeTab" v-if="isEdit || isViewMode">
@@ -880,6 +881,8 @@
           </el-col>
         </el-row>
 
+        <Teleport v-if="taxProfileFieldsReady" to="#employee-tax-profile-target">
+        <div class="employee-tax-profile-fields">
         <!-- 一、基础身份信息 -->
         <el-divider content-position="left">基础身份信息</el-divider>
         <el-row :gutter="30">
@@ -1430,7 +1433,13 @@
               <el-switch v-model="form.is_elderly_alone" :disabled="isViewMode" />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+        </el-row>
+        </div>
+        </Teleport>
+
+        <el-divider content-position="left">表单设置</el-divider>
+        <el-row :gutter="30">
+          <el-col :span="12">
             <el-form-item label="跳过小程序表单" prop="skip_form_filling">
               <el-switch v-model="form.skip_form_filling" :disabled="isViewMode" />
               <div class="form-tip" style="color: #909399;">开启后生成工资表时不校验表单填写</div>
@@ -1698,6 +1707,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="涉税与投资" name="tax-investment">
+          <div id="employee-tax-profile-target"></div>
           <el-form
             :model="form"
             :rules="formRules"
@@ -6045,6 +6055,7 @@ const formatDateForDisplay = (date) => {
 const loading = ref(false)
 const submitting = ref(false)
 const showCreateDialog = ref(false)
+const taxProfileFieldsReady = ref(false)
 const isEdit = ref(false)
 const skipDraftSaveOnClose = ref(false)
 const employeeStickyPanelRef = ref(null)
@@ -10206,6 +10217,8 @@ const fillSampleData = () => {
 }
 
 const handleDialogClose = () => {
+  taxProfileFieldsReady.value = false
+
   if (skipDraftSaveOnClose.value) {
     skipDraftSaveOnClose.value = false
     resetDialogState({ closeDialog: false })
@@ -10233,6 +10246,10 @@ const handleDialogClose = () => {
     if (!isEdit.value && !isViewMode.value) employeeDraft.save()
     resetDialogState()
   }
+}
+
+const handleEmployeeDialogOpened = () => {
+  taxProfileFieldsReady.value = true
 }
 
 const handleResetCreateForm = () => {

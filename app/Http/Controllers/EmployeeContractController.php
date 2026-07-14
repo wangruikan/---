@@ -984,6 +984,7 @@ class EmployeeContractController extends Controller
             ]);
 
             $this->syncEmployeeResignationDate($request);
+            app(ApprovalService::class)->handleEmployeeContractCreated($contract);
 
             \Log::info('storeWithFile: 完成', [
                 'contract_id' => $contract->id,
@@ -1394,6 +1395,7 @@ class EmployeeContractController extends Controller
             ]);
 
             $this->syncEmployeeResignationDate($request, $employee);
+            app(ApprovalService::class)->handleEmployeeContractCreated($contract);
 
             \Log::info('saveFilledContract: 完成', [
                 'contract_id' => $contract->id,
@@ -1535,6 +1537,7 @@ class EmployeeContractController extends Controller
             ]);
 
             $this->syncEmployeeResignationDate($request, $employee);
+            app(ApprovalService::class)->handleEmployeeContractCreated($contract);
 
             \Log::info('storeWithTemplate: 完成', [
                 'contract_id' => $contract->id,
@@ -1715,6 +1718,7 @@ class EmployeeContractController extends Controller
 
             $contract = EmployeeContract::create($contractData);
             $this->syncEmployeeResignationDate($request, $employee);
+            app(ApprovalService::class)->handleEmployeeContractCreated($contract);
 
             if ($targetStatus === 'completed') {
                 app(ApprovalService::class)->handleEmployeeContractCompleted($contract);

@@ -1322,6 +1322,19 @@ class ApprovalService
         }
     }
 
+    public function handleEmployeeContractCreated(EmployeeContract $contract): void
+    {
+        $employeeStatus = match ($contract->contract_type) {
+            'termination' => 'terminated',
+            'retirement' => 'retired',
+            default => null,
+        };
+
+        if ($employeeStatus !== null) {
+            $this->autoCreateDecreaseInsuranceRecord($contract, $employeeStatus);
+        }
+    }
+
     public function handleEmployeeContractCompleted(EmployeeContract $contract): void
     {
         $employee = \App\Models\Employee::find($contract->employee_id);
@@ -1375,7 +1388,6 @@ class ApprovalService
                 'has_termination_date_field' => $hasTerminationDate
             ]);
 
-            $this->autoCreateDecreaseInsuranceRecord($contract, 'terminated');
             $this->returnOtherInsuranceQuota($contract, $employee);
             $this->deleteEmployeeCompensationRecords($employee->id);
             return;
@@ -1440,7 +1452,6 @@ class ApprovalService
             'contract_status_raw' => $employee->getAttributes()['contract_status'] ?? 'N/A'
         ]);
 
-        $this->autoCreateDecreaseInsuranceRecord($contract, 'retired');
         $this->returnOtherInsuranceQuota($contract, $employee);
         $this->deleteEmployeeCompensationRecords($employee->id);
     }

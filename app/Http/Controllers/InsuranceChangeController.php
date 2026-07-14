@@ -443,6 +443,9 @@ class InsuranceChangeController extends ApiController
             'employee_social_security_base' => $record->employee_social_security_base,
             'employee_medical_insurance_base' => $record->employee_medical_insurance_base,
             'employee_housing_fund_base' => $record->employee_housing_fund_base,
+            'display_employee_social_security_base' => $record->employee_social_security_base,
+            'display_employee_medical_insurance_base' => $record->employee_medical_insurance_base,
+            'display_employee_housing_fund_base' => $record->employee_housing_fund_base,
             'employee_large_medical_base' => $record->employee_large_medical_base,
             
             // ⚠️ 重要：保持与实时数据相同的结构
@@ -708,6 +711,9 @@ class InsuranceChangeController extends ApiController
             'employee_medical_insurance_base' => $hasMedicalInsurance ? $medicalBase : 0,
             'employee_social_security_base' => $hasSocialSecurity ? $pensionBase : 0,
             'employee_housing_fund_base' => $hasHousingFund ? $housingFundBase : 0,
+            'display_employee_medical_insurance_base' => $employee->medical_insurance_base ?? $medicalBase,
+            'display_employee_social_security_base' => $employee->social_security_base ?? $pensionBase,
+            'display_employee_housing_fund_base' => $employee->housing_fund_base ?? $housingFundBase,
             'employee_large_medical_base' => $hasLargeMedical ? $largeMedicalBase : 0,
             'employee_large_medical_company_base' => $hasLargeMedical ? $largeMedicalCompanyBase : 0,
             'medical_insurance_company_amount' => $medicalCompanyAmount,
@@ -875,6 +881,7 @@ class InsuranceChangeController extends ApiController
         );
 
         // 构建明细数据
+        $employee = $personnel->employee;
         $detail = [
             'id' => $personnel->id,
             'employee_id' => $personnel->employee_id,
@@ -896,6 +903,9 @@ class InsuranceChangeController extends ApiController
             'employee_medical_insurance_base' => $hasMedicalInsurance ? $medicalBase : 0,
             'employee_social_security_base' => $hasSocialSecurity ? $pensionBase : 0,
             'employee_housing_fund_base' => $hasHousingFund ? $housingFundBase : 0,
+            'display_employee_medical_insurance_base' => $employee->medical_insurance_base ?? $medicalBase,
+            'display_employee_social_security_base' => $employee->social_security_base ?? $pensionBase,
+            'display_employee_housing_fund_base' => $employee->housing_fund_base ?? $housingFundBase,
             'employee_large_medical_base' => $hasLargeMedical ? $largeMedicalBase : 0,
             'employee_large_medical_company_base' => $hasLargeMedical ? $largeMedicalCompanyBase : 0,
             'medical_insurance_company_amount' => $medicalCompanyAmount,

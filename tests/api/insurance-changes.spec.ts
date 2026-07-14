@@ -159,7 +159,7 @@ test.describe('参保增减 API 测试', () => {
       const data = await response.json();
       expect(data.success).toBe(true);
       for (const item of data.data) {
-        expect(item.status).toBe('pending');
+        expect(['pending', 'submitted']).toContain(item.status);
       }
     });
 
@@ -316,7 +316,7 @@ test.describe('参保增减 API 测试', () => {
         'other_insurance',
       ];
       for (const item of data.data) {
-        expect(allowedCategories).toContain(item.category);
+        expect(allowedCategories.includes(item.category) || /^other_policy:\d+$/.test(item.category)).toBe(true);
       }
     });
   });

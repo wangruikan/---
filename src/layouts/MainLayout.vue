@@ -89,7 +89,7 @@
         </div>
         
         <!-- 主内容 -->
-        <el-main class="main-content">
+        <el-main ref="mainContentRef" class="main-content">
           <router-view v-slot="{ Component, route }">
             <keep-alive :max="20">
               <component
@@ -184,7 +184,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -203,6 +203,11 @@ const router = useRouter()
 const userStore = useUserStore()
 const accountSetStore = useAccountSetStore()
 const permissionStore = usePermissionStore()
+
+const mainContentRef = ref()
+let viewportTableObserver = null
+let viewportTableFrame = null
+let viewportTableScrollContainer = null
 
 const showNotifications = ref(false)
 const notifications = ref([])
@@ -259,6 +264,120 @@ const viewRenderKey = computed(() => `${route.name || route.path}:${accountSetSt
 const canAccessAccountSets = computed(() => {
   return userStore.userInfo?.role === 'admin' || permissionStore.hasModuleAccess('account_sets')
 })
+
+const getMainContentElement = () => mainContentRef.value?.$el || mainContentRef.value
+
+const getTrailingTableContentHeight = (table, mainContent) => {
+  const tableBottom = table.getBoundingClientRect().bottom
+  let furthestContentBottom = tableBottom
+  let currentElement = table
+
+  while (currentElement.parentElement && currentElement.parentElement !== mainContent) {
+    let sibling = currentElement.nextElementSibling
+    while (sibling) {
+      const siblingStyle = getComputedStyle(sibling)
+      const siblingRect = sibling.getBoundingClientRect()
+      const isVisible = siblingStyle.display !== 'none'
+        && siblingStyle.visibility !== 'hidden'
+        && siblingRect.width > 0
+        && siblingRect.height > 0
+      const isInNormalFlow = !['absolute', 'fixed'].includes(siblingStyle.position)
+
+      if (isVisible && isInNormalFlow) {
+        furthestContentBottom = Math.max(furthestContentBottom, siblingRect.bottom)
+      }
+      sibling = sibling.nextElementSibling
+    }
+    currentElement = currentElement.parentElement
+  }
+
+  return Math.max(40, furthestContentBottom - tableBottom + 40)
+}
+
+const updateViewportTableHeights = () => {
+  const mainContent = getMainContentElement()
+  if (!mainContent) return
+
+  const viewportBottom = Math.min(window.innerHeight, mainContent.getBoundingClientRect().bottom)
+  const mainContentPaddingBottom = Number.parseFloat(getComputedStyle(mainContent).paddingBottom) || 0
+
+  mainContent.querySelectorAll('.el-table').forEach((table) => {
+    const isNestedTable = Boolean(table.parentElement?.closest('.el-table'))
+    const isOverlayTable = Boolean(table.closest('.el-dialog, .el-drawer, .el-popover'))
+    const isVisible = table.offsetParent !== null && table.getClientRects().length > 0
+    if (isNestedTable || isOverlayTable || !isVisible) return
+
+    const isManaged = table.dataset.viewportListTable === 'true'
+    if (!isManaged && (table.style.height || table.style.maxHeight)) return
+
+    const innerWrapper = Array.from(table.children).find((child) => child.classList.contains('el-table__inner-wrapper'))
+    const headerWrapper = innerWrapper?.querySelector('.el-table__header-wrapper')
+    const bodyScroller = innerWrapper?.querySelector('.el-table__body-wrapper .el-scrollbar__wrap')
+    if (!headerWrapper || !bodyScroller) return
+
+    const tableRect = table.getBoundingClientRect()
+    const trailingContentHeight = getTrailingTableContentHeight(table, mainContent)
+    const footerHeight = innerWrapper.querySelector('.el-table__footer-wrapper')?.getBoundingClientRect().height || 0
+    const availableTableHeight = viewportBottom
+      - tableRect.top
+      - trailingContentHeight
+      - mainContentPaddingBottom
+      - 2
+    const bodyMaxHeight = Math.max(
+      120,
+      Math.floor(availableTableHeight - headerWrapper.getBoundingClientRect().height - footerHeight)
+    )
+    const nextHeight = `${bodyMaxHeight}px`
+
+    table.dataset.viewportListTable = 'true'
+    if (table.style.getPropertyValue('--viewport-list-body-max-height') !== nextHeight) {
+      table.style.setProperty('--viewport-list-body-max-height', nextHeight)
+    }
+  })
+}
+
+const scheduleViewportTableUpdate = () => {
+  if (viewportTableFrame !== null) {
+    window.cancelAnimationFrame(viewportTableFrame)
+  }
+
+  viewportTableFrame = window.requestAnimationFrame(() => {
+    viewportTableFrame = null
+    updateViewportTableHeights()
+  })
+}
+
+const initializeViewportTables = async () => {
+  await nextTick()
+  const mainContent = getMainContentElement()
+  if (!mainContent) return
+
+  viewportTableObserver = new MutationObserver(scheduleViewportTableUpdate)
+  viewportTableObserver.observe(mainContent, {
+    subtree: true,
+    childList: true
+  })
+
+  viewportTableScrollContainer = mainContent.closest('.main-container')
+  mainContent.addEventListener('click', scheduleViewportTableUpdate, true)
+  viewportTableScrollContainer?.addEventListener('scroll', scheduleViewportTableUpdate, { passive: true })
+  window.addEventListener('resize', scheduleViewportTableUpdate)
+  scheduleViewportTableUpdate()
+}
+
+const destroyViewportTables = () => {
+  viewportTableObserver?.disconnect()
+  viewportTableObserver = null
+  getMainContentElement()?.removeEventListener('click', scheduleViewportTableUpdate, true)
+  viewportTableScrollContainer?.removeEventListener('scroll', scheduleViewportTableUpdate)
+  viewportTableScrollContainer = null
+  window.removeEventListener('resize', scheduleViewportTableUpdate)
+
+  if (viewportTableFrame !== null) {
+    window.cancelAnimationFrame(viewportTableFrame)
+    viewportTableFrame = null
+  }
+}
 
 const buildVisitedTab = (targetRoute) => {
   if (!targetRoute || !targetRoute.path) return null
@@ -515,6 +634,7 @@ const handleOpenAccountSetManagement = () => {
 
 onMounted(async () => {
   document.body.classList.add('with-fixed-sidebar-layout')
+  initializeViewportTables()
 
   loadNotifications()
   
@@ -530,6 +650,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.body.classList.remove('with-fixed-sidebar-layout')
+  destroyViewportTables()
 })
 
 watch(() => accountSetStore.currentAccountSet?.id, (accountSetId) => {
@@ -550,6 +671,7 @@ watch(
   () => route.fullPath,
   () => {
     addVisitedTab(route)
+    nextTick(scheduleViewportTableUpdate)
   },
   { immediate: true }
 )
@@ -721,6 +843,12 @@ watch(
 .main-content {
   background: #f0f2f5;
   padding: 20px;
+}
+
+.main-content :deep([data-viewport-list-table="true"] > .el-table__inner-wrapper > .el-table__body-wrapper .el-scrollbar__wrap) {
+  max-height: var(--viewport-list-body-max-height) !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
 }
 
 .notification-list {

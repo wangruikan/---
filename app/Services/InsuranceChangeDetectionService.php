@@ -126,6 +126,7 @@ class InsuranceChangeDetectionService
                     [
                         'project_id' => $projectId,
                         'source' => $source,
+                        'task_month' => sprintf('%04d-%02d', (int) $year, (int) $month),
                     ]
                 );
 
@@ -365,8 +366,9 @@ class InsuranceChangeDetectionService
             return null;
         }
 
+        $taskMonth = $options['task_month'] ?? now()->format('Y-m');
         $details = $this->buildTaskChangeDetails($changeType, $taskAction);
-        $existingRecord = $this->findReusableOpenRelationTask($employee, $project, $taskAction);
+        $existingRecord = $this->findReusableMonthlyTask($employee, $project, $taskAction, $taskMonth);
 
         if ($existingRecord) {
             $details = $this->mergeTaskChangeDetails($existingRecord->parseChangeDetails(), $details);
@@ -377,6 +379,7 @@ class InsuranceChangeDetectionService
             'task_action' => $taskAction,
             'change_type' => $changeType,
             'change_summary' => null,
+            'task_month' => $taskMonth,
             'change_details' => json_encode([
                 'change_type' => $changeType,
                 'change_time' => now()->format('Y-m-d H:i:s'),
@@ -446,6 +449,10 @@ class InsuranceChangeDetectionService
             'change_summary' => $options['change_summary'] ?? null,
             'change_details' => $options['change_details'] ?? null,
         ]);
+
+        if (InsuranceChange::supportsTaskMonth()) {
+            $change->task_month = $options['task_month'] ?? now()->format('Y-m');
+        }
 
         $this->fillChangeSnapshotsFromState($change, $employee, $project, $personnel);
 
@@ -684,19 +691,27 @@ class InsuranceChangeDetectionService
         return array_values($merged);
     }
 
-    private function findReusableOpenRelationTask(Employee $employee, Project $project, string $taskAction): ?InsuranceChange
+    private function findReusableMonthlyTask(
+        Employee $employee,
+        Project $project,
+        string $taskAction,
+        string $taskMonth
+    ): ?InsuranceChange
     {
-        return InsuranceChange::query()
+        $query = InsuranceChange::query()
             ->where('employee_id', $employee->id)
             ->where('project_id', $project->id)
             ->where('account_set_id', $employee->account_set_id)
-            ->where('change_type', $taskAction)
-            ->whereIn('status', InsuranceChange::OPEN_STATUSES)
-            ->where(function ($query) {
-                $query->whereNull('change_summary')->orWhere('change_summary', '');
-            })
-            ->orderByDesc('id')
-            ->first();
+            ->where('change_type', $taskAction);
+
+        if (InsuranceChange::supportsTaskMonth()) {
+            $query->where('task_month', $taskMonth);
+        } else {
+            [$year, $month] = array_map('intval', explode('-', $taskMonth, 2));
+            $query->whereYear('created_at', $year)->whereMonth('created_at', $month);
+        }
+
+        return $query->orderByDesc('id')->first();
     }
 
     private function getAffectedEmployees($changeType, $regionId = null)
@@ -824,12 +839,8 @@ class InsuranceChangeDetectionService
                 return null;
             }
 
-            // 优先复用员工在该项目/账套下最新未完成的增减记录，不再按月份强制拆单
-            $existingRecord = InsuranceChange::findLatestOpenChange(
-                (int) $employee->id,
-                (int) $project->id,
-                (int) $employee->account_set_id
-            );
+            $taskMonth = sprintf('%04d-%02d', (int) $year, (int) $month);
+            $existingRecord = $this->findReusableMonthlyTask($employee, $project, 'increase', $taskMonth);
 
             if ($existingRecord) {
                 // 更新现有记录 - 合并变更详情而不是覆盖
@@ -875,6 +886,7 @@ class InsuranceChangeDetectionService
                 
                 $updatePayload = [
                     'status' => 'pending',
+                    'employee_name' => $employee->name,
                     'change_summary' => $changeSummary,
                     'change_details' => json_encode([
                         'change_type' => $changeType,
@@ -909,7 +921,7 @@ class InsuranceChangeDetectionService
                 $changeDetailsData = $this->generateChangeDetails($changeType, $oldData, $newData);
                 $changeDetails = $changeDetailsData['changes'] ?? [];
                 
-                $insuranceChange = InsuranceChange::create([
+                $createPayload = [
                     'employee_id' => $employee->id,
                     'employee_name' => $employee->name,
                     'employee_id_number' => $employee->id_number,
@@ -942,7 +954,13 @@ class InsuranceChangeDetectionService
                     'created_by' => 1, // 系统自动创建
                     'created_at' => now(),
                     'updated_at' => now()
-                ]);
+                ];
+
+                if (InsuranceChange::supportsTaskMonth()) {
+                    $createPayload['task_month'] = $taskMonth;
+                }
+
+                $insuranceChange = InsuranceChange::create($createPayload);
 
                 // 生成保险配置快照
                 $insuranceChange->saveCompleteInsuranceConfig();

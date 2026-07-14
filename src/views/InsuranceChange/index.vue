@@ -114,7 +114,11 @@
               @selection-change="handleTaskSelectionChange"
             >
               <el-table-column type="selection" width="55" :selectable="isTaskSelectable" />
-              <el-table-column prop="employee.name" label="员工姓名" width="120" />
+              <el-table-column label="员工姓名" width="120">
+                <template #default="{ row }">
+                  {{ row.employee?.name || row.employee_name || '-' }}
+                </template>
+              </el-table-column>
               <el-table-column label="增减类型" width="100">
                 <template #default="{ row }">
                   <el-tag v-if="row.change_type === 'decrease'" type="danger">

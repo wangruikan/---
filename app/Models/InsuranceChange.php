@@ -1543,9 +1543,11 @@ class InsuranceChange extends Model
     {
         $payload = [
             'status' => 'pending',
+            'fully_confirmed' => false,
             'submitted_at' => null,
             'processed_at' => null,
             'completed_at' => null,
+            'processed_by' => null,
         ];
 
         if ($resetOtherInsuranceProcessed) {

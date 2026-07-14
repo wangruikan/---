@@ -21,9 +21,12 @@ interface SeedContext {
   accountSetId: number;
   projectId: number;
   socialRegionId: number;
+  alternativeSocialRegionId: number;
   medicalRegionId: number;
   housingRegionId: number;
   housingConfigId: number;
+  alternativeHousingRegionId: number;
+  alternativeHousingConfigId: number;
   largeMedicalConfigId: number;
   policyIds: number[];
   token: string;
@@ -281,6 +284,41 @@ async function seedBaseData(request: APIRequestContext): Promise<SeedContext> {
   `);
 
   runSql(`
+    INSERT INTO social_security_regions (
+      name, code, company, min_base_amount, max_base_amount, account_set_id, created_by, created_at, updated_at
+    ) VALUES (
+      ${sqlValue(`${PREFIX}-社保地区B`)},
+      ${sqlValue(`${PREFIX}-SS-B`)},
+      ${sqlValue(`${PREFIX}-公司`)},
+      1000,
+      30000,
+      ${accountSetId},
+      ${userId},
+      NOW(),
+      NOW()
+    )
+  `);
+  const alternativeSocialRegionId = querySingleNumber(
+    `SELECT id FROM social_security_regions WHERE code = ${sqlValue(`${PREFIX}-SS-B`)} LIMIT 1`
+  );
+  runSql(`
+    INSERT INTO social_security_types (
+      region_id, name, base_amount, min_base_amount, max_base_amount, employee_ratio, company_ratio, created_by, created_at, updated_at
+    ) VALUES (
+      ${alternativeSocialRegionId},
+      ${sqlValue(`${PREFIX}-养老B`)},
+      6500,
+      1000,
+      30000,
+      0.0900,
+      0.1700,
+      ${userId},
+      NOW(),
+      NOW()
+    )
+  `);
+
+  runSql(`
     INSERT INTO medical_insurance_regions (
       name, code, company, min_base_amount, max_base_amount, account_set_id, created_by, created_at, updated_at
     ) VALUES (
@@ -352,6 +390,45 @@ async function seedBaseData(request: APIRequestContext): Promise<SeedContext> {
   `);
   const housingConfigId = querySingleNumber(
     `SELECT id FROM housing_fund_configs WHERE config_name = ${sqlValue(`${PREFIX}-公积金配置`)} LIMIT 1`
+  );
+
+  runSql(`
+    INSERT INTO housing_fund_regions (
+      region_name, account_number, company_name, account_set_id, created_by, created_at, updated_at
+    ) VALUES (
+      ${sqlValue(`${PREFIX}-公积金地区B`)},
+      ${sqlValue(`${PREFIX}-HF-B`)},
+      ${sqlValue(`${PREFIX}-公司`)},
+      ${accountSetId},
+      ${userId},
+      NOW(),
+      NOW()
+    )
+  `);
+  const alternativeHousingRegionId = querySingleNumber(
+    `SELECT id FROM housing_fund_regions WHERE account_number = ${sqlValue(`${PREFIX}-HF-B`)} LIMIT 1`
+  );
+  runSql(`
+    INSERT INTO housing_fund_configs (
+      region_id, config_name, base_amount, min_base_amount, max_base_amount, employee_ratio, company_ratio,
+      is_default, account_set_id, created_by, created_at, updated_at
+    ) VALUES (
+      ${alternativeHousingRegionId},
+      ${sqlValue(`${PREFIX}-公积金配置B`)},
+      6500,
+      1000,
+      30000,
+      0.0800,
+      0.0800,
+      0,
+      ${accountSetId},
+      ${userId},
+      NOW(),
+      NOW()
+    )
+  `);
+  const alternativeHousingConfigId = querySingleNumber(
+    `SELECT id FROM housing_fund_configs WHERE config_name = ${sqlValue(`${PREFIX}-公积金配置B`)} LIMIT 1`
   );
 
   runSql(`
@@ -450,9 +527,9 @@ async function seedBaseData(request: APIRequestContext): Promise<SeedContext> {
       '2026-01-01',
       'current',
       'current',
-      ${sqlValue(JSON.stringify([socialRegionId]))},
+      ${sqlValue(JSON.stringify([socialRegionId, alternativeSocialRegionId]))},
       ${sqlValue(JSON.stringify([medicalRegionId]))},
-      ${sqlValue(JSON.stringify([housingRegionId]))},
+      ${sqlValue(JSON.stringify([housingRegionId, alternativeHousingRegionId]))},
       0,
       0,
       0,
@@ -480,9 +557,12 @@ async function seedBaseData(request: APIRequestContext): Promise<SeedContext> {
     accountSetId,
     projectId,
     socialRegionId,
+    alternativeSocialRegionId,
     medicalRegionId,
     housingRegionId,
     housingConfigId,
+    alternativeHousingRegionId,
+    alternativeHousingConfigId,
     largeMedicalConfigId,
     policyIds,
     token: loginResult.token,
@@ -550,7 +630,7 @@ function getDbChangeRows(employeeId: number): string[][] {
   return queryRows(`
     SELECT id, change_type, status, social_security_region_id, medical_insurance_region_id,
            housing_fund_region_id, housing_fund_config_id, large_medical_insurance_config_id,
-           other_insurance_policies, change_details
+           other_insurance_policies, change_details, employee_name, fully_confirmed
     FROM insurance_changes
     WHERE employee_id = ${employeeId}
       AND project_id = ${ctx.projectId}
@@ -576,6 +656,20 @@ async function syncAndGetItems(request: APIRequestContext, changeId: number): Pr
   expect(response.status(), JSON.stringify(body)).toBe(200);
   expect(body.success).toBe(true);
   return body.data;
+}
+
+async function processCategories(
+  request: APIRequestContext,
+  changeId: number,
+  categories: string[]
+): Promise<void> {
+  const response = await request.put(apiUrl(`insurance-changes/${changeId}/confirm-process`), {
+    headers: authHeaders(),
+    data: { categories, result: 'success' },
+  });
+  const body = await response.json();
+  expect(response.status(), JSON.stringify(body)).toBe(200);
+  expect(body.success).toBe(true);
 }
 
 async function listVisibleChanges(request: APIRequestContext): Promise<any[]> {
@@ -715,6 +809,83 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       items.map((item: any) => item.category),
       ['social_security', 'medical_insurance', 'large_medical_insurance']
     );
+  });
+
+  test('同月部分险种已成功后修改其他险种，应复用原任务并只重置发生变化的险种', async ({ request }) => {
+    const employeeName = `${PREFIX}-同月复用任务`;
+    const employeeId = await createEmployee(request, {
+      ...baseEmployeePayload(9, employeeName),
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 6000,
+      social_insurance_enrollment_date: '2026-07-01',
+      housing_fund_region_id: ctx.housingRegionId,
+      housing_fund_config_id: ctx.housingConfigId,
+      housing_fund_base: 6000,
+      provident_fund_enrollment_date: '2026-07-01',
+    });
+
+    const initialRows = getDbChangeRows(employeeId);
+    expect(initialRows).toHaveLength(1);
+    const changeId = Number(initialRows[0][0]);
+    let items = await syncAndGetItems(request, changeId);
+    expectCategories(items.map((item: any) => item.category), ['social_security', 'housing_fund']);
+
+    await processCategories(request, changeId, ['social_security']);
+    items = await syncAndGetItems(request, changeId);
+    expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
+      housing_fund: 'pending',
+      social_security: 'completed',
+    });
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      housing_fund_region_id: ctx.alternativeHousingRegionId,
+      housing_fund_config_id: ctx.alternativeHousingConfigId,
+      housing_fund_base: 6500,
+      provident_fund_enrollment_date: '2026-07-01',
+    });
+
+    let rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0][0])).toBe(changeId);
+    expect(Number(rows[0][5])).toBe(ctx.alternativeHousingRegionId);
+    expect(Number(rows[0][6])).toBe(ctx.alternativeHousingConfigId);
+    expect(rows[0][10]).toBe(employeeName);
+
+    items = await syncAndGetItems(request, changeId);
+    expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
+      housing_fund: 'pending',
+      social_security: 'completed',
+    });
+
+    await processCategories(request, changeId, ['housing_fund']);
+    rows = getDbChangeRows(employeeId);
+    expect(rows[0][2]).toBe('completed');
+    expect(Number(rows[0][11])).toBe(1);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      social_security_region_id: ctx.alternativeSocialRegionId,
+      social_security_base: 6500,
+      social_insurance_enrollment_date: '2026-07-01',
+    });
+
+    rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0][0])).toBe(changeId);
+    expect(rows[0][2]).toBe('pending');
+    expect(Number(rows[0][3])).toBe(ctx.alternativeSocialRegionId);
+    expect(Number(rows[0][11])).toBe(0);
+
+    items = await syncAndGetItems(request, changeId);
+    expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
+      housing_fund: 'completed',
+      social_security: 'pending',
+    });
+
+    const visible = await listVisibleChanges(request);
+    const visibleChange = visible.find((item: any) => Number(item.id) === changeId);
+    expect(visibleChange?.employee_name).toBe(employeeName);
   });
 
   test('只修改已有绑定的基数，在没有参保人员记录时仍应沉淀为待处理任务', async ({ request }) => {

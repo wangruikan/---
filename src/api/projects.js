@@ -35,6 +35,20 @@ export function getProject(id) {
   })
 }
 
+export function getProjectSocialSecurityRegions(id) {
+  return request({
+    url: `/projects/${id}/social-security-regions`,
+    method: 'get'
+  })
+}
+
+export function getProjectHousingFundRegions(id) {
+  return request({
+    url: `/projects/${id}/housing-fund-regions`,
+    method: 'get'
+  })
+}
+
 // update project
 export function updateProject(id, data) {
   return request({

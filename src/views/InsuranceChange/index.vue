@@ -1,5 +1,5 @@
 <template>
-  <div class="insurance-change-container">
+  <div class="insurance-change-container" :class="{ 'preview-only-host': props.previewOnly }">
     <div class="page-header">
       <h2>参保增减管理</h2>
       <!-- 按钮已隐藏 -->
@@ -1673,6 +1673,28 @@
       </template>
     </el-dialog>
 
+    <!-- 公积金汇总表预览 -->
+    <el-dialog
+      v-model="showHousingFundSummaryPreviewDialog"
+      title="公积金汇总表预览"
+      width="90%"
+      top="5vh"
+      :close-on-click-modal="false"
+    >
+      <iframe
+        class="housing-summary-preview-frame"
+        :srcdoc="housingFundSummaryPreviewHtml"
+        title="公积金汇总表预览"
+      />
+      <template #footer>
+        <el-button @click="showHousingFundSummaryPreviewDialog = false">关闭</el-button>
+        <el-button type="primary" @click="exportHousingFundSummaryAction" :loading="exportLoading">
+          <el-icon><Download /></el-icon>
+          导出Excel
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 滞留金填写 -->
     <el-dialog
       v-model="showSummaryRetentionDialog"
@@ -1820,8 +1842,19 @@ import {
 } from '@/api/insuranceChange'
 import { getSocialSecurityRegions } from '@/api/socialSecurity'
 import { getMedicalInsuranceRegions } from '@/api/medicalInsurance'
-import { exportSocialSecurityToExcelHTML, exportToExcelHTML, exportHousingFundSummaryToExcel } from '@/utils/excelExportHTML'
+import {
+  exportSocialSecurityToExcelHTML,
+  exportToExcelHTML,
+  exportHousingFundSummaryToExcel,
+  buildHousingFundSummaryHTML
+} from '@/utils/excelExportHTML'
 
+const props = defineProps({
+  previewOnly: {
+    type: Boolean,
+    default: false
+  }
+})
 const accountSetStore = useAccountSetStore()
 
 // 计算属性
@@ -2563,6 +2596,8 @@ const summaryLoading = ref(false)
 const processing = ref(false)
 const processingOtherInsurance = ref(false)
 const showSummaryPreviewDialog = ref(false)
+const showHousingFundSummaryPreviewDialog = ref(false)
+const housingFundSummaryPreviewHtml = ref('')
 const showSummaryRetentionDialog = ref(false)
 const summaryPreviewRows = ref([])
 const summaryPreviewMeta = ref({
@@ -4284,6 +4319,30 @@ const exportHousingFundExcel = async () => {
   }
 }
 
+const getHousingFundSummaryTitle = () => {
+  const month = detailFilterForm.value.month || getCurrentMonth()
+  let formattedMonth = month
+  if (month && month.includes('-')) {
+    const [year, monthNum] = month.split('-')
+    formattedMonth = `${year}年${monthNum.padStart(2, '0')}月`
+  }
+  return `${getCompanyNameWithRegion()}${formattedMonth}公积金汇总表`
+}
+
+const generateHousingFundSummaryPreview = () => {
+  if (!housingFundDetails.value || housingFundDetails.value.length === 0) {
+    ElMessage.warning('没有数据可生成汇总表')
+    return
+  }
+
+  housingFundSummaryPreviewHtml.value = buildHousingFundSummaryHTML(
+    housingFundDetails.value,
+    getHousingFundSummaryTitle()
+  )
+  showHousingFundSummaryPreviewDialog.value = true
+  ElMessage.success('汇总表已生成，可预览后导出')
+}
+
 // 导出公积金汇总表
 const exportHousingFundSummaryAction = async () => {
   if (!housingFundDetails.value || housingFundDetails.value.length === 0) {
@@ -4294,14 +4353,7 @@ const exportHousingFundSummaryAction = async () => {
   exportLoading.value = true
 
   try {
-    // 生成文件名和标题
-    const month = detailFilterForm.value.month || getCurrentMonth()
-    let formattedMonth = month
-    if (month && month.includes('-')) {
-      const [year, monthNum] = month.split('-')
-      formattedMonth = `${year}年${monthNum.padStart(2, '0')}月`
-    }
-    const title = `${getCompanyNameWithRegion()}${formattedMonth}公积金汇总表`
+    const title = getHousingFundSummaryTitle()
     const filename = `${title}.xlsx`
 
     // 导出汇总表
@@ -4418,6 +4470,7 @@ const detailFilterForm = ref({
   month: getCurrentMonth(), // 默认当前月份
   region_name: ''
 })
+const detailProjectId = ref(null)
 
 const summaryFilterForm = ref({
   region_name: ''
@@ -4803,7 +4856,12 @@ const loadDetails = async () => {
 
   const params = {
     account_set_id: currentAccountSetId.value,
-    ...detailFilterForm.value
+    ...detailFilterForm.value,
+    insurance_category: detailActiveTab.value === 'housing' ? 'housing_fund' : 'social_insurance'
+  }
+
+  if (detailProjectId.value) {
+    params.project_id = detailProjectId.value
   }
 
   if (!detailTabNeedsRegionFilter()) {
@@ -5367,6 +5425,7 @@ const resetFilter = () => {
 }
 
 const resetDetailFilter = () => {
+  detailProjectId.value = null
   detailFilterForm.value = {
     month: getCurrentMonth(), // 重置为当前月份
     region_name: getDefaultDetailRegion()
@@ -6649,12 +6708,51 @@ watch(changeStatusTab, () => {
 
 watch(() => filteredChanges.value.length, updateChangeTableMaxHeight)
 
-onMounted(async () => {
-  window.addEventListener('resize', updateChangeTableMaxHeight)
-  // 先加载各类地区配置
+const loadSummaryPreviewConfigurations = async () => {
   await loadSocialSecurityRegions()
   await loadMedicalInsuranceRegions()
   await loadLargeMedicalConfigs()
+}
+
+const openSummaryPreview = async ({ category, month, regionName, projectId }) => {
+  if (!['social_insurance', 'housing_fund'].includes(category) || !month || !regionName || !projectId) {
+    ElMessage.warning('汇总预览参数不完整')
+    return
+  }
+
+  showSummaryPreviewDialog.value = false
+  showHousingFundSummaryPreviewDialog.value = false
+  details.value = []
+  await loadSummaryPreviewConfigurations()
+
+  detailActiveTab.value = category === 'housing_fund' ? 'housing' : 'social'
+  detailFilterForm.value = {
+    month,
+    region_name: regionName
+  }
+  detailProjectId.value = projectId
+  activeTab.value = 'details'
+
+  await loadDetails()
+  await nextTick()
+
+  if (category === 'housing_fund') {
+    generateHousingFundSummaryPreview()
+  } else {
+    await generateSummaryTable()
+  }
+}
+
+defineExpose({ openSummaryPreview })
+
+onMounted(async () => {
+  if (props.previewOnly) {
+    return
+  }
+
+  window.addEventListener('resize', updateChangeTableMaxHeight)
+  // 先加载各类地区配置
+  await loadSummaryPreviewConfigurations()
   // 再加载参保人员列表
   await loadChanges()
   updateChangeTableMaxHeight()
@@ -6805,6 +6903,15 @@ watch(showExportDialog, (newVal) => {
 <style scoped>
 .insurance-change-container {
   padding: 20px;
+}
+
+.insurance-change-container.preview-only-host {
+  padding: 0;
+}
+
+.insurance-change-container.preview-only-host > .page-header,
+.insurance-change-container.preview-only-host > .tabs-container {
+  display: none;
 }
 
 .page-header {
@@ -7120,6 +7227,13 @@ watch(showExportDialog, (newVal) => {
   background-color: #e8f3ff !important;
   color: #1d4ed8;
   font-weight: 700;
+}
+
+.housing-summary-preview-frame {
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #fff;
 }
 
 .summary-preview-wrapper {

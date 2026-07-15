@@ -322,17 +322,37 @@ class InsuranceChangeController extends ApiController
             true
         );
 
+        $projectId = $request->integer('project_id');
+        if ($projectId) {
+            $query->where('project_id', $projectId);
+        }
+
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName && $regionName !== '全部') {
-            $query->where(function($regionQuery) use ($regionName) {
-                $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
-                    $q->where('name', $regionName);
-                })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
-                    $q->where('name', $regionName);
-                })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+            $insuranceCategory = $request->input('insurance_category');
+            if ($insuranceCategory === 'housing_fund') {
+                $query->whereHas('employee.housingFundRegion', function($q) use ($regionName) {
                     $q->where('region_name', $regionName);
                 });
-            });
+            } elseif ($insuranceCategory === 'social_insurance') {
+                $query->where(function($regionQuery) use ($regionName) {
+                    $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    });
+                });
+            } else {
+                $query->where(function($regionQuery) use ($regionName) {
+                    $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                        $q->where('region_name', $regionName);
+                    });
+                });
+            }
         }
 
         $personnelRecords = $query->orderBy('last_updated_at', 'desc')->get();
@@ -382,17 +402,37 @@ class InsuranceChangeController extends ApiController
             true
         );
 
+        $projectId = $request->integer('project_id');
+        if ($projectId) {
+            $query->where('project_id', $projectId);
+        }
+
         // 地区筛选 - 通过员工关联的地区进行筛选
         if ($regionName && $regionName !== '全部') {
-            $query->where(function($regionQuery) use ($regionName) {
-                $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
-                    $q->where('name', $regionName);
-                })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
-                    $q->where('name', $regionName);
-                })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+            $insuranceCategory = $request->input('insurance_category');
+            if ($insuranceCategory === 'housing_fund') {
+                $query->whereHas('employee.housingFundRegion', function($q) use ($regionName) {
                     $q->where('region_name', $regionName);
                 });
-            });
+            } elseif ($insuranceCategory === 'social_insurance') {
+                $query->where(function($regionQuery) use ($regionName) {
+                    $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    });
+                });
+            } else {
+                $query->where(function($regionQuery) use ($regionName) {
+                    $regionQuery->whereHas('employee.socialSecurityRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.medicalInsuranceRegion', function($q) use ($regionName) {
+                        $q->where('name', $regionName);
+                    })->orWhereHas('employee.housingFundRegion', function($q) use ($regionName) {
+                        $q->where('region_name', $regionName);
+                    });
+                });
+            }
         }
 
         $records = $query->orderBy('generated_at', 'desc')->get();

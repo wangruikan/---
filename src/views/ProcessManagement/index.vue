@@ -244,6 +244,18 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="汇总预览">
+          <el-button
+            type="primary"
+            plain
+            :icon="View"
+            :loading="previewRegionsLoading || summaryPreviewLoading"
+            :disabled="!form.project_id || !form.month || previewRegionsLoading || summaryPreviewLoading"
+            @click="handlePreviewSummary"
+          >
+            预览汇总表
+          </el-button>
+        </el-form-item>
         <el-form-item label="流程描述" prop="description">
           <el-input
             v-model="form.description"
@@ -305,6 +317,33 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="previewRegionDialogVisible"
+      :title="previewRegionDialogTitle"
+      width="420px"
+      :close-on-click-modal="false"
+    >
+      <el-select v-model="previewRegionName" placeholder="请选择地区" style="width: 100%;">
+        <el-option
+          v-for="regionName in previewRegionOptions"
+          :key="regionName"
+          :label="regionName"
+          :value="regionName"
+        />
+      </el-select>
+      <template #footer>
+        <el-button @click="previewRegionDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!previewRegionName" @click="handleConfirmPreviewRegion">
+          查看预览
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <InsuranceChange
+      ref="insuranceSummaryPreviewRef"
+      :preview-only="true"
+    />
 
     <!-- 表格填写生成Word组件 -->
     <FormToWordGenerator 
@@ -550,13 +589,18 @@ import PaymentFormFields from '@/components/PaymentFormFields.vue'
 import SituationExplanationInlineForm from '@/components/SituationExplanationInlineForm.vue'
 import FormToWordGenerator from '@/components/FormToWordGenerator.vue'
 import ApprovalStampSelector from '@/components/ApprovalStampSelector.vue'
+import InsuranceChange from '@/views/InsuranceChange/index.vue'
 import {
   getProcessList, getPendingProcessProjects, getProcessDetail, createProcess, uploadAttachment,
   deleteAttachment as deleteProcessAttachment,
   submitProcess as submitProcessApi,
   deleteProcess as deleteProcessApi
 } from '@/api/processApproval'
-import { getProjects } from '@/api/projects'
+import {
+  getProjects,
+  getProjectSocialSecurityRegions,
+  getProjectHousingFundRegions
+} from '@/api/projects'
 import { createFromProcessApproval } from '@/api/paymentApplication'
 import { useRouter } from 'vue-router'
 
@@ -685,6 +729,16 @@ const rules = {
   title: [{ required: true, message: '请输入流程标题', trigger: 'blur' }],
   project_id: [{ required: true, message: '请选择关联项目', trigger: 'change' }]
 }
+
+const previewRegionsLoading = ref(false)
+const summaryPreviewLoading = ref(false)
+const previewRegionDialogVisible = ref(false)
+const previewRegionOptions = ref([])
+const previewRegionName = ref('')
+const insuranceSummaryPreviewRef = ref(null)
+const previewRegionDialogTitle = computed(() => {
+  return form.category === 'housing_fund' ? '选择公积金地区' : '选择社保地区'
+})
 
 // 当前流程ID（用于上传附件）
 const currentProcessId = ref(null)
@@ -847,8 +901,80 @@ const loadProjects = async () => {
 }
 
 // 项目选择改变
-const handleProjectChange = (value) => {
-  // 可以在这里添加额外逻辑
+const handleProjectChange = () => {
+  loadSummaryPreviewRegions()
+}
+
+const getPreviewRegionName = (region) => {
+  return region?.name || region?.region_name || ''
+}
+
+const loadSummaryPreviewRegions = async () => {
+  previewRegionOptions.value = []
+  previewRegionName.value = ''
+
+  if (!form.project_id) {
+    return
+  }
+
+  previewRegionsLoading.value = true
+  try {
+    const response = form.category === 'housing_fund'
+      ? await getProjectHousingFundRegions(form.project_id)
+      : await getProjectSocialSecurityRegions(form.project_id)
+    const regionNames = (response.data || [])
+      .map(getPreviewRegionName)
+      .filter(Boolean)
+    previewRegionOptions.value = Array.from(new Set(regionNames))
+  } catch (error) {
+    console.error('加载项目参保地区失败:', error)
+    previewRegionOptions.value = []
+  } finally {
+    previewRegionsLoading.value = false
+  }
+}
+
+const openSummaryPreview = async (regionName) => {
+  if (!insuranceSummaryPreviewRef.value) {
+    ElMessage.warning('汇总预览尚未准备完成，请稍后重试')
+    return
+  }
+
+  summaryPreviewLoading.value = true
+  try {
+    await insuranceSummaryPreviewRef.value.openSummaryPreview({
+      category: form.category,
+      month: form.month,
+      regionName,
+      projectId: form.project_id
+    })
+  } finally {
+    summaryPreviewLoading.value = false
+  }
+}
+
+const handlePreviewSummary = async () => {
+  if (previewRegionOptions.value.length === 0) {
+    ElMessage.warning(`该项目未配置${form.category === 'housing_fund' ? '公积金' : '社保'}地区`)
+    return
+  }
+
+  if (previewRegionOptions.value.length === 1) {
+    await openSummaryPreview(previewRegionOptions.value[0])
+    return
+  }
+
+  previewRegionName.value = ''
+  previewRegionDialogVisible.value = true
+}
+
+const handleConfirmPreviewRegion = async () => {
+  if (!previewRegionName.value) {
+    return
+  }
+  const regionName = previewRegionName.value
+  previewRegionDialogVisible.value = false
+  await openSummaryPreview(regionName)
 }
 
 const getProcessCategoryLabel = (category) => {
@@ -948,6 +1074,7 @@ const handleCreatePendingProcess = (row) => {
     description: ''
   })
   dialogVisible.value = true
+  loadSummaryPreviewRegions()
 }
 
 // 保存流程

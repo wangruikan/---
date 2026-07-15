@@ -533,7 +533,7 @@ export function exportHousingFundSummaryToExcel(data, title, filename) {
  * @param {String} title - 标题
  * @returns {String} HTML内容
  */
-function buildHousingFundSummaryHTML(data, title) {
+export function buildHousingFundSummaryHTML(data, title) {
   // 按项目分组并计算汇总
   const projectSummary = {}
   

@@ -221,6 +221,28 @@ test.describe('参保明细 API 测试', () => {
       expect(data.success).toBe(true);
     });
 
+    test('按 project_id 筛选只返回当前项目', async ({ request }) => {
+      const allResponse = await request.get(`${BASE_URL}/insurance-changes/details`, {
+        headers: authHeaders(),
+        params: { account_set_id: ACCOUNT_SET_ID },
+      });
+      const allData = await allResponse.json();
+      const projectId = allData.data.find((row: any) => row.project_id)?.project_id;
+      if (!projectId) {
+        test.skip();
+        return;
+      }
+
+      const response = await request.get(`${BASE_URL}/insurance-changes/details`, {
+        headers: authHeaders(),
+        params: { account_set_id: ACCOUNT_SET_ID, project_id: projectId },
+      });
+      expect(response.status()).toBe(200);
+      const data = await response.json();
+      expect(data.success).toBe(true);
+      expect(data.data.every((row: any) => Number(row.project_id) === Number(projectId))).toBe(true);
+    });
+
     test('缺少 account_set_id 应返回 422 或 200', async ({ request }) => {
       const response = await request.get(`${BASE_URL}/insurance-changes/details`, {
         headers: authHeaders(),

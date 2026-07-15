@@ -322,6 +322,26 @@ test.describe.serial('项目 4 负责人 API 测试', () => {
     cleanupSeedData();
   });
 
+  test('项目人员候选列表应返回当前账套的启用用户', async ({ request }) => {
+    const response = await request.get(apiUrl('users'), {
+      headers: authHeaders(tokens.admin!, ctx.accountSetId!),
+      params: {
+        all: 'true',
+        current_account_set_only: true,
+        current_account_set_id: ctx.accountSetId,
+        is_active: true,
+      },
+    });
+
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(Array.isArray(data.data)).toBe(true);
+    expect(new Set(data.data.map((user: any) => Number(user.id)))).toEqual(
+      new Set(Object.values(ctx.userIds!))
+    );
+  });
+
   test('管理员可以配置 4 个负责人位置', async ({ request }) => {
     const response = await request.post(apiUrl(`projects/${ctx.projectIds!.managed}/role-users`), {
       headers: authHeaders(tokens.admin!, ctx.accountSetId!),

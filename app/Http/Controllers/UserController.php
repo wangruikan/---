@@ -51,7 +51,7 @@ class UserController extends Controller
         
         // 按状态筛选
         if ($request->filled('is_active')) {
-            $query->where('is_active', $request->is_active);
+            $query->where('is_active', $request->boolean('is_active'));
         }
         
         // 获取所有用户或分页

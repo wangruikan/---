@@ -835,6 +835,88 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
     expect(items.map((item: any) => item.category)).toEqual(['social_security']);
   });
 
+  test('未实际参保前把唯一待处理社保改为无，应撤销整条增加任务', async ({ request }) => {
+    const employeeName = `${PREFIX}-撤销唯一社保`;
+    const employeeId = await createEmployee(request, baseEmployeePayload(16, employeeName));
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 7000,
+      social_insurance_enrollment_date: '2026-07-01',
+    });
+
+    let rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    const changeId = Number(rows[0][0]);
+    let items = await syncAndGetItems(request, changeId);
+    expect(items.map((item: any) => item.category)).toEqual(['social_security']);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      social_security_region_id: null,
+      social_security_base: null,
+      social_insurance_enrollment_date: null,
+    });
+
+    rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(0);
+    expect(getDbItemRows(changeId)).toHaveLength(0);
+
+    const visible = await listVisibleChanges(request);
+    expect(visible.filter((item: any) => item.employee_name === employeeName)).toHaveLength(0);
+  });
+
+  test('未实际参保前把社保改为无，应只撤销社保子任务并保留其他险种', async ({ request }) => {
+    const employeeName = `${PREFIX}-只撤销社保子任务`;
+    const employeeId = await createEmployee(request, baseEmployeePayload(17, employeeName));
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      social_security_region_id: ctx.socialRegionId,
+      social_security_base: 7000,
+      social_insurance_enrollment_date: '2026-07-01',
+      housing_fund_region_id: ctx.housingRegionId,
+      housing_fund_config_id: ctx.housingConfigId,
+      housing_fund_base: 7000,
+      provident_fund_enrollment_date: '2026-07-01',
+    });
+
+    let rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    const changeId = Number(rows[0][0]);
+    let items = await syncAndGetItems(request, changeId);
+    expectCategories(items.map((item: any) => item.category), ['social_security', 'housing_fund']);
+
+    await processCategories(request, changeId, ['housing_fund']);
+    items = await syncAndGetItems(request, changeId);
+    expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
+      housing_fund: 'completed',
+      social_security: 'pending',
+    });
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      social_security_region_id: null,
+      social_security_base: null,
+      social_insurance_enrollment_date: null,
+    });
+
+    rows = getDbChangeRows(employeeId);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0][0])).toBe(changeId);
+    expect(rows[0][1]).toBe('increase');
+    expect(rows[0][2]).toBe('completed');
+    expect(rows[0][9]).not.toContain('social_security');
+
+    items = await syncAndGetItems(request, changeId);
+    expect(items.map((item: any) => item.category)).toEqual(['housing_fund']);
+    expect(items[0].status).toBe('completed');
+
+    const visible = await listVisibleChanges(request);
+    expect(visible.filter((item: any) => item.employee_name === employeeName)).toHaveLength(1);
+  });
+
   test('已有未完成任务时分两次补不同险种，应复用同一条任务并追加子任务', async ({ request }) => {
     const employeeId = await createEmployee(request, baseEmployeePayload(4, `${PREFIX}-分次补参保`));
 

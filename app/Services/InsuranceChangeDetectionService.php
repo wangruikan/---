@@ -71,6 +71,28 @@ class InsuranceChangeDetectionService
 
                 $project = $this->resolveProjectForEmployee($employee, $projectId);
                 $personnel = $project ? $this->findCurrentPersonnel($employee, $project) : null;
+                $mode = $this->resolveEmployeeEventMode($changeType, $oldData, $newData, $source);
+
+                if (
+                    $source === 'employee_insurance_profile_change'
+                    && $changeType === 'social_security'
+                    && $mode === 'decrease'
+                    && (!$personnel || !$personnel->social_security_region_id)
+                ) {
+                    $cancelled = $project
+                        ? $this->cancelPendingSocialSecurityIncreaseTask(
+                            $employee,
+                            $project,
+                            sprintf('%04d-%02d', (int) $year, (int) $month)
+                        )
+                        : false;
+
+                    return [
+                        'success' => true,
+                        'message' => $cancelled ? '待处理社保任务已撤销' : '无需生成参保任务',
+                        'imported_count' => 0,
+                    ];
+                }
 
                 // 员工尚未形成参保记录时，资料编辑应继续沉淀到增减任务，而不是尝试同步现有参保数据。
                 if ($source === 'employee_insurance_profile_change' && !$personnel) {
@@ -93,8 +115,6 @@ class InsuranceChangeDetectionService
                         'record' => $record,
                     ];
                 }
-
-                $mode = $this->resolveEmployeeEventMode($changeType, $oldData, $newData, $source);
 
                 if ($mode === 'noop') {
                     return [
@@ -689,6 +709,102 @@ class InsuranceChangeDetectionService
         }
 
         return array_values($merged);
+    }
+
+    private function cancelPendingSocialSecurityIncreaseTask(
+        Employee $employee,
+        Project $project,
+        string $taskMonth
+    ): bool {
+        $change = $this->findReusableMonthlyTask($employee, $project, 'increase', $taskMonth);
+        if (!$change || !in_array($change->status, InsuranceChange::OPEN_STATUSES, true)) {
+            return false;
+        }
+
+        $socialSecurityItem = $change->items()->where('category', 'social_security')->first();
+        if ($socialSecurityItem && !in_array($socialSecurityItem->status, ['pending', 'submitted'], true)) {
+            return false;
+        }
+
+        $remainingDetails = array_values(array_filter(
+            $change->parseChangeDetails(),
+            fn ($detail) => ($detail['category'] ?? null) !== 'social_security'
+        ));
+
+        return DB::transaction(function () use ($change, $remainingDetails) {
+            $change->items()->where('category', 'social_security')->delete();
+
+            if (empty($remainingDetails)) {
+                $change->delete();
+                return true;
+            }
+
+            $detailsPayload = json_decode((string) $change->change_details, true);
+            if (!is_array($detailsPayload) || !isset($detailsPayload['changes'])) {
+                $detailsPayload = [
+                    'change_time' => now()->format('Y-m-d H:i:s'),
+                    'auto_import' => true,
+                ];
+            }
+            $detailsPayload['changes'] = $remainingDetails;
+
+            $changeTypes = [];
+            foreach ($remainingDetails as $detail) {
+                if (!empty($detail['category'])) {
+                    $changeTypes[$detail['category']] = $this->getChangeTypeText($detail['category']);
+                }
+            }
+            $detailsPayload['change_type'] = array_key_first($changeTypes);
+
+            $change->update([
+                'social_security_region_id' => null,
+                'employee_social_security_base' => null,
+                'social_security_types' => null,
+                'change_summary' => '检测到' . implode('、', array_values($changeTypes)) . '配置变更，自动更新',
+                'change_details' => json_encode($detailsPayload, JSON_UNESCAPED_UNICODE),
+            ]);
+
+            $remainingItems = $change->items()->get();
+            $representedCategories = $remainingItems->map(function ($item) {
+                return strpos($item->category, 'other_policy:') === 0
+                    ? 'other_insurance'
+                    : $item->category;
+            })->unique()->values()->all();
+            $hasUnmaterializedCategory = !empty(array_diff(array_keys($changeTypes), $representedCategories));
+            $hasPending = $remainingItems->contains(function ($item) {
+                return in_array($item->status, ['pending', 'submitted'], true);
+            });
+
+            if (
+                !$hasUnmaterializedCategory
+                && $remainingItems->isNotEmpty()
+                && $remainingItems->every(fn ($item) => $item->status === 'completed')
+            ) {
+                $change->update([
+                    'status' => 'completed',
+                    'fully_confirmed' => true,
+                    'processed_at' => now(),
+                    'completed_at' => now(),
+                ]);
+            } elseif ($hasUnmaterializedCategory || $hasPending) {
+                $change->update([
+                    'status' => 'pending',
+                    'fully_confirmed' => false,
+                    'processed_at' => null,
+                    'completed_at' => null,
+                ]);
+            } else {
+                $hasFailed = $remainingItems->contains(fn ($item) => $item->status === 'failed');
+                $change->update([
+                    'status' => $hasFailed ? 'failed' : 'terminated',
+                    'fully_confirmed' => false,
+                    'processed_at' => null,
+                    'completed_at' => null,
+                ]);
+            }
+
+            return true;
+        });
     }
 
     private function findReusableMonthlyTask(

@@ -53,14 +53,33 @@ class PaymentApplicationController extends Controller
             }
 
             $query = PaymentRequest::with([
-                'submitter',
+                'submitter:id,name',
                 'salaryApproval.project',
                 'insuranceSummary',
                 'reimbursement',
-                'attachments',
-                'invoiceAttachments',
-                'approvalInstance.records.approver'
-            ])->where('account_set_id', $accountSetId);
+                'approvalInstance' => function ($approvalQuery) {
+                    $approvalQuery->select(['id', 'status', 'current_step', 'total_steps']);
+                },
+                'approvalInstance.records' => function ($recordQuery) {
+                    $recordQuery
+                        ->select(['id', 'instance_id', 'step_order', 'approver_name', 'status'])
+                        ->where('status', 'pending')
+                        ->orderBy('step_order');
+                },
+            ])
+            ->withCount([
+                'attachments as payment_attachments_count' => function ($attachmentQuery) {
+                    $attachmentQuery->where(function ($query) {
+                        $query->where('attachment_type', 'attachment')
+                            ->orWhereNull('attachment_type');
+                    });
+                },
+                'attachments as payment_invoice_attachments_count' => function ($attachmentQuery) {
+                    $attachmentQuery->where('attachment_type', 'invoice');
+                },
+                'invoiceAttachments as separate_invoice_attachments_count',
+            ])
+            ->where('account_set_id', $accountSetId);
 
             if ($request->filled('payment_type')) {
                 $paymentTypeFilter = $request->input('payment_type');
@@ -154,9 +173,13 @@ class PaymentApplicationController extends Controller
                 }
             }
 
-            $requests = $query->orderBy('created_at', 'desc')->get();
+            $page = (int)$request->input('page', 1);
+            $perPage = (int)$request->input('per_page', 15);
+            $paginator = $query
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage, ['*'], 'page', $page);
 
-            $requests = $requests->map(function ($req) {
+            $requests = $paginator->getCollection()->map(function ($req) {
                 $title = '';
                 $month = '';
                 $typeName = '';
@@ -218,10 +241,9 @@ class PaymentApplicationController extends Controller
                     }
                 }
 
-                $attachmentTypeCount = $req->attachments->where('attachment_type', 'attachment')->count();
-                $attachmentNullCount = $req->attachments->whereNull('attachment_type')->count();
-                $invoiceTypeCount = $req->attachments->where('attachment_type', 'invoice')->count();
-                $invoiceAttachmentsCount = $req->invoiceAttachments->count();
+                $attachmentCount = (int)($req->payment_attachments_count ?? 0);
+                $invoiceTypeCount = (int)($req->payment_invoice_attachments_count ?? 0);
+                $invoiceAttachmentsCount = (int)($req->separate_invoice_attachments_count ?? 0);
 
                 $result = [
                     'id' => $req->id,
@@ -236,12 +258,12 @@ class PaymentApplicationController extends Controller
                     'invoice_status' => $req->invoice_status,
                     'upload_later' => $req->upload_later,
                     'initiator' => $req->submitter,
-                    'attachments' => $req->attachments,
-                    'attachments_count' => $attachmentTypeCount + $attachmentNullCount,
+                    'attachments' => [],
+                    'attachments_count' => $attachmentCount,
                     'invoice_attachments_count' => $req->invoice_status === 'invoice_approved'
                         ? $invoiceTypeCount
                         : ($invoiceTypeCount + $invoiceAttachmentsCount),
-                    'approval_instance' => $req->approvalInstance ?? null,
+                    'approval_instance' => $this->formatPaymentListApprovalInstance($req->approvalInstance),
                     'process_approval_id' => null,
                     'salary_approval_id' => $req->salary_approval_id,
                     'insurance_summary_id' => $req->insurance_summary_id,
@@ -304,19 +326,14 @@ class PaymentApplicationController extends Controller
                 return $result;
             });
 
-            $page = (int)$request->input('page', 1);
-            $perPage = (int)$request->input('per_page', 15);
-            $total = $requests->count();
-            $data = $requests->forPage($page, $perPage)->values();
-
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'data' => $data,
-                    'current_page' => $page,
-                    'per_page' => $perPage,
-                    'total' => $total,
-                    'last_page' => (int)ceil($total / max($perPage, 1))
+                    'data' => $requests->values(),
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage()
                 ]
             ]);
         } catch (\Exception $e) {
@@ -330,6 +347,30 @@ class PaymentApplicationController extends Controller
                 'message' => '获取列表失败: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function formatPaymentListApprovalInstance($approvalInstance): ?array
+    {
+        if (!$approvalInstance) {
+            return null;
+        }
+
+        return [
+            'id' => $approvalInstance->id,
+            'status' => $approvalInstance->status,
+            'current_step' => $approvalInstance->current_step,
+            'total_steps' => $approvalInstance->total_steps,
+            'records' => $approvalInstance->records
+                ? $approvalInstance->records->map(function ($record) {
+                    return [
+                        'id' => $record->id,
+                        'step_order' => $record->step_order,
+                        'approver_name' => $record->approver_name,
+                        'status' => $record->status,
+                    ];
+                })->values()->all()
+                : [],
+        ];
     }
 
     /**

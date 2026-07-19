@@ -43,7 +43,6 @@ class Kernel extends HttpKernel
             \App\Http\Middleware\InjectAuthTokenFromHeader::class,
             // \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',  // 已关闭限流
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            \App\Http\Middleware\DailyAssessmentCheck::class,  // 每日考核检查
         ],
     ];
 

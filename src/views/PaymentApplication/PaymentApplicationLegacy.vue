@@ -1771,10 +1771,10 @@ onMounted(async () => {
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   
-  await loadProjects()
-  
-  // 先加载列表
-  await loadApplicationList()
+  await Promise.all([
+    loadProjects(),
+    loadApplicationList()
+  ])
   initPaymentTableStickyTop()
   window.addEventListener('resize', updatePaymentTableStickyTop)
   

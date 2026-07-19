@@ -53,22 +53,34 @@ class InsuranceChangeController extends ApiController
             return $response;
         }
 
-        $user = $request->user();
         $accountSetId = $request->input('account_set_id');
         $status = $request->input('status');
         $regionName = $request->input('region_name');
         $month = $request->input('month'); // 新增月份筛选参数
         $query = InsuranceChange::where('account_set_id', $accountSetId)
             ->with([
-                'employee.socialSecurityRegion.socialSecurityTypes',
-                'employee.medicalInsuranceRegion.medicalInsuranceTypes',
+                'employee' => function ($query) {
+                    $query->select($this->getInsuranceChangeListEmployeeColumns());
+                },
+                'employee.socialSecurityRegion:id,name',
+                'employee.medicalInsuranceRegion:id,name',
                 'employee.housingFundRegion',
-                'employee.housingFundConfig',
-                'employee.projects.otherInsurancePolicies.type',
-                'project',
-                'creator',
-                'attachments'  // 加载附件列表
-            ]);
+                'project:id,name',
+                'creator:id,name',
+                'attachments' => function ($query) {
+                    $query->select([
+                        'id',
+                        'insurance_change_id',
+                        'insurance_change_item_id',
+                        'file_path',
+                        'original_name',
+                        'file_size',
+                        'file_type',
+                        'created_at',
+                    ])->orderBy('id');
+                },
+            ])
+            ->withCount('attachments');
 
         app(ProjectRoleUserService::class)->applyManagedProjectFilter(
             $query,
@@ -115,9 +127,10 @@ class InsuranceChangeController extends ApiController
         }
 
         $changes = $query->orderBy('created_at', 'desc')->get();
+        $changeItemsEnabled = $this->isChangeItemsEnabled();
 
         // 使用快照数据而不是实时数据
-        $changes->each(function ($change) {
+        $changes->each(function ($change) use ($changeItemsEnabled) {
             // $change->social_security_types = $change->getCurrentSocialSecurityConfig();
             // $change->medical_insurance_types = $change->getCurrentMedicalInsuranceConfig();
             // $change->housing_fund_params = $change->getCurrentHousingFundConfig();
@@ -133,21 +146,208 @@ class InsuranceChangeController extends ApiController
             // 解析变更详情，传递给前端
             $change->parsed_change_details = $change->parseChangeDetails();
 
-            if ($this->isChangeItemsEnabled()) {
+            if ($changeItemsEnabled) {
                 $this->syncChangeItems($change);
-                $change->change_items = $change->items()
-                    ->with(['attachments', 'processor'])
-                    ->orderBy('id')
-                    ->get();
-            } else {
-                $change->change_items = [];
             }
+        });
+
+        if ($changeItemsEnabled) {
+            $changes->load([
+                'items' => function ($query) {
+                    $query
+                        ->select([
+                            'id',
+                            'insurance_change_id',
+                            'category',
+                            'change_type',
+                            'status',
+                            'category_snapshot',
+                            'change_details',
+                            'processed_by',
+                            'processed_at',
+                        ])
+                        ->withCount('attachments')
+                        ->orderBy('id');
+                },
+            ]);
+        }
+
+        $list = $changes->map(function ($change) use ($changeItemsEnabled) {
+            $changeItems = $changeItemsEnabled ? ($change->items ?? collect()) : collect();
+
+            return $this->formatInsuranceChangeListItem($change, $changeItems);
         });
 
         return response()->json([
             'success' => true,
-            'data' => $changes
+            'data' => $list
         ]);
+    }
+
+    private function getInsuranceChangeListEmployeeColumns(): array
+    {
+        $columns = [
+            'id',
+            'name',
+            'id_number',
+            'phone',
+            'department',
+            'position',
+            'entry_date',
+            'hire_date',
+            'employment_date',
+            'social_security_region_id',
+            'medical_insurance_region_id',
+            'housing_fund_region_id',
+            'large_medical_insurance_config_id',
+        ];
+
+        return array_values(array_filter($columns, function ($column) {
+            return Schema::hasColumn('employees', $column);
+        }));
+    }
+
+    private function formatInsuranceChangeListItem(InsuranceChange $change, $changeItems): array
+    {
+        return [
+            'id' => $change->id,
+            'employee_id' => $change->employee_id,
+            'employee_name' => $change->employee_name,
+            'employee_id_number' => $change->employee_id_number,
+            'employee_gender' => $change->employee_gender,
+            'employee_birth_date' => $change->employee_birth_date,
+            'employee_phone' => $change->employee_phone,
+            'employee_status' => $change->employee_status,
+            'project_id' => $change->project_id,
+            'project_name' => $change->project?->name,
+            'account_set_id' => $change->account_set_id,
+            'task_month' => $change->task_month,
+            'change_type' => $change->change_type,
+            'status' => $change->status,
+            'fully_confirmed' => $change->fully_confirmed,
+            'other_insurance_processed' => $change->other_insurance_processed,
+            'attachment_path' => $change->attachment_path,
+            'attachment_uploaded_at' => $change->attachment_uploaded_at,
+            'processed_at' => $change->processed_at,
+            'submitted_at' => $change->submitted_at,
+            'completed_at' => $change->completed_at,
+            'notes' => $change->notes,
+            'created_by' => $change->created_by,
+            'processed_by' => $change->processed_by,
+            'created_at' => $change->created_at,
+            'updated_at' => $change->updated_at,
+            'used_quotas' => $change->used_quotas,
+            'social_security_region_id' => $change->social_security_region_id,
+            'medical_insurance_region_id' => $change->medical_insurance_region_id,
+            'housing_fund_region_id' => $change->housing_fund_region_id,
+            'housing_fund_config_id' => $change->housing_fund_config_id,
+            'large_medical_insurance_config_id' => $change->large_medical_insurance_config_id,
+            'large_medical_insurance_enabled' => $change->large_medical_insurance_enabled,
+            'employee_social_security_base' => $change->employee_social_security_base,
+            'employee_medical_insurance_base' => $change->employee_medical_insurance_base,
+            'employee_housing_fund_base' => $change->employee_housing_fund_base,
+            'employee_large_medical_base' => $change->employee_large_medical_base,
+            'employee_large_medical_company_base' => $change->employee_large_medical_company_base,
+            'social_security_types' => $change->social_security_types,
+            'medical_insurance_types' => $change->medical_insurance_types,
+            'housing_fund_params' => $change->housing_fund_params,
+            'other_insurance_policies' => $change->other_insurance_policies,
+            'large_medical_insurance_config' => $change->large_medical_insurance_config,
+            'social_security_changed' => $change->social_security_changed,
+            'medical_insurance_changed' => $change->medical_insurance_changed,
+            'housing_fund_changed' => $change->housing_fund_changed,
+            'change_summary' => $change->change_summary,
+            'change_details' => $change->change_details,
+            'detected_changes' => [],
+            'parsed_change_details' => $change->parsed_change_details ?? [],
+            'employee' => $this->formatInsuranceChangeListEmployee($change->employee),
+            'project' => $change->project ? [
+                'id' => $change->project->id,
+                'name' => $change->project->name,
+            ] : null,
+            'creator' => $change->creator ? [
+                'id' => $change->creator->id,
+                'name' => $change->creator->name,
+            ] : null,
+            'attachments_count' => (int) ($change->attachments_count ?? 0),
+            'attachments' => $change->attachments
+                ? $change->attachments->map(fn ($attachment) => $this->formatInsuranceChangeListAttachment($attachment))->values()->all()
+                : [],
+            'change_items' => collect($changeItems)
+                ->map(fn ($item) => $this->formatInsuranceChangeListItemTask($item))
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function formatInsuranceChangeListEmployee(?Employee $employee): ?array
+    {
+        if (!$employee) {
+            return null;
+        }
+
+        $data = [
+            'id' => $employee->id,
+            'name' => $employee->name,
+            'id_number' => $employee->id_number,
+            'phone' => $employee->phone,
+            'position' => $employee->position,
+            'entry_date' => $employee->getAttribute('entry_date') ?: $employee->hire_date,
+            'hire_date' => $employee->hire_date,
+            'employment_date' => $employee->employment_date,
+            'social_security_region_id' => $employee->social_security_region_id,
+            'medical_insurance_region_id' => $employee->medical_insurance_region_id,
+            'housing_fund_region_id' => $employee->housing_fund_region_id,
+            'large_medical_insurance_config_id' => $employee->large_medical_insurance_config_id,
+            'social_security_region' => $employee->socialSecurityRegion ? [
+                'id' => $employee->socialSecurityRegion->id,
+                'name' => $employee->socialSecurityRegion->name,
+            ] : null,
+            'medical_insurance_region' => $employee->medicalInsuranceRegion ? [
+                'id' => $employee->medicalInsuranceRegion->id,
+                'name' => $employee->medicalInsuranceRegion->name,
+            ] : null,
+            'housing_fund_region' => $employee->housingFundRegion ? [
+                'id' => $employee->housingFundRegion->id,
+                'region_name' => $employee->housingFundRegion->region_name,
+            ] : null,
+        ];
+
+        if (array_key_exists('department', $employee->getAttributes())) {
+            $data['department'] = $employee->getAttribute('department');
+        }
+
+        return $data;
+    }
+
+    private function formatInsuranceChangeListAttachment(InsuranceChangeAttachment $attachment): array
+    {
+        return [
+            'id' => $attachment->id,
+            'insurance_change_id' => $attachment->insurance_change_id,
+            'insurance_change_item_id' => $attachment->insurance_change_item_id,
+            'file_path' => $attachment->file_path,
+            'original_name' => $attachment->original_name,
+            'file_size' => $attachment->file_size,
+            'file_type' => $attachment->file_type,
+            'created_at' => $attachment->created_at,
+        ];
+    }
+
+    private function formatInsuranceChangeListItemTask(InsuranceChangeItem $item): array
+    {
+        return [
+            'id' => $item->id,
+            'insurance_change_id' => $item->insurance_change_id,
+            'category' => $item->category,
+            'change_type' => $item->change_type,
+            'status' => $item->status,
+            'category_snapshot' => $item->category_snapshot,
+            'change_details' => $item->change_details,
+            'processed_by' => $item->processed_by,
+            'processed_at' => $item->processed_at,
+            'attachments_count' => (int) ($item->attachments_count ?? 0),
+        ];
     }
 
     /**

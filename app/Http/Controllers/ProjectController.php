@@ -70,7 +70,7 @@ class ProjectController extends Controller
         return $this->calculateProjectStatusByEndDate($projectData['end_date'] ?? $fallbackEndDate);
     }
 
-    private function applyProjectIndexFilters($query, Request $request): void
+    private function applyProjectBaseScope($query, Request $request): void
     {
         $currentAccountSetId = $this->getCurrentAccountSetId($request);
 
@@ -90,6 +90,11 @@ class ProjectController extends Controller
                 (string) $responsibilityRoleType
             );
         }
+    }
+
+    private function applyProjectIndexFilters($query, Request $request): void
+    {
+        $this->applyProjectBaseScope($query, $request);
 
         if ($request->has('status') && $request->status) {
             $status = (string) $request->status;
@@ -525,8 +530,18 @@ class ProjectController extends Controller
             $projects = $query->paginate($perPage);
             $this->appendProjectRoleManagementPermissions($projects->getCollection(), $request);
         }
+
+        $filterOptions = null;
+        if ($request->boolean('include_filter_options')) {
+            $filterOptionsQuery = Project::query();
+            $this->applyProjectBaseScope($filterOptionsQuery, $request);
+            $filterOptions = $filterOptionsQuery
+                ->select('id', 'name', 'code')
+                ->orderBy('created_at', 'desc')
+                ->get();
+        }
         
-        return response()->json([
+        $response = [
             'success' => true,
             'data' => $projects,
             'stats' => [
@@ -536,6 +551,61 @@ class ProjectController extends Controller
                 'inactive' => intval($stats->terminated_count ?? 0),
                 'terminated' => intval($stats->terminated_count ?? 0),
             ]
+        ];
+
+        if ($filterOptions !== null) {
+            $response['filter_options'] = $filterOptions;
+        }
+
+        return response()->json($response);
+    }
+
+    public function getCreateOptions(Request $request)
+    {
+        $accountSetId = $this->getCurrentAccountSetId($request);
+        $user = $request->user();
+
+        if (!$accountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '请选择账套'
+            ], 422);
+        }
+
+        if ($user->role !== 'admin') {
+            $hasAccess = $user->accountSets()
+                ->where('account_sets.id', $accountSetId)
+                ->exists();
+
+            if (!$hasAccess) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '无权限访问该账套'
+                ], 403);
+            }
+        }
+
+        $socialSecurityRegions = \App\Models\SocialSecurityRegion::where('account_set_id', $accountSetId)
+            ->with(['socialSecurityTypes'])
+            ->get();
+        $housingFundRegions = \App\Models\HousingFundRegion::where('account_set_id', $accountSetId)
+            ->get();
+        $medicalInsuranceRegions = \App\Models\MedicalInsuranceRegion::where('account_set_id', $accountSetId)
+            ->with(['medicalInsuranceTypes'])
+            ->get();
+        $otherInsurancePolicies = \App\Models\OtherInsurancePolicy::where('account_set_id', $accountSetId)
+            ->where('status', 'active')
+            ->with(['type'])
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'social_security_regions' => $socialSecurityRegions,
+                'housing_fund_regions' => $housingFundRegions,
+                'medical_insurance_regions' => $medicalInsuranceRegions,
+                'other_insurance_policies' => $otherInsurancePolicies,
+            ],
         ]);
     }
 

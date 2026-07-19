@@ -9,6 +9,15 @@ export const getEmployees = (params) => {
   })
 }
 
+// 获取人员档案页面初始化数据
+export const getEmployeePageBootstrap = (params = {}) => {
+  return request({
+    url: '/employees/page-bootstrap',
+    method: 'get',
+    params
+  })
+}
+
 // 获取员工详情
 export const getEmployee = (id) => {
   return request({

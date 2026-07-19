@@ -7,6 +7,7 @@ use App\Models\InvoiceContentConfig;
 use App\Models\InvoiceContentItem;
 use App\Models\InvoiceItem;
 use App\Models\InvoiceProject;
+use App\Models\Project;
 use App\Models\ProcessApproval;
 use App\Models\ApprovalAttachment;
 use App\Models\ApprovalInstance;
@@ -115,6 +116,86 @@ class InvoiceApplicationController extends Controller
         return response()->json([
             'success' => true,
             'data' => $applications
+        ]);
+    }
+
+    /**
+     * 获取创建发票申请所需的下拉选项
+     */
+    public function createOptions(Request $request)
+    {
+        if ($response = $this->checkPermission('invoice_applications.create')) {
+            return $response;
+        }
+
+        $user = $request->user();
+        $accountSetId = (int) (
+            $request->input('current_account_set_id')
+            ?: $request->header('X-Account-Set-Id')
+            ?: $user?->current_account_set_id
+            ?: $user?->account_set_id
+        );
+
+        if ($accountSetId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套',
+            ], 400);
+        }
+
+        $projects = Project::where('account_set_id', $accountSetId)
+            ->orderByDesc('created_at')
+            ->get([
+                'id',
+                'name',
+                'invoice_infos',
+                'invoice_company_name',
+                'invoice_tax_number',
+                'invoice_company_address',
+                'invoice_company_phone',
+                'invoice_bank_name',
+                'invoice_bank_account',
+                'invoice_bank_code',
+            ])
+            ->map(function (Project $project) {
+                return [
+                    'id' => (int) $project->id,
+                    'name' => $project->name,
+                    'invoice_infos' => $project->invoice_infos,
+                ];
+            })
+            ->values();
+
+        $invoiceProjects = InvoiceProject::where('account_set_id', $accountSetId)
+            ->orderBy('project_name')
+            ->get([
+                'id',
+                'project_name',
+                'spec_model',
+                'unit',
+                'quantity',
+                'unit_price',
+                'amount',
+                'tax_rate',
+                'tax_amount',
+                'remark',
+            ]);
+
+        $invoiceContentConfigs = InvoiceContentConfig::where('account_set_id', $accountSetId)
+            ->orderBy('project_name')
+            ->get([
+                'id',
+                'project_name',
+                'tax_rate',
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'projects' => $projects,
+                'invoice_projects' => $invoiceProjects,
+                'invoice_content_configs' => $invoiceContentConfigs,
+            ],
         ]);
     }
 

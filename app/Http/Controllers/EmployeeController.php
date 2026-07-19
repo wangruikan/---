@@ -5144,6 +5144,259 @@ class EmployeeController extends ApiController
         ];
     }
 
+    private function resolveEmployeePageAccountSetId(Request $request): ?int
+    {
+        $accountSetId = $request->header('X-Account-Set-Id')
+            ?: $request->input('current_account_set_id')
+            ?: $request->user()?->current_account_set_id
+            ?: $request->user()?->account_set_id;
+
+        return $accountSetId ? (int) $accountSetId : null;
+    }
+
+    private function buildEmployeePageProjectOptions(int $accountSetId): array
+    {
+        return Project::where('account_set_id', $accountSetId)
+            ->orderByDesc('created_at')
+            ->get([
+                'id',
+                'name',
+                'code',
+                'status',
+                'start_date',
+                'end_date',
+                'social_security_regions',
+                'medical_insurance_regions',
+                'housing_fund_regions',
+            ])
+            ->map(function (Project $project) {
+                return [
+                    'id' => (int) $project->id,
+                    'name' => $project->name,
+                    'code' => $project->code,
+                    'status' => $project->status,
+                    'start_date' => $project->getRawOriginal('start_date'),
+                    'end_date' => $project->getRawOriginal('end_date'),
+                    'social_security_regions' => $project->social_security_regions ?: [],
+                    'medical_insurance_regions' => $project->medical_insurance_regions ?: [],
+                    'housing_fund_regions' => $project->housing_fund_regions ?: [],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function buildExpiredIdCardReminderData(int $accountSetId): array
+    {
+        $today = Carbon::today();
+        $warningDate = $today->copy()->addMonth();
+
+        $expiredEmployees = Employee::where('account_set_id', $accountSetId)
+            ->whereNotNull('id_card_valid_until')
+            ->whereDate('id_card_valid_until', '<=', $warningDate->toDateString());
+
+        $this->applyActivePersonnelFilter($expiredEmployees);
+
+        $expiredEmployees = $expiredEmployees
+            ->select('id', 'name', 'employee_number', 'id_number', 'id_card_valid_until')
+            ->orderBy('id_card_valid_until', 'asc')
+            ->get()
+            ->map(function ($employee) use ($today) {
+                $expiryDate = Carbon::parse($employee->id_card_valid_until)->startOfDay();
+                $isExpired = $expiryDate->lt($today);
+                $isToday = $expiryDate->equalTo($today);
+
+                if ($isExpired) {
+                    $expiredDays = $expiryDate->diffInDays($today);
+                    $statusType = 'expired';
+                    $statusLabel = '已过期';
+                    $daysLabel = '已过期 ' . $expiredDays . ' 天';
+                } elseif ($isToday) {
+                    $expiredDays = 0;
+                    $statusType = 'expiring_soon';
+                    $statusLabel = '今日到期';
+                    $daysLabel = '今日到期';
+                } else {
+                    $expiredDays = $today->diffInDays($expiryDate);
+                    $statusType = 'expiring_soon';
+                    $statusLabel = '即将到期';
+                    $daysLabel = '剩余 ' . $expiredDays . ' 天';
+                }
+
+                return [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    'employee_number' => $employee->employee_number,
+                    'id_number' => $employee->id_number,
+                    'id_card_valid_until' => $employee->id_card_valid_until,
+                    'expired_days' => $expiredDays,
+                    'status_type' => $statusType,
+                    'status_label' => $statusLabel,
+                    'days_label' => $daysLabel,
+                ];
+            });
+
+        return [
+            'data' => $expiredEmployees->values()->all(),
+            'count' => $expiredEmployees->count(),
+            'expired_count' => $expiredEmployees->where('status_type', 'expired')->count(),
+            'expiring_soon_count' => $expiredEmployees->where('status_type', 'expiring_soon')->count(),
+        ];
+    }
+
+    private function buildPendingContractUploadData(int $accountSetId): array
+    {
+        return Employee::where('account_set_id', $accountSetId)
+            ->where('is_offline_onboarding', true)
+            ->where('contract_uploaded', false)
+            ->where('contract_upload_deadline', '<', Carbon::now())
+            ->where('contract_status', 'active')
+            ->with('projects:id,name')
+            ->get()
+            ->map(function (Employee $employee) {
+                return [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    'id_number' => $employee->id_number,
+                    'phone' => $employee->phone,
+                    'offline_onboarding_date' => $employee->offline_onboarding_date,
+                    'contract_upload_deadline' => $employee->contract_upload_deadline,
+                    'overdue_days' => Carbon::parse($employee->contract_upload_deadline)->diffInDays(Carbon::now()),
+                    'projects' => $employee->projects->pluck('name')->values()->all(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function buildArchiveReminderCounts(int $accountSetId): array
+    {
+        $today = Carbon::today();
+        $warningDate = $today->copy()->addDays(30);
+
+        $documentEmployees = Employee::where('account_set_id', $accountSetId)
+            ->select(['id', 'account_set_id'])
+            ->with([
+                'projects:id,name',
+                'documents:id,employee_id,document_config_id',
+            ])
+            ->get();
+        $this->appendMissingRequiredDocumentData($documentEmployees);
+
+        $activeQuery = Employee::where('account_set_id', $accountSetId);
+        $this->applyActivePersonnelFilter($activeQuery);
+
+        $unsignedContractQuery = clone $activeQuery;
+        $this->applyLaborContractSignFilter($unsignedContractQuery, 'unsigned');
+
+        $pendingStampQuery = clone $activeQuery;
+        $this->applyLaborContractSignFilter($pendingStampQuery, 'pending_stamp');
+
+        $retiredQuery = Employee::where('account_set_id', $accountSetId);
+        $this->applyPersonnelStatusFilter($retiredQuery, 'retired');
+
+        $contractExpiredQuery = clone $activeQuery;
+        $contractExpiredQuery
+            ->whereNotNull('contract_end_date')
+            ->whereDate('contract_end_date', '<', $today->toDateString())
+            ->whereDoesntHave('latestEmployeeContract', function ($contractQuery) {
+                $contractQuery->whereIn('contract_type', ['termination', 'retirement'])
+                    ->whereIn('status', ['employee_signed', 'in_approval', 'completed']);
+            });
+
+        return [
+            'missing_documents' => $documentEmployees->filter(function (Employee $employee) {
+                return (bool) $employee->has_missing_required_documents;
+            })->count(),
+            'unsigned_contract' => $unsignedContractQuery->count(),
+            'offline_contract_upload' => Employee::where('account_set_id', $accountSetId)
+                ->where('is_offline_onboarding', true)
+                ->where(function ($query) {
+                    $query->whereNull('contract_uploaded')->orWhere('contract_uploaded', false);
+                })
+                ->count(),
+            'pending_stamp' => $pendingStampQuery->count(),
+            'retired' => $retiredQuery->count(),
+            'contract_expiring' => (clone $activeQuery)
+                ->whereNotNull('contract_end_date')
+                ->whereDate('contract_end_date', '>=', $today->toDateString())
+                ->whereDate('contract_end_date', '<=', $warningDate->toDateString())
+                ->count(),
+            'contract_expired' => $contractExpiredQuery->count(),
+        ];
+    }
+
+    public function getPageBootstrap(Request $request)
+    {
+        if ($response = $this->checkPermission('employees.view')) {
+            return $response;
+        }
+
+        $accountSetId = $this->resolveEmployeePageAccountSetId($request);
+        if (!$accountSetId) {
+            return response()->json([
+                'success' => false,
+                'message' => '请先选择账套',
+            ], 400);
+        }
+
+        $warnings = [];
+
+        try {
+            $projects = $this->buildEmployeePageProjectOptions($accountSetId);
+        } catch (\Throwable $e) {
+            $projects = [];
+            $warnings[] = '项目选项加载失败';
+            \Log::error('人员档案页面项目选项加载失败', ['error' => $e->getMessage()]);
+        }
+
+        try {
+            $idCardReminders = $this->buildExpiredIdCardReminderData($accountSetId);
+        } catch (\Throwable $e) {
+            $idCardReminders = ['data' => [], 'count' => 0, 'expired_count' => 0, 'expiring_soon_count' => 0];
+            $warnings[] = '身份证提醒加载失败';
+            \Log::error('人员档案页面身份证提醒加载失败', ['error' => $e->getMessage()]);
+        }
+
+        try {
+            $pendingContractUpload = $this->buildPendingContractUploadData($accountSetId);
+        } catch (\Throwable $e) {
+            $pendingContractUpload = [];
+            $warnings[] = '待上传合同加载失败';
+            \Log::error('人员档案页面待上传合同加载失败', ['error' => $e->getMessage()]);
+        }
+
+        try {
+            $archiveReminderCounts = $this->buildArchiveReminderCounts($accountSetId);
+        } catch (\Throwable $e) {
+            $archiveReminderCounts = [
+                'missing_documents' => 0,
+                'unsigned_contract' => 0,
+                'offline_contract_upload' => 0,
+                'pending_stamp' => 0,
+                'retired' => 0,
+                'contract_expiring' => 0,
+                'contract_expired' => 0,
+            ];
+            $warnings[] = '档案提醒统计加载失败';
+            \Log::error('人员档案页面档案提醒统计加载失败', ['error' => $e->getMessage()]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'projects' => $projects,
+                'id_card_reminders' => $idCardReminders,
+                'pending_contract_upload' => [
+                    'data' => $pendingContractUpload,
+                    'count' => count($pendingContractUpload),
+                ],
+                'archive_reminder_counts' => $archiveReminderCounts,
+            ],
+            'warnings' => $warnings,
+        ]);
+    }
+
     /**
      * 获取身份证已过期或一个月内即将到期的在职员工列表
      */
@@ -5156,63 +5409,14 @@ class EmployeeController extends ApiController
                 $accountSetId = $request->user()->account_set_id;
             }
 
-            $today = Carbon::today();
-            $warningDate = $today->copy()->addMonth();
-
-            $expiredEmployees = Employee::where('account_set_id', $accountSetId)
-                ->whereNotNull('id_card_valid_until')
-                ->whereDate('id_card_valid_until', '<=', $warningDate->toDateString());
-
-            $this->applyActivePersonnelFilter($expiredEmployees);
-
-            $expiredEmployees = $expiredEmployees
-                ->select('id', 'name', 'employee_number', 'id_number', 'id_card_valid_until')
-                ->orderBy('id_card_valid_until', 'asc')
-                ->get()
-                ->map(function ($employee) {
-                    $expiryDate = Carbon::parse($employee->id_card_valid_until)->startOfDay();
-                    $isExpired = $expiryDate->lt(Carbon::today());
-                    $isToday = $expiryDate->equalTo(Carbon::today());
-
-                    if ($isExpired) {
-                        $expiredDays = $expiryDate->diffInDays(Carbon::today());
-                        $statusType = 'expired';
-                        $statusLabel = '已过期';
-                        $daysLabel = '已过期 ' . $expiredDays . ' 天';
-                    } elseif ($isToday) {
-                        $expiredDays = 0;
-                        $statusType = 'expiring_soon';
-                        $statusLabel = '今日到期';
-                        $daysLabel = '今日到期';
-                    } else {
-                        $expiredDays = Carbon::today()->diffInDays($expiryDate);
-                        $statusType = 'expiring_soon';
-                        $statusLabel = '即将到期';
-                        $daysLabel = '剩余 ' . $expiredDays . ' 天';
-                    }
-
-                    return [
-                        'id' => $employee->id,
-                        'name' => $employee->name,
-                        'employee_number' => $employee->employee_number,
-                        'id_number' => $employee->id_number,
-                        'id_card_valid_until' => $employee->id_card_valid_until,
-                        'expired_days' => $expiredDays,
-                        'status_type' => $statusType,
-                        'status_label' => $statusLabel,
-                        'days_label' => $daysLabel
-                    ];
-                });
-
-            $expiredCount = $expiredEmployees->where('status_type', 'expired')->count();
-            $expiringSoonCount = $expiredEmployees->where('status_type', 'expiring_soon')->count();
+            $reminderData = $this->buildExpiredIdCardReminderData((int) $accountSetId);
 
             return response()->json([
                 'success' => true,
-                'data' => $expiredEmployees,
-                'count' => $expiredEmployees->count(),
-                'expired_count' => $expiredCount,
-                'expiring_soon_count' => $expiringSoonCount
+                'data' => $reminderData['data'],
+                'count' => $reminderData['count'],
+                'expired_count' => $reminderData['expired_count'],
+                'expiring_soon_count' => $reminderData['expiring_soon_count'],
             ]);
         } catch (\Exception $e) {
             \Log::error('获取过期身份证列表失败', [

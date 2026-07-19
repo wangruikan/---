@@ -1515,7 +1515,7 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick } 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PdfPlaceholderSetup from '@/components/PdfPlaceholderSetup.vue'
 import ProjectDocumentConfigDialog from '@/components/ProjectDocumentConfigDialog.vue'
-import { getProjects, createProject, updateProject, terminateProject, deleteProject, getProjectCodePreview, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
+import { getProjects, createProject, updateProject, terminateProject, deleteProject, getProjectCodePreview, getProjectCreateOptions, getProjectRoleUsers, saveProjectRoleUsers } from '@/api/projects'
 import { getUsers } from '@/api/user'
 import { getSharedFiles } from '@/api/sharedFiles'
 import { addContractTemplate, getDefaultTemplates, getContractTemplates, setDefaultTemplate, deleteContractTemplate } from '@/api/contractTemplates'
@@ -2441,30 +2441,12 @@ const handleProjectCodeBlur = () => {
   form.code = normalizeProjectCode(form.code)
 }
 
-const loadProjectFilterOptions = async () => {
-  try {
-    const response = await getProjects({
-      all: true,
-      current_account_set_id: currentAccountSetId.value
-    })
-
-    if (response?.success) {
-      const projectList = Array.isArray(response.data) ? response.data : (response.data?.data || [])
-      projectFilterOptions.value = projectList
-    } else {
-      projectFilterOptions.value = []
-    }
-  } catch (error) {
-    console.error('加载项目筛选选项失败:', error)
-    projectFilterOptions.value = []
-  }
-}
-
 const loadProjects = async () => {
   loading.value = true
   try {
     const params = {
       all: true,
+      include_filter_options: true,
       current_account_set_id: currentAccountSetId.value,
       ...searchForm
     }
@@ -2482,6 +2464,13 @@ const loadProjects = async () => {
     if (response && response.success) {
       const projectList = Array.isArray(response.data) ? response.data : (response.data?.data || [])
       projects.value = projectList
+      projectFilterOptions.value = Array.isArray(response.filter_options)
+        ? response.filter_options
+        : projectList.map(project => ({
+          id: project.id,
+          name: project.name,
+          code: project.code
+        }))
       projectStats.value = {
         total: response.stats?.total || 0,
         active: response.stats?.active || 0,
@@ -3788,36 +3777,30 @@ const getRemainingDaysText = (row) => {
 
 // 加载所有可用的地区和保险数据
 const loadAvailableRegions = async () => {
+  if (!currentAccountSetId.value) {
+    availableSocialSecurityRegions.value = []
+    availableHousingFundRegions.value = []
+    availableMedicalInsuranceRegions.value = []
+    availableOtherInsurancePolicies.value = []
+    return
+  }
+
+  loadingSocialSecurityRegions.value = true
+  loadingHousingFundRegions.value = true
+  loadingMedicalInsuranceRegions.value = true
+  loadingOtherInsurancePolicies.value = true
+
   try {
-    // 并行加载所有数据
-    const [
-      socialSecurityResponse, 
-      housingFundResponse, 
-      medicalInsuranceResponse,
-      otherInsuranceResponse
-    ] = await Promise.all([
-      getAvailableSocialSecurityRegions(),
-      getAvailableHousingFundRegions(),
-      getAvailableMedicalInsuranceRegions(),
-      getAvailableOtherInsurancePolicies()
-    ])
-    
-    if (socialSecurityResponse.success) {
-      availableSocialSecurityRegions.value = socialSecurityResponse.data || []
-    }
-    
-    if (housingFundResponse.success) {
-      availableHousingFundRegions.value = housingFundResponse.data || []
-    }
-    
-    if (medicalInsuranceResponse.success) {
-      availableMedicalInsuranceRegions.value = medicalInsuranceResponse.data || []
-    }
-    
-    if (otherInsuranceResponse.success) {
-      availableOtherInsurancePolicies.value = otherInsuranceResponse.data || []
-    }
-    
+    const response = await getProjectCreateOptions({
+      current_account_set_id: currentAccountSetId.value
+    })
+
+    const data = response.data || {}
+    availableSocialSecurityRegions.value = data.social_security_regions || []
+    availableHousingFundRegions.value = data.housing_fund_regions || []
+    availableMedicalInsuranceRegions.value = data.medical_insurance_regions || []
+    availableOtherInsurancePolicies.value = data.other_insurance_policies || []
+
     console.log('地区和保险数据加载完成:', {
       socialSecurity: availableSocialSecurityRegions.value.length,
       housingFund: availableHousingFundRegions.value.length,
@@ -3827,6 +3810,11 @@ const loadAvailableRegions = async () => {
   } catch (error) {
     console.error('加载地区数据失败:', error)
     ElMessage.error('加载地区数据失败')
+  } finally {
+    loadingSocialSecurityRegions.value = false
+    loadingHousingFundRegions.value = false
+    loadingMedicalInsuranceRegions.value = false
+    loadingOtherInsurancePolicies.value = false
   }
 }
 
@@ -3836,7 +3824,6 @@ onMounted(async () => {
   await nextTick()
   initProjectTableStickyTop()
   window.addEventListener('resize', updateProjectTableStickyTop)
-  await loadProjectFilterOptions()
   // 然后加载项目
   loadProjects()
 })
@@ -3854,7 +3841,6 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
   console.log('项目页-账套变化检测:', { new: newAccountSetId, old: oldAccountSetId })
   if (newAccountSetId && oldAccountSetId && newAccountSetId !== oldAccountSetId) {
     console.log('✅ 项目页-账套切换，重新加载数据:', newAccountSetId)
-    loadProjectFilterOptions()
     loadProjects()
   }
 })

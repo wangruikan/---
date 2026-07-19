@@ -36,6 +36,30 @@ interface ExpiredIdCardsResponse {
   expiring_soon_count: number;
 }
 
+interface EmployeePageBootstrapResponse {
+  success: boolean;
+  data: {
+    projects: Array<Record<string, unknown>>;
+    id_card_reminders: Omit<ExpiredIdCardsResponse, 'success'>;
+    pending_contract_upload: {
+      data: Array<Record<string, unknown>>;
+      count: number;
+    };
+    archive_reminder_counts: Record<string, number>;
+  };
+  warnings: string[];
+}
+
+const ARCHIVE_REMINDER_KEYS = [
+  'missing_documents',
+  'unsigned_contract',
+  'offline_contract_upload',
+  'pending_stamp',
+  'retired',
+  'contract_expiring',
+  'contract_expired',
+] as const;
+
 function assertJsonResponse(response: APIResponse) {
   expect(response.headers()['content-type']).toContain('application/json');
 }
@@ -45,6 +69,21 @@ function authHeaders(token: string) {
     Authorization: `Bearer ${token}`,
     'X-Account-Set-Id': String(ACCOUNT_SET_ID),
   };
+}
+
+function normalizeProjectRegionIds(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const id = typeof item === 'object' && item !== null
+        ? (item as Record<string, unknown>).id
+        : item;
+      return Number(id);
+    })
+    .filter((id) => Number.isInteger(id) && id > 0);
 }
 
 async function login(request: APIRequestContext): Promise<string> {
@@ -80,6 +119,39 @@ class EmployeeReminderApiClient {
     const body = (await response.json()) as ExpiredIdCardsResponse;
 
     return { response, body, elapsed };
+  }
+
+  async getPageBootstrap() {
+    const startedAt = Date.now();
+    const response = await this.request.get(`${BASE_URL}/employees/page-bootstrap`, {
+      headers: authHeaders(this.token),
+      params: {
+        current_account_set_id: ACCOUNT_SET_ID,
+      },
+    });
+    const elapsed = Date.now() - startedAt;
+    const body = (await response.json()) as EmployeePageBootstrapResponse;
+
+    return { response, body, elapsed };
+  }
+
+  async getProjects() {
+    const response = await this.request.get(`${BASE_URL}/projects`, {
+      headers: authHeaders(this.token),
+      params: {
+        current_account_set_id: ACCOUNT_SET_ID,
+      },
+    });
+
+    return { response, body: await response.json() };
+  }
+
+  async getPendingContractUpload() {
+    const response = await this.request.get(`${BASE_URL}/employees/pending-contract-upload`, {
+      headers: authHeaders(this.token),
+    });
+
+    return { response, body: await response.json() };
   }
 
   async listActiveEmployees(perPage = 10) {
@@ -147,6 +219,78 @@ test.describe('身份证到期提醒 API', () => {
     });
 
     expect(response.status()).toBe(401);
+  });
+
+  test('人员档案聚合初始化接口未登录请求返回 401', async ({ request }) => {
+    const response = await request.get(`${BASE_URL}/employees/page-bootstrap`, {
+      params: {
+        current_account_set_id: ACCOUNT_SET_ID,
+      },
+    });
+
+    expect(response.status()).toBe(401);
+  });
+
+  test('人员档案聚合初始化接口返回完整结构且提醒数据口径不变', async ({ request }) => {
+    const token = await login(request);
+    const api = new EmployeeReminderApiClient(request, token);
+
+    const [bootstrapResult, reminderResult, projectsResult, pendingContractResult] = await Promise.all([
+      api.getPageBootstrap(),
+      api.getExpiredIdCards(),
+      api.getProjects(),
+      api.getPendingContractUpload(),
+    ]);
+
+    expect(bootstrapResult.response.status()).toBe(200);
+    expect(bootstrapResult.elapsed).toBeLessThan(RESPONSE_TIME_LIMIT);
+    assertJsonResponse(bootstrapResult.response);
+
+    const { body } = bootstrapResult;
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.data.projects)).toBe(true);
+    expect(Array.isArray(body.data.pending_contract_upload.data)).toBe(true);
+    expect(body.data.pending_contract_upload.count).toBe(
+      body.data.pending_contract_upload.data.length
+    );
+    expect(Array.isArray(body.warnings)).toBe(true);
+    expect(body.warnings).toEqual([]);
+
+    expect(Object.keys(body.data.archive_reminder_counts).sort()).toEqual(
+      [...ARCHIVE_REMINDER_KEYS].sort()
+    );
+    for (const key of ARCHIVE_REMINDER_KEYS) {
+      expect(typeof body.data.archive_reminder_counts[key]).toBe('number');
+      expect(body.data.archive_reminder_counts[key]).toBeGreaterThanOrEqual(0);
+    }
+
+    expect(reminderResult.response.status()).toBe(200);
+    expect(body.data.id_card_reminders).toEqual({
+      data: reminderResult.body.data,
+      count: reminderResult.body.count,
+      expired_count: reminderResult.body.expired_count,
+      expiring_soon_count: reminderResult.body.expiring_soon_count,
+    });
+
+    expect(projectsResult.response.status()).toBe(200);
+    const legacyProjects = projectsResult.body.data?.data || [];
+    const normalizeProject = (project: Record<string, unknown>) => ({
+      id: project.id,
+      name: project.name,
+      code: project.code,
+      status: project.status,
+      start_date: project.start_date,
+      end_date: project.end_date,
+      social_security_regions: normalizeProjectRegionIds(project.social_security_regions),
+      medical_insurance_regions: normalizeProjectRegionIds(project.medical_insurance_regions),
+      housing_fund_regions: normalizeProjectRegionIds(project.housing_fund_regions),
+    });
+    expect(body.data.projects.map(normalizeProject)).toEqual(
+      legacyProjects.map(normalizeProject)
+    );
+
+    expect(pendingContractResult.response.status()).toBe(200);
+    expect(body.data.pending_contract_upload.data).toEqual(pendingContractResult.body.data || []);
   });
 
   test('返回一个月内到期/已过期的员工列表与统计', async ({ request }) => {

@@ -12,6 +12,17 @@ export function getInvoiceApplications(params) {
 }
 
 /**
+ * 获取创建发票申请所需选项
+ */
+export function getInvoiceApplicationCreateOptions(params = {}) {
+  return request({
+    url: '/invoice-applications/create-options',
+    method: 'get',
+    params
+  })
+}
+
+/**
  * 获取发票申请详情
  */
 export function getInvoiceApplicationDetail(id) {

@@ -6,10 +6,16 @@ use App\Models\ContractReminder;
 use App\Models\BidReminder;
 use App\Models\DocumentDeliveryReminder;
 use App\Models\AssessmentRecord;
+use App\Models\ApprovalFlowConfig;
+use App\Models\ApprovalInstance;
+use App\Models\ApprovalRecord;
 use App\Models\Project;
 use App\Models\Employee;
 use App\Models\EmployeeContract;
+use App\Models\PendingTask;
+use App\Services\DynamicScheduledTaskService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
@@ -36,6 +42,10 @@ class DashboardController extends Controller
             $contractStatistics = $this->getContractStatisticsData($accountSetId);
             $reminders = $this->getRemindersData($accountSetId);
             $projects = $this->getProjectsData($accountSetId);
+            $myTasks = $this->getMyTasksData($accountSetId, $request->user());
+            $quickStats = $this->getQuickStatsData($request, $accountSetId);
+            $assessmentRecords = $this->getAssessmentRecordsData($accountSetId, $request->user());
+            $monthlyWorkStats = $this->getMonthlyWorkStatsData($accountSetId, $request->user());
 
             return response()->json([
                 'success' => true,
@@ -44,7 +54,11 @@ class DashboardController extends Controller
                     'employeeDistribution' => $employeeDistribution,
                     'contractStatistics' => $contractStatistics,
                     'reminders' => $reminders,
-                    'projects' => $projects
+                    'projects' => $projects,
+                    'myTasks' => $myTasks,
+                    'quickStats' => $quickStats,
+                    'assessmentRecords' => $assessmentRecords,
+                    'monthlyWorkStats' => $monthlyWorkStats,
                 ]
             ]);
         } catch (\Exception $e) {
@@ -52,6 +66,161 @@ class DashboardController extends Controller
                 'success' => false,
                 'message' => '获取Dashboard数据失败：' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function emptyMonthlyWorkStats(): array
+    {
+        return [
+            'total' => 0,
+            'pending' => 0,
+            'approved' => 0,
+            'rejected' => 0,
+            'completed' => 0,
+        ];
+    }
+
+    private function getMyTasksData($accountSetId, $user): array
+    {
+        if (!$user) {
+            return ['list' => [], 'total' => 0];
+        }
+
+        try {
+            $query = ApprovalRecord::with(['instance.creator', 'instance.attachments'])
+                ->where('approver_id', $user->id)
+                ->where('status', 'pending')
+                ->whereHas('instance', function ($q) use ($accountSetId) {
+                    $q->where('account_set_id', $accountSetId);
+                });
+
+            $total = (clone $query)->count();
+            $tasks = $query->orderBy('created_at', 'desc')
+                ->limit(20)
+                ->get();
+
+            foreach ($tasks as $task) {
+                $task->business_data = $task->instance?->getBusinessData();
+            }
+
+            return [
+                'list' => $tasks->values(),
+                'total' => $total,
+            ];
+        } catch (\Exception $e) {
+            return ['list' => [], 'total' => 0];
+        }
+    }
+
+    private function getQuickStatsData(Request $request, $accountSetId): array
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return [
+                'pendingTasks' => 0,
+                'approved' => 0,
+                'initiated' => 0,
+            ];
+        }
+
+        try {
+            app(DynamicScheduledTaskService::class)->syncForAccountSet(
+                $accountSetId,
+                $request->input('month')
+            );
+
+            $pendingTasks = PendingTask::where('account_set_id', $accountSetId)
+                ->where('handler_id', $user->id)
+                ->where('status', 'pending')
+                ->count();
+
+            $approved = ApprovalRecord::where('approver_id', $user->id)
+                ->whereIn('status', ['approved', 'rejected', 'returned'])
+                ->whereHas('instance', function ($q) use ($accountSetId) {
+                    $q->where('account_set_id', $accountSetId);
+                })
+                ->count();
+
+            $initiated = ApprovalInstance::where('created_by', $user->id)
+                ->where('account_set_id', $accountSetId)
+                ->count();
+
+            return [
+                'pendingTasks' => $pendingTasks,
+                'approved' => $approved,
+                'initiated' => $initiated,
+            ];
+        } catch (\Exception $e) {
+            return [
+                'pendingTasks' => 0,
+                'approved' => 0,
+                'initiated' => 0,
+            ];
+        }
+    }
+
+    private function getAssessmentRecordsData($accountSetId, $user)
+    {
+        if (!$user) {
+            return [];
+        }
+
+        try {
+            return AssessmentRecord::with(['latestAppeal'])
+                ->where('account_set_id', $accountSetId)
+                ->where('handler_id', $user->id)
+                ->orderBy('deadline_date', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->limit(8)
+                ->get();
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    private function canViewMonthlyWorkStats($user, $accountSetId): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->role === 'super_admin') {
+            return true;
+        }
+
+        if (in_array($user->role, ['admin', 'manager', 'senior_manager'], true)) {
+            return true;
+        }
+
+        return DB::table('account_set_users')
+            ->where('account_set_id', $accountSetId)
+            ->where('user_id', $user->id)
+            ->whereBetween('approval_level', [
+                ApprovalFlowConfig::MIN_APPROVAL_LEVEL,
+                ApprovalFlowConfig::MAX_APPROVAL_LEVEL,
+            ])
+            ->exists();
+    }
+
+    private function getMonthlyWorkStatsData($accountSetId, $user): array
+    {
+        if (!$this->canViewMonthlyWorkStats($user, $accountSetId)) {
+            return $this->emptyMonthlyWorkStats();
+        }
+
+        try {
+            $baseQuery = ApprovalInstance::where('account_set_id', $accountSetId);
+
+            return [
+                'total' => (clone $baseQuery)->count(),
+                'pending' => (clone $baseQuery)->where('status', 'pending')->count(),
+                'approved' => (clone $baseQuery)->where('status', 'approved')->count(),
+                'rejected' => (clone $baseQuery)->where('status', 'rejected')->count(),
+                'completed' => (clone $baseQuery)->where('status', 'completed')->count(),
+            ];
+        } catch (\Exception $e) {
+            return $this->emptyMonthlyWorkStats();
         }
     }
 

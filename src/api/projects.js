@@ -27,6 +27,15 @@ export function getProjectCodePreview(params) {
   })
 }
 
+// get project create/edit form options
+export function getProjectCreateOptions(params) {
+  return request({
+    url: '/projects/create-options',
+    method: 'get',
+    params
+  })
+}
+
 // get project detail
 export function getProject(id) {
   return request({

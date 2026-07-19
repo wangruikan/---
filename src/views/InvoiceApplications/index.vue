@@ -5,7 +5,7 @@
         <div class="card-header">
           <span class="title">发票申请管理</span>
           <!-- 创建按钮 - 只有后续审批节点人员可见 -->
-          <el-button v-if="canCreateTask" type="primary" @click="handleCreate">
+          <el-button v-if="canCreateTask" type="primary" :loading="createOptionsLoading" @click="handleCreate">
             <el-icon><Plus /></el-icon>
             创建开票任务
           </el-button>
@@ -1118,6 +1118,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download } from '@element-plus/icons-vue'
 import {
   getInvoiceApplications,
+  getInvoiceApplicationCreateOptions,
   getInvoiceApplicationDetail,
   createInvoiceApplication,
   getRedFlushCandidates,
@@ -1130,9 +1131,6 @@ import {
   deleteAttachment,
   submitInvoiceApplication
 } from '@/api/invoiceApplication'
-import { getAllInvoiceProjects } from '@/api/invoiceProject'
-import { getAllInvoiceContentConfigs } from '@/api/invoiceContentConfig'
-import { getProjects } from '@/api/projects'
 import request from '@/api/request'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { usePermissionStore } from '@/stores/permission'
@@ -1261,6 +1259,8 @@ const createItems = ref([
 ])
 const invoiceContentConfigs = ref([])
 const projectOptions = ref([])
+const createOptionsLoading = ref(false)
+const createOptionsAccountSetId = ref(null)
 const createContentItems = ref([])
 const createDeductionSectionRef = ref(null)
 const lastCreateDuplicateWarnKey = ref('')
@@ -2122,40 +2122,44 @@ const loadData = async () => {
   }
 }
 
-// 加载发票项目
-const loadInvoiceProjects = async () => {
-  try {
-    const response = await getAllInvoiceProjects()
-    if (response.success) {
-      invoiceProjects.value = response.data
-    }
-  } catch (error) {
-    console.error('加载项目失败', error)
+const loadCreateOptions = async () => {
+  const accountSetId = Number(accountSetStore.currentAccountSetId)
+  if (!accountSetId) {
+    ElMessage.warning('请先选择账套')
+    return false
   }
-}
 
-const loadProjectOptions = async () => {
-  try {
-    const response = await getProjects({ all: true })
-    if (response.success) {
-      projectOptions.value = Array.isArray(response.data)
-        ? response.data
-        : (response.data?.data || [])
-    }
-  } catch (error) {
-    console.error('加载项目管理列表失败', error)
+  if (createOptionsAccountSetId.value === accountSetId) {
+    return true
   }
-}
 
-// 加载开票内容配置项目
-const loadInvoiceContentConfigs = async () => {
+  createOptionsLoading.value = true
   try {
-    const response = await getAllInvoiceContentConfigs()
-    if (response.success) {
-      invoiceContentConfigs.value = response.data || []
+    const response = await getInvoiceApplicationCreateOptions({
+      current_account_set_id: accountSetId
+    })
+
+    if (!response?.success) {
+      throw new Error(response?.message || '加载开票选项失败')
     }
+
+    projectOptions.value = Array.isArray(response.data?.projects) ? response.data.projects : []
+    invoiceProjects.value = Array.isArray(response.data?.invoice_projects) ? response.data.invoice_projects : []
+    invoiceContentConfigs.value = Array.isArray(response.data?.invoice_content_configs)
+      ? response.data.invoice_content_configs
+      : []
+    createOptionsAccountSetId.value = accountSetId
+    return true
   } catch (error) {
-    console.error('加载开票内容配置失败', error)
+    console.error('加载开票选项失败', error)
+    projectOptions.value = []
+    invoiceProjects.value = []
+    invoiceContentConfigs.value = []
+    createOptionsAccountSetId.value = null
+    ElMessage.error(error.message || '加载开票选项失败')
+    return false
+  } finally {
+    createOptionsLoading.value = false
   }
 }
 
@@ -2343,7 +2347,11 @@ const resetCreateForm = () => {
   createFormRef.value?.clearValidate()
 }
 
-const handleCreate = () => {
+const handleCreate = async () => {
+  if (!await loadCreateOptions()) {
+    return
+  }
+
   resetCreateForm()
   createDialogVisible.value = true
 }
@@ -2659,7 +2667,11 @@ const handleDelete = async (row) => {
 }
 
 // 添加明细
-const handleAddItem = () => {
+const handleAddItem = async () => {
+  if (!await loadCreateOptions()) {
+    return
+  }
+
   isEditItem.value = false
   itemDialogTitle.value = '添加明细项'
   resetItemForm()
@@ -2667,7 +2679,11 @@ const handleAddItem = () => {
 }
 
 // 编辑明细
-const handleEditItem = (row) => {
+const handleEditItem = async (row) => {
+  if (!await loadCreateOptions()) {
+    return
+  }
+
   isEditItem.value = true
   itemDialogTitle.value = '编辑明细项'
   itemForm.id = row.id
@@ -3100,9 +3116,6 @@ watch(
 // 初始化
 onMounted(() => {
   loadData()
-  loadProjectOptions()
-  loadInvoiceProjects()
-  loadInvoiceContentConfigs()
   resetCreateContentItems()
   syncCreateCalculatedAmounts()
 })

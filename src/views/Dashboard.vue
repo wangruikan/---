@@ -425,10 +425,6 @@ import { User, Folder, Clock, Money, Document, UserFilled, Warning, Bell, Refres
 import * as echarts from 'echarts'
 import dayjs from 'dayjs'
 import { markReminderAsRead, getDashboardData } from '@/api/dashboard'
-import { getProcessRecordStats } from '@/api/processRecord'
-import { getAssessmentRecords } from '@/api/assessment'
-import { getMyTasks, getMyApproved, getMyInitiated } from '@/api/approvalFlow'
-import { getPendingTasksStatistics } from '@/api/pendingTasks'
 import { submitInvoiceReason } from '@/api/invoiceReminder'
 import { useAccountSetStore } from '@/stores/accountSet'
 import { useUserStore } from '@/stores/user'
@@ -751,31 +747,6 @@ watch(
   { deep: true }
 )
 
-const loadMyTasks = async () => {
-  if (!accountSetStore.currentAccountSet?.id) {
-    myTaskList.value = []
-    myTaskTotal.value = 0
-    return
-  }
-
-  myTaskLoading.value = true
-  try {
-    const response = await getMyTasks({
-      page: 1,
-      per_page: 50
-    })
-
-    myTaskList.value = Array.isArray(response?.data) ? response.data : []
-    myTaskTotal.value = Number(response?.total || 0)
-  } catch (error) {
-    console.error('加载我的待办失败:', error)
-    myTaskList.value = []
-    myTaskTotal.value = 0
-  } finally {
-    myTaskLoading.value = false
-  }
-}
-
 const resetQuickStats = () => {
   quickStats.value = {
     pendingTasks: 0,
@@ -784,28 +755,13 @@ const resetQuickStats = () => {
   }
 }
 
-const loadQuickStats = async () => {
-  if (!accountSetStore.currentAccountSet?.id) {
-    resetQuickStats()
-    return
-  }
-
-  const [pendingResult, approvedResult, initiatedResult] = await Promise.allSettled([
-    getPendingTasksStatistics(),
-    getMyApproved({ page: 1, per_page: 1 }),
-    getMyInitiated({ page: 1, per_page: 1 })
-  ])
-
-  quickStats.value = {
-    pendingTasks: pendingResult.status === 'fulfilled'
-      ? Number(pendingResult.value?.data?.pending || 0)
-      : 0,
-    approved: approvedResult.status === 'fulfilled'
-      ? Number(approvedResult.value?.total || 0)
-      : 0,
-    initiated: initiatedResult.status === 'fulfilled'
-      ? Number(initiatedResult.value?.total || 0)
-      : 0
+const resetMonthlyWorkStats = () => {
+  monthlyWorkStats.value = {
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    completed: 0
   }
 }
 
@@ -822,12 +778,16 @@ const goToMyTasks = (row) => {
 
 // 统一加载 Dashboard 数据
 const loadDashboardData = async () => {
+  myTaskLoading.value = true
   try {
     if (!accountSetStore.currentAccountSet?.id) {
       console.warn('未选择账套，无法加载 Dashboard 数据')
       myTaskList.value = []
       myTaskTotal.value = 0
       resetQuickStats()
+      assessmentRecords.value = []
+      resetMonthlyWorkStats()
+      await initMonthlyWorkChart()
       return
     }
 
@@ -850,32 +810,55 @@ const loadDashboardData = async () => {
       // 保存图表数据给 initCharts 使用
       employeeDistributionData.value = response.data.employeeDistribution || []
       contractStatisticsData.value = response.data.contractStatistics || []
-      
+
+      const myTasksData = response.data.myTasks || {}
+      myTaskList.value = Array.isArray(myTasksData.list) ? myTasksData.list : []
+      myTaskTotal.value = Number(myTasksData.total || 0)
+
+      const quickStatsData = response.data.quickStats || {}
+      quickStats.value = {
+        pendingTasks: Number(quickStatsData.pendingTasks || 0),
+        approved: Number(quickStatsData.approved || 0),
+        initiated: Number(quickStatsData.initiated || 0)
+      }
+
+      assessmentRecords.value = Array.isArray(response.data.assessmentRecords)
+        ? response.data.assessmentRecords
+        : []
+
+      const monthlyStatsData = response.data.monthlyWorkStats || {}
+      monthlyWorkStats.value = {
+        total: Number(monthlyStatsData.total || 0),
+        pending: Number(monthlyStatsData.pending || 0),
+        approved: Number(monthlyStatsData.approved || 0),
+        rejected: Number(monthlyStatsData.rejected || 0),
+        completed: Number(monthlyStatsData.completed || 0)
+      }
+
       // 初始化图表
       await initCharts()
-
-      // 本月工作汇总
-      await loadMonthlyWorkData()
-
-      // 考核记录
-      await loadAssessmentRecords()
-
-      // 我的待办（审批管理同源）
-      await loadMyTasks()
-
-      // 顶部快捷卡片数量
-      await loadQuickStats()
+      await initMonthlyWorkChart()
     } else {
       console.error('获取 Dashboard 数据失败:', response.message)
       ElMessage.error(response.message || '获取 Dashboard 数据失败')
-      await loadMyTasks()
-      await loadQuickStats()
+      myTaskList.value = []
+      myTaskTotal.value = 0
+      resetQuickStats()
+      assessmentRecords.value = []
+      resetMonthlyWorkStats()
+      await initMonthlyWorkChart()
     }
   } catch (error) {
     console.error('Load dashboard data error:', error)
     ElMessage.error('获取 Dashboard 数据失败')
-    await loadMyTasks()
-    await loadQuickStats()
+    myTaskList.value = []
+    myTaskTotal.value = 0
+    resetQuickStats()
+    assessmentRecords.value = []
+    resetMonthlyWorkStats()
+    await initMonthlyWorkChart()
+  } finally {
+    myTaskLoading.value = false
   }
 }
 
@@ -930,29 +913,6 @@ const loadMenuLayoutForShortcuts = async () => {
     console.warn('加载菜单布局失败，快捷入口将使用默认菜单配置', error)
   }
   rawMenuLayout.value = []
-}
-
-const loadAssessmentRecords = async () => {
-  if (!accountSetStore.currentAccountSet?.id) {
-    assessmentRecords.value = []
-    return
-  }
-
-  try {
-    const response = await getAssessmentRecords({
-      account_set_id: accountSetStore.currentAccountSet.id,
-      page: 1,
-      per_page: 8
-    })
-
-    if (response.success) {
-      assessmentRecords.value = response.data || []
-    } else {
-      assessmentRecords.value = []
-    }
-  } catch (error) {
-    assessmentRecords.value = []
-  }
 }
 
 const handleAssessmentClick = (record) => {
@@ -1016,39 +976,6 @@ const initMonthlyWorkChart = async () => {
   window.addEventListener('resize', () => {
     monthlyWorkChart.resize()
   })
-}
-
-const loadMonthlyWorkData = async () => {
-  if (!accountSetStore.currentAccountSet?.id) {
-    monthlyWorkStats.value = { total: 0, pending: 0, approved: 0, rejected: 0, completed: 0 }
-    await initMonthlyWorkChart()
-    return
-  }
-
-  try {
-    const response = await getProcessRecordStats({
-      account_set_id: accountSetStore.currentAccountSet.id
-    })
-
-    if (!response.success || !response.data) {
-      monthlyWorkStats.value = { total: 0, pending: 0, approved: 0, rejected: 0, completed: 0 }
-      await initMonthlyWorkChart()
-      return
-    }
-
-    monthlyWorkStats.value = {
-      total: response.data.total || 0,
-      pending: response.data.pending || 0,
-      approved: response.data.approved || 0,
-      rejected: response.data.rejected || 0,
-      completed: response.data.completed || 0
-    }
-
-    await initMonthlyWorkChart()
-  } catch (error) {
-    monthlyWorkStats.value = { total: 0, pending: 0, approved: 0, rejected: 0, completed: 0 }
-    await initMonthlyWorkChart()
-  }
 }
 
 const approvalLauncherVisible = ref(false)

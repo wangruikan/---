@@ -5788,7 +5788,7 @@
           :name="item.key"
         >
           <template #label>
-            {{ item.label }} ({{ item.rows.length }})
+            {{ item.label }} ({{ item.count }})
           </template>
         </el-tab-pane>
       </el-tabs>
@@ -5957,8 +5957,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { UploadFilled, Download, Search, Refresh, Document, Plus, Edit, Star, Postcard, FolderOpened, Calendar, User, Check, Upload, Delete, View, Warning } from '@element-plus/icons-vue'
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, getPendingContractUpload, markContractUploaded, submitSalaryAdjustmentApproval, getRegistrationFormUpdateStatus, submitRegistrationFormUpdateApproval } from '@/api/employees'
-import { getProjects } from '@/api/projects'
+import { getEmployees, getEmployeePageBootstrap, createEmployee, updateEmployee, deleteEmployee, submitOfflineOnboarding, markContractUploaded, submitSalaryAdjustmentApproval, getRegistrationFormUpdateStatus, submitRegistrationFormUpdateApproval } from '@/api/employees'
 import { getEmployeeContracts, uploadContract, submitContract, completeContract, deleteContract, downloadContract, uploadSignedContract } from '@/api/employeeContracts'
 import { getDefaultTemplates, getContractTemplates } from '@/api/contractTemplates'
 import { getProjectSocialSecurityRegions, getProjectHousingFundRegions } from '@/api/employeeSocialSecurity'
@@ -6946,46 +6945,35 @@ const needsExpiredContractSeparationReminder = (row) => {
 
 const archiveReminderSummaryItems = computed(() => {
   const rows = archiveReminderEmployees.value
+  const createItem = (key, label, filter) => {
+    const itemRows = rows.filter(filter)
+    return {
+      key,
+      label,
+      rows: itemRows,
+      count: archiveReminderLoaded.value
+        ? itemRows.length
+        : Number(archiveReminderCounts.value[key] || 0)
+    }
+  }
 
   return [
-    {
-      key: 'missing_documents',
-      label: '资料不全',
-      rows: rows.filter(row => hasMissingRequiredDocuments(row))
-    },
-    {
-      key: 'unsigned_contract',
-      label: '未签合同',
-      rows: rows.filter(row => isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_signature')
-    },
-    {
-      key: 'offline_contract_upload',
-      label: '线下待上传合同',
-      rows: rows.filter(row => row?.is_offline_onboarding && !row?.contract_uploaded)
-    },
-    {
-      key: 'pending_stamp',
-      label: '已签未盖章',
-      rows: rows.filter(row => isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_stamp')
-    },
-    {
-      key: 'retired',
-      label: '退休人员',
-      rows: rows.filter(row => getDisplayPersonnelStatus(row) === 'retired')
-    },
-    {
-      key: 'contract_expiring',
-      label: '合同30天内到期',
-      rows: rows.filter(row => {
+    createItem('missing_documents', '资料不全', row => hasMissingRequiredDocuments(row)),
+    createItem('unsigned_contract', '未签合同', row => (
+      isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_signature'
+    )),
+    createItem('offline_contract_upload', '线下待上传合同', row => (
+      row?.is_offline_onboarding && !row?.contract_uploaded
+    )),
+    createItem('pending_stamp', '已签未盖章', row => (
+      isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_stamp'
+    )),
+    createItem('retired', '退休人员', row => getDisplayPersonnelStatus(row) === 'retired'),
+    createItem('contract_expiring', '合同30天内到期', row => {
         const remainingDays = getContractRemainingDays(row)
         return isActiveEmployeeForReminder(row) && remainingDays !== null && remainingDays >= 0 && remainingDays <= 30
-      })
-    },
-    {
-      key: 'contract_expired',
-      label: '合同已到期',
-      rows: rows.filter(row => needsExpiredContractSeparationReminder(row))
-    }
+      }),
+    createItem('contract_expired', '合同已到期', row => needsExpiredContractSeparationReminder(row))
   ]
 })
 
@@ -6994,17 +6982,17 @@ const currentArchiveReminderItem = computed(() => {
 })
 
 const archiveReminderTotalCount = computed(() => {
-  return archiveReminderSummaryItems.value.reduce((total, item) => total + item.rows.length, 0)
+  return archiveReminderSummaryItems.value.reduce((total, item) => total + item.count, 0)
 })
 
 const archiveReminderSummaryText = computed(() => {
-  const nonEmptyItems = archiveReminderSummaryItems.value.filter(item => item.rows.length > 0)
+  const nonEmptyItems = archiveReminderSummaryItems.value.filter(item => item.count > 0)
 
   if (nonEmptyItems.length === 0) {
     return '按当前筛选条件，暂无需要关注的档案提醒。'
   }
 
-  return `按当前筛选条件，共有 ${nonEmptyItems.map(item => `${item.label}${item.rows.length}人`).join('，')}。`
+  return `按当前筛选条件，共有 ${nonEmptyItems.map(item => `${item.label}${item.count}人`).join('，')}。`
 })
 
 // 社保、医保和公积金地区相关
@@ -7039,6 +7027,17 @@ const showArchiveReminderDialogVisible = ref(false) // 显示档案提醒汇总�
 const archiveReminderLoading = ref(false)
 const archiveReminderActiveTab = ref('missing_documents')
 const archiveReminderEmployees = ref([])
+const archiveReminderLoaded = ref(false)
+const createEmptyArchiveReminderCounts = () => ({
+  missing_documents: 0,
+  unsigned_contract: 0,
+  offline_contract_upload: 0,
+  pending_stamp: 0,
+  retired: 0,
+  contract_expiring: 0,
+  contract_expired: 0
+})
+const archiveReminderCounts = ref(createEmptyArchiveReminderCounts())
 const currentEditingEmployeeId = ref(null) // 当前编辑的员工ID
 
 // 员工变更历史相关
@@ -7535,25 +7534,6 @@ const applyExpiredIdCardReminderState = (response) => {
   expiringSoonIdCardsCount.value = response.expiring_soon_count || 0
 }
 
-// 检查身份证过期的员工
-const checkExpiredIdCards = async () => {
-  try {
-    const response = await request.get('/employees/expired-id-cards', {
-      params: {
-        current_account_set_id: currentAccountSetId.value
-      }
-    })
-    if (response.success) {
-      applyExpiredIdCardReminderState(response)
-      
-      // 如果有身份证已过期或即将到期，进入页面时直接弹出提醒
-      showExpiredIdCardsDialogVisible.value = expiredIdCardsCount.value > 0
-    }
-  } catch (error) {
-    console.error('检查身份证到期提醒失败:', error)
-  }
-}
-
 // 显示过期身份证对话框
 const showExpiredIdCardsDialog = async () => {
   showExpiredIdCardsDialogVisible.value = true
@@ -7896,23 +7876,56 @@ const loadProjectHousingFundRegions = async (projectIds) => {
   }
 }
 
-const loadProjects = async () => {
+const loadEmployeePageBootstrap = async ({ autoShowIdCardReminder = false } = {}) => {
+  if (!currentAccountSetId.value) {
+    projects.value = []
+    pendingContractUploadList.value = []
+    applyExpiredIdCardReminderState({})
+    archiveReminderCounts.value = createEmptyArchiveReminderCounts()
+    archiveReminderEmployees.value = []
+    archiveReminderLoaded.value = false
+    showExpiredIdCardsDialogVisible.value = false
+    return
+  }
+
   try {
-    // 使用封装的 API 方法，会自动添加 Authorization token
-    const response = await getProjects({
+    const response = await getEmployeePageBootstrap({
       current_account_set_id: currentAccountSetId.value
     })
-    if (response.success) {
-      projects.value = response.data.data || []
-      console.log('项目列表加载成功:', projects.value.length, '个项目')
-    } else {
-      ElMessage.warning('加载项目列表失败，请刷新重试')
-      projects.value = []
+
+    if (!response?.success) {
+      throw new Error(response?.message || '加载人员档案初始化数据失败')
+    }
+
+    const bootstrapData = response.data || {}
+    projects.value = Array.isArray(bootstrapData.projects) ? bootstrapData.projects : []
+    applyExpiredIdCardReminderState(bootstrapData.id_card_reminders || {})
+    pendingContractUploadList.value = bootstrapData.pending_contract_upload?.data || []
+    archiveReminderCounts.value = {
+      ...createEmptyArchiveReminderCounts(),
+      ...(bootstrapData.archive_reminder_counts || {})
+    }
+    archiveReminderEmployees.value = []
+    archiveReminderLoaded.value = false
+    setArchiveReminderDefaultTab()
+
+    if (autoShowIdCardReminder) {
+      showExpiredIdCardsDialogVisible.value = expiredIdCardsCount.value > 0
+    }
+
+    if (Array.isArray(response.warnings) && response.warnings.length > 0) {
+      console.warn('人员档案部分初始化数据加载失败:', response.warnings)
     }
   } catch (error) {
-    console.error('Load projects error:', error)
-    ElMessage.error('加载项目列表失败: ' + (error.message || '未知错误'))
+    console.error('加载人员档案初始化数据失败:', error)
     projects.value = []
+    pendingContractUploadList.value = []
+    applyExpiredIdCardReminderState({})
+    archiveReminderCounts.value = createEmptyArchiveReminderCounts()
+    archiveReminderEmployees.value = []
+    archiveReminderLoaded.value = false
+    showExpiredIdCardsDialogVisible.value = false
+    ElMessage.error(error.message || '加载人员档案初始化数据失败')
   }
 }
 
@@ -9193,23 +9206,14 @@ const cancelOfflineOnboarding = () => {
   currentOfflineEmployee.value = null
 }
 
-// 加载待上传合同的员工列表
-const loadPendingContractUpload = async () => {
-  try {
-    const response = await getPendingContractUpload()
-    pendingContractUploadList.value = response.data || []
-  } catch (error) {
-    console.error('Load pending contract upload error:', error)
-  }
-}
-
 const setArchiveReminderDefaultTab = () => {
-  const firstNonEmptyItem = archiveReminderSummaryItems.value.find(item => item.rows.length > 0)
+  const firstNonEmptyItem = archiveReminderSummaryItems.value.find(item => item.count > 0)
   archiveReminderActiveTab.value = firstNonEmptyItem?.key || archiveReminderSummaryItems.value[0]?.key || 'missing_documents'
 }
 
 const loadArchiveReminderEmployees = async () => {
   archiveReminderLoading.value = true
+  archiveReminderLoaded.value = false
 
   try {
     const perPage = 200
@@ -9247,11 +9251,13 @@ const loadArchiveReminderEmployees = async () => {
     }
 
     archiveReminderEmployees.value = allEmployees
+    archiveReminderLoaded.value = true
     setArchiveReminderDefaultTab()
   } catch (error) {
     console.error('加载档案提醒汇总失败:', error)
     ElMessage.error(error.message || '加载档案提醒汇总失败')
     archiveReminderEmployees.value = []
+    archiveReminderLoaded.value = false
     setArchiveReminderDefaultTab()
   } finally {
     archiveReminderLoading.value = false
@@ -9347,7 +9353,7 @@ const handleMarkContractUploaded = async (employeeId) => {
     
     await markContractUploaded(employeeId)
     ElMessage.success('已标记合同已上传')
-    loadPendingContractUpload()
+    await loadEmployeePageBootstrap({ autoShowIdCardReminder: false })
     
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
@@ -12267,10 +12273,7 @@ onMounted(async () => {
   initEmployeeTableStickyTop()
   window.addEventListener('resize', updateEmployeeTableStickyTop)
   loadEmployees()
-  loadProjects()
-  checkExpiredIdCards()
-  loadPendingContractUpload() // 加载待上传合同列表
-  loadArchiveReminderEmployees()
+  loadEmployeePageBootstrap({ autoShowIdCardReminder: true })
 })
 
 onBeforeUnmount(() => {
@@ -12291,10 +12294,7 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
   if (newAccountSetId && oldAccountSetId && newAccountSetId !== oldAccountSetId) {
     console.log('✅ 账套切换，重新加载数据:', newAccountSetId)
     loadEmployees()
-    loadProjects()
-    checkExpiredIdCards()
-    loadPendingContractUpload() // 加载待上传合同列表
-    loadArchiveReminderEmployees()
+    loadEmployeePageBootstrap({ autoShowIdCardReminder: true })
   }
 })
 

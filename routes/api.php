@@ -322,6 +322,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [EmployeeController::class, 'store']);
         Route::get('/debug-data', [EmployeeController::class, 'debugEmployeeData']); // 调试员工数据
         Route::get('/test-registration-pdf', [EmployeeController::class, 'testRegistrationFormPdf']); // 测试从业人员登记表PDF
+        Route::get('/page-bootstrap', [EmployeeController::class, 'getPageBootstrap']); // 人员档案页面初始化数据
         Route::get('/expired-id-cards', [EmployeeController::class, 'getExpiredIdCards']); // 获取身份证过期员工列表
         Route::get('/download-import-template', [EmployeeController::class, 'downloadImportTemplate']); // 下载批量导入模板
         Route::post('/import', [EmployeeController::class, 'importEmployees']); // 批量导入员工
@@ -422,6 +423,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ProjectController::class, 'index']);
         Route::post('/', [ProjectController::class, 'store']);
         Route::get('/generate-code-preview', [ProjectController::class, 'generateCodePreview']);
+        Route::get('/create-options', [ProjectController::class, 'getCreateOptions']);
         Route::get('/{id}', [ProjectController::class, 'show']);
         Route::put('/{id}', [ProjectController::class, 'update']);
         Route::put('/{id}/terminate', [ProjectController::class, 'terminate']);
@@ -1177,6 +1179,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('invoice-applications')->group(function () {
         // 权限检查（必须在 {id} 路由之前）
         Route::get('/check-permission/create', [InvoiceApplicationController::class, 'checkCreatePermission']); // 检查创建权限
+        Route::get('/create-options', [InvoiceApplicationController::class, 'createOptions']); // 获取创建页面选项
         Route::get('/red-flush-candidates', [InvoiceApplicationController::class, 'redFlushCandidates']); // 获取可红冲历史发票
         
         // 导出Excel

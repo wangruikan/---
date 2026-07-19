@@ -589,12 +589,14 @@ class ApprovalService
                 ->whereIn('status', ['pending', 'waiting'])
                 ->update(['status' => 'withdrawn']);
             
-            // 更新业务数据状态为已撤回
+            // 审批实例保留“已撤回”，业务单据按驳回恢复到可重新提交状态。
             $this->updateBusinessStatus(
                 $instance->business_type,
                 $instance->business_id,
-                'withdrawn'
+                'rejected'
             );
+
+            $this->recreateInvoiceFillTaskIfNeeded($instance);
             
             Log::info('审批已撤回', [
                 'instance_id' => $instanceId,
@@ -1332,6 +1334,29 @@ class ApprovalService
 
         if ($employeeStatus !== null) {
             $this->autoCreateDecreaseInsuranceRecord($contract, $employeeStatus);
+        }
+    }
+
+    private function recreateInvoiceFillTaskIfNeeded(ApprovalInstance $instance): void
+    {
+        if (!in_array($instance->business_type, ['发票申请', '发票申请（重新提交）'], true)) {
+            return;
+        }
+
+        $invoiceApplication = \App\Models\InvoiceApplication::find($instance->business_id);
+        if (!$invoiceApplication) {
+            return;
+        }
+
+        try {
+            PendingTaskService::createInvoiceFillTask($invoiceApplication->fresh());
+        } catch (\Exception $taskException) {
+            Log::error('审批未通过后重建发票填写待办失败', [
+                'invoice_application_id' => $invoiceApplication->id,
+                'approval_instance_id' => $instance->id,
+                'approval_status' => $instance->status,
+                'error' => $taskException->getMessage(),
+            ]);
         }
     }
 

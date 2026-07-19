@@ -871,10 +871,10 @@ class PaymentApplicationController extends Controller
                 ], 400);
             }
 
-            if (!$application->approvalInstance || $application->approvalInstance->status !== 'rejected') {
+            if (!$application->approvalInstance || !in_array($application->approvalInstance->status, ['rejected', 'withdrawn'], true)) {
                 return response()->json([
                     'success' => false,
-                    'message' => '只有被驳回的申请才能重新发起审批'
+                    'message' => '只有被驳回或撤回的申请才能重新发起审批'
                 ], 400);
             }
 

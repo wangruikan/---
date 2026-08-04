@@ -53,3 +53,14 @@ export function deleteInvoiceProject(id) {
   })
 }
 
+/**
+ * 更新发票项目排序
+ */
+export function updateInvoiceProjectSort(items) {
+  return request({
+    url: '/invoice-projects/sort',
+    method: 'post',
+    data: { items }
+  })
+}
+

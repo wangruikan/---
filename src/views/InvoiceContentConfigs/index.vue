@@ -4,10 +4,13 @@
       <template #header>
         <div class="card-header">
           <span class="title">开票内容配置项目</span>
-          <el-button type="primary" @click="handleCreate">
-            <el-icon><Plus /></el-icon>
-            新增
-          </el-button>
+          <div class="header-actions">
+            <el-button plain :icon="Sort" @click="openSortDialog">调整顺序</el-button>
+            <el-button type="primary" @click="handleCreate">
+              <el-icon><Plus /></el-icon>
+              新增
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -93,20 +96,32 @@
         <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
       </template>
     </el-dialog>
+
+    <SortOrderDialog
+      v-model="sortDialogVisible"
+      title="调整开票内容配置顺序"
+      :items="sortItems"
+      :loading="sortSubmitting"
+      :get-description="getSortDescription"
+      @save="handleSaveSort"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Sort } from '@element-plus/icons-vue'
 import {
   getInvoiceContentConfigs,
+  getAllInvoiceContentConfigs,
   createInvoiceContentConfig,
   updateInvoiceContentConfig,
-  deleteInvoiceContentConfig
+  deleteInvoiceContentConfig,
+  updateInvoiceContentConfigSort
 } from '@/api/invoiceContentConfig'
 import { formatDate } from '@/utils/dateFormat'
+import SortOrderDialog from '@/components/SortOrderDialog.vue'
 
 const searchForm = reactive({
   keyword: ''
@@ -114,6 +129,9 @@ const searchForm = reactive({
 
 const tableData = ref([])
 const loading = ref(false)
+const sortDialogVisible = ref(false)
+const sortSubmitting = ref(false)
+const sortItems = ref([])
 const pagination = reactive({
   current: 1,
   pageSize: 15,
@@ -189,6 +207,44 @@ const handleSearch = () => {
 const handleReset = () => {
   searchForm.keyword = ''
   handleSearch()
+}
+
+const getSortDescription = (item) => `${Number(item.tax_rate || 0) * 100}%`
+
+const openSortDialog = async () => {
+  try {
+    const response = await getAllInvoiceContentConfigs()
+    if (!response.success) {
+      ElMessage.error(response.message || '加载排序数据失败')
+      return
+    }
+
+    sortItems.value = Array.isArray(response.data) ? response.data : []
+    sortDialogVisible.value = true
+  } catch (error) {
+    console.error('加载排序数据失败', error)
+    ElMessage.error(error.response?.data?.message || error.message || '加载排序数据失败')
+  }
+}
+
+const handleSaveSort = async (items) => {
+  sortSubmitting.value = true
+  try {
+    const response = await updateInvoiceContentConfigSort(items)
+    if (!response.success) {
+      ElMessage.error(response.message || '排序更新失败')
+      return
+    }
+
+    ElMessage.success(response.message || '排序更新成功')
+    sortDialogVisible.value = false
+    await loadData()
+  } catch (error) {
+    console.error('排序更新失败', error)
+    ElMessage.error(error.response?.data?.message || error.message || '排序更新失败')
+  } finally {
+    sortSubmitting.value = false
+  }
 }
 
 const handleCreate = () => {
@@ -285,6 +341,11 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .card-header .title {

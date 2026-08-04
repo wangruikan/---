@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\InvoiceProject;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -32,10 +33,14 @@ class InvoiceProjectController extends Controller
             });
         }
 
-        // 排序
-        $sortBy = $request->input('sort_by', 'created_at');
-        $sortOrder = $request->input('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+        // 默认按维护顺序展示；保留显式排序参数兼容旧调用。
+        if ($request->filled('sort_by')) {
+            $query->orderBy($request->input('sort_by'), $request->input('sort_order', 'asc'));
+        } else {
+            $query->orderBy('sort_order', 'asc')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id');
+        }
 
         // 分页
         $perPage = $request->input('per_page', 15);
@@ -82,6 +87,7 @@ class InvoiceProjectController extends Controller
         $project = InvoiceProject::create([
             'account_set_id' => $accountSetId,
             'project_name' => $request->input('project_name'),
+            'sort_order' => (int) InvoiceProject::where('account_set_id', $accountSetId)->max('sort_order') + 1,
             'spec_model' => $request->input('spec_model'),
             'unit' => $request->input('unit'),
             'quantity' => $request->input('quantity'),
@@ -164,6 +170,59 @@ class InvoiceProjectController extends Controller
     }
 
     /**
+     * 批量更新发票项目排序
+     */
+    public function updateSort(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|integer',
+            'items.*.sort_order' => 'required|integer|min:1',
+        ], [
+            'items.required' => '排序数据不能为空',
+            'items.*.id.required' => '项目ID不能为空',
+            'items.*.sort_order.required' => '排序值不能为空',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $user = Auth::user();
+        $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
+        $items = collect($request->input('items'));
+        $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->unique()->values();
+        $projects = InvoiceProject::where('account_set_id', $accountSetId)
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id);
+
+        if ($projects->count() !== $ids->count()) {
+            return response()->json([
+                'success' => false,
+                'message' => '只能调整当前账套中的发票项目顺序',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($items, $accountSetId) {
+            foreach ($items as $index => $item) {
+                InvoiceProject::where('account_set_id', $accountSetId)
+                    ->where('id', $item['id'])
+                    ->update(['sort_order' => $index + 1]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '排序更新成功',
+        ]);
+    }
+
+    /**
      * 删除项目
      */
     public function destroy($id)
@@ -203,10 +262,13 @@ class InvoiceProjectController extends Controller
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
         $projects = InvoiceProject::where('account_set_id', $accountSetId)
-            ->orderBy('project_name')
+            ->orderBy('sort_order', 'asc')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get([
                 'id',
                 'project_name',
+                'sort_order',
                 'spec_model',
                 'unit',
                 'quantity',

@@ -164,7 +164,7 @@ const routes = [
         path: '/payment-payees',
         name: 'PaymentPayees',
         component: () => import('@/views/PaymentPayees/index.vue'),
-        meta: { title: '收款信息维护' }
+        meta: { title: '收付款信息维护' }
       },
       {
         path: '/payment-summaries',

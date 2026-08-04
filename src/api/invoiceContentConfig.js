@@ -37,3 +37,11 @@ export function deleteInvoiceContentConfig(id) {
     method: 'delete'
   })
 }
+
+export function updateInvoiceContentConfigSort(items) {
+  return request({
+    url: '/invoice-content-configs/sort',
+    method: 'post',
+    data: { items }
+  })
+}

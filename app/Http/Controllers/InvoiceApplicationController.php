@@ -167,10 +167,13 @@ class InvoiceApplicationController extends Controller
             ->values();
 
         $invoiceProjects = InvoiceProject::where('account_set_id', $accountSetId)
-            ->orderBy('project_name')
+            ->orderBy('sort_order', 'asc')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get([
                 'id',
                 'project_name',
+                'sort_order',
                 'spec_model',
                 'unit',
                 'quantity',
@@ -182,11 +185,14 @@ class InvoiceApplicationController extends Controller
             ]);
 
         $invoiceContentConfigs = InvoiceContentConfig::where('account_set_id', $accountSetId)
-            ->orderBy('project_name')
+            ->orderBy('sort_order', 'asc')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get([
                 'id',
                 'project_name',
                 'tax_rate',
+                'sort_order',
             ]);
 
         return response()->json([

@@ -49,19 +49,35 @@
     <el-card class="table-card">
       <template #header>
         <div class="card-header">
-          <span>在职员工列表（共 {{ employees.length }} 人）</span>
-          <el-tag type="info" size="small">按险种独立调基</el-tag>
+          <div class="card-header-title">
+            <span>在职员工列表（共 {{ employees.length }} 人）</span>
+            <el-tag type="info" size="small">按险种独立调基</el-tag>
+          </div>
+          <div class="card-header-actions">
+            <span v-if="selectedEmployees.length" class="selection-count">已选 {{ selectedEmployees.length }} 人</span>
+            <el-button
+              type="primary"
+              :disabled="!permissionInfo.allowed || selectedEmployees.length === 0"
+              @click="openBatchDialog"
+            >
+              <el-icon><Edit /></el-icon>
+              批量调整
+            </el-button>
+          </div>
         </div>
       </template>
 
       <el-table
+        ref="employeeTableRef"
         v-loading="loading"
         :data="employees"
         border
         stripe
         style="width: 100%"
         :height="620"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="52" fixed="left" />
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="employee_name" label="员工姓名" width="120" fixed="left" />
         <el-table-column prop="id_number" label="身份证号" width="180" />
@@ -208,6 +224,98 @@
     </el-dialog>
 
     <el-dialog
+      v-model="showBatchDialog"
+      title="批量调整基数"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        :title="`已选择 ${selectedEmployees.length} 名员工`"
+        type="info"
+        :closable="false"
+        class="dialog-alert"
+      />
+
+      <el-form label-width="110px">
+        <el-form-item label="调整险种">
+          <el-select
+            v-model="batchForm.adjustment_type"
+            placeholder="请选择调整险种"
+            style="width: 100%"
+            @change="resetBatchBaseValues"
+          >
+            <el-option
+              v-for="type in adjustmentTypes"
+              :key="type.key"
+              :label="type.label"
+              :value="type.key"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-alert
+          v-if="batchLargeMedicalBlocked"
+          title="所选员工中包含特殊地区人员，大额医疗请前往大额医疗保险管理中调整"
+          type="warning"
+          :closable="false"
+          class="dialog-alert"
+        />
+
+        <el-form-item :label="batchBaseLabel">
+          <el-input-number
+            v-model="batchForm.new_base"
+            :min="0"
+            :precision="2"
+            controls-position="right"
+            style="width: 100%"
+            placeholder="请输入调整后的基数"
+          />
+        </el-form-item>
+
+        <el-form-item v-if="batchForm.adjustment_type === 'large_medical'" label="公司基数">
+          <el-input-number
+            v-model="batchForm.new_company_base"
+            :min="0"
+            :precision="2"
+            controls-position="right"
+            style="width: 100%"
+            placeholder="请输入调整后的公司基数"
+          />
+        </el-form-item>
+
+        <el-form-item label="生效时间">
+          <el-date-picker
+            v-model="batchForm.effective_date"
+            type="date"
+            placeholder="请选择生效时间"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            :disabled-date="disabledDate"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="调整原因">
+          <el-input
+            v-model="batchForm.adjustment_reason"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="请输入调整原因（可选）"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="showBatchDialog = false">取消</el-button>
+          <el-button type="primary" :loading="batchSubmitting" @click="handleBatchSubmit">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="showHistoryDialog"
       :title="`调基历史 - ${currentEmployee?.employee_name || ''}`"
       width="980px"
@@ -285,6 +393,8 @@ const typeMetaMap = {
 
 const loading = ref(false)
 const employees = ref([])
+const employeeTableRef = ref(null)
+const selectedEmployees = ref([])
 const permissionInfo = ref({ allowed: false, message: '' })
 
 const filterForm = reactive({
@@ -299,6 +409,16 @@ const currentAdjustmentType = ref('social_security')
 const adjustForm = reactive({
   adjustment_id: null,
   employee_id: null,
+  new_base: null,
+  new_company_base: null,
+  effective_date: '',
+  adjustment_reason: ''
+})
+
+const showBatchDialog = ref(false)
+const batchSubmitting = ref(false)
+const batchForm = reactive({
+  adjustment_type: '',
   new_base: null,
   new_company_base: null,
   effective_date: '',
@@ -333,6 +453,17 @@ const projectOptions = computed(() => {
 })
 
 const currentTypeMeta = computed(() => typeMetaMap[currentAdjustmentType.value])
+const batchTypeMeta = computed(() => typeMetaMap[batchForm.adjustment_type])
+const batchBaseLabel = computed(() => (
+  batchForm.adjustment_type === 'large_medical'
+    ? '个人基数'
+    : `${batchTypeMeta.value?.label || '调整'}基数`
+))
+const batchLargeMedicalBlocked = computed(() => (
+  batchForm.adjustment_type === 'large_medical' && selectedEmployees.value.some(
+    (employee) => employee.large_medical_base_source === 'config'
+  )
+))
 const currentPendingItem = computed(() => {
   if (!currentEmployee.value) {
     return null
@@ -467,8 +598,10 @@ const loadEmployees = async () => {
       }
     })
     employees.value = Array.isArray(response.data) ? response.data : []
+    selectedEmployees.value = []
   } catch (error) {
     employees.value = []
+    selectedEmployees.value = []
     console.error('加载员工列表失败:', error)
     ElMessage.error(error.response?.data?.message || '加载失败')
   } finally {
@@ -485,6 +618,100 @@ const resetFilter = () => {
 const handleRefresh = () => {
   checkPermission()
   loadEmployees()
+}
+
+const handleSelectionChange = (rows) => {
+  selectedEmployees.value = rows
+}
+
+const resetBatchForm = () => {
+  batchForm.adjustment_type = ''
+  batchForm.new_base = null
+  batchForm.new_company_base = null
+  batchForm.effective_date = ''
+  batchForm.adjustment_reason = ''
+}
+
+const resetBatchBaseValues = () => {
+  batchForm.new_base = null
+  batchForm.new_company_base = null
+}
+
+const openBatchDialog = () => {
+  if (!permissionInfo.value.allowed) {
+    ElMessage.warning(permissionInfo.value.message)
+    return
+  }
+
+  if (!selectedEmployees.value.length) {
+    ElMessage.warning('请选择需要调整的员工')
+    return
+  }
+
+  resetBatchForm()
+  showBatchDialog.value = true
+}
+
+const handleBatchSubmit = async () => {
+  if (!selectedEmployees.value.length) {
+    ElMessage.warning('请选择需要调整的员工')
+    return
+  }
+
+  if (!batchForm.adjustment_type) {
+    ElMessage.warning('请选择调整险种')
+    return
+  }
+
+  if (batchLargeMedicalBlocked.value) {
+    ElMessage.warning('所选员工中包含特殊地区人员，请取消选择后重试')
+    return
+  }
+
+  if (batchForm.adjustment_type === 'large_medical') {
+    if (!hasValue(batchForm.new_base) && !hasValue(batchForm.new_company_base)) {
+      ElMessage.warning('请至少填写一个大额医疗调整值')
+      return
+    }
+  } else if (!hasValue(batchForm.new_base)) {
+    ElMessage.warning('请输入调整后的基数')
+    return
+  }
+
+  if (!batchForm.effective_date) {
+    ElMessage.warning('请选择生效时间')
+    return
+  }
+
+  batchSubmitting.value = true
+  try {
+    const data = {
+      employee_ids: selectedEmployees.value.map((employee) => employee.employee_id),
+      account_set_id: effectiveAccountSetId.value,
+      adjustment_type: batchForm.adjustment_type,
+      effective_date: batchForm.effective_date,
+      adjustment_reason: batchForm.adjustment_reason
+    }
+
+    if (hasValue(batchForm.new_base)) {
+      data.new_base = batchForm.new_base
+    }
+    if (hasValue(batchForm.new_company_base)) {
+      data.new_company_base = batchForm.new_company_base
+    }
+
+    const response = await request.post('/base-adjustments/batch', data)
+    ElMessage.success(response.message || '批量调整成功')
+    showBatchDialog.value = false
+    selectedEmployees.value = []
+    employeeTableRef.value?.clearSelection()
+    await loadEmployees()
+  } catch (error) {
+    console.error('批量保存调基失败:', error)
+    ElMessage.error(error.response?.data?.message || '批量保存失败')
+  } finally {
+    batchSubmitting.value = false
+  }
 }
 
 const openAdjustDialog = (row, type) => {
@@ -733,6 +960,18 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.card-header-title,
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selection-count {
+  color: #606266;
+  font-size: 13px;
 }
 
 .adjustment-card {

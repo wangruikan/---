@@ -56,7 +56,13 @@
     </el-card>
 
     <el-card class="table-card">
-      <el-table :data="pagedPortalList" v-loading="loading" border stripe>
+      <el-table
+        :data="pagedPortalList"
+        v-loading="loading"
+        border
+        stripe
+        :span-method="regionSpanMethod"
+      >
         <el-table-column label="序号" width="70" align="center">
           <template #default="{ $index }">
             {{ getRowIndex($index) }}
@@ -460,6 +466,29 @@ const getStatusType = (row) => {
 
 const getRowIndex = (index) => {
   return (pagination.current - 1) * pagination.pageSize + index + 1
+}
+
+const regionSpanMethod = ({ row, column, rowIndex }) => {
+  if (column.property !== 'region_name') {
+    return { rowspan: 1, colspan: 1 }
+  }
+
+  const rows = pagedPortalList.value
+  const regionName = row.region_name || ''
+
+  if (rowIndex > 0 && (rows[rowIndex - 1].region_name || '') === regionName) {
+    return { rowspan: 0, colspan: 0 }
+  }
+
+  let rowspan = 1
+  for (let index = rowIndex + 1; index < rows.length; index += 1) {
+    if ((rows[index].region_name || '') !== regionName) {
+      break
+    }
+    rowspan += 1
+  }
+
+  return { rowspan, colspan: 1 }
 }
 
 const getErrorMessage = (error, fallback) => {

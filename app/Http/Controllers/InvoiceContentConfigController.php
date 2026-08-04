@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\InvoiceContentConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -27,7 +28,15 @@ class InvoiceContentConfigController extends Controller
 
         $sortBy = $request->input('sort_by', 'created_at');
         $sortOrder = $request->input('sort_order', 'desc');
-        $projects = $query->orderBy($sortBy, $sortOrder)
+        if ($request->filled('sort_by')) {
+            $query->orderBy($sortBy, $sortOrder);
+        } else {
+            $query->orderBy('sort_order', 'asc')
+                ->orderByDesc('created_at')
+                ->orderByDesc('id');
+        }
+
+        $projects = $query
             ->paginate($request->input('per_page', 15));
 
         return response()->json([
@@ -42,11 +51,14 @@ class InvoiceContentConfigController extends Controller
         $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
 
         $projects = InvoiceContentConfig::where('account_set_id', $accountSetId)
-            ->orderBy('project_name')
+            ->orderBy('sort_order', 'asc')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->get([
                 'id',
                 'project_name',
                 'tax_rate',
+                'sort_order',
             ]);
 
         return response()->json([
@@ -72,6 +84,7 @@ class InvoiceContentConfigController extends Controller
         $project = InvoiceContentConfig::create([
             'account_set_id' => $accountSetId,
             'project_name' => $request->input('project_name'),
+            'sort_order' => (int) InvoiceContentConfig::where('account_set_id', $accountSetId)->max('sort_order') + 1,
             'tax_rate' => $request->input('tax_rate', 0),
             'created_by' => $user->id,
         ]);
@@ -113,6 +126,59 @@ class InvoiceContentConfigController extends Controller
             'success' => true,
             'message' => '更新成功',
             'data' => $project,
+        ]);
+    }
+
+    /**
+     * 批量更新开票内容配置排序
+     */
+    public function updateSort(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|integer',
+            'items.*.sort_order' => 'required|integer|min:1',
+        ], [
+            'items.required' => '排序数据不能为空',
+            'items.*.id.required' => '项目ID不能为空',
+            'items.*.sort_order.required' => '排序值不能为空',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $user = Auth::user();
+        $accountSetId = $request->input('current_account_set_id', $user->account_set_id);
+        $items = collect($request->input('items'));
+        $ids = $items->pluck('id')->map(fn ($id) => (int) $id)->unique()->values();
+        $projects = InvoiceContentConfig::where('account_set_id', $accountSetId)
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id);
+
+        if ($projects->count() !== $ids->count()) {
+            return response()->json([
+                'success' => false,
+                'message' => '只能调整当前账套中的开票内容配置顺序',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($items, $accountSetId) {
+            foreach ($items as $index => $item) {
+                InvoiceContentConfig::where('account_set_id', $accountSetId)
+                    ->where('id', $item['id'])
+                    ->update(['sort_order' => $index + 1]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '排序更新成功',
         ]);
     }
 

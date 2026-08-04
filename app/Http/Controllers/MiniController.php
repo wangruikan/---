@@ -1135,30 +1135,18 @@ class MiniController extends Controller
             $project = $context['project'];
             $documentSetId = $context['document_set_id'];
 
-            if (!$project) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [],
-                    'message' => '您未分配到任何项目'
-                ]);
+            $configs = collect();
+            if ($project && $documentSetId) {
+                $configs = \App\Models\ProjectDocumentConfig::where('project_id', $project->id)
+                    ->where('document_set_id', $documentSetId)
+                    ->with('project:id,name')
+                    ->orderBy('sort_order', 'asc')
+                    ->get();
             }
-
-            if (!$documentSetId) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [],
-                    'message' => '当前项目未配置资料方案'
-                ]);
-            }
-
-            $configs = \App\Models\ProjectDocumentConfig::where('project_id', $project->id)
-                ->where('document_set_id', $documentSetId)
-                ->with('project:id,name')
-                ->orderBy('sort_order', 'asc')
-                ->get();
 
             // 获取员工已上传的资料（按config_id分组，支持多文件）
             $uploadedDocuments = \App\Models\EmployeeDocument::where('employee_id', $employee->id)
+                ->with('project:id,name')
                 ->orderBy('uploaded_at', 'desc')
                 ->get()
                 ->groupBy('document_config_id');
@@ -1180,6 +1168,7 @@ class MiniController extends Controller
                     'sort_order' => $config->sort_order,
                     'uploaded' => $fileCount > 0,
                     'file_count' => $fileCount,
+                    'is_history' => false,
                     // 保持向后兼容
                     'upload_info' => $fileCount > 0 ? [
                         'id' => $uploadedFiles->first()->id,
@@ -1205,9 +1194,66 @@ class MiniController extends Controller
                 ];
             });
 
+            $currentConfigIds = $configs->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $historicalFiles = $uploadedDocuments
+                ->flatten(1)
+                ->filter(function ($document) use ($project, $currentConfigIds) {
+                    return !in_array((int) $document->document_config_id, $currentConfigIds, true)
+                        || !$project
+                        || (int) $document->project_id !== (int) $project->id;
+                })
+                ->groupBy(function ($document) {
+                    return implode(':', [
+                        (int) ($document->project_id ?? 0),
+                        (int) ($document->document_config_id ?? 0),
+                        (string) ($document->document_name ?? ''),
+                    ]);
+                });
+
+            $historicalResult = $historicalFiles->map(function ($files) use ($host) {
+                $firstFile = $files->first();
+
+                return [
+                    'config_id' => $firstFile->document_config_id,
+                    'project_id' => $firstFile->project_id,
+                    'project_name' => optional($firstFile->project)->name ?: '历史项目',
+                    'document_name' => $firstFile->document_name ?: $firstFile->original_filename,
+                    'document_type' => 'all',
+                    'document_type_text' => '所有类型',
+                    'is_required' => false,
+                    'sort_order' => PHP_INT_MAX,
+                    'uploaded' => true,
+                    'file_count' => $files->count(),
+                    'is_history' => true,
+                    'upload_info' => [
+                        'id' => $firstFile->id,
+                        'file_url' => $host . '/' . $firstFile->file_path,
+                        'original_filename' => $firstFile->original_filename,
+                        'file_size' => $firstFile->file_size,
+                        'file_size_formatted' => $firstFile->file_size_formatted,
+                        'uploaded_at' => $firstFile->uploaded_at,
+                        'upload_source' => $firstFile->upload_source,
+                    ],
+                    'files' => $files->map(function ($file) use ($host) {
+                        return [
+                            'id' => $file->id,
+                            'file_url' => $host . '/' . $file->file_path,
+                            'original_filename' => $file->original_filename,
+                            'file_size' => $file->file_size,
+                            'file_size_formatted' => $file->file_size_formatted,
+                            'uploaded_at' => $file->uploaded_at,
+                            'upload_source' => $file->upload_source,
+                        ];
+                    })->values()->toArray(),
+                ];
+            })->values();
+
             return response()->json([
                 'success' => true,
-                'data' => $result
+                'data' => $result->concat($historicalResult)->values(),
+                'message' => !$project
+                    ? '您未分配到当前项目，已显示历史资料'
+                    : (!$documentSetId ? '当前项目未配置资料方案，已显示历史资料' : null),
             ]);
         } catch (\Exception $e) {
             \Log::error('获取员工资料列表失败: ' . $e->getMessage());

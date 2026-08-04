@@ -2,7 +2,7 @@
   <div class="payment-payees-page">
     <el-card shadow="never" class="header-card">
       <div class="header-row">
-        <div class="header-title">收款信息维护</div>
+        <div class="header-title">收付款信息维护</div>
         <el-button type="primary" :icon="Plus" @click="handleCreate">新增收款信息</el-button>
       </div>
     </el-card>

@@ -1030,6 +1030,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [App\Http\Controllers\BaseAdjustmentController::class, 'index']);
         Route::get('/check-permission', [App\Http\Controllers\BaseAdjustmentController::class, 'getAdjustStatus']);
         Route::post('/', [App\Http\Controllers\BaseAdjustmentController::class, 'store']);
+        Route::post('/batch', [App\Http\Controllers\BaseAdjustmentController::class, 'batchStore']);
         Route::delete('/{id}', [App\Http\Controllers\BaseAdjustmentController::class, 'destroy']);
         Route::post('/{id}/apply-now', [App\Http\Controllers\BaseAdjustmentController::class, 'applyNow']);
         Route::get('/employee/{employeeId}/history', [App\Http\Controllers\BaseAdjustmentController::class, 'history']);
@@ -1161,6 +1162,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('invoice-projects')->group(function () {
         Route::get('/', [InvoiceProjectController::class, 'index']);                          // 获取列表
         Route::get('/all', [InvoiceProjectController::class, 'all']);                         // 获取所有（下拉选择）
+        Route::post('/sort', [InvoiceProjectController::class, 'updateSort']);                // 更新排序
         Route::post('/', [InvoiceProjectController::class, 'store']);                         // 创建项目
         Route::put('/{id}', [InvoiceProjectController::class, 'update']);                     // 更新项目
         Route::delete('/{id}', [InvoiceProjectController::class, 'destroy']);                 // 删除项目
@@ -1170,6 +1172,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('invoice-content-configs')->group(function () {
         Route::get('/', [InvoiceContentConfigController::class, 'index']);                    // 获取列表
         Route::get('/all', [InvoiceContentConfigController::class, 'all']);                   // 获取所有（下拉选择）
+        Route::post('/sort', [InvoiceContentConfigController::class, 'updateSort']);          // 更新排序
         Route::post('/', [InvoiceContentConfigController::class, 'store']);                   // 创建项目
         Route::put('/{id}', [InvoiceContentConfigController::class, 'update']);               // 更新项目
         Route::delete('/{id}', [InvoiceContentConfigController::class, 'destroy']);           // 删除项目

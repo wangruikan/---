@@ -63,10 +63,11 @@
       </el-table-column>
       <el-table-column label="操作" width="100" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button type="primary" size="small" @click="handleUpload(row)">
+          <el-button v-if="!row.is_history" type="primary" size="small" @click="handleUpload(row)">
             <el-icon><Upload /></el-icon>
             上传
           </el-button>
+          <el-tag v-else type="info" size="small">历史资料</el-tag>
         </template>
       </el-table-column>
     </el-table>

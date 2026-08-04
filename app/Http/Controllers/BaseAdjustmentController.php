@@ -224,45 +224,7 @@ class BaseAdjustmentController extends Controller
         }
 
         try {
-            $adjustment = DB::transaction(function () use ($request, $employee, $type) {
-                $existingAdjustment = $this->findPendingAdjustmentByType(
-                    $employee->id,
-                    $request->account_set_id,
-                    $type,
-                    $request->input('adjustment_id')
-                );
-
-                if ($existingAdjustment && $existingAdjustment->isMixedRecord()) {
-                    $existingAdjustment = $existingAdjustment->extractTypeToStandaloneRecord($type, [
-                        'status' => 'pending',
-                        'applied_at' => null,
-                    ]);
-                }
-
-                $project = $employee->projects->first();
-                $payload = array_merge(
-                    BaseAdjustment::emptyTypePayload(),
-                    [
-                        'employee_id' => $employee->id,
-                        'project_id' => $project ? $project->id : null,
-                        'account_set_id' => $request->account_set_id,
-                        'status' => 'pending',
-                        'applied_at' => null,
-                        'adjustment_reason' => $request->input('adjustment_reason'),
-                    ],
-                    $this->buildTypePayload($employee, $request, $type)
-                );
-
-                if ($existingAdjustment) {
-                    $existingAdjustment->update($payload);
-
-                    return $existingAdjustment->fresh(['employee', 'creator']);
-                }
-
-                $payload['created_by'] = auth('sanctum')->id();
-
-                return BaseAdjustment::create($payload)->load(['employee', 'creator']);
-            });
+            $adjustment = DB::transaction(fn () => $this->upsertTypeAdjustment($employee, $request, $type));
 
             return response()->json([
                 'success' => true,
@@ -281,6 +243,144 @@ class BaseAdjustmentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => '保存失败：' . $exception->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function batchStore(Request $request)
+    {
+        if ($response = $this->checkPermission('base_adjustment.create')) {
+            return $response;
+        }
+
+        $canAdjust = $this->canAdjustBase($request);
+        if (!$canAdjust['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => $canAdjust['message'],
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'employee_ids' => 'required|array|min:1',
+            'employee_ids.*' => 'required|integer|distinct|exists:employees,id',
+            'account_set_id' => 'required|exists:account_sets,id',
+            'adjustment_type' => 'required|in:' . implode(',', BaseAdjustment::getSupportedTypes()),
+            'effective_date' => 'required|date|after_or_equal:today',
+            'new_base' => 'nullable|numeric|min:0',
+            'new_company_base' => 'nullable|numeric|min:0',
+            'adjustment_reason' => 'nullable|string|max:500',
+        ], [
+            'employee_ids.required' => '请选择至少一名员工',
+            'employee_ids.*.distinct' => '员工不能重复选择',
+            'adjustment_type.required' => '请选择调整险种',
+            'effective_date.required' => '请选择生效时间',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => '验证失败',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $type = $request->input('adjustment_type');
+        $newBase = $request->input('new_base');
+        $newCompanyBase = $request->input('new_company_base');
+
+        if (in_array($type, [
+            BaseAdjustment::TYPE_SOCIAL_SECURITY,
+            BaseAdjustment::TYPE_MEDICAL_INSURANCE,
+            BaseAdjustment::TYPE_HOUSING_FUND,
+        ], true) && !$this->hasValue($newBase)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请填写调整后的基数',
+            ], 422);
+        }
+
+        if ($type === BaseAdjustment::TYPE_LARGE_MEDICAL && !$this->hasValue($newBase) && !$this->hasValue($newCompanyBase)) {
+            return response()->json([
+                'success' => false,
+                'message' => '请至少填写一个大额医疗调整值',
+            ], 422);
+        }
+
+        $employeeIds = array_values(array_unique(array_map('intval', $request->input('employee_ids'))));
+        $employees = Employee::with([
+            'projects',
+            'socialSecurityRegion',
+            'medicalInsuranceRegion',
+            'housingFundConfig',
+            'largeMedicalInsuranceConfigRelation',
+        ])
+            ->where('account_set_id', $request->account_set_id)
+            ->whereIn('contract_status', ['active', 'approved'])
+            ->whereIn('id', $employeeIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($employees->count() !== count($employeeIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => '所选员工中包含不属于当前账套或不在职的人员，请刷新后重试',
+            ], 422);
+        }
+
+        if ($type === BaseAdjustment::TYPE_LARGE_MEDICAL) {
+            $configEmployees = $employees->filter(function (Employee $employee) {
+                return optional($employee->largeMedicalInsuranceConfigRelation)->base_source === 'config';
+            });
+
+            if ($configEmployees->isNotEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '所选员工中包含特殊地区人员，大额医疗请前往大额医疗保险管理中调整',
+                ], 422);
+            }
+        }
+
+        $sameValueEmployees = $employees->filter(function (Employee $employee) use ($type, $newBase, $newCompanyBase) {
+            return $this->isSameAsCurrentValue($employee, $type, $newBase, $newCompanyBase);
+        });
+
+        if ($sameValueEmployees->isNotEmpty()) {
+            $names = $sameValueEmployees->pluck('name')->filter()->implode('、');
+
+            return response()->json([
+                'success' => false,
+                'message' => '以下员工调整后的基数与当前基数一致：' . ($names ?: '请刷新后重试'),
+            ], 422);
+        }
+
+        try {
+            DB::transaction(function () use ($employees, $employeeIds, $request, $type) {
+                foreach ($employeeIds as $employeeId) {
+                    $this->upsertTypeAdjustment($employees->get($employeeId), $request, $type);
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => '批量基数调整已保存',
+                'data' => [
+                    'total' => count($employeeIds),
+                    'employee_ids' => $employeeIds,
+                ],
+            ]);
+        } catch (\Throwable $exception) {
+            Log::error('批量保存基数调整失败', [
+                'employee_ids' => $employeeIds,
+                'account_set_id' => $request->account_set_id,
+                'adjustment_type' => $type,
+                'error' => $exception->getMessage(),
+                'trace' => $exception->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '批量保存失败：' . $exception->getMessage(),
             ], 500);
         }
     }
@@ -556,6 +656,47 @@ class BaseAdjustmentController extends Controller
             ->first(function (BaseAdjustment $record) use ($type) {
                 return $record->hasType($type);
             });
+    }
+
+    private function upsertTypeAdjustment(Employee $employee, Request $request, string $type): BaseAdjustment
+    {
+        $existingAdjustment = $this->findPendingAdjustmentByType(
+            $employee->id,
+            $request->account_set_id,
+            $type,
+            $request->input('adjustment_id')
+        );
+
+        if ($existingAdjustment && $existingAdjustment->isMixedRecord()) {
+            $existingAdjustment = $existingAdjustment->extractTypeToStandaloneRecord($type, [
+                'status' => 'pending',
+                'applied_at' => null,
+            ]);
+        }
+
+        $project = $employee->projects->first();
+        $payload = array_merge(
+            BaseAdjustment::emptyTypePayload(),
+            [
+                'employee_id' => $employee->id,
+                'project_id' => $project ? $project->id : null,
+                'account_set_id' => $request->account_set_id,
+                'status' => 'pending',
+                'applied_at' => null,
+                'adjustment_reason' => $request->input('adjustment_reason'),
+            ],
+            $this->buildTypePayload($employee, $request, $type)
+        );
+
+        if ($existingAdjustment) {
+            $existingAdjustment->update($payload);
+
+            return $existingAdjustment->fresh(['employee', 'creator']);
+        }
+
+        $payload['created_by'] = auth('sanctum')->id();
+
+        return BaseAdjustment::create($payload)->load(['employee', 'creator']);
     }
 
     private function buildTypePayload(Employee $employee, Request $request, string $type): array

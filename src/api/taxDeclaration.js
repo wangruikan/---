@@ -80,10 +80,11 @@ export function getTaskDetail(id) {
   })
 }
 
-export function completeTask(id) {
+export function completeTask(id, data) {
   return request({
     url: `/tax-declarations/tasks/${id}/complete`,
-    method: 'post'
+    method: 'post',
+    data
   })
 }
 

@@ -64,6 +64,7 @@ class CheckTaxDeclarationReminders extends Command
                         'config_id' => $config->id,
                         'company_name' => $config->company_name,
                         'tax_category_ids' => $config->tax_category_ids,
+                        'completed_tax_category_ids' => [],
                         'declaration_date' => now(),
                         'year' => $currentYear,
                         'handler_id' => $handler->id,

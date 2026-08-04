@@ -17,6 +17,7 @@ class TaxDeclarationTask extends Model
         'config_id',
         'company_name',
         'tax_category_ids',
+        'completed_tax_category_ids',
         'declaration_date',
         'year',
         'handler_id',
@@ -28,6 +29,7 @@ class TaxDeclarationTask extends Model
 
     protected $casts = [
         'tax_category_ids' => 'array',
+        'completed_tax_category_ids' => 'array',
         'declaration_date' => 'datetime:Y-m-d',
         'completed_at' => 'datetime:Y-m-d H:i:s',
         'created_at' => 'datetime:Y-m-d H:i:s',
@@ -89,11 +91,82 @@ class TaxDeclarationTask extends Model
      */
     public function getTaxCategoriesAttribute()
     {
-        if (empty($this->tax_category_ids)) {
+        $categoryIds = $this->getConfiguredTaxCategoryIds();
+
+        if (empty($categoryIds)) {
             return collect();
         }
-        
-        return TaxCategory::whereIn('id', $this->tax_category_ids)->get();
+
+        $categories = TaxCategory::whereIn('id', $categoryIds)->get()->keyBy('id');
+
+        return collect($categoryIds)
+            ->map(fn ($categoryId) => $categories->get($categoryId))
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * 获取任务配置的税种 ID，统一转成整数并保持配置顺序。
+     */
+    public function getConfiguredTaxCategoryIds(): array
+    {
+        return $this->normalizeTaxCategoryIds($this->tax_category_ids);
+    }
+
+    /**
+     * 获取已经完成申报的税种 ID。
+     */
+    public function getCompletedTaxCategoryIdsList(): array
+    {
+        if ($this->completed_tax_category_ids === null && $this->status === 'completed') {
+            return $this->getConfiguredTaxCategoryIds();
+        }
+
+        return array_values(array_intersect(
+            $this->getConfiguredTaxCategoryIds(),
+            $this->normalizeTaxCategoryIds($this->completed_tax_category_ids)
+        ));
+    }
+
+    /**
+     * 获取尚未完成申报的税种 ID。
+     */
+    public function getPendingTaxCategoryIds(): array
+    {
+        return array_values(array_diff(
+            $this->getConfiguredTaxCategoryIds(),
+            $this->getCompletedTaxCategoryIdsList()
+        ));
+    }
+
+    /**
+     * 记录本次完成的税种；只有所有配置税种完成后，任务才完成。
+     */
+    public function markTaxCategoriesCompleted(array $categoryIds, $userId): void
+    {
+        $configuredIds = $this->getConfiguredTaxCategoryIds();
+        $completedIds = array_values(array_unique(array_merge(
+            $this->getCompletedTaxCategoryIdsList(),
+            $this->normalizeTaxCategoryIds($categoryIds)
+        )));
+        $completedIds = array_values(array_intersect($configuredIds, $completedIds));
+        $isCompleted = !empty($configuredIds) && empty(array_diff($configuredIds, $completedIds));
+
+        $this->update([
+            'completed_tax_category_ids' => $completedIds,
+            'status' => $isCompleted ? 'completed' : 'pending',
+            'completed_at' => $isCompleted ? now() : null,
+            'completed_by' => $isCompleted ? $userId : null,
+        ]);
+    }
+
+    private function normalizeTaxCategoryIds($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $value)));
     }
 
     /**
@@ -114,6 +187,7 @@ class TaxDeclarationTask extends Model
     public function markAsCompleted($userId)
     {
         $this->update([
+            'completed_tax_category_ids' => $this->getConfiguredTaxCategoryIds(),
             'status' => 'completed',
             'completed_at' => now(),
             'completed_by' => $userId,

@@ -8,6 +8,7 @@ use App\Models\TaxDeclarationTask;
 use App\Models\TaxDeclarationAttachment;
 use App\Models\ApprovalFlowConfig;
 use App\Models\OperationLog;
+use App\Models\User;
 use App\Services\PendingTaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -228,6 +229,8 @@ class TaxDeclarationController extends Controller
                 'created_by' => $request->user()?->id ?? Auth::id(),
             ]);
 
+            $this->syncCurrentMonthTask($config);
+
             return response()->json([
                 'success' => true,
                 'data' => $config,
@@ -287,6 +290,8 @@ class TaxDeclarationController extends Controller
                 'period_type' => $request->period_type,
                 'declaration_date' => $declarationDate,
             ]);
+
+            $this->syncCurrentMonthTask($config->fresh());
 
             return response()->json([
                 'success' => true,
@@ -372,7 +377,7 @@ class TaxDeclarationController extends Controller
         
         // 加载税种信息
         foreach ($tasks as $task) {
-            $task->tax_categories_list = $task->taxCategories;
+            $this->appendTaskTaxCategoryState($task);
         }
         
         return response()->json([
@@ -385,9 +390,55 @@ class TaxDeclarationController extends Controller
     }
 
     /**
+     * 为任务税种附加逐项完成状态，供列表和详情页统一使用。
+     */
+    private function appendTaskTaxCategoryState(TaxDeclarationTask $task): void
+    {
+        $completedIds = $task->getCompletedTaxCategoryIdsList();
+
+        $task->tax_categories_list = $task->taxCategories->map(function ($category) use ($completedIds) {
+            $category->completed = in_array((int) $category->id, $completedIds, true);
+            return $category;
+        })->values();
+        $task->completed_tax_category_ids = $completedIds;
+        $task->pending_tax_category_ids = $task->getPendingTaxCategoryIds();
+    }
+
+    private function normalizeTaxCategoryIds($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $value)));
+    }
+
+    /**
+     * 配置保存后立即同步当前月任务，不等待下个周期或定时任务。
+     */
+    private function syncCurrentMonthTask(TaxDeclarationConfig $config): void
+    {
+        $now = now();
+
+        $this->syncTasksFromConfigs(
+            $config->account_set_id,
+            $now->year,
+            $now->copy()->endOfMonth()->format('Y-m-d'),
+            $now->format('Y-m'),
+            $config->id
+        );
+    }
+
+    /**
      * 根据当前税费申报配置补齐任务，避免依赖定时任务预先生成。
      */
-    private function syncTasksFromConfigs($accountSetId, int $year, ?string $visibleUntilDate, ?string $targetMonth = null): array
+    private function syncTasksFromConfigs(
+        $accountSetId,
+        int $year,
+        ?string $visibleUntilDate,
+        ?string $targetMonth = null,
+        ?int $forceCurrentTaskConfigId = null
+    ): array
     {
         if (!$accountSetId) {
             return [];
@@ -398,6 +449,18 @@ class TaxDeclarationController extends Controller
 
         foreach ($configs as $config) {
             $declarationDates = $this->buildDeclarationDates($year, $config);
+            $forceCurrentTask = $targetMonth !== null && (
+                (int) $config->id === $forceCurrentTaskConfigId
+                || $this->wasConfigChangedInMonth($config, $targetMonth)
+            );
+
+            if ($forceCurrentTask) {
+                $currentMonthDate = $targetMonth . '-01';
+                if (!in_array($currentMonthDate, $declarationDates, true)) {
+                    $declarationDates[] = $currentMonthDate;
+                }
+            }
+
             if (empty($declarationDates)) {
                 continue;
             }
@@ -409,7 +472,9 @@ class TaxDeclarationController extends Controller
                     continue;
                 }
 
-                if (!$this->isDeclarationDateAvailable($config, $declarationDate)) {
+                $isForcedCurrentTask = $forceCurrentTask && substr($declarationDate, 0, 7) === $targetMonth;
+
+                if (!$isForcedCurrentTask && !$this->isDeclarationDateAvailable($config, $declarationDate)) {
                     continue;
                 }
 
@@ -422,19 +487,37 @@ class TaxDeclarationController extends Controller
                 $task = $this->findExistingTaskForMonth($config->id, $year, $declarationDate);
 
                 if ($task) {
+                    // 配置调整后保留仍然存在的已完成税种；新增税种自动回到待处理。
+                    $previousCategoryIds = $task->getConfiguredTaxCategoryIds();
+                    $storedCompletedIds = $task->completed_tax_category_ids;
+                    $completedCategoryIds = $storedCompletedIds === null && $task->status === 'completed'
+                        ? $previousCategoryIds
+                        : $task->getCompletedTaxCategoryIdsList();
+                    $currentCategoryIds = $this->normalizeTaxCategoryIds($config->tax_category_ids);
+                    $completedCategoryIds = array_values(array_intersect($currentCategoryIds, $completedCategoryIds));
+                    $isCompleted = !empty($currentCategoryIds)
+                        && empty(array_diff($currentCategoryIds, $completedCategoryIds));
+
                     $task->update([
                         'account_set_id' => $config->account_set_id,
                         'company_name' => $config->company_name,
                         'tax_category_ids' => $config->tax_category_ids,
                         'declaration_date' => $declarationDate,
+                        'completed_tax_category_ids' => $completedCategoryIds,
+                        'status' => $isCompleted ? 'completed' : 'pending',
+                        'completed_at' => $isCompleted ? $task->completed_at : null,
+                        'completed_by' => $isCompleted ? $task->completed_by : null,
                     ]);
+
+                    if ($isCompleted) {
+                        PendingTaskService::checkAndCompleteTaxDeclarationTask($task->fresh());
+                    } else {
+                        PendingTaskService::createTaxDeclarationTask($task->fresh());
+                    }
                     continue;
                 }
 
-                $handler = ApprovalFlowConfig::getFirstEffectiveApprover(
-                    (int) $config->account_set_id,
-                    'tax_declaration'
-                );
+                $handler = $this->resolveTaskHandler($config);
 
                 if (!$handler) {
                     Log::warning('税费申报任务动态生成失败：未找到操作员', [
@@ -452,6 +535,7 @@ class TaxDeclarationController extends Controller
                         'config_id' => $config->id,
                         'company_name' => $config->company_name,
                         'tax_category_ids' => $config->tax_category_ids,
+                        'completed_tax_category_ids' => [],
                         'declaration_date' => $declarationDate,
                         'year' => $year,
                         'handler_id' => $handler->id,
@@ -478,7 +562,19 @@ class TaxDeclarationController extends Controller
             }
         }
 
-        return $targetMonth === null ? $configs->pluck('id')->all() : $visibleConfigIds;
+        if ($targetMonth === null) {
+            return $configs->pluck('id')->all();
+        }
+
+        $existingConfigIds = TaxDeclarationTask::where('account_set_id', $accountSetId)
+            ->whereIn('config_id', $configs->pluck('id')->all())
+            ->where('year', $year)
+            ->whereYear('declaration_date', $year)
+            ->whereMonth('declaration_date', (int) substr($targetMonth, 5, 2))
+            ->pluck('config_id')
+            ->all();
+
+        return array_values(array_unique(array_merge($visibleConfigIds, $existingConfigIds)));
     }
 
     private function resolveTaskMonth(Request $request): array
@@ -603,6 +699,45 @@ class TaxDeclarationController extends Controller
         return null;
     }
 
+    /**
+     * 当前月创建或修改的配置必须立即拥有当期任务。
+     */
+    private function wasConfigChangedInMonth(TaxDeclarationConfig $config, string $targetMonth): bool
+    {
+        return $config->created_at?->format('Y-m') === $targetMonth
+            || $config->updated_at?->format('Y-m') === $targetMonth;
+    }
+
+    /**
+     * 未配置税费审批人时，由配置创建人承接任务，避免任务被跳过。
+     */
+    private function resolveTaskHandler(TaxDeclarationConfig $config): ?object
+    {
+        $handler = ApprovalFlowConfig::getFirstEffectiveApprover(
+            (int) $config->account_set_id,
+            'tax_declaration'
+        );
+
+        if ($handler) {
+            return $handler;
+        }
+
+        if ($config->created_by) {
+            $creator = User::query()
+                ->whereKey($config->created_by)
+                ->where('is_active', true)
+                ->first();
+
+            if ($creator) {
+                return $creator;
+            }
+        }
+
+        $currentUser = Auth::user();
+
+        return $currentUser instanceof User && $currentUser->is_active ? $currentUser : null;
+    }
+
     private function extractMonth(?string $value): int
     {
         if (!is_string($value) || !preg_match('/^\d{2}(?:-\d{2})?$/', $value)) {
@@ -648,7 +783,7 @@ class TaxDeclarationController extends Controller
             $task = TaxDeclarationTask::with(['handler', 'completedBy', 'attachments.uploader'])
                 ->findOrFail($id);
             
-            $task->tax_categories_list = $task->taxCategories;
+            $this->appendTaskTaxCategoryState($task);
             
             return response()->json([
                 'success' => true,
@@ -763,33 +898,71 @@ class TaxDeclarationController extends Controller
     }
 
     /**
-     * 完成任务
+     * 完成选中的税种申报
      */
     public function completeTask(Request $request, $id)
     {
         try {
-            $task = TaxDeclarationTask::findOrFail($id);
-            
-            if ($task->status === 'completed') {
+            $validator = Validator::make($request->all(), [
+                'tax_category_ids' => 'required|array|min:1',
+                'tax_category_ids.*' => 'integer',
+            ]);
+
+            if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => '任务已完成'
+                    'message' => '请选择需要申报的税种'
+                ], 422);
+            }
+
+            $task = TaxDeclarationTask::findOrFail($id);
+
+            $selectedIds = $this->normalizeTaxCategoryIds($request->input('tax_category_ids'));
+            $configuredIds = $task->getConfiguredTaxCategoryIds();
+            $completedIds = $task->getCompletedTaxCategoryIdsList();
+            $invalidIds = array_diff($selectedIds, $configuredIds);
+            $alreadyCompletedIds = array_intersect($selectedIds, $completedIds);
+
+            if (!empty($invalidIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '选择的税种不属于当前申报任务'
+                ], 422);
+            }
+
+            if (!empty($alreadyCompletedIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '已完成的税种不能重复申报'
+                ], 422);
+            }
+
+            if ($task->status === 'completed' || empty($task->getPendingTaxCategoryIds())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该任务的税种已全部完成'
                 ], 400);
             }
 
             DB::beginTransaction();
 
-            // 标记任务为已完成
-            $task->markAsCompleted(Auth::id());
+            $task->markTaxCategoriesCompleted($selectedIds, Auth::id());
 
             // 完成待办任务
             PendingTaskService::checkAndCompleteTaxDeclarationTask($task);
 
             DB::commit();
 
+            $remainingIds = $task->fresh()->getPendingTaxCategoryIds();
+
             return response()->json([
                 'success' => true,
-                'message' => '任务已完成'
+                'message' => empty($remainingIds) ? '全部税种申报完成' : '所选税种申报完成',
+                'data' => [
+                    'status' => empty($remainingIds) ? 'completed' : 'pending',
+                    'completed_tax_category_ids' => $task->fresh()->getCompletedTaxCategoryIdsList(),
+                    'pending_tax_category_ids' => $remainingIds,
+                ]
             ]);
         } catch (\Exception $e) {
             DB::rollBack();

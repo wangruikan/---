@@ -36,14 +36,18 @@
         <el-table-column prop="handler_name" label="操作员" width="120" />
         <el-table-column label="税种" min-width="250">
           <template #default="{ row }">
-            <el-tag
-              v-for="category in row.tax_categories_list"
-              :key="category.id"
-              size="small"
-              style="margin-right: 5px"
-            >
-              {{ category.name }}
-            </el-tag>
+            <div class="tax-category-list">
+              <div
+                v-for="category in row.tax_categories_list"
+                :key="category.id"
+                class="tax-category-item"
+              >
+                <span>{{ category.name }}</span>
+                <el-icon v-if="category.completed" class="tax-category-completed">
+                  <circle-check-filled />
+                </el-icon>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="申报月份" width="120">
@@ -79,7 +83,7 @@
               link
               @click="handleCompleteTask(row)"
             >
-              完成
+              申报
             </el-button>
           </template>
         </el-table-column>
@@ -113,16 +117,33 @@
           {{ currentTask.completed_at ? formatDateTime(currentTask.completed_at) : '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="税种列表" :span="2">
-          <el-tag
+          <div class="tax-category-list detail-tax-category-list">
+            <div
             v-for="category in currentTask.tax_categories_list"
             :key="category.id"
-            size="small"
-            style="margin-right: 5px"
-          >
-            {{ category.name }}
-          </el-tag>
+            class="tax-category-item"
+            >
+              <span>{{ category.name }}</span>
+              <el-icon v-if="category.completed" class="tax-category-completed">
+                <circle-check-filled />
+              </el-icon>
+            </div>
+          </div>
         </el-descriptions-item>
       </el-descriptions>
+
+      <template v-if="currentTask && currentTask.status === 'pending'">
+        <el-divider content-position="left">选择本次申报税种</el-divider>
+        <el-checkbox-group v-model="selectedTaxCategoryIds" class="tax-category-checkbox-group">
+          <el-checkbox
+            v-for="category in pendingTaxCategories"
+            :key="category.id"
+            :label="category.id"
+          >
+            {{ category.name }}
+          </el-checkbox>
+        </el-checkbox-group>
+      </template>
 
       <el-divider content-position="left">附件管理</el-divider>
 
@@ -163,6 +184,14 @@
 
       <template #footer>
         <el-button @click="taskDetailDialogVisible = false">关闭</el-button>
+        <el-button
+          v-if="currentTask && currentTask.status === 'pending'"
+          type="success"
+          :disabled="selectedTaxCategoryIds.length === 0"
+          @click="submitSelectedTaxCategories"
+        >
+          申报所选税种
+        </el-button>
       </template>
     </el-dialog>
 
@@ -193,9 +222,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, UploadFilled } from '@element-plus/icons-vue'
+import { CircleCheckFilled, Upload, UploadFilled } from '@element-plus/icons-vue'
 import {
   getTasks,
   getTaskDetail,
@@ -229,8 +258,13 @@ const pagination = reactive({
 
 const taskDetailDialogVisible = ref(false)
 const currentTask = ref(null)
+const selectedTaxCategoryIds = ref([])
 const uploadDialogVisible = ref(false)
 const uploadTaskId = ref(null)
+
+const pendingTaxCategories = computed(() => {
+  return (currentTask.value?.tax_categories_list || []).filter(category => !category.completed)
+})
 
 // 加载申报任务
 const loadTasks = async () => {
@@ -271,6 +305,7 @@ const handleViewTask = async (row) => {
   try {
     const response = await getTaskDetail(row.id)
     currentTask.value = response.data
+    selectedTaxCategoryIds.value = []
     taskDetailDialogVisible.value = true
   } catch (error) {
     console.error('加载详情失败:', error)
@@ -278,27 +313,52 @@ const handleViewTask = async (row) => {
   }
 }
 
-// 完成任务
+// 打开税种申报选择
 const handleCompleteTask = async (row) => {
   try {
-    await ElMessageBox.confirm('确定要完成该任务吗？', '提示', {
+    const response = await getTaskDetail(row.id)
+    currentTask.value = response.data
+    selectedTaxCategoryIds.value = []
+    taskDetailDialogVisible.value = true
+  } catch (error) {
+    console.error('加载申报税种失败:', error)
+    ElMessage.error(error.response?.data?.message || '加载失败')
+  }
+}
+
+// 提交本次选中的税种
+const submitSelectedTaxCategories = async () => {
+  if (!currentTask.value || selectedTaxCategoryIds.value.length === 0) {
+    ElMessage.warning('请选择需要申报的税种')
+    return
+  }
+
+  try {
+    const selectedNames = pendingTaxCategories.value
+      .filter(category => selectedTaxCategoryIds.value.includes(category.id))
+      .map(category => category.name)
+      .join('、')
+
+    await ElMessageBox.confirm(`确定申报以下税种吗？\n${selectedNames}`, '确认申报', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
-      type: 'warning'
+      type: 'warning',
+      distinguishCancelAndClose: true
     })
-    
-    await completeTask(row.id)
-    ElMessage.success('任务已完成')
-    loadTasks()
-    
-    if (currentTask.value && currentTask.value.id === row.id) {
-      const response = await getTaskDetail(row.id)
-      currentTask.value = response.data
-    }
+
+    await completeTask(currentTask.value.id, {
+      tax_category_ids: selectedTaxCategoryIds.value
+    })
+    ElMessage.success('所选税种申报完成')
+    selectedTaxCategoryIds.value = []
+    await loadTasks()
+
+    const response = await getTaskDetail(currentTask.value.id)
+    currentTask.value = response.data
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('操作失败:', error)
-      ElMessage.error(error.response?.data?.message || '操作失败')
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('申报失败:', error)
+      ElMessage.error(error.response?.data?.message || '申报失败')
     }
   }
 }
@@ -498,5 +558,35 @@ onMounted(() => {
 
 .search-header {
   margin-bottom: 20px;
+}
+
+.tax-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tax-category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  line-height: 22px;
+}
+
+.detail-tax-category-list {
+  width: 100%;
+}
+
+.tax-category-completed {
+  color: #67c23a;
+  font-size: 16px;
+}
+
+.tax-category-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 </style>

@@ -134,6 +134,11 @@ export class PdfFillService {
         // 获取字段值
         let fieldValue = employeeData[fieldName] ?? fieldMapping[fieldName]
 
+        // 性别和户籍性质勾选由前端根据当前人员数据生成，避免依赖接口预先计算。
+        if (this.isConditionalCheckField(fieldName)) {
+          fieldValue = this.getConditionalCheckValue(fieldName, employeeData)
+        }
+
         if (fieldName === 'gender') {
           fieldValue = this.formatGender(fieldValue)
         }
@@ -421,6 +426,29 @@ export class PdfFillService {
       return '女'
     }
     return value
+  }
+
+  static isConditionalCheckField(fieldName) {
+    return [
+      'gender_male_check',
+      'gender_female_check',
+      'household_agricultural_check',
+      'household_non_agricultural_check'
+    ].includes(fieldName)
+  }
+
+  static getConditionalCheckValue(fieldName, employeeData) {
+    const gender = String(employeeData?.gender ?? '').trim().toLowerCase()
+    const householdType = String(employeeData?.household_type ?? '').trim().toLowerCase()
+
+    const checked = {
+      gender_male_check: ['male', 'm', '1', '男', '男性'].includes(gender),
+      gender_female_check: ['female', 'f', '2', '女', '女性'].includes(gender),
+      household_agricultural_check: ['agricultural', 'rural', '农业', '农村', '非城镇'].includes(householdType),
+      household_non_agricultural_check: ['non_agricultural', 'non-agricultural', 'urban', '非农业', '城镇'].includes(householdType)
+    }
+
+    return checked[fieldName] ? '√' : ''
   }
 
   static calculateSafeFontSize(boxHeight, preferredSize = 14) {

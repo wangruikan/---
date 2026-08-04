@@ -1398,6 +1398,7 @@ class EmployeeController extends ApiController
             'transfer_date' => 'nullable|date',
             'project_document_set_id' => 'nullable|integer',
             'remittance_remark' => 'nullable|string|max:255',
+            'household_type' => 'nullable|in:agricultural,non_agricultural',
             'salary_items' => 'nullable|array',
             'salary_items.*.name' => 'required|string|max:50',
             'salary_items.*.amount' => 'required|numeric|min:0',
@@ -1508,7 +1509,7 @@ class EmployeeController extends ApiController
             
             // 二、从业任职信息
             'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 
-            'signing_location', 'annual_employment_status', 'job_title',
+            'signing_location', 'household_type', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
             'is_disabled', 'disability_cert_type', 'disability_cert_number',

@@ -27,6 +27,11 @@ interface InvoiceFixture {
   applicationId: number;
 }
 
+interface GenericApprovalFixture {
+  businessId: number;
+  oldInstanceId: number;
+}
+
 let accountSetId = 0;
 let initiatorId = 0;
 let approverId = 0;
@@ -35,6 +40,11 @@ let initiatorEmail = '';
 let outsiderEmail = '';
 let reimbursementFixtures: ReimbursementFixture;
 let invoiceFixture: InvoiceFixture;
+let employeeContractFixture: GenericApprovalFixture;
+let salaryApprovalFixture: GenericApprovalFixture;
+let insuranceProcessFixture: GenericApprovalFixture;
+let fileStampProcessFixture: GenericApprovalFixture;
+let attendanceSheetFixture: GenericApprovalFixture;
 
 function apiUrl(route: string): string {
   return `${BASE_URL}/${route.replace(/^\/+/, '')}`;
@@ -145,21 +155,57 @@ function cleanupPrefix(): void {
   const invoiceApplicationIds = queryRows(`
     SELECT id FROM invoice_applications WHERE account_set_id IN (${accountSetIn})
   `).map(([id]) => Number(id));
+  const salaryApprovalIds = queryRows(`
+    SELECT id FROM salary_approvals WHERE account_set_id IN (${accountSetIn})
+  `).map(([id]) => Number(id));
+  const processApprovalIds = queryRows(`
+    SELECT id FROM process_approvals WHERE account_set_id IN (${accountSetIn})
+  `).map(([id]) => Number(id));
+  const attendanceSheetIds = queryRows(`
+    SELECT id FROM attendance_sheets WHERE account_set_id IN (${accountSetIn})
+  `).map(([id]) => Number(id));
+  const employeeContractIds = queryRows(`
+    SELECT ec.id
+    FROM employee_contracts ec
+    LEFT JOIN employees e ON e.id = ec.employee_id
+    WHERE ec.account_set_id IN (${accountSetIn})
+       OR e.account_set_id IN (${accountSetIn})
+  `).map(([id]) => Number(id));
+  const employeeIds = queryRows(`
+    SELECT id FROM employees WHERE account_set_id IN (${accountSetIn})
+  `).map(([id]) => Number(id));
+  const projectIds = queryRows(`
+    SELECT id FROM projects WHERE account_set_id IN (${accountSetIn})
+  `).map(([id]) => Number(id));
 
   const approvalInstanceIn = sqlIdList(approvalInstanceIds);
   const reimbursementIn = sqlIdList(reimbursementIds);
   const invoiceApplicationIn = sqlIdList(invoiceApplicationIds);
+  const salaryApprovalIn = sqlIdList(salaryApprovalIds);
+  const processApprovalIn = sqlIdList(processApprovalIds);
+  const attendanceSheetIn = sqlIdList(attendanceSheetIds);
+  const employeeContractIn = sqlIdList(employeeContractIds);
+  const employeeIn = sqlIdList(employeeIds);
+  const projectIn = sqlIdList(projectIds);
 
   const statements = [
     `DELETE FROM approval_attachments WHERE instance_id IN (${approvalInstanceIn})`,
     `DELETE FROM approval_cc_users WHERE instance_id IN (${approvalInstanceIn})`,
     `DELETE FROM approval_records WHERE instance_id IN (${approvalInstanceIn})`,
-    `DELETE FROM approval_instances WHERE id IN (${approvalInstanceIn})`,
     `DELETE FROM reimbursement_attachments WHERE reimbursement_id IN (${reimbursementIn})`,
     `DELETE FROM reimbursements WHERE id IN (${reimbursementIn})`,
     `DELETE FROM invoice_content_items WHERE application_id IN (${invoiceApplicationIn})`,
     `DELETE FROM invoice_items WHERE application_id IN (${invoiceApplicationIn})`,
     `DELETE FROM invoice_applications WHERE id IN (${invoiceApplicationIn})`,
+    `DELETE FROM salary_approval_attachments WHERE salary_approval_id IN (${salaryApprovalIn})`,
+    `DELETE FROM salary_approvals WHERE id IN (${salaryApprovalIn})`,
+    `DELETE FROM process_attachments WHERE process_approval_id IN (${processApprovalIn})`,
+    `DELETE FROM process_approvals WHERE id IN (${processApprovalIn})`,
+    `DELETE FROM attendance_sheets WHERE id IN (${attendanceSheetIn})`,
+    `DELETE FROM employee_contracts WHERE id IN (${employeeContractIn})`,
+    `DELETE FROM employees WHERE id IN (${employeeIn})`,
+    `DELETE FROM projects WHERE id IN (${projectIn})`,
+    `DELETE FROM approval_instances WHERE id IN (${approvalInstanceIn})`,
     `DELETE FROM pending_tasks WHERE account_set_id IN (${accountSetIn})`,
     `DELETE FROM approval_flow_configs WHERE account_set_id IN (${accountSetIn})`,
     `DELETE FROM personal_access_tokens WHERE tokenable_type = 'App\\\\Models\\\\User' AND tokenable_id IN (${userIn})`,
@@ -269,6 +315,148 @@ function createInvoiceApplicationScenario(): { applicationId: number } {
   return { applicationId };
 }
 
+function createProject(key: string): number {
+  return querySingleNumber(`
+    INSERT INTO projects
+      (account_set_id, name, code, status, created_at, updated_at)
+    VALUES
+      (${accountSetId}, ${sqlValue(`${PREFIX}-${key}-project`)}, ${sqlValue(`${PREFIX}-${key}-code`)}, 'active', NOW(), NOW());
+    SELECT LAST_INSERT_ID();
+  `);
+}
+
+function createEmployee(key: string): number {
+  const suffix = RUN_ID.slice(-4).padStart(4, '0');
+  return querySingleNumber(`
+    INSERT INTO employees
+      (account_set_id, name, id_number, gender, birth_date, hire_date, contract_start_date, created_at, updated_at)
+    VALUES
+      (${accountSetId}, ${sqlValue(`${PREFIX}-${key}-employee`)}, ${sqlValue(`11010119900101${suffix}`)}, 'male', '1990-01-01', '2026-07-01', '2026-07-01', NOW(), NOW());
+    SELECT LAST_INSERT_ID();
+  `);
+}
+
+function createRejectedApprovalInstance(businessType: string, businessId: number, key: string): number {
+  const instanceId = querySingleNumber(`
+    INSERT INTO approval_instances
+      (account_set_id, business_type, business_id, current_step, total_steps, status, stamp_method, created_by, created_at, updated_at, completed_at)
+    VALUES
+      (${accountSetId}, ${sqlValue(businessType)}, ${businessId}, 1, 1, 'rejected', 'online', ${initiatorId}, NOW(), NOW(), NOW());
+    SELECT LAST_INSERT_ID();
+  `);
+
+  runSql(`
+    INSERT INTO approval_records
+      (instance_id, step_order, step_name, approver_id, approver_name, status, comment, approved_at, created_at, updated_at)
+    VALUES
+      (${instanceId}, 1, '第1级审批', ${approverId}, ${sqlValue(`${PREFIX}-approver`)}, 'rejected', ${sqlValue(`${key}-rejected`)}, NOW(), NOW(), NOW());
+  `);
+
+  return instanceId;
+}
+
+function createEmployeeContractScenario(): GenericApprovalFixture {
+  const employeeId = createEmployee('contract');
+  const businessId = querySingleNumber(`
+    INSERT INTO employee_contracts
+      (employee_id, account_set_id, contract_type, contract_file, original_filename, status, created_by, created_at, updated_at)
+    VALUES
+      (${employeeId}, ${accountSetId}, 'labor', 'tests/api/test-document.pdf', ${sqlValue('employee-contract.pdf')}, 'rejected', ${initiatorId}, NOW(), NOW());
+    SELECT LAST_INSERT_ID();
+  `);
+  const oldInstanceId = createRejectedApprovalInstance('employee_contract', businessId, 'employee-contract');
+
+  runSql(`
+    UPDATE employee_contracts
+    SET approval_instance_id = ${oldInstanceId}
+    WHERE id = ${businessId};
+  `);
+
+  return { businessId, oldInstanceId };
+}
+
+function createSalaryApprovalScenario(): GenericApprovalFixture {
+  const projectId = createProject('salary');
+  const businessId = querySingleNumber(`
+    INSERT INTO salary_approvals
+      (account_set_id, project_id, month, approval_type, status, submitted_by, submitted_at, rejection_reason, remarks, created_at, updated_at)
+    VALUES
+      (${accountSetId}, ${projectId}, '2026-07', 'online', 'rejected', ${initiatorId}, NOW(), ${sqlValue('salary rejected')}, ${sqlValue(`${PREFIX}-salary-approval`)}, NOW(), NOW());
+    SELECT LAST_INSERT_ID();
+  `);
+  const oldInstanceId = createRejectedApprovalInstance('工资表审批', businessId, 'salary-approval');
+
+  runSql(`
+    UPDATE salary_approvals
+    SET approval_instance_id = ${oldInstanceId}
+    WHERE id = ${businessId};
+  `);
+
+  runSql(`
+    INSERT INTO salary_approval_attachments
+      (salary_approval_id, filename, file_path, file_size, mime_type, uploaded_by, created_at, updated_at)
+    VALUES
+      (${businessId}, 'salary-approval.pdf', 'tests/api/test-document.pdf', 302, 'application/pdf', ${initiatorId}, NOW(), NOW());
+  `);
+
+  return { businessId, oldInstanceId };
+}
+
+function createProcessApprovalScenario(category: 'social_insurance' | 'file_stamp', businessType: '保险汇总' | '文件盖章', key: string): GenericApprovalFixture {
+  const businessId = querySingleNumber(`
+    INSERT INTO process_approvals
+      (account_set_id, initiator_id, title, category, month, project_ids, description, status, rejection_reason, created_at, updated_at)
+    VALUES
+      (${accountSetId}, ${initiatorId}, ${sqlValue(`${PREFIX}-${key}-process`)}, ${sqlValue(category)}, '2026-07', '[]', ${sqlValue(`${key} rejected`)}, 'rejected', ${sqlValue(`${key} rejected`)}, NOW(), NOW());
+    SELECT LAST_INSERT_ID();
+  `);
+  const oldInstanceId = createRejectedApprovalInstance(businessType, businessId, key);
+
+  runSql(`
+    UPDATE process_approvals
+    SET approval_instance_id = ${oldInstanceId}
+    WHERE id = ${businessId};
+  `);
+
+  runSql(`
+    INSERT INTO process_attachments
+      (process_approval_id, filename, file_path, file_size, mime_type, uploaded_by, created_at, updated_at)
+    VALUES
+      (${businessId}, ${sqlValue(`${key}.pdf`)}, 'tests/api/test-document.pdf', 302, 'application/pdf', ${initiatorId}, NOW(), NOW());
+  `);
+
+  return { businessId, oldInstanceId };
+}
+
+function createAttendanceSheetScenario(): GenericApprovalFixture {
+  const projectId = createProject('attendance');
+  const businessId = querySingleNumber(`
+    INSERT INTO attendance_sheets
+      (account_set_id, project_id, month, work_days, status, rejection_reason, total_employees, notes, attachments, created_by, submitted_by, submitted_at, created_at, updated_at)
+    VALUES
+      (
+        ${accountSetId},
+        ${projectId},
+        '2026-07',
+        21,
+        'rejected',
+        ${sqlValue('attendance rejected')},
+        3,
+        ${sqlValue(`${PREFIX}-attendance`)},
+        ${sqlValue('[{\"path\":\"tests/api/test-document.pdf\",\"name\":\"attendance.pdf\",\"size\":302,\"type\":\"application/pdf\"}]')},
+        ${initiatorId},
+        ${initiatorId},
+        NOW(),
+        NOW(),
+        NOW()
+      );
+    SELECT LAST_INSERT_ID();
+  `);
+  const oldInstanceId = createRejectedApprovalInstance('考勤申请', businessId, 'attendance-sheet');
+
+  return { businessId, oldInstanceId };
+}
+
 function createFixtures(): void {
   cleanupPrefix();
 
@@ -303,6 +491,11 @@ function createFixtures(): void {
   runSql(`
     INSERT INTO approval_flow_configs (account_set_id, business_type, enabled_levels, created_at, updated_at)
     VALUES
+      (${accountSetId}, 'employee_contract', '[2]', NOW(), NOW()),
+      (${accountSetId}, '工资表审批', '[2]', NOW(), NOW()),
+      (${accountSetId}, '保险汇总', '[2]', NOW(), NOW()),
+      (${accountSetId}, '文件盖章', '[2]', NOW(), NOW()),
+      (${accountSetId}, '考勤申请', '[2]', NOW(), NOW()),
       (${accountSetId}, '报销申请', '[2]', NOW(), NOW()),
       (${accountSetId}, '发票申请', '[1,2]', NOW(), NOW());
   `);
@@ -313,6 +506,11 @@ function createFixtures(): void {
   };
 
   invoiceFixture = createInvoiceApplicationScenario();
+  employeeContractFixture = createEmployeeContractScenario();
+  salaryApprovalFixture = createSalaryApprovalScenario();
+  insuranceProcessFixture = createProcessApprovalScenario('social_insurance', '保险汇总', 'insurance-process');
+  fileStampProcessFixture = createProcessApprovalScenario('file_stamp', '文件盖章', 'file-stamp-process');
+  attendanceSheetFixture = createAttendanceSheetScenario();
 }
 
 test.describe('重新发起审批接口覆盖', () => {
@@ -499,5 +697,159 @@ test.describe('重新发起审批接口覆盖', () => {
     const body = await expectJson(response, 403);
     expect(body.success).toBe(false);
     expect(body.message).toBe('只有第一个有效审批节点人员才能填写并提交审批');
+  });
+
+  test('通用 approvals/resubmit 可以重新发起被驳回的员工合同审批', async ({ request }) => {
+    const token = await login(request, initiatorEmail);
+    const { businessId, oldInstanceId } = employeeContractFixture;
+
+    const response = await request.post(apiUrl('approvals/resubmit'), {
+      headers: authHeaders(token),
+      data: {
+        business_type: 'employee_contract',
+        business_id: businessId,
+        stamp_method: 'online',
+        stamp_selection_mode: 'none',
+      },
+    });
+    const body = await expectJson(response);
+    expect(body.success).toBe(true);
+    expect(body.message).toBe('重新发起成功');
+
+    const [contractRow] = queryRows(`
+      SELECT status, approval_instance_id
+      FROM employee_contracts
+      WHERE id = ${businessId}
+    `);
+    expect(contractRow[0]).toBe('in_approval');
+    const newInstanceId = Number(contractRow[1]);
+    expect(newInstanceId).toBeGreaterThan(0);
+    expect(newInstanceId).not.toBe(oldInstanceId);
+
+    const oldInstanceRows = queryRows(`
+      SELECT id FROM approval_instances WHERE id = ${oldInstanceId}
+    `);
+    expect(oldInstanceRows).toHaveLength(0);
+  });
+
+  test('通用 approvals/resubmit 可以重新发起被驳回的工资表审批', async ({ request }) => {
+    const token = await login(request, initiatorEmail);
+    const { businessId, oldInstanceId } = salaryApprovalFixture;
+
+    const response = await request.post(apiUrl('approvals/resubmit'), {
+      headers: authHeaders(token),
+      data: {
+        business_type: '工资表审批',
+        business_id: businessId,
+        stamp_method: 'online',
+        stamp_selection_mode: 'none',
+      },
+    });
+    const body = await expectJson(response);
+    expect(body.success).toBe(true);
+
+    const [approvalRow] = queryRows(`
+      SELECT status, approval_instance_id
+      FROM salary_approvals
+      WHERE id = ${businessId}
+    `);
+    expect(approvalRow[0]).toBe('pending');
+    const newInstanceId = Number(approvalRow[1]);
+    expect(newInstanceId).toBeGreaterThan(0);
+    expect(newInstanceId).not.toBe(oldInstanceId);
+  });
+
+  test('通用 approvals/resubmit 可以重新发起被驳回的保险汇总审批', async ({ request }) => {
+    const token = await login(request, initiatorEmail);
+    const { businessId, oldInstanceId } = insuranceProcessFixture;
+
+    const response = await request.post(apiUrl('approvals/resubmit'), {
+      headers: authHeaders(token),
+      data: {
+        business_type: '保险汇总',
+        business_id: businessId,
+        stamp_method: 'online',
+        stamp_selection_mode: 'none',
+      },
+    });
+    const body = await expectJson(response);
+    expect(body.success).toBe(true);
+
+    const [processRow] = queryRows(`
+      SELECT status, approval_instance_id
+      FROM process_approvals
+      WHERE id = ${businessId}
+    `);
+    expect(processRow[0]).toBe('pending');
+    const newInstanceId = Number(processRow[1]);
+    expect(newInstanceId).toBeGreaterThan(0);
+    expect(newInstanceId).not.toBe(oldInstanceId);
+  });
+
+  test('通用 approvals/resubmit 可以重新发起被驳回的文件盖章审批', async ({ request }) => {
+    const token = await login(request, initiatorEmail);
+    const { businessId, oldInstanceId } = fileStampProcessFixture;
+
+    const response = await request.post(apiUrl('approvals/resubmit'), {
+      headers: authHeaders(token),
+      data: {
+        business_type: '文件盖章',
+        business_id: businessId,
+        stamp_method: 'online',
+        stamp_selection_mode: 'none',
+      },
+    });
+    const body = await expectJson(response);
+    expect(body.success).toBe(true);
+
+    const [processRow] = queryRows(`
+      SELECT status, approval_instance_id
+      FROM process_approvals
+      WHERE id = ${businessId}
+    `);
+    expect(processRow[0]).toBe('pending');
+    const newInstanceId = Number(processRow[1]);
+    expect(newInstanceId).toBeGreaterThan(0);
+    expect(newInstanceId).not.toBe(oldInstanceId);
+  });
+
+  test('通用 approvals/resubmit 可以重新发起被驳回的考勤申请', async ({ request }) => {
+    const token = await login(request, initiatorEmail);
+    const { businessId, oldInstanceId } = attendanceSheetFixture;
+
+    const beforeRows = queryRows(`
+      SELECT id
+      FROM approval_instances
+      WHERE business_type = '考勤申请' AND business_id = ${businessId}
+      ORDER BY id
+    `);
+    expect(beforeRows).toEqual([[String(oldInstanceId)]]);
+
+    const response = await request.post(apiUrl('approvals/resubmit'), {
+      headers: authHeaders(token),
+      data: {
+        business_type: '考勤申请',
+        business_id: businessId,
+        stamp_method: 'online',
+        stamp_selection_mode: 'none',
+      },
+    });
+    const body = await expectJson(response);
+    expect(body.success).toBe(true);
+
+    const [sheetRow] = queryRows(`
+      SELECT status
+      FROM attendance_sheets
+      WHERE id = ${businessId}
+    `);
+    expect(sheetRow[0]).toBe('submitted');
+
+    const afterRows = queryRows(`
+      SELECT id
+      FROM approval_instances
+      WHERE business_type = '考勤申请' AND business_id = ${businessId}
+      ORDER BY id
+    `);
+    expect(afterRows.map(([id]) => Number(id))).toContain(body.data.instance_id);
   });
 });

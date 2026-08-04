@@ -138,6 +138,16 @@ class AttendanceSheet extends Model
         return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_REJECTED], true);
     }
 
+    public function resetForResubmit()
+    {
+        $this->forceFill([
+            'status' => self::STATUS_SUBMITTED,
+            'rejection_reason' => null,
+            'approved_by' => null,
+            'approved_at' => null,
+        ])->save();
+    }
+
     public function canApprove()
     {
         return $this->status === self::STATUS_SUBMITTED;

@@ -1108,6 +1108,10 @@ class ApprovalFlowController extends Controller
             return 'employee_contract';
         }
 
+        if ($normalizedType === '文件盖章') {
+            return 'process_approval';
+        }
+
         $typeHex = strtolower(bin2hex($normalizedType));
         $hexMap = [
             'e5b7a5e8b584e8a1a8e5aea1e689b9' => 'salary_approval',

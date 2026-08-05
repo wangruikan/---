@@ -26,11 +26,6 @@
 			</view>
 			
 			<view class="form-item">
-				<text class="label">入职职位</text>
-				<input type="text" placeholder="请输入入职职位" v-model="formData.entry_position" />
-			</view>
-			
-			<view class="form-item">
 				<text class="label">入职日期</text>
 				<picker mode="date" :value="formatDateForPicker(formData.entry_date)" @change="onEntryDateChange">
 					<view class="picker">{{ formatDateDisplay(formData.entry_date) || '请选择日期' }}</view>
@@ -104,11 +99,6 @@
 				<input type="digit" placeholder="请输入身高" v-model="formData.height" />
 			</view>
 			
-			<view class="form-item">
-				<text class="label required">身份证号码</text>
-				<input type="idcard" placeholder="请输入身份证号码" v-model="formData.id_number" maxlength="18" @blur="onIdNumberChange" />
-			</view>
-
 			<view class="form-item">
 				<text class="label required">身份证有效期开始</text>
 				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_from)" @change="onIdCardValidFromChange">
@@ -210,11 +200,6 @@
 			<view class="form-item">
 				<text class="label">户口地址</text>
 				<input type="text" placeholder="请输入户口地址" v-model="formData.household_address" />
-			</view>
-			
-			<view class="form-item">
-				<text class="label">联系电话</text>
-				<input type="number" placeholder="请输入联系电话" v-model="formData.contact_phone" />
 			</view>
 			
 			<view class="form-item">
@@ -582,7 +567,6 @@ export default {
 			formData: {
 				// 头部信息
 				fill_date: '',
-				entry_position: '',
 				entry_date: '',
 				department: '',
 				job_title: '',
@@ -606,14 +590,12 @@ export default {
 				native_place_detail: '',
 				marital_status: '',
 				has_children: '',
-				id_number: '',
 				id_card_valid_from: '',
 				id_card_valid_until: '',
 				household_type: '',
 				current_address: '',
 				postal_code: '',
 				household_address: '',
-				contact_phone: '',
 				document_address: '',
 				disability_level: '',
 				// 二、个人技能
@@ -741,7 +723,7 @@ export default {
 						}
 					}
 					// 复制其他数据
-					const { signature, photo, ...otherData } = data
+					const { signature, photo, id_number, entry_position, contact_phone, ...otherData } = data
 					this.formData = { ...this.formData, ...otherData }
 					this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
 					this.formData.id_card_valid_from = data.id_card_valid_from || ''
@@ -921,39 +903,11 @@ export default {
 			return map[val] || val
 		},
 
-		// 身份证号码变化
-		onIdNumberChange() {
-			const idNumber = this.formData.id_number
-			if (!idNumber || idNumber.length !== 18) return
-			if (!this.validateIdNumber(idNumber)) {
-				uni.showToast({ title: '请输入正确的身份证号码', icon: 'none' })
-				return
-			}
-			// 提取出生日期
-			const birthYear = idNumber.substring(6, 10)
-			const birthMonth = idNumber.substring(10, 12)
-			const birthDay = idNumber.substring(12, 14)
-			this.formData.birth_date = `${birthYear}-${birthMonth}-${birthDay}`
-			// 提取性别
-			const genderCode = parseInt(idNumber.substring(16, 17))
-			this.formData.gender = genderCode % 2 === 1 ? 'male' : 'female'
-		},
-		
-		validateIdNumber(idNumber) {
-			return !!idNumber && idNumber.length === 18
-		},
-
 		validateRequiredFields() {
 			this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
 
-			const idNumber = String(this.formData.id_number || '').trim()
-			if (!this.formData.birth_date && this.validateIdNumber(idNumber)) {
-				this.formData.birth_date = `${idNumber.substring(6, 10)}-${idNumber.substring(10, 12)}-${idNumber.substring(12, 14)}`
-			}
-
 			const requiredFields = [
 				{ key: 'fill_date', label: '填表日期' },
-				{ key: 'entry_position', label: '入职职位' },
 				{ key: 'entry_date', label: '入职日期' },
 				{ key: 'department', label: '部门' },
 				{ key: 'job_title', label: '职务' },
@@ -974,12 +928,10 @@ export default {
 				{ key: 'education_type', label: '学历性质' },
 				{ key: 'marital_status', label: '婚姻状况' },
 				{ key: 'has_children', label: '是否有子女' },
-				{ key: 'id_number', label: '身份证号码' },
 				{ key: 'household_type', label: '户口状态' },
 				{ key: 'current_address', label: '现居住地址' },
 				{ key: 'postal_code', label: '邮编' },
 				{ key: 'household_address', label: '户口地址' },
-				{ key: 'contact_phone', label: '联系电话' },
 				{ key: 'document_address', label: '文书送达地址' },
 				{ key: 'disability_level', label: '残疾证等级' },
 				{ key: 'professional_title', label: '职称' },
@@ -1123,11 +1075,6 @@ export default {
 				return false
 			}
 
-			if (!this.validateIdNumber(idNumber)) {
-				uni.showToast({ title: '请输入正确的身份证号码', icon: 'none' })
-				return false
-			}
-
 			if (!this.formData.photoPath && !this.formData.photo) {
 				uni.showToast({ title: '请上传一寸照片', icon: 'none' })
 				return false
@@ -1202,7 +1149,6 @@ export default {
 						this.formData = {
 							...this.formData,
 							fill_date: dateStr,
-							entry_position: '软件工程师',
 							entry_date: dateStr,
 							department: '技术部',
 							job_title: '工程师',
@@ -1216,7 +1162,6 @@ export default {
 							gender: 'male',
 							height: '175',
 							birth_date: '1990-05-15',
-							id_number: '110101199005150015',
 							id_card_valid_from: '2020-01-01',
 							id_card_valid_until: '2040-01-01',
 							political_status: '群众',
@@ -1230,7 +1175,6 @@ export default {
 							current_address: '北京市朝阳区某某街道某某号',
 							postal_code: '100000',
 							household_address: '北京市朝阳区',
-							contact_phone: '13800138000',
 							document_address: '北京市朝阳区某某街道某某号',
 							disability_level: '',
 							language_skills: ['四级', '六级'],
@@ -1307,6 +1251,9 @@ export default {
 					submitData.photo = this.formData.photoPath
 				}
 				delete submitData.photoPath
+				delete submitData.id_number
+				delete submitData.entry_position
+				delete submitData.contact_phone
 				
 				const res = await submitRegistrationForm(submitData)
 				

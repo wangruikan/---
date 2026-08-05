@@ -48,29 +48,18 @@ class MiniController extends Controller
         );
     }
 
-    /**
-     * 身份证号同步（保留唯一校验）
-     */
-    private function resolveEmployeeIdNumber(Employee $employee, ?string $idNumber): ?string
+    private function getEmployeeBirthDate(Employee $employee): ?string
     {
-        if (!$idNumber || $idNumber === $employee->id_number) {
-            return $employee->id_number;
+        if ($employee->birth_date) {
+            return $employee->birth_date->format('Y-m-d');
         }
 
-        $exists = Employee::where('id_number', $idNumber)
-            ->where('id', '!=', $employee->id)
-            ->exists();
-
-        if ($exists) {
-            \Log::warning('登记表身份证号与其他员工重复，跳过身份证号同步', [
-                'employee_id' => $employee->id,
-                'id_number' => $idNumber,
-            ]);
-
-            return $employee->id_number;
+        if (preg_match('/^\d{6}(\d{4})(\d{2})(\d{2})\d{3}[\dXx]$/', (string) $employee->id_number, $matches)
+            && checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1])) {
+            return "{$matches[1]}-{$matches[2]}-{$matches[3]}";
         }
 
-        return $idNumber;
+        return null;
     }
 
     /**
@@ -1611,6 +1600,10 @@ class MiniController extends Controller
                 $formData['bank_account_holder'] = $employee->bank_account_holder ?? '';
                 $formData['bank_name'] = $employee->bank_name ?? '';
                 $formData['bank_branch'] = $employee->bank_branch ?? '';
+                $formData['id_number'] = $employee->id_number ?? '';
+                $formData['position'] = $employee->position ?? '';
+                $formData['contact_phone'] = $employee->phone ?? '';
+                $formData['birth_date'] = $this->getEmployeeBirthDate($employee) ?? ($formData['birth_date'] ?? null);
                 $formData['id_card_valid_from'] = $formData['id_card_valid_from'] ?? $employee->id_card_valid_from;
                 $formData['id_card_valid_until'] = $formData['id_card_valid_until'] ?? $employee->id_card_valid_until;
 
@@ -1649,6 +1642,10 @@ class MiniController extends Controller
                     'bank_account_holder' => $employee->bank_account_holder ?? '',
                     'bank_name' => $employee->bank_name ?? '',
                     'bank_branch' => $employee->bank_branch ?? '',
+                    'id_number' => $employee->id_number ?? '',
+                    'position' => $employee->position ?? '',
+                    'contact_phone' => $employee->phone ?? '',
+                    'birth_date' => $this->getEmployeeBirthDate($employee),
                     'id_card_valid_from' => $employee->id_card_valid_from,
                     'id_card_valid_until' => $employee->id_card_valid_until,
                 ]
@@ -1701,12 +1698,10 @@ class MiniController extends Controller
             'height' => 'nullable|integer|min:1|max:300',
             'weight' => 'nullable|numeric|min:1|max:500',
             'marital_status' => 'nullable|string|max:20',
-            'id_number' => 'required|string|size:18',
             'id_card_valid_from' => 'nullable|date',
             'id_card_valid_until' => 'nullable|date',
             'current_residence' => 'nullable|string|max:200',
             'household_registration' => 'nullable|string|max:200',
-            'position' => 'nullable|string|max:100',
             'desired_location' => 'nullable|string|max:100',
             'accept_assignment' => 'nullable|boolean',
             'contact_address' => 'nullable|string|max:200',
@@ -1715,7 +1710,6 @@ class MiniController extends Controller
             'contact_city' => 'nullable|string|max:50',
             'contact_district' => 'nullable|string|max:50',
             'contact_address_detail' => 'nullable|string|max:200',
-            'contact_phone' => 'nullable|string|max:20',
             'bank_account' => 'nullable|string|max:50',
             'bank_account_holder' => 'nullable|string|max:255',
             'bank_name' => 'nullable|string|max:100',
@@ -1744,8 +1738,6 @@ class MiniController extends Controller
             'registration_date.required' => '请输入登记日期',
             'name.required' => '请输入姓名',
             'gender.required' => '请选择性别',
-            'id_number.required' => '请输入身份证号码',
-            'id_number.size' => '身份证号码必须为18位',
             'signature.required' => '请先完成手写签名',
         ]);
 
@@ -1881,16 +1873,16 @@ class MiniController extends Controller
                     'height' => $request->height,
                     'weight' => $request->weight,
                     'marital_status' => $request->marital_status,
-                    'id_number' => $request->id_number,
+                    'id_number' => $employee->id_number,
                     'id_card_valid_from' => $request->id_card_valid_from,
                     'id_card_valid_until' => $request->id_card_valid_until,
                     'current_residence' => $request->current_residence,
                     'household_registration' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->household_registration,
-                    'position' => $request->position,
+                    'position' => $employee->position,
                     'desired_location' => $request->desired_location,
                     'accept_assignment' => $request->accept_assignment,
                     'contact_address' => $contactAddress,
-                    'contact_phone' => $request->contact_phone,
+                    'contact_phone' => $employee->phone,
                     'remarks' => $request->remarks,
                     'signature' => $request->signature, // 保存签名图片路径（已经通过uploadSignature上传）
                     'photo' => $request->photo,         // 保存一寸照片路径（已经通过uploadPhoto上传）
@@ -1904,15 +1896,12 @@ class MiniController extends Controller
             $employeeUpdateData = [
                 'name' => $request->name,
                 'gender' => $request->gender,
-                'id_number' => $this->resolveEmployeeIdNumber($employee, $request->id_number),
                 'id_card_valid_from' => $request->id_card_valid_from,
                 'id_card_valid_until' => $request->id_card_valid_until,
                 'birth_date' => $request->birth_date,
                 'marital_status' => $request->marital_status,
-                'position' => $request->position,
                 'education' => $request->education_level,
                 'education_type' => $request->education_type,
-                'phone' => $request->contact_phone,
                 'address' => $request->current_residence,
                 'household_registration' => $hasPlaceOfOriginPayload ? $placeOfOrigin : $request->household_registration,
                 'contact_address' => ($hasAddressPayload || $hasRegionPayload) ? $contactAddress : $employee->contact_address,
@@ -2032,6 +2021,10 @@ class MiniController extends Controller
                 $formData['bank_account_holder'] = $formData['bank_account_holder'] ?? $employee->bank_account_holder;
                 $formData['bank_name'] = $formData['bank_name'] ?? $employee->bank_name;
                 $formData['bank_branch'] = $formData['bank_branch'] ?? $employee->bank_branch;
+                $formData['entry_position'] = $employee->position ?? '';
+                $formData['id_number'] = $employee->id_number ?? '';
+                $formData['contact_phone'] = $employee->phone ?? '';
+                $formData['birth_date'] = $this->getEmployeeBirthDate($employee) ?? ($formData['birth_date'] ?? null);
                 $formData['education_type'] = $this->normalizeEducationTypeValue($formData['education_type'] ?? '');
 
                 if (empty($formData['native_place'])) {
@@ -2053,6 +2046,10 @@ class MiniController extends Controller
                     'bank_account_holder' => $employee->bank_account_holder ?? '',
                     'bank_name' => $employee->bank_name ?? '',
                     'bank_branch' => $employee->bank_branch ?? '',
+                    'entry_position' => $employee->position ?? '',
+                    'id_number' => $employee->id_number ?? '',
+                    'contact_phone' => $employee->phone ?? '',
+                    'birth_date' => $this->getEmployeeBirthDate($employee),
                     'id_card_valid_from' => $employee->id_card_valid_from,
                     'id_card_valid_until' => $employee->id_card_valid_until,
                 ];
@@ -2088,7 +2085,6 @@ class MiniController extends Controller
 
         $validator = Validator::make($request->all(), [
             'fill_date' => 'required|date',
-            'entry_position' => 'required|string|max:100',
             'entry_date' => 'required|date',
             'department' => 'required|string|max:100',
             'job_title' => 'required|string|max:100',
@@ -2114,14 +2110,12 @@ class MiniController extends Controller
             'native_place_region' => 'nullable',
             'marital_status' => 'required|string|max:20',
             'has_children' => 'required|string|max:20',
-            'id_number' => 'required|string|size:18',
             'id_card_valid_from' => 'nullable|date',
             'id_card_valid_until' => 'nullable|date',
             'household_type' => 'required|string|max:20',
             'current_address' => 'required|string|max:200',
             'postal_code' => 'required|string|max:10',
             'household_address' => 'required|string|max:200',
-            'contact_phone' => 'required|string|max:20',
             'document_address' => 'required|string|max:200',
             'disability_level' => 'required|string|max:20',
             'language_skills' => 'required|array|min:1',
@@ -2188,7 +2182,6 @@ class MiniController extends Controller
             'max' => ':attribute超出长度限制',
         ], [
             'fill_date' => '填表日期',
-            'entry_position' => '入职职位',
             'entry_date' => '入职日期',
             'department' => '部门',
             'job_title' => '职务',
@@ -2208,12 +2201,10 @@ class MiniController extends Controller
             'native_place' => '籍贯',
             'marital_status' => '婚姻状况',
             'has_children' => '是否有子女',
-            'id_number' => '身份证号码',
             'household_type' => '户口状态',
             'current_address' => '现居住地址',
             'postal_code' => '邮编',
             'household_address' => '户口地址',
-            'contact_phone' => '联系电话',
             'document_address' => '文书送达地址',
             'disability_level' => '残疾证等级',
             'language_skills' => '英语水平',
@@ -2341,7 +2332,7 @@ class MiniController extends Controller
                 [
                     'account_set_id' => $employee->account_set_id,
                     'fill_date' => $request->fill_date,
-                    'entry_position' => $request->entry_position,
+                    'entry_position' => $employee->position,
                     'entry_date' => $request->entry_date,
                     'department' => $request->department,
                     'job_title' => $request->job_title,
@@ -2362,14 +2353,14 @@ class MiniController extends Controller
                     'native_place' => $hasNativePlacePayload ? $nativePlace : $request->native_place,
                     'marital_status' => $request->marital_status,
                     'has_children' => $request->has_children,
-                    'id_number' => $request->id_number,
+                    'id_number' => $employee->id_number,
                     'id_card_valid_from' => $request->id_card_valid_from,
                     'id_card_valid_until' => $request->id_card_valid_until,
                     'household_type' => $request->household_type,
                     'current_address' => $request->current_address,
                     'postal_code' => $request->postal_code,
                     'household_address' => $request->household_address,
-                    'contact_phone' => $request->contact_phone,
+                    'contact_phone' => $employee->phone,
                     'document_address' => $request->document_address,
                     'disability_level' => $request->disability_level,
                     'language_skills' => $request->language_skills,
@@ -2424,17 +2415,14 @@ class MiniController extends Controller
             $employeeUpdateData = [
                 'name' => $request->name,
                 'gender' => $request->gender,
-                'id_number' => $this->resolveEmployeeIdNumber($employee, $request->id_number),
                 'id_card_valid_from' => $request->id_card_valid_from,
                 'id_card_valid_until' => $request->id_card_valid_until,
                 'birth_date' => $request->birth_date,
                 'marital_status' => $request->marital_status,
-                'position' => $request->entry_position,
                 'job_title' => $request->job_title,
                 'hire_date' => $normalizedEntryDate !== '' ? $normalizedEntryDate : null,
                 'education' => $request->education_level,
                 'education_type' => $educationType,
-                'phone' => $request->contact_phone,
                 'address' => $request->current_address,
                 'household_address' => $hasNativePlaceDetailPayload ? $nativePlaceDetail : $request->household_address,
                 'household_type' => $normalizedHouseholdType,

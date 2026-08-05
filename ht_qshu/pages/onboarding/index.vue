@@ -36,12 +36,6 @@
 				</radio-group>
 			</view>
 			
-			<!-- 身份证号码 -->
-			<view class="form-item">
-				<text class="label required">身份证号码</text>
-				<input type="idcard" placeholder="请输入身份证号码" v-model="formData.id_number" maxlength="18" @blur="onIdNumberChange" />
-			</view>
-
 			<view class="form-item">
 				<text class="label required">身份证有效期开始</text>
 				<picker mode="date" :value="formatDateForPicker(formData.id_card_valid_from)" @change="onIdCardValidFromChange">
@@ -292,12 +286,6 @@
 		<view class="form-section">
 			<view class="section-title">就业信息</view>
 			
-			<!-- 岗位 -->
-			<view class="form-item">
-				<text class="label">岗位</text>
-				<input type="text" placeholder="请输入岗位" v-model="formData.position" />
-			</view>
-			
 			<!-- 求职地区 -->
 			<view class="form-item">
 				<text class="label">求职地区</text>
@@ -322,11 +310,6 @@
 				<input type="text" placeholder="请输入详细地址" v-model="formData.contact_address_detail" />
 			</view>
 			
-			<!-- 联系电话 -->
-			<view class="form-item">
-				<text class="label">联系电话</text>
-				<input type="number" placeholder="请输入联系电话" v-model="formData.contact_phone" />
-			</view>
 		</view>
 		
 		<!-- 工资卡信息 -->
@@ -419,7 +402,6 @@ export default {
 				place_of_origin: '',
 				place_of_origin_detail: '',
 				birth_date: '',
-				id_number: '',
 				id_card_valid_from: '',
 				id_card_valid_until: '',
 				current_residence: '',
@@ -435,13 +417,11 @@ export default {
 				major: '',
 				degree: '',
 				technical_title: '',
-				position: '',
 				desired_location: '',
 				accept_assignment: false,
 				contact_address: '',
 				contact_address_region: [],
 				contact_address_detail: '',
-				contact_phone: '',
 				bank_account: '',
 				bank_account_holder: '',
 				bank_name: '',
@@ -563,7 +543,7 @@ export default {
 				}
 				
 				// 复制其他数据（排除signature和photo，因为已经处理过了）
-				const { signature, photo, ...otherData } = data
+				const { signature, photo, id_number, position, contact_phone, ...otherData } = data
 				this.formData = { ...this.formData, ...otherData }
 				this.formData.education_type = this.normalizeEducationType(this.formData.education_type)
 				this.formData.education_background = Array.isArray(this.formData.education_background) ? this.formData.education_background : []
@@ -653,35 +633,6 @@ export default {
 			this.formData.gender = e.detail.value
 		},
 		
-		// 身份证号码变化时校验并提取出生日期
-		onIdNumberChange(e) {
-			const idNumber = this.formData.id_number
-			if (!idNumber) return
-			
-			// 校验身份证号码
-			if (!this.validateIdNumber(idNumber)) {
-				uni.showToast({
-					title: '请输入正确的身份证号码',
-					icon: 'none'
-				})
-				return
-			}
-			
-			// 从身份证提取出生日期
-			const birthYear = idNumber.substring(6, 10)
-			const birthMonth = idNumber.substring(10, 12)
-			this.formData.birth_date = `${birthYear}-${birthMonth}`
-			
-			// 从身份证提取性别（倒数第二位奇数为男，偶数为女）
-			const genderCode = parseInt(idNumber.substring(16, 17))
-			this.formData.gender = genderCode % 2 === 1 ? 'male' : 'female'
-		},
-		
-		// 校验身份证号码
-		validateIdNumber(idNumber) {
-			return !!idNumber && idNumber.length === 18
-		},
-
 		isEmptyValue(value) {
 			if (value === null || value === undefined) return true
 			if (typeof value === 'string') return value.trim() === ''
@@ -695,7 +646,6 @@ export default {
 				{ key: 'registration_date', label: '登记日期' },
 				{ key: 'name', label: '姓名' },
 				{ key: 'gender', label: '性别' },
-				{ key: 'id_number', label: '身份证号码' },
 				{ key: 'id_card_valid_from', label: '身份证有效期开始' },
 				{ key: 'id_card_valid_until', label: '身份证有效期至' },
 				{ key: 'birth_date', label: '出生年月' },
@@ -713,9 +663,7 @@ export default {
 				{ key: 'major', label: '所学专业' },
 				{ key: 'degree', label: '学位' },
 				{ key: 'technical_title', label: '技术职称' },
-				{ key: 'position', label: '岗位' },
 				{ key: 'desired_location', label: '求职地区' },
-				{ key: 'contact_phone', label: '联系电话' },
 				{ key: 'remarks', label: '备注' }
 			]
 
@@ -1035,7 +983,6 @@ export default {
 							place_of_origin: '北京市北京市朝阳区某某街道某某号',
 							place_of_origin_detail: '某某街道某某号',
 							birth_date: `${birthYear}-${String(birthMonth).padStart(2, '0')}`,
-							id_number: '110101199005011234',
 							id_card_valid_from: '2020-01-01',
 							id_card_valid_until: '2040-01-01',
 							current_residence: '北京市朝阳区某某街道某某号',
@@ -1051,13 +998,11 @@ export default {
 							major: '计算机科学与技术',
 							degree: '学士',
 							technical_title: '工程师',
-							position: '软件工程师',
 							desired_location: '北京市',
 							accept_assignment: true,
 							contact_address: '北京市朝阳区某某街道某某号',
 							contact_address_region: ['北京市', '北京市', '朝阳区'],
 							contact_address_detail: '某某街道某某号',
-							contact_phone: '13800138000',
 							bank_account: '6222021234567890123',
 							bank_account_holder: '张三',
 							bank_name: '中国工商银行',
@@ -1142,14 +1087,6 @@ export default {
 				return
 			}
 
-			if (!this.validateIdNumber(this.formData.id_number)) {
-				uni.showToast({
-					title: '请输入正确的身份证号码',
-					icon: 'none'
-				})
-				return
-			}
-			
 			this.submitting = true
 			
 			try {
@@ -1190,6 +1127,9 @@ export default {
 					submitData.photo = this.formData.photoPath
 				}
 				delete submitData.photoPath
+				delete submitData.id_number
+				delete submitData.position
+				delete submitData.contact_phone
 				
 				// 调试日志
 				console.log('提交签名路径:', submitData.signature)

@@ -292,20 +292,51 @@ test.describe('入职登记表 API 测试', () => {
       expect(response.status()).toBe(422);
     });
 
-    test('缺少 id_number 返回 422', async ({ request }) => {
+    test('身份证号、岗位、手机号不需要小程序提交', async ({ request }) => {
+      const payload = buildOnboardingPayload();
+      delete payload.id_number;
+      delete payload.contact_phone;
       const response = await request.post(`${BASE_URL}/mini/onboarding-form`, {
         headers: miniHeaders(),
-        data: buildOnboardingPayload({ id_number: undefined }),
+        data: payload,
       });
-      expect(response.status()).toBe(422);
+      expect(response.status()).toBe(200);
     });
 
-    test('id_number 不是 18 位返回 422', async ({ request }) => {
+    test('小程序伪造的身份证号、岗位、手机号不会覆盖人员档案', async ({ request }) => {
+      const beforeResponse = await request.get(`${BASE_URL}/employees/${miniEmployeeId}`, {
+        headers: adminHeaders(),
+      });
+      expect(beforeResponse.status()).toBe(200);
+      const beforeEmployee = (await beforeResponse.json()).data;
+
       const response = await request.post(`${BASE_URL}/mini/onboarding-form`, {
         headers: miniHeaders(),
-        data: buildOnboardingPayload({ id_number: '1234567890' }),
+        data: buildOnboardingPayload({
+          id_number: '000000000000000000',
+          position: '小程序错误岗位',
+          contact_phone: '13999999999',
+        }),
       });
-      expect(response.status()).toBe(422);
+      expect(response.status()).toBe(200);
+
+      const miniResponse = await request.get(`${BASE_URL}/mini/onboarding-form`, {
+        headers: miniHeaders(),
+      });
+      expect(miniResponse.status()).toBe(200);
+      const miniForm = (await miniResponse.json()).data;
+      expect(miniForm.id_number || '').toBe(beforeEmployee.id_number || '');
+      expect(miniForm.position || '').toBe(beforeEmployee.position || '');
+      expect(miniForm.contact_phone || '').toBe(beforeEmployee.phone || '');
+
+      const afterResponse = await request.get(`${BASE_URL}/employees/${miniEmployeeId}`, {
+        headers: adminHeaders(),
+      });
+      expect(afterResponse.status()).toBe(200);
+      const afterEmployee = (await afterResponse.json()).data;
+      expect(afterEmployee.id_number).toBe(beforeEmployee.id_number);
+      expect(afterEmployee.position).toBe(beforeEmployee.position);
+      expect(afterEmployee.phone).toBe(beforeEmployee.phone);
     });
 
     test('education_type 非法值且无已有表单时返回 422', async ({ request }) => {

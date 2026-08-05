@@ -175,12 +175,16 @@ test.describe('从业人员登记表 API 测试', () => {
       expect(response.status()).toBe(422);
     });
 
-    test('缺少 entry_position 返回 422', async ({ request }) => {
+    test('身份证号、入职职位、手机号不需要小程序提交', async ({ request }) => {
+      const payload = buildRegistrationPayload();
+      delete payload.entry_position;
+      delete payload.id_number;
+      delete payload.contact_phone;
       const response = await request.post(`${BASE_URL}/mini/registration-form`, {
         headers: miniHeaders(),
-        data: buildRegistrationPayload({ entry_position: undefined }),
+        data: payload,
       });
-      expect(response.status()).toBe(422);
+      expect(response.status()).toBe(200);
     });
 
     test('缺少 entry_date 返回 422', async ({ request }) => {
@@ -263,20 +267,40 @@ test.describe('从业人员登记表 API 测试', () => {
       expect(response.status()).toBe(422);
     });
 
-    test('缺少 id_number 返回 422', async ({ request }) => {
-      const response = await request.post(`${BASE_URL}/mini/registration-form`, {
-        headers: miniHeaders(),
-        data: buildRegistrationPayload({ id_number: undefined }),
+    test('小程序伪造的身份证号、入职职位、手机号不会覆盖人员档案', async ({ request }) => {
+      const beforeResponse = await request.get(`${BASE_URL}/employees/${miniEmployeeId}`, {
+        headers: adminHeaders(),
       });
-      expect(response.status()).toBe(422);
-    });
+      expect(beforeResponse.status()).toBe(200);
+      const beforeEmployee = (await beforeResponse.json()).data;
 
-    test('id_number 不是 18 位返回 422', async ({ request }) => {
       const response = await request.post(`${BASE_URL}/mini/registration-form`, {
         headers: miniHeaders(),
-        data: buildRegistrationPayload({ id_number: '123456' }),
+        data: buildRegistrationPayload({
+          entry_position: '小程序错误岗位',
+          id_number: '000000000000000000',
+          contact_phone: '13999999999',
+        }),
       });
-      expect(response.status()).toBe(422);
+      expect(response.status()).toBe(200);
+
+      const miniResponse = await request.get(`${BASE_URL}/mini/registration-form`, {
+        headers: miniHeaders(),
+      });
+      expect(miniResponse.status()).toBe(200);
+      const miniForm = (await miniResponse.json()).data;
+      expect(miniForm.id_number || '').toBe(beforeEmployee.id_number || '');
+      expect(miniForm.entry_position || '').toBe(beforeEmployee.position || '');
+      expect(miniForm.contact_phone || '').toBe(beforeEmployee.phone || '');
+
+      const afterResponse = await request.get(`${BASE_URL}/employees/${miniEmployeeId}`, {
+        headers: adminHeaders(),
+      });
+      expect(afterResponse.status()).toBe(200);
+      const afterEmployee = (await afterResponse.json()).data;
+      expect(afterEmployee.id_number).toBe(beforeEmployee.id_number);
+      expect(afterEmployee.position).toBe(beforeEmployee.position);
+      expect(afterEmployee.phone).toBe(beforeEmployee.phone);
     });
 
     test('缺少 education_level 返回 422', async ({ request }) => {
@@ -348,14 +372,6 @@ test.describe('从业人员登记表 API 测试', () => {
       const response = await request.post(`${BASE_URL}/mini/registration-form`, {
         headers: miniHeaders(),
         data: buildRegistrationPayload({ household_address: undefined }),
-      });
-      expect(response.status()).toBe(422);
-    });
-
-    test('缺少 contact_phone 返回 422', async ({ request }) => {
-      const response = await request.post(`${BASE_URL}/mini/registration-form`, {
-        headers: miniHeaders(),
-        data: buildRegistrationPayload({ contact_phone: undefined }),
       });
       expect(response.status()).toBe(422);
     });

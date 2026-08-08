@@ -63,9 +63,9 @@
         stripe
         :span-method="regionSpanMethod"
       >
-        <el-table-column label="序号" width="70" align="center">
-          <template #default="{ $index }">
-            {{ getRowIndex($index) }}
+        <el-table-column prop="region_sequence" label="序号" width="70" align="center">
+          <template #default="{ row }">
+            {{ row.region_sequence }}
           </template>
         </el-table-column>
         <el-table-column prop="region_name" label="地区名称" width="140" />
@@ -429,7 +429,22 @@ const groupedPortalList = computed(() => {
     groups = groups.filter((item) => !item.anyActive)
   }
 
-  return groups
+  const regionSequenceMap = new Map()
+  let nextRegionSequence = 1
+
+  return groups.map((group) => {
+    const regionName = group.region_name || ''
+
+    if (!regionSequenceMap.has(regionName)) {
+      regionSequenceMap.set(regionName, nextRegionSequence)
+      nextRegionSequence += 1
+    }
+
+    return {
+      ...group,
+      region_sequence: regionSequenceMap.get(regionName)
+    }
+  })
 })
 
 const totalGroups = computed(() => groupedPortalList.value.length)
@@ -464,12 +479,8 @@ const getStatusType = (row) => {
   return 'info'
 }
 
-const getRowIndex = (index) => {
-  return (pagination.current - 1) * pagination.pageSize + index + 1
-}
-
 const regionSpanMethod = ({ row, column, rowIndex }) => {
-  if (column.property !== 'region_name') {
+  if (!['region_sequence', 'region_name'].includes(column.property)) {
     return { rowspan: 1, colspan: 1 }
   }
 

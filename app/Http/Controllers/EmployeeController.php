@@ -983,7 +983,7 @@ class EmployeeController extends ApiController
         
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'id_number' => 'required|string|unique:employees,id_number',
+            'id_number' => 'required|string',
             'phone' => 'nullable|string|max:20',
             'email' => 'nullable|email|max:255',
             'gender' => 'required|in:male,female',
@@ -1387,7 +1387,7 @@ class EmployeeController extends ApiController
         
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
-            'id_number' => 'sometimes|required|string|unique:employees,id_number,' . $id,
+            'id_number' => 'sometimes|required|string',
             'phone' => 'nullable|string|max:20',
             'email' => 'nullable|email|max:255',
             'gender' => 'sometimes|required|in:male,female',

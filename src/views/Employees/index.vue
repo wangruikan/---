@@ -780,6 +780,18 @@
 
         <el-row :gutter="30">
           <el-col :span="12">
+            <el-form-item label="人员状态" prop="personnel_status">
+              <el-select v-model="form.personnel_status" placeholder="请选择人员状态" :disabled="isViewMode" clearable style="width: 100%">
+                <el-option label="在职" value="active" />
+                <el-option label="离职" value="resigned" />
+                <el-option label="退休" value="retired" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="30">
+          <el-col :span="12">
             <el-form-item label="离职日期">
               <el-date-picker
                 v-model="form.resignation_date"
@@ -1320,16 +1332,6 @@
         <!-- 二、从业任职信息 -->
         <el-divider content-position="left">从业任职信息</el-divider>
         <el-row :gutter="30">
-          <el-col :span="12">
-            <el-form-item label="人员状态" prop="personnel_status">
-              <el-select v-model="form.personnel_status" placeholder="请选择人员状态" :disabled="isViewMode" clearable>
-                <el-option label="在职" value="active" />
-                <el-option label="离职" value="resigned" />
-                <el-option label="退休" value="retired" />
-                <el-option label="停薪留职" value="unpaid_leave" />
-              </el-select>
-            </el-form-item>
-          </el-col>
           <el-col :span="12">
             <el-form-item label="任职受雇从业类型" prop="employment_type">
               <el-select v-model="form.employment_type" placeholder="请选择任职受雇从业类型" :disabled="isViewMode" clearable>
@@ -6935,6 +6937,16 @@ const hasSignedSeparationContract = (row) => {
     && ['employee_signed', 'in_approval', 'completed'].includes(contract?.status)
 }
 
+const hasCompletedResignationAgreement = (row) => {
+  const contract = row?.latest_termination_contract || row?.latestTerminationContract
+  return contract?.status === 'completed'
+}
+
+const needsResignationAgreementReminder = (row) => {
+  return getDisplayPersonnelStatus(row) === 'resigned'
+    && !hasCompletedResignationAgreement(row)
+}
+
 const needsExpiredContractSeparationReminder = (row) => {
   const remainingDays = getContractRemainingDays(row)
   return isActiveEmployeeForReminder(row)
@@ -6967,6 +6979,9 @@ const archiveReminderSummaryItems = computed(() => {
     )),
     createItem('pending_stamp', '已签未盖章', row => (
       isActiveEmployeeForReminder(row) && getDisplayLaborContractStatus(row) === 'pending_stamp'
+    )),
+    createItem('pending_resignation_agreement', '待签离职协议', row => (
+      needsResignationAgreementReminder(row)
     )),
     createItem('retired', '退休人员', row => getDisplayPersonnelStatus(row) === 'retired'),
     createItem('contract_expiring', '合同30天内到期', row => {
@@ -7033,6 +7048,7 @@ const createEmptyArchiveReminderCounts = () => ({
   unsigned_contract: 0,
   offline_contract_upload: 0,
   pending_stamp: 0,
+  pending_resignation_agreement: 0,
   retired: 0,
   contract_expiring: 0,
   contract_expired: 0
@@ -9291,6 +9307,10 @@ const getArchiveReminderRemark = (row, categoryKey) => {
     return '劳动合同已签署，待盖章完成'
   }
 
+  if (categoryKey === 'pending_resignation_agreement') {
+    return '人员已维护为离职，离职协议尚未完成签署'
+  }
+
   if (categoryKey === 'retired') {
     const retirementDate = formatDate(row.retirement_date)
     return retirementDate !== '-' ? `退休日期：${retirementDate}` : '已退休'
@@ -9314,7 +9334,7 @@ const getArchiveReminderActionText = (categoryKey) => {
     return '补资料'
   }
 
-  if (['unsigned_contract', 'offline_contract_upload', 'pending_stamp', 'contract_expiring', 'contract_expired'].includes(categoryKey)) {
+  if (['unsigned_contract', 'offline_contract_upload', 'pending_stamp', 'pending_resignation_agreement', 'contract_expiring', 'contract_expired'].includes(categoryKey)) {
     return '合同管理'
   }
 
@@ -9330,7 +9350,7 @@ const handleArchiveReminderAction = async (row, categoryKey) => {
     return
   }
 
-  if (['unsigned_contract', 'offline_contract_upload', 'pending_stamp', 'contract_expiring', 'contract_expired'].includes(categoryKey)) {
+  if (['unsigned_contract', 'offline_contract_upload', 'pending_stamp', 'pending_resignation_agreement', 'contract_expiring', 'contract_expired'].includes(categoryKey)) {
     await handleContractManage(row)
     return
   }

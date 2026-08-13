@@ -2276,48 +2276,43 @@ class ApprovalService
     /**
      * 创建参保减少记录（离职/退休）
      */
-    private function autoCreateDecreaseInsuranceRecord($contract, $employeeStatus)
+    public function createDecreaseInsuranceRecordForEmployee($employee, string $employeeStatus = 'terminated', ?int $createdBy = null, ?string $decreaseReasonNote = null): void
     {
         try {
             Log::info('开始创建参保减少记录', [
-                'contract_id' => $contract->id,
-                'employee_id' => $contract->employee_id,
-                'employee_status' => $employeeStatus
+                'employee_id' => $employee->id,
+                'employee_status' => $employeeStatus,
             ]);
-            
-            // 获取员工信息
-            $employee = \App\Models\Employee::find($contract->employee_id);
-            if (!$employee) {
-                Log::warning('员工不存在，无法创建参保减少记录', ['employee_id' => $contract->employee_id]);
-                return;
-            }
-            
+
+            $accountSetId = (int) $employee->account_set_id;
+            $createdBy = $createdBy ?: (auth()->id() ?: 1);
+
             // 查找该员工当前的参保记录
             $personnelRecord = \App\Models\InsurancePersonnel::where('employee_id', $employee->id)
-                ->where('account_set_id', $contract->account_set_id)
+                ->where('account_set_id', $accountSetId)
                 ->where('status', 'active')
                 ->first();
-            
+
             if (!$personnelRecord) {
                 Log::warning('员工没有活跃的参保记录，无需创建减少记录', [
                     'employee_id' => $employee->id,
-                    'account_set_id' => $contract->account_set_id
+                    'account_set_id' => $accountSetId,
                 ]);
                 return;
             }
-            
+
             // 获取项目信息
             $project = $employee->projects->first();
             if (!$project) {
-                Log::warning('员工未关联项目，无法创建参保减少记录', ['employee_id' => $contract->employee_id]);
+                Log::warning('员工未关联项目，无法创建参保减少记录', ['employee_id' => $employee->id]);
                 return;
             }
-            
+
             // 转换性别格式
             $genderValue = null;
             if ($employee->gender) {
                 if (is_numeric($employee->gender)) {
-                    $genderValue = (int)$employee->gender;
+                    $genderValue = (int) $employee->gender;
                 } else {
                     $genderStr = strtolower($employee->gender);
                     if (in_array($genderStr, ['male', '男', '1'])) {
@@ -2327,7 +2322,7 @@ class ApprovalService
                     }
                 }
             }
-            
+
             // 转换员工状态为整数值
             $employeeStatusValue = null;
             if ($employeeStatus === 'terminated') {
@@ -2335,12 +2330,14 @@ class ApprovalService
             } elseif ($employeeStatus === 'retired') {
                 $employeeStatusValue = 3; // 退休
             }
-            $decreaseReasonNote = $this->buildDecreaseReasonNote($contract, $employeeStatus);
+
+            $decreaseReasonNote = $decreaseReasonNote
+                ?: ($employee->termination_reason ?: ($employeeStatus === 'terminated' ? '员工离职，停止参保' : '员工退休，停止参保'));
 
             $existingOpenChange = \App\Models\InsuranceChange::findLatestOpenChange(
                 (int) $employee->id,
                 (int) $project->id,
-                (int) $contract->account_set_id
+                $accountSetId
             );
 
             if ($existingOpenChange) {
@@ -2352,7 +2349,7 @@ class ApprovalService
                     'employee_phone' => $employee->phone,
                     'employee_status' => $employeeStatusValue,
                     'change_type' => 'decrease',
-                    'created_by' => $existingOpenChange->created_by ?: $contract->created_by,
+                    'created_by' => $existingOpenChange->created_by ?: $createdBy,
                     'notes' => $decreaseReasonNote,
                     'social_security_types' => $personnelRecord->social_security_types,
                     'medical_insurance_types' => $personnelRecord->medical_insurance_types,
@@ -2374,12 +2371,31 @@ class ApprovalService
                     'insurance_change_id' => $existingOpenChange->id,
                     'employee_id' => $employee->id,
                     'project_id' => $project->id,
-                    'employee_status' => $employeeStatus
+                    'employee_status' => $employeeStatus,
                 ]);
 
                 return;
             }
-            
+
+            // 人员档案已经触发并完成离职减少后，后续签解除协议不能再次生成同一类任务。
+            $completedResignationChangeExists = \App\Models\InsuranceChange::where('employee_id', $employee->id)
+                ->where('project_id', $project->id)
+                ->where('account_set_id', $accountSetId)
+                ->where('change_type', 'decrease')
+                ->where('employee_status', 2)
+                ->where('status', 'completed')
+                ->where('fully_confirmed', true)
+                ->exists();
+
+            if ($completedResignationChangeExists) {
+                Log::info('离职减少任务已完成，跳过重复创建', [
+                    'employee_id' => $employee->id,
+                    'project_id' => $project->id,
+                    'account_set_id' => $accountSetId,
+                ]);
+                return;
+            }
+
             // 创建参保减少记录
             $insuranceChange = \App\Models\InsuranceChange::create([
                 'employee_id' => $employee->id,
@@ -2390,10 +2406,10 @@ class ApprovalService
                 'employee_phone' => $employee->phone,
                 'employee_status' => $employeeStatusValue,
                 'project_id' => $project->id,
-                'account_set_id' => $contract->account_set_id,
-                'change_type' => 'decrease',  // 标识为减少记录
+                'account_set_id' => $accountSetId,
+                'change_type' => 'decrease',
                 'status' => 'pending',
-                'created_by' => $contract->created_by,
+                'created_by' => $createdBy,
                 'notes' => $decreaseReasonNote,
                 // 复制当前参保记录的保险配置
                 'social_security_types' => $personnelRecord->social_security_types,
@@ -2409,21 +2425,35 @@ class ApprovalService
                 'employee_large_medical_base' => $personnelRecord->employee_large_medical_base,
                 'used_quotas' => $personnelRecord->used_quotas,
             ]);
-            
+
             Log::info('参保减少记录创建成功', [
                 'insurance_change_id' => $insuranceChange->id,
                 'employee_id' => $employee->id,
                 'employee_name' => $employee->name,
-                'employee_status' => $employeeStatus
+                'employee_status' => $employeeStatus,
             ]);
-            
         } catch (\Exception $e) {
             Log::error('创建参保减少记录失败', [
-                'contract_id' => $contract->id,
-                'employee_id' => $contract->employee_id,
-                'error' => $e->getMessage()
+                'employee_id' => $employee->id ?? null,
+                'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function autoCreateDecreaseInsuranceRecord($contract, $employeeStatus)
+    {
+        $employee = \App\Models\Employee::find($contract->employee_id);
+        if (!$employee) {
+            Log::warning('员工不存在，无法创建参保减少记录', ['employee_id' => $contract->employee_id]);
+            return;
+        }
+
+        $this->createDecreaseInsuranceRecordForEmployee(
+            $employee,
+            $employeeStatus,
+            $contract->created_by,
+            $this->buildDecreaseReasonNote($contract, $employeeStatus)
+        );
     }
 
     private function buildDecreaseReasonNote(EmployeeContract $contract, string $employeeStatus): string

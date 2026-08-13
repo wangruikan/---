@@ -831,7 +831,8 @@ class EmployeeController extends ApiController
                         'registrationForm',
                         'documents',
                         'latestLaborContract.approvalInstance',
-                        'latestEmployeeContract.approvalInstance'
+                        'latestEmployeeContract.approvalInstance',
+                        'latestTerminationContract'
                     ]);
                     
                     // 【账套过滤】根据当前账套过滤员工
@@ -1384,6 +1385,7 @@ class EmployeeController extends ApiController
         ]);
         
         $employee = Employee::findOrFail($id);
+        $originalPersonnelStatus = $this->resolveEmployeePersonnelStatus($employee);
         
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
@@ -1396,6 +1398,7 @@ class EmployeeController extends ApiController
             'contract_start_date' => 'sometimes|required|date',
             'contract_end_date' => 'nullable|date|after:contract_start_date',
             'transfer_date' => 'nullable|date',
+            'termination_reason' => 'nullable|string|max:255',
             'project_document_set_id' => 'nullable|integer',
             'remittance_remark' => 'nullable|string|max:255',
             'household_type' => 'nullable|in:agricultural,non_agricultural',
@@ -1508,7 +1511,7 @@ class EmployeeController extends ApiController
             'country_region', 'chinese_name', 'birth_country', 'other_id_type', 'other_id_number',
             
             // 二、从业任职信息
-            'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 
+            'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 'termination_reason',
             'signing_location', 'household_type', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
@@ -1729,6 +1732,19 @@ class EmployeeController extends ApiController
             $employee->refresh();
             $employee->load('projects');
             $this->detectInsuranceRegionChanges($employee, $originalInsuranceData, $updateData);
+
+            $shouldCreateResignationInsuranceTask = array_key_exists('personnel_status', $updateData)
+                && in_array($updateData['personnel_status'], ['resigned', '离职'], true)
+                && !in_array($originalPersonnelStatus, ['resigned', 'retired'], true);
+
+            if ($shouldCreateResignationInsuranceTask) {
+                app(\App\Services\ApprovalService::class)->createDecreaseInsuranceRecordForEmployee(
+                    $employee,
+                    'terminated',
+                    $request->user()?->id,
+                    $employee->termination_reason
+                );
+            }
             
             \Log::info('员工数据更新成功', [
                 'employee_id' => $id,
@@ -5293,6 +5309,12 @@ class EmployeeController extends ApiController
         $pendingStampQuery = clone $activeQuery;
         $this->applyLaborContractSignFilter($pendingStampQuery, 'pending_stamp');
 
+        $pendingResignationAgreementQuery = Employee::where('account_set_id', $accountSetId);
+        $this->applyResignedPersonnelFilter($pendingResignationAgreementQuery);
+        $pendingResignationAgreementQuery->whereDoesntHave('latestTerminationContract', function ($contractQuery) {
+            $contractQuery->where('status', 'completed');
+        });
+
         $retiredQuery = Employee::where('account_set_id', $accountSetId);
         $this->applyPersonnelStatusFilter($retiredQuery, 'retired');
 
@@ -5317,6 +5339,7 @@ class EmployeeController extends ApiController
                 })
                 ->count(),
             'pending_stamp' => $pendingStampQuery->count(),
+            'pending_resignation_agreement' => $pendingResignationAgreementQuery->count(),
             'retired' => $retiredQuery->count(),
             'contract_expiring' => (clone $activeQuery)
                 ->whereNotNull('contract_end_date')
@@ -5375,6 +5398,7 @@ class EmployeeController extends ApiController
                 'unsigned_contract' => 0,
                 'offline_contract_upload' => 0,
                 'pending_stamp' => 0,
+                'pending_resignation_agreement' => 0,
                 'retired' => 0,
                 'contract_expiring' => 0,
                 'contract_expired' => 0,

@@ -444,6 +444,13 @@ class Employee extends Model
             ->latestOfMany('id');
     }
 
+    public function latestTerminationContract()
+    {
+        return $this->hasOne(EmployeeContract::class)
+            ->where('contract_type', 'termination')
+            ->latestOfMany('id');
+    }
+
     public function latestEmployeeContract()
     {
         return $this->hasOne(EmployeeContract::class)

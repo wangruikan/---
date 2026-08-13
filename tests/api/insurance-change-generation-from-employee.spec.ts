@@ -1430,6 +1430,129 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
     expect(rightBody.data.some((item: any) => Number(item.id) === changeId)).toBe(true);
   });
 
+  test('人员档案维护为离职后立即生成减少任务，后续解除协议不重复生成且完成后移除提醒', async ({ request }) => {
+    const employeeName = `${PREFIX}-档案维护离职`;
+    const employeeId = await createEmployee(request, baseEmployeePayload(18, employeeName));
+
+    runSql(`
+      INSERT INTO insurance_personnel (
+        employee_id, employee_name, employee_id_number, employee_gender, employee_birth_date,
+        employee_status, project_id, account_set_id, social_security_region_id,
+        employee_social_security_base, social_security_types, status,
+        first_confirmation_date, last_updated_at, created_at, updated_at
+      ) VALUES (
+        ${employeeId},
+        ${sqlValue(employeeName)},
+        ${sqlValue(idNumber(18))},
+        2,
+        '1990-01-01',
+        1,
+        ${ctx.projectId},
+        ${ctx.accountSetId},
+        ${ctx.socialRegionId},
+        6000,
+        ${sqlValue(JSON.stringify([{ name: '养老保险', company_ratio: 0.16, employee_ratio: 0.08 }]))},
+        'active',
+        '2026-07-01',
+        NOW(),
+        NOW(),
+        NOW()
+      )
+    `);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      personnel_status: 'resigned',
+      termination_reason: '个人原因离职',
+    });
+
+    let changes = queryRows(`
+      SELECT id, change_type, status, notes, employee_name
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changes).toHaveLength(1);
+    expect(changes[0][1]).toBe('decrease');
+    expect(changes[0][2]).toBe('pending');
+    expect(changes[0][3]).toBe('个人原因离职');
+    expect(changes[0][4]).toBe(employeeName);
+
+    const statusAfterResignation = queryRows(`
+      SELECT personnel_status
+      FROM employees
+      WHERE id = ${employeeId}
+    `);
+    expect(statusAfterResignation).toEqual([['resigned']]);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      personnel_status: 'resigned',
+      termination_reason: '个人原因离职',
+    });
+    changes = queryRows(`
+      SELECT id, change_type
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changes).toHaveLength(1);
+
+    const bootstrapBeforeAgreement = await request.get(apiUrl('employees/page-bootstrap'), {
+      headers: authHeaders(),
+      params: { current_account_set_id: ctx.accountSetId },
+    });
+    const bootstrapBeforeBody = await bootstrapBeforeAgreement.json();
+    expect(bootstrapBeforeAgreement.status(), JSON.stringify(bootstrapBeforeBody)).toBe(200);
+    expect(bootstrapBeforeBody.data.archive_reminder_counts.pending_resignation_agreement).toBe(1);
+
+    const createContract = await request.post(apiUrl('employees/contracts'), {
+      headers: authHeaders(),
+      multipart: {
+        employee_id: String(employeeId),
+        current_account_set_id: String(ctx.accountSetId),
+        contract_type: 'termination',
+        termination_reason: '个人原因离职',
+        resignation_date: '2026-07-15',
+        stamp_method: 'online',
+        contract_file: {
+          name: `${PREFIX}-profile-termination.pdf`,
+          mimeType: 'application/pdf',
+          buffer: Buffer.from('%PDF-1.4\n%%EOF\n'),
+        },
+      },
+    });
+    const contractBody = await createContract.json();
+    expect(createContract.status(), JSON.stringify(contractBody)).toBe(200);
+    expect(contractBody.success).toBe(true);
+    const contractId = Number(contractBody.data.id);
+
+    changes = queryRows(`
+      SELECT id, change_type
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+      ORDER BY id
+    `);
+    expect(changes).toHaveLength(1);
+
+    runSql(`UPDATE employee_contracts SET status = 'completed' WHERE id = ${contractId}`);
+    completeEmployeeContractBusiness(contractId);
+
+    const bootstrapAfterAgreement = await request.get(apiUrl('employees/page-bootstrap'), {
+      headers: authHeaders(),
+      params: { current_account_set_id: ctx.accountSetId },
+    });
+    const bootstrapAfterBody = await bootstrapAfterAgreement.json();
+    expect(bootstrapAfterAgreement.status(), JSON.stringify(bootstrapAfterBody)).toBe(200);
+    expect(bootstrapAfterBody.data.archive_reminder_counts.pending_resignation_agreement).toBe(0);
+  });
+
   test('创建解除合同应立即生成减少任务，审批完成后不得再次触发', async ({ request }) => {
     const employeeName = `${PREFIX}-创建离职合同即减保`;
     const employeeId = await createEmployee(request, baseEmployeePayload(11, employeeName));

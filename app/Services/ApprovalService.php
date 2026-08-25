@@ -893,6 +893,13 @@ class ApprovalService
                 // 更新流程管理的状态
                 $process = \App\Models\ProcessApproval::find($businessId);
                 if ($process) {
+                    if (
+                        $process->category === 'social_detail_edit'
+                        && in_array($status, ['completed', 'complete'], true)
+                    ) {
+                        $this->applySocialDetailEdit($process);
+                    }
+
                     $data = [];
                     
                     if ($status === 'in_approval') {
@@ -1245,6 +1252,121 @@ class ApprovalService
             
             // 后续添加其他业务类型
         }
+    }
+
+    private function applySocialDetailEdit(\App\Models\ProcessApproval $process): void
+    {
+        $payload = json_decode((string) $process->description, true);
+        if (!is_array($payload) || ($payload['type'] ?? null) !== 'social_detail_edit') {
+            throw new \RuntimeException('社保明细修改审批数据无效');
+        }
+
+        $source = $payload['source'] ?? null;
+        $detailId = (int) ($payload['detail_id'] ?? 0);
+        $projectId = (int) ($payload['project_id'] ?? 0);
+        $month = (string) ($payload['month'] ?? $process->month ?? '');
+        $after = $payload['after'] ?? [];
+
+        if (!in_array($source, ['current', 'archive'], true) || !$detailId || !$projectId || !$month) {
+            throw new \RuntimeException('社保明细修改审批目标无效');
+        }
+
+        if ($this->isSocialSummaryApprovedForProject($process->account_set_id, $projectId, $month)) {
+            throw new \RuntimeException('该月份社保汇总已审批完成，不能再修改');
+        }
+
+        $socialBase = round((float) ($after['social_security_base'] ?? 0), 2);
+        $medicalBase = round((float) ($after['medical_insurance_base'] ?? 0), 2);
+
+        if ($source === 'current') {
+            $personnel = \App\Models\InsurancePersonnel::where('id', $detailId)
+                ->where('account_set_id', $process->account_set_id)
+                ->where('project_id', $projectId)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$personnel) {
+                throw new \RuntimeException('当月社保明细已不存在');
+            }
+
+            $personnel->update([
+                'employee_social_security_base' => $socialBase,
+                'employee_medical_insurance_base' => $medicalBase,
+                'last_updated_at' => now(),
+            ]);
+        } else {
+            $record = \App\Models\InsuranceDetailRecord::where('id', $detailId)
+                ->where('account_set_id', $process->account_set_id)
+                ->where('project_id', $projectId)
+                ->where('record_year', substr($month, 0, 4))
+                ->where('record_month', (int) substr($month, 5, 2))
+                ->first();
+
+            if (!$record) {
+                throw new \RuntimeException('历史社保明细已不存在');
+            }
+
+            $socialAmounts = $this->calculateSocialDetailAmounts(
+                $record->social_security_types,
+                $socialBase
+            );
+            $medicalAmounts = $this->calculateSocialDetailAmounts(
+                $record->medical_insurance_types,
+                $medicalBase
+            );
+
+            $record->update([
+                'employee_social_security_base' => $socialBase,
+                'employee_medical_insurance_base' => $medicalBase,
+                'social_security_company_amount' => $socialAmounts['company'],
+                'social_security_employee_amount' => $socialAmounts['employee'],
+                'medical_insurance_company_amount' => $medicalAmounts['company'],
+                'medical_insurance_employee_amount' => $medicalAmounts['employee'],
+            ]);
+        }
+
+        Log::info('社保明细修改审批已生效', [
+            'process_id' => $process->id,
+            'detail_id' => $detailId,
+            'source' => $source,
+            'month' => $month,
+            'reason' => $payload['reason'] ?? '',
+        ]);
+    }
+
+    private function calculateSocialDetailAmounts($types, float $base): array
+    {
+        if (is_string($types)) {
+            $types = json_decode($types, true);
+        }
+
+        $company = 0.0;
+        $employee = 0.0;
+        foreach (is_array($types) ? $types : [] as $type) {
+            $company += $base * (float) ($type['company_ratio'] ?? 0);
+            $employee += $base * (float) ($type['employee_ratio'] ?? 0);
+        }
+
+        return [
+            'company' => round($company, 2),
+            'employee' => round($employee, 2),
+        ];
+    }
+
+    private function isSocialSummaryApprovedForProject(int $accountSetId, int $projectId, string $month): bool
+    {
+        return \App\Models\ProcessApproval::where('account_set_id', $accountSetId)
+            ->where('category', 'social_insurance')
+            ->where('month', $month)
+            ->where('status', 'approved')
+            ->get(['project_ids'])
+            ->contains(function ($process) use ($projectId) {
+                $projectIds = is_array($process->project_ids)
+                    ? $process->project_ids
+                    : (json_decode($process->project_ids ?? '[]', true) ?: []);
+
+                return in_array($projectId, array_map('intval', $projectIds), true);
+            });
     }
     
     /**

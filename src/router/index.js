@@ -245,7 +245,7 @@ const routes = [
         path: '/other-insurance',
         name: 'OtherInsurance',
         component: () => import('@/views/OtherInsurance/index.vue'),
-        meta: { title: '其他保险管理' }
+        meta: { title: '商业保险管理' }
       },
       {
         path: '/large-medical-insurance',
@@ -347,19 +347,19 @@ const routes = [
         path: '/users',
         name: 'Users',
         component: () => import('@/views/Users/index.vue'),
-        meta: { title: '用户管理', requiresAdmin: true }
+        meta: { title: '用户管理' }
       },
       {
         path: '/role-permissions',
         name: 'RolePermissions',
         component: () => import('@/views/Permissions/RolePermissions.vue'),
-        meta: { title: '角色权限管理', requiresAdmin: true }
+        meta: { title: '角色权限管理' }
       },
       {
         path: '/role-menus',
         name: 'RoleMenus',
         component: () => import('@/views/Permissions/RoleMenus.vue'),
-        meta: { title: '菜单配置', requiresAdmin: true }
+        meta: { title: '菜单配置' }
       },
       {
         path: '/account-sets',
@@ -422,13 +422,6 @@ router.beforeEach(async (to, from, next) => {
   // 检查是否需要登录
   if (to.meta.requiresAuth && !userStore.isLoggedIn) {
     next('/login')
-    return
-  }
-  
-  // 检查是否需要管理员权限
-  if (to.meta.requiresAdmin && !['admin', 'super_admin'].includes(userStore.userInfo?.role)) {
-    console.warn('需要管理员权限，当前角色:', userStore.userInfo?.role)
-    next('/')
     return
   }
   

@@ -18,6 +18,7 @@ class MedicalInsuranceRegion extends Model
         'company' => '单位',
         'min_base_amount' => '最低基数',
         'max_base_amount' => '最高基数',
+        'account_opening_month' => '开户年月',
     ];
 
     public function getAuditIdentifier()
@@ -32,7 +33,8 @@ class MedicalInsuranceRegion extends Model
         'min_base_amount',
         'max_base_amount',
         'account_set_id',
-        'created_by'
+        'created_by',
+        'account_opening_month'
     ];
 
     protected $casts = [
@@ -40,6 +42,7 @@ class MedicalInsuranceRegion extends Model
         'updated_at' => 'datetime:Y-m-d H:i:s',
         'min_base_amount' => 'decimal:2',
         'max_base_amount' => 'decimal:2',
+        'account_opening_month' => 'date:Y-m-d',
     ];
 
     /**

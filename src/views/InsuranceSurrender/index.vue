@@ -158,7 +158,7 @@
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="其他保险总统计" name="otherOverview">
+      <el-tab-pane label="商业保险总统计" name="otherOverview">
         <el-card class="filter-card">
           <el-form :inline="true" :model="otherOverviewFilter">
             <el-form-item label="月份">
@@ -267,12 +267,12 @@
               <el-table-column prop="remarks" label="备注" min-width="120" />
             </el-table>
 
-            <el-empty v-else description="暂无其他保险总统计数据" />
+            <el-empty v-else description="暂无商业保险总统计数据" />
           </el-card>
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="其他保险明细" name="otherDetails">
+      <el-tab-pane label="商业保险明细" name="otherDetails">
         <el-card class="filter-card">
           <el-form :inline="true" :model="otherDetailFilter">
             <el-form-item label="月份">
@@ -384,7 +384,7 @@
             </el-card>
           </div>
 
-          <el-empty v-else description="暂无其他保险明细数据" />
+          <el-empty v-else description="暂无商业保险明细数据" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -853,7 +853,7 @@ const buildOtherInsuranceRows = (details, month, useDynamicStatus = false) => {
       const expirationDate = policy.policy_end_date || '-'
 
       rows.push({
-        insurance_type: policy.type || '其他保险',
+        insurance_type: policy.type || '商业保险',
         employee_name: detail.employee_name || employee.name || '-',
         id_number: detail.employee_id_number || employee.id_number || '-',
         gender: formatGender(detail.employee_gender || employee.gender),
@@ -931,7 +931,7 @@ const otherInsuranceDetails = computed(() => {
   const groupedData = {}
 
   buildOtherInsuranceRows(otherInsuranceRawDetails.value, otherDetailFilter.month).forEach((row) => {
-    const insuranceType = row.insurance_type || '其他保险'
+    const insuranceType = row.insurance_type || '商业保险'
 
     if (!groupedData[insuranceType]) {
       groupedData[insuranceType] = {
@@ -1048,7 +1048,7 @@ const loadOtherInsuranceOverview = async () => {
   } catch (error) {
     otherOverviewRawDetails.value = []
     otherOverviewSurrenders.value = []
-    ElMessage.error(error.response?.data?.message || error.message || '加载其他保险总统计失败')
+    ElMessage.error(error.response?.data?.message || error.message || '加载商业保险总统计失败')
   } finally {
     otherOverviewLoading.value = false
   }
@@ -1076,7 +1076,7 @@ const loadOtherInsuranceDetails = async () => {
     otherInsuranceRawDetails.value = Array.isArray(res.data) ? res.data : []
   } catch (error) {
     otherInsuranceRawDetails.value = []
-    ElMessage.error(error.response?.data?.message || error.message || '加载其他保险明细失败')
+    ElMessage.error(error.response?.data?.message || error.message || '加载商业保险明细失败')
   } finally {
     otherDetailLoading.value = false
   }
@@ -1131,12 +1131,12 @@ const exportInsuranceGroup = async (insuranceType, policies) => {
     ]
 
     const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, insuranceType.slice(0, 31) || '其他保险')
+    XLSX.utils.book_append_sheet(workbook, worksheet, insuranceType.slice(0, 31) || '商业保险')
     const fileName = `${insuranceType}_${otherDetailFilter.month || getCurrentMonth()}.xlsx`
     XLSX.writeFile(workbook, fileName)
     ElMessage.success(`导出成功：${fileName}`)
   } catch (error) {
-    console.error('导出其他保险明细失败:', error)
+    console.error('导出商业保险明细失败:', error)
     ElMessage.error('导出失败，请重试')
   }
 }

@@ -188,7 +188,7 @@ class HousingFundConfigController extends Controller
             'max_base_amount' => 'required|numeric|min:0',
             'employee_ratio' => 'required|numeric|min:0|max:1',
             'company_ratio' => 'required|numeric|min:0|max:1',
-            'limit_effective_date' => 'nullable|date|after_or_equal:today'
+            'limit_effective_date' => 'nullable|date'
         ]);
         
         $compensationResult = null;
@@ -204,9 +204,11 @@ class HousingFundConfigController extends Controller
         $hasLimitInput = $request->has('min_base_amount') || $request->has('max_base_amount');
         $hasLimitValueDiff = (string) $requestedMin !== (string) $config->min_base_amount || (string) $requestedMax !== (string) $config->max_base_amount;
         $hasLimitChange = $hasLimitInput && ($hasLimitValueDiff || $request->filled('limit_effective_date'));
+        $limitEffectiveNow = $request->filled('limit_effective_date')
+            && \Carbon\Carbon::parse($request->input('limit_effective_date'))->startOfDay()->lte(\Carbon\Carbon::today());
 
         if ($hasLimitChange) {
-            if ($request->filled('limit_effective_date')) {
+            if ($request->filled('limit_effective_date') && !$limitEffectiveNow) {
                 Log::info('HousingFund pending change check', [
                     'config_id' => $config->id,
                     'hasLimitInput' => $hasLimitInput,
@@ -235,6 +237,13 @@ class HousingFundConfigController extends Controller
                     'effective_date' => $pending->effective_date,
                 ]);
             } else {
+                if ($limitEffectiveNow) {
+                    app(InsuranceLimitPendingService::class)->cancelPendingChange(
+                        'housing_fund_config',
+                        $config->id
+                    );
+                }
+
                 $limitUpdateService = app(\App\Services\BaseLimitUpdateService::class);
                 $updateResult = $limitUpdateService->updateLimits($config, $requestedMin, $requestedMax);
 

@@ -264,7 +264,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/process-records/stats', [ProcessRecordController::class, 'getStats']);
     Route::get('/process-records/check-access', [ProcessRecordController::class, 'checkAccess']);
 
-    // 用户管理（超级管理员专用）
+    // 用户管理
     Route::prefix('users')->group(function () {
         // 用户当前账套选择（必须放在 {id} 路由之前）
         Route::put('/current-account-set', [UserController::class, 'updateCurrentAccountSet']);
@@ -278,7 +278,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/reset-password', [UserController::class, 'resetPassword']);
     });
 
-    // 权限管理（仅admin可访问）
+    // 权限管理
     Route::prefix('permissions')->group(function () {
         Route::get('/', [App\Http\Controllers\PermissionController::class, 'index']);
         Route::get('/my', [App\Http\Controllers\PermissionController::class, 'myPermissions']);
@@ -743,6 +743,7 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::prefix('recruitment')->group(function () {
     Route::get('/', [RecruitmentController::class, 'index']);
     Route::get('/permissions', [RecruitmentController::class, 'getPermissions']); // 获取权限信息
+    Route::get('/management', [RecruitmentController::class, 'managementIndex']); // 招聘管理列表（按负责人过滤）
     Route::post('/', [RecruitmentController::class, 'store']);
     Route::put('/{id}', [RecruitmentController::class, 'update']);
     Route::delete('/{id}', [RecruitmentController::class, 'destroy']);
@@ -794,7 +795,6 @@ Route::prefix('recruitment')->group(function () {
         Route::get('/my', [AccountSetController::class, 'getMyAccountSets']); // 获取我的账套
         Route::post('/set-user-default', [AccountSetController::class, 'setUserDefault']); // 设置我的默认账套
         
-        // 只有管理员可以访问的接口
         Route::get('/statistics', [AccountSetController::class, 'getStatistics']);
         Route::get('/', [AccountSetController::class, 'index']);
         Route::post('/', [AccountSetController::class, 'store']);
@@ -968,6 +968,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('insurance-changes')->group(function () {
         Route::get('/', [App\Http\Controllers\InsuranceChangeController::class, 'index']);
         Route::get('/details', [App\Http\Controllers\InsuranceChangeController::class, 'getDetails']);
+        Route::post('/social-detail-edit', [App\Http\Controllers\InsuranceChangeController::class, 'submitSocialDetailEdit']);
         Route::get('/summaries', [App\Http\Controllers\InsuranceChangeController::class, 'getSummaries']);
         Route::post('/export', [App\Http\Controllers\InsuranceChangeController::class, 'export']);
         Route::post('/generate-registration-reports', [App\Http\Controllers\InsuranceChangeController::class, 'generateRegistrationReports']);

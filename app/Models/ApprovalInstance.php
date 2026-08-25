@@ -126,8 +126,18 @@ class ApprovalInstance extends Model
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
             case '保险汇总':
             case '文件盖章':
-                return \App\Models\ProcessApproval::with(['initiator', 'attachments'])
+                $process = \App\Models\ProcessApproval::with(['initiator', 'attachments'])
                     ->find($this->business_id);
+
+                if ($process && $process->category === 'social_detail_edit') {
+                    $editData = json_decode((string) $process->description, true);
+                    $process->setAttribute(
+                        'social_detail_edit_data',
+                        is_array($editData) ? $editData : null
+                    );
+                }
+
+                return $process;
             case '付款申请':
                 return \App\Models\PaymentRequest::with(['submitter', 'attachments'])
                     ->find($this->business_id);

@@ -70,6 +70,16 @@
         </el-table-column>
         <el-table-column prop="region_name" label="地区名称" width="140" />
         <el-table-column prop="business_type" label="业务类型" width="140" />
+        <el-table-column
+          prop="remarks"
+          label="备注"
+          min-width="180"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ row.remarks || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column label="网站名称" min-width="220">
           <template #default="{ row }">
             <div class="portal-cell-list">

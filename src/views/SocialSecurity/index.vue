@@ -49,6 +49,11 @@
       <el-table class="sticky-region-table" :data="filteredSocialRegions" v-loading="loading" stripe max-height="420" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" fixed="left" />
         <el-table-column prop="name" label="地区名称" width="200" fixed="left" />
+        <el-table-column label="开户年月" width="120">
+          <template #default="{ row }">
+            {{ row.account_opening_month ? row.account_opening_month.slice(0, 7) : '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="code" label="社保编号" width="180" />
         <el-table-column label="进行中上下限" width="230">
           <template #default="{ row }">
@@ -126,6 +131,16 @@
         </el-form-item>
         <el-form-item label="单位" prop="company">
           <el-input v-model="regionForm.company" placeholder="请输入单位/公司名称" />
+        </el-form-item>
+        <el-form-item label="开户年月" prop="account_opening_month">
+          <el-date-picker
+            v-model="regionForm.account_opening_month"
+            type="month"
+            value-format="YYYY-MM"
+            format="YYYY-MM"
+            placeholder="请选择开户年月"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item
           v-if="!editingRegion"
@@ -354,6 +369,11 @@
           <el-table class="sticky-region-table" :data="filteredMedicalRegions" v-loading="medicalLoading" stripe max-height="420" @selection-change="handleMedicalSelectionChange">
             <el-table-column type="selection" width="55" fixed="left" />
             <el-table-column prop="name" label="地区名称" width="200" fixed="left" />
+            <el-table-column label="开户年月" width="120">
+              <template #default="{ row }">
+                {{ row.account_opening_month ? row.account_opening_month.slice(0, 7) : '-' }}
+              </template>
+            </el-table-column>
             <el-table-column prop="code" label="医保编号" width="180" />
             <el-table-column label="进行中上下限" width="230">
               <template #default="{ row }">
@@ -428,6 +448,16 @@
             </el-form-item>
             <el-form-item label="单位" prop="company">
               <el-input v-model="medicalRegionForm.company" placeholder="请输入单位/公司名称" />
+            </el-form-item>
+            <el-form-item label="开户年月" prop="account_opening_month">
+              <el-date-picker
+                v-model="medicalRegionForm.account_opening_month"
+                type="month"
+                value-format="YYYY-MM"
+                format="YYYY-MM"
+                placeholder="请选择开户年月"
+                style="width: 100%"
+              />
             </el-form-item>
             <el-form-item
               v-if="!editingMedicalRegion"
@@ -1129,7 +1159,8 @@ const regionForm = ref({
   code: '',
   company: '',
   min_base_amount: null,
-  max_base_amount: null
+  max_base_amount: null,
+  account_opening_month: ''
 })
 
 const typeForm = ref({
@@ -1145,6 +1176,9 @@ const regionRules = {
   name: [
     { required: true, message: '请输入地区名称', trigger: 'blur' },
     { min: 2, max: 100, message: '地区名称长度在 2 到 100 个字符', trigger: 'blur' }
+  ],
+  account_opening_month: [
+    { required: true, message: '请选择开户年月', trigger: 'change' }
   ]
 }
 
@@ -1200,7 +1234,8 @@ const medicalRegionForm = ref({
   type_id: null,
   type_name: '医疗保险',
   type_employee_ratio: 0,
-  type_company_ratio: 0
+  type_company_ratio: 0,
+  account_opening_month: ''
 })
 
 const medicalLimitForm = ref({
@@ -1355,7 +1390,8 @@ const editRegion = async (region) => {
     regionForm.value = {
       name: latestRegion.name,
       code: latestRegion.code || '',
-      company: latestRegion.company || ''
+      company: latestRegion.company || '',
+      account_opening_month: latestRegion.account_opening_month ? latestRegion.account_opening_month.slice(0, 7) : ''
     }
     showCreateDialog.value = true
   } catch (error) {
@@ -1400,6 +1436,7 @@ const handleSubmitRegion = async () => {
       name: regionForm.value.name,
       code: regionForm.value.code || null,
       company: regionForm.value.company || null,
+      account_opening_month: regionForm.value.account_opening_month || null,
       account_set_id: currentAccountSetId.value
     }
 
@@ -1435,7 +1472,8 @@ const resetRegionForm = () => {
     code: '',
     company: '',
     min_base_amount: null,
-    max_base_amount: null
+    max_base_amount: null,
+    account_opening_month: ''
   }
   if (regionFormRef.value) {
     regionFormRef.value.resetFields()
@@ -1751,6 +1789,7 @@ const editMedicalRegion = async (region) => {
       name: latestRegion.name,
       code: latestRegion.code || '',
       company: latestRegion.company || '',
+      account_opening_month: latestRegion.account_opening_month ? latestRegion.account_opening_month.slice(0, 7) : '',
       min_base_amount: null,
       max_base_amount: null,
       type_id: null,
@@ -1817,6 +1856,7 @@ const handleSubmitMedicalRegion = async () => {
       name: medicalRegionForm.value.name,
       code: medicalRegionForm.value.code || null,
       company: medicalRegionForm.value.company || null,
+      account_opening_month: medicalRegionForm.value.account_opening_month || null,
       account_set_id: currentAccountSetId.value
     }
 
@@ -1866,6 +1906,7 @@ const resetMedicalRegionForm = () => {
     company: '',
     min_base_amount: null,
     max_base_amount: null,
+    account_opening_month: '',
     type_id: null,
     type_name: '医疗保险',
     type_employee_ratio: 0,

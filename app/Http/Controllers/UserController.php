@@ -73,14 +73,6 @@ class UserController extends Controller
      */
     public function store(Request $request)
     {
-        // 只有管理员可以创建用户
-        if (!in_array($request->user()->role, ['admin', 'super_admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         // 从角色表获取所有有效角色
         $validRoles = \App\Models\Role::where('name', '!=', 'super_admin')->pluck('name')->toArray();
         $validRolesStr = implode(',', $validRoles);
@@ -155,14 +147,6 @@ class UserController extends Controller
      */
     public function update(Request $request, $id)
     {
-        // 只有管理员可以更新用户
-        if (!in_array($request->user()->role, ['admin', 'super_admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $user = User::findOrFail($id);
 
         // 从角色表获取所有有效角色
@@ -210,14 +194,6 @@ class UserController extends Controller
      */
     public function destroy(Request $request, $id)
     {
-        // 只有管理员可以删除用户
-        if (!in_array($request->user()->role, ['admin', 'super_admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $user = User::findOrFail($id);
 
         // 不能删除自己
@@ -241,14 +217,6 @@ class UserController extends Controller
      */
     public function resetPassword(Request $request, $id)
     {
-        // 只有管理员可以重置密码
-        if (!in_array($request->user()->role, ['admin', 'super_admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $validator = Validator::make($request->all(), [
             'password' => 'required|string|min:6',
         ]);
@@ -277,14 +245,6 @@ class UserController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
-        // 只有管理员可以修改用户状态
-        if (!in_array($request->user()->role, ['admin', 'super_admin'])) {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $user = User::findOrFail($id);
         
         $validator = Validator::make($request->all(), [

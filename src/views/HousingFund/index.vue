@@ -45,6 +45,11 @@
       <el-table class="sticky-region-table" :data="filteredRegions" v-loading="loading" stripe max-height="420" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" fixed="left" />
         <el-table-column prop="region_name" label="地区名称" width="200" fixed="left" />
+        <el-table-column label="开户年月" width="120">
+          <template #default="{ row }">
+            {{ row.account_opening_month ? row.account_opening_month.slice(0, 7) : '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="account_number" label="公积金账号" width="180" />
         <el-table-column label="配置数量" width="120">
           <template #default="{ row }">
@@ -184,6 +189,16 @@
         <el-form-item label="单位（公司）" prop="company_name">
           <el-input v-model="regionForm.company_name" placeholder="请输入单位名称" />
           <div class="form-tip">缴纳公积金的单位（公司）名称</div>
+        </el-form-item>
+        <el-form-item label="开户年月" prop="account_opening_month">
+          <el-date-picker
+            v-model="regionForm.account_opening_month"
+            type="month"
+            value-format="YYYY-MM"
+            format="YYYY-MM"
+            placeholder="请选择开户年月"
+            style="width: 100%"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -723,7 +738,8 @@ const filteredRegions = computed(() => {
 const regionForm = reactive({
   region_name: '',
   account_number: '',
-  company_name: ''
+  company_name: '',
+  account_opening_month: ''
 })
 
 // 配置表单
@@ -756,6 +772,9 @@ const configLimitRules = {
 const regionRules = {
   region_name: [
     { required: true, message: '请输入地区名称', trigger: 'blur' }
+  ],
+  account_opening_month: [
+    { required: true, message: '请选择开户年月', trigger: 'change' }
   ]
 }
 
@@ -832,6 +851,7 @@ const editRegion = (region) => {
   regionForm.region_name = region.region_name
   regionForm.account_number = region.account_number || ''
   regionForm.company_name = region.company_name || ''
+  regionForm.account_opening_month = region.account_opening_month ? region.account_opening_month.slice(0, 7) : ''
   showCreateRegionDialog.value = true
 }
 
@@ -1059,6 +1079,7 @@ const resetRegionForm = () => {
   regionForm.region_name = ''
   regionForm.account_number = ''
   regionForm.company_name = ''
+  regionForm.account_opening_month = ''
   regionFormRef.value?.resetFields()
 }
 

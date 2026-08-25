@@ -185,7 +185,7 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="其他保险细分" min-width="240">
+              <el-table-column label="商业保险细分" min-width="240">
                 <template #default="{ row }">
                   <div v-if="getOtherInsuranceDetailRows(row).length > 0" class="other-insurance-detail-list">
                     <div
@@ -245,7 +245,7 @@
               </el-table-column>
               <el-table-column label="操作" width="280" fixed="right">
                 <template #default="{ row }">
-                  <!-- 按需求：仅隐藏“其他保险确认处理”按钮 -->
+                  <!-- 按需求：仅隐藏“商业保险确认处理”按钮 -->
                   <el-button 
                     v-if="hasProcessableItems(row)"
                     type="primary" 
@@ -256,7 +256,7 @@
                   >
                     处理业务
                   </el-button>
-                  <!-- 按需求临时隐藏：其他保险确认处理 -->
+                  <!-- 按需求临时隐藏：商业保险确认处理 -->
                   <el-button 
                     v-if="row.attachments && row.attachments.length > 0"
                     type="info" 
@@ -407,10 +407,22 @@
                       <template v-for="column in dynamicCompanyColumns" :key="'company_' + column.name">
                         <el-table-column 
                           :prop="'company_' + (column.fieldPrefix || '') + column.name" 
-                          :label="getInsuranceColumnLabel(column, 'company')" 
+                          :label="column.name"
                           width="120" 
                           align="right"
+                          header-align="center"
                         >
+                          <template #header>
+                            <div class="insurance-column-header">
+                              <span>{{ column.name }}</span>
+                              <span
+                                v-if="getInsuranceColumnRatioLabel(column, 'company')"
+                                class="insurance-column-ratio"
+                              >
+                                {{ getInsuranceColumnRatioLabel(column, 'company') }}
+                              </span>
+                            </div>
+                          </template>
                           <template #default="{ row }">
                             {{ row['company_' + (column.fieldPrefix || '') + column.name] || '0.00' }}
                           </template>
@@ -428,10 +440,22 @@
                       <template v-for="column in dynamicEmployeeColumns" :key="'employee_' + column.name">
                         <el-table-column 
                           :prop="'employee_' + (column.fieldPrefix || '') + column.name" 
-                          :label="getInsuranceColumnLabel(column, 'employee')" 
+                          :label="column.name"
                           width="120" 
                           align="right"
+                          header-align="center"
                         >
+                          <template #header>
+                            <div class="insurance-column-header">
+                              <span>{{ column.name }}</span>
+                              <span
+                                v-if="getInsuranceColumnRatioLabel(column, 'employee')"
+                                class="insurance-column-ratio"
+                              >
+                                {{ getInsuranceColumnRatioLabel(column, 'employee') }}
+                              </span>
+                            </div>
+                          </template>
                           <template #default="{ row }">
                             {{ row['employee_' + (column.fieldPrefix || '') + column.name] || '0.00' }}
                           </template>
@@ -450,6 +474,20 @@
                       </template>
                     </el-table-column>
                     <el-table-column prop="remarks" label="备注" width="100" />
+                    <el-table-column label="操作" width="90" fixed="right" align="center">
+                      <template #default="{ row }">
+                        <el-button
+                          v-if="row.can_edit_social_detail && !row.isSummaryRow && !row.isTotalRow"
+                          type="primary"
+                          link
+                          size="small"
+                          @click="openSocialDetailEdit(row)"
+                        >
+                          <el-icon><Edit /></el-icon>
+                          修改
+                        </el-button>
+                      </template>
+                    </el-table-column>
                   </el-table>
                 </el-card>
               </div>
@@ -690,8 +728,32 @@
                         <span class="ratio-amount">{{ row.ratio }}</span>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="company_portion" :label="housingFundCompanyPortionLabel" width="120" align="right" />
-                    <el-table-column prop="employee_portion" :label="housingFundEmployeePortionLabel" width="120" align="right" />
+                    <el-table-column prop="company_portion" label="单位部分" width="120" align="right" header-align="center">
+                      <template #header>
+                        <div class="insurance-column-header">
+                          <span>单位部分</span>
+                          <span
+                            v-if="getHousingFundRatioLabel('company')"
+                            class="insurance-column-ratio"
+                          >
+                            {{ getHousingFundRatioLabel('company') }}
+                          </span>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="employee_portion" label="个人部分" width="120" align="right" header-align="center">
+                      <template #header>
+                        <div class="insurance-column-header">
+                          <span>个人部分</span>
+                          <span
+                            v-if="getHousingFundRatioLabel('employee')"
+                            class="insurance-column-ratio"
+                          >
+                            {{ getHousingFundRatioLabel('employee') }}
+                          </span>
+                        </div>
+                      </template>
+                    </el-table-column>
                     <el-table-column prop="housing_fund_total" label="公积金合计" width="120" align="right">
                       <template #default="{ row }">
                         <span class="grand-total">{{ row.housing_fund_total }}</span>
@@ -895,7 +957,7 @@
 
         <el-alert
           v-if="isOtherInsuranceProcessSelected"
-          title="其他保险默认按成功处理，确认后会先保存参保费用并完成处理。"
+          title="商业保险默认按成功处理，确认后会先保存参保费用并完成处理。"
           type="success"
           :closable="false"
           style="margin-bottom: 16px;"
@@ -1331,11 +1393,11 @@
           </el-table>
         </div>
 
-        <!-- 其他保险信息 -->
-        <div v-if="shouldShowDetailCategory('other_insurance') && getOtherInsuranceDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('other_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('其他保险')) }">
+        <!-- 商业保险信息 -->
+        <div v-if="shouldShowDetailCategory('other_insurance') && getOtherInsuranceDetails().length > 0" class="insurance-details" :class="{ 'has-change': hasCategoryChange('other_insurance') || (currentChange.change_summary && (currentChange.change_summary.includes('其他保险') || currentChange.change_summary.includes('商业保险'))) }">
           <h4>
-            其他保险信息
-            <el-tag v-if="hasCategoryChange('other_insurance') || (currentChange.change_summary && currentChange.change_summary.includes('其他保险'))" type="danger" size="small" effect="dark" style="margin-left: 10px;">
+            商业保险信息
+            <el-tag v-if="hasCategoryChange('other_insurance') || (currentChange.change_summary && (currentChange.change_summary.includes('其他保险') || currentChange.change_summary.includes('商业保险')))" type="danger" size="small" effect="dark" style="margin-left: 10px;">
               <el-icon style="margin-right: 2px;"><Warning /></el-icon>
               有变更
             </el-tag>
@@ -1377,7 +1439,7 @@
             </el-table-column>
             <el-table-column prop="type" label="保险类型">
               <template #default="{ row }">
-                {{ row.type || '其他保险' }}
+                {{ row.type || '商业保险' }}
               </template>
             </el-table-column>
             <el-table-column prop="endorsement_number" label="批单号" width="150">
@@ -1464,7 +1526,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="form-tip">该项目绑定的其他保险，无需选择地区。数据导入后不可修改。</div>
+          <div class="form-tip">该项目绑定的商业保险，无需选择地区。数据导入后不可修改。</div>
         </div>
 
         <!-- 大额医疗保险 -->
@@ -1772,6 +1834,109 @@
       </template>
     </el-dialog>
     
+    <!-- 社保明细编辑：先修改明细，提交审批时只填写原因 -->
+    <el-dialog
+      v-model="showSocialDetailEditDialog"
+      title="修改社保明细"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <el-descriptions :column="2" border size="small" style="margin-bottom: 18px;">
+        <el-descriptions-item label="姓名">
+          {{ socialDetailEditForm.employee_name || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="所属期">
+          {{ socialDetailEditForm.month || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <el-form
+        ref="socialDetailEditFormRef"
+        :model="socialDetailEditForm"
+        :rules="socialDetailEditRules"
+        label-width="100px"
+      >
+        <el-form-item label="社保基数" prop="social_security_base">
+          <el-input-number
+            v-model="socialDetailEditForm.social_security_base"
+            :min="0"
+            :precision="2"
+            :step="100"
+            controls-position="right"
+            style="width: 100%;"
+          />
+        </el-form-item>
+        <el-form-item label="医保基数" prop="medical_insurance_base">
+          <el-input-number
+            v-model="socialDetailEditForm.medical_insurance_base"
+            :min="0"
+            :precision="2"
+            :step="100"
+            controls-position="right"
+            style="width: 100%;"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="cancelSocialDetailEdit">取消</el-button>
+        <el-button
+          type="primary"
+          @click="continueSocialDetailEdit"
+        >
+          填写原因
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="showSocialDetailEditReasonDialog"
+      title="提交社保明细修改审批"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <el-descriptions :column="1" border size="small" style="margin-bottom: 18px;">
+        <el-descriptions-item label="修改对象">
+          {{ socialDetailEditForm.employee_name || '-' }}（{{ socialDetailEditForm.month || '-' }}）
+        </el-descriptions-item>
+        <el-descriptions-item label="修改内容">
+          社保基数 {{ formatEditBase(socialDetailEditForm.original_social_security_base) }} →
+          {{ formatEditBase(socialDetailEditForm.social_security_base) }}；
+          医保基数 {{ formatEditBase(socialDetailEditForm.original_medical_insurance_base) }} →
+          {{ formatEditBase(socialDetailEditForm.medical_insurance_base) }}
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <el-form
+        ref="socialDetailEditReasonFormRef"
+        :model="socialDetailEditForm"
+        :rules="socialDetailEditReasonRules"
+        label-width="80px"
+      >
+        <el-form-item label="修改原因" prop="reason">
+          <el-input
+            v-model="socialDetailEditForm.reason"
+            type="textarea"
+            :rows="4"
+            maxlength="1000"
+            show-word-limit
+            placeholder="请输入修改原因"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="backToSocialDetailEdit">返回修改</el-button>
+        <el-button
+          type="primary"
+          :loading="socialDetailEditLoading"
+          @click="submitSocialDetailEditForm"
+        >
+          确认提交
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 导出数据对话框 -->
     <el-dialog 
       v-model="showExportDialog" 
@@ -1833,6 +1998,7 @@ import request from '@/api/request'
 import {
   getInsuranceChanges,
   getInsuranceChangeDetails,
+  submitSocialDetailEdit as submitSocialDetailEditRequest,
   getInsuranceChangeSummaries,
   generateSummary,
   exportSummary,
@@ -1997,14 +2163,9 @@ const formatRatioLabel = (value) => {
   return `${fixedValue}%`
 }
 
-const appendRatioToName = (name, ratio) => {
-  const ratioLabel = formatRatioLabel(ratio)
-  return ratioLabel ? `${name}（${ratioLabel}）` : name
-}
-
-const getInsuranceColumnLabel = (column, side) => {
+const getInsuranceColumnRatioLabel = (column, side) => {
   const ratio = side === 'company' ? column.companyRatio : column.employeeRatio
-  return appendRatioToName(column.name, ratio)
+  return formatRatioLabel(ratio)
 }
 
 const parseInsuranceNumber = (value) => {
@@ -2104,13 +2265,9 @@ const getHousingFundRatioFromDetails = (side) => {
   }
 }
 
-const housingFundCompanyPortionLabel = computed(() => {
-  return appendRatioToName('单位部分', getHousingFundRatioFromDetails('company'))
-})
-
-const housingFundEmployeePortionLabel = computed(() => {
-  return appendRatioToName('个人部分', getHousingFundRatioFromDetails('employee'))
-})
+const getHousingFundRatioLabel = (side) => {
+  return formatRatioLabel(getHousingFundRatioFromDetails(side))
+}
 
 const detailSummaryRowClassName = ({ row }) => {
   if (row?.isTotalRow) {
@@ -2163,6 +2320,15 @@ const buildSocialSecurityDetailRow = (detail, serialNumber, typeLabel) => {
 
   const rowData = {
     serial_number: serialNumber,
+    detail_id: detail.id,
+    detail_source: detail.source || 'current',
+    detail_month: detail.payment_period || (
+      detail.record_year && detail.record_month
+        ? String(detail.record_year) + '-' + String(detail.record_month).padStart(2, '0')
+        : detailFilterForm.value.month
+    ),
+    detail_project_id: detail.project_id || project.id || null,
+    can_edit_social_detail: typeLabel === '正常' && detail.can_edit_social_detail !== false,
     employee_name: detail.employee_name || employee.name || '小计',
     id_number: detail.employee_id_number || employee.id_number || '',
     project_name: detail.project_name || (project ? project.name : ''),
@@ -2170,14 +2336,14 @@ const buildSocialSecurityDetailRow = (detail, serialNumber, typeLabel) => {
     type: typeLabel,
     period: formatPeriodString(detail.payment_period) || formatPeriod(detail.created_at),
     medical_base: formatDisplayBase(
+      detail.employee_medical_insurance_base,
       detail.display_employee_medical_insurance_base,
-      employee.medical_insurance_base,
-      detail.employee_medical_insurance_base
+      employee.medical_insurance_base
     ),
     social_security_base: formatDisplayBase(
+      detail.employee_social_security_base,
       detail.display_employee_social_security_base,
-      employee.social_security_base,
-      detail.employee_social_security_base
+      employee.social_security_base
     ),
     social_security_total: socialSecurityTotal.toFixed(2),
     remarks: ''
@@ -2862,7 +3028,7 @@ const getOtherInsurancePolicyLabel = (policy = {}) => {
     }
   }
 
-  return '其他保险'
+  return '商业保险'
 }
 
 const getOtherInsuranceDetailRows = (change) => {
@@ -4516,6 +4682,30 @@ const loadActiveDetailData = () => {
 const showUploadDialogFlag = ref(false)
 const showViewFilesDialogFlag = ref(false)
 const showDetailDialogFlag = ref(false)
+const showSocialDetailEditDialog = ref(false)
+const showSocialDetailEditReasonDialog = ref(false)
+const socialDetailEditLoading = ref(false)
+const socialDetailEditFormRef = ref(null)
+const socialDetailEditReasonFormRef = ref(null)
+const socialDetailEditForm = ref({
+  detail_id: null,
+  source: 'current',
+  month: '',
+  project_id: null,
+  employee_name: '',
+  original_social_security_base: 0,
+  original_medical_insurance_base: 0,
+  social_security_base: 0,
+  medical_insurance_base: 0,
+  reason: ''
+})
+const socialDetailEditRules = {
+  social_security_base: [{ required: true, message: '请输入社保基数', trigger: 'change' }],
+  medical_insurance_base: [{ required: true, message: '请输入医保基数', trigger: 'change' }]
+}
+const socialDetailEditReasonRules = {
+  reason: [{ required: true, message: '请输入修改原因', trigger: 'blur' }]
+}
 const currentChange = ref(null)
 const processingChangeId = ref(null)
 
@@ -4547,7 +4737,7 @@ const processableItems = computed(() => {
 const getProcessItemLabel = (item) => {
   if (isOtherInsurancePolicyCategory(item?.category)) {
     const policy = parseOtherInsurancePolicySnapshot(item?.category_snapshot)
-    return policy ? getOtherInsuranceProcessItemLabel(policy) : '其他保险'
+    return policy ? getOtherInsuranceProcessItemLabel(policy) : '商业保险'
   }
 
   return getCategoryText(item?.category)
@@ -4557,13 +4747,13 @@ const getOtherInsuranceProcessItemLabel = (policy = {}) => {
   const typeName = resolveOtherInsuranceTypeName(policy)
   const policyName = getOtherInsurancePolicyLabel(policy)
 
-  if (typeName && typeName !== '其他保险') {
-    return policyName && policyName !== typeName && policyName !== '其他保险'
+  if (typeName && !['其他保险', '商业保险'].includes(typeName)) {
+    return policyName && policyName !== typeName && !['其他保险', '商业保险'].includes(policyName)
       ? `${typeName}（${policyName}）`
       : typeName
   }
 
-  return policyName || '其他保险'
+  return policyName || '商业保险'
 }
 
 const processableItemOptions = computed(() => {
@@ -4891,6 +5081,124 @@ const loadDetails = async () => {
   }
 }
 
+const resetSocialDetailEditForm = () => {
+  socialDetailEditForm.value = {
+    detail_id: null,
+    source: 'current',
+    month: '',
+    project_id: null,
+    employee_name: '',
+    original_social_security_base: 0,
+    original_medical_insurance_base: 0,
+    social_security_base: 0,
+    medical_insurance_base: 0,
+    reason: ''
+  }
+  nextTick(() => {
+    socialDetailEditFormRef.value?.clearValidate()
+    socialDetailEditReasonFormRef.value?.clearValidate()
+  })
+}
+
+const formatEditBase = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(2) : '-'
+}
+
+const openSocialDetailEdit = (row) => {
+  if (!row?.can_edit_social_detail) {
+    ElMessage.warning('该月份社保汇总已审批完成，不能再修改')
+    return
+  }
+
+  const socialBase = Number(row.social_security_base || 0)
+  const medicalBase = Number(row.medical_base || 0)
+  socialDetailEditForm.value = {
+    detail_id: row.detail_id,
+    source: row.detail_source || 'current',
+    month: row.detail_month || detailFilterForm.value.month || getCurrentMonth(),
+    project_id: row.detail_project_id || detailProjectId.value || null,
+    employee_name: row.employee_name || '',
+    original_social_security_base: socialBase,
+    original_medical_insurance_base: medicalBase,
+    social_security_base: socialBase,
+    medical_insurance_base: medicalBase,
+    reason: ''
+  }
+  showSocialDetailEditDialog.value = true
+  nextTick(() => socialDetailEditFormRef.value?.clearValidate())
+}
+
+const cancelSocialDetailEdit = () => {
+  showSocialDetailEditDialog.value = false
+  showSocialDetailEditReasonDialog.value = false
+  resetSocialDetailEditForm()
+}
+
+const continueSocialDetailEdit = async () => {
+  if (!socialDetailEditFormRef.value) return
+
+  try {
+    await socialDetailEditFormRef.value.validate()
+  } catch {
+    return
+  }
+
+  showSocialDetailEditDialog.value = false
+  showSocialDetailEditReasonDialog.value = true
+  nextTick(() => socialDetailEditReasonFormRef.value?.clearValidate())
+}
+
+const backToSocialDetailEdit = () => {
+  showSocialDetailEditReasonDialog.value = false
+  showSocialDetailEditDialog.value = true
+}
+
+const submitSocialDetailEditForm = async () => {
+  if (!socialDetailEditReasonFormRef.value || socialDetailEditLoading.value) {
+    return
+  }
+
+  try {
+    await socialDetailEditReasonFormRef.value.validate()
+  } catch {
+    return
+  }
+
+  if (!currentAccountSetId.value) {
+    ElMessage.warning('请先选择账套')
+    return
+  }
+
+  socialDetailEditLoading.value = true
+  try {
+    const response = await submitSocialDetailEditRequest({
+      account_set_id: currentAccountSetId.value,
+      detail_id: socialDetailEditForm.value.detail_id,
+      source: socialDetailEditForm.value.source,
+      month: socialDetailEditForm.value.month,
+      project_id: socialDetailEditForm.value.project_id,
+      social_security_base: socialDetailEditForm.value.social_security_base,
+      medical_insurance_base: socialDetailEditForm.value.medical_insurance_base,
+      reason: socialDetailEditForm.value.reason.trim()
+    })
+
+    if (!response.success) {
+      throw new Error(response.message || '提交审批失败')
+    }
+
+    ElMessage.success(response.message || '已提交审批，审批通过后生效')
+    showSocialDetailEditReasonDialog.value = false
+    resetSocialDetailEditForm()
+    await loadDetails()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || error.message || '提交审批失败')
+  } finally {
+    socialDetailEditLoading.value = false
+  }
+}
+
 // 加载社保补差明细
 const loadCompensationDetails = async () => {
   if (!currentAccountSetId.value) {
@@ -5133,8 +5441,8 @@ const saveProcessOtherInsuranceAmounts = async () => {
   }
 
   if (processOtherInsuranceAmountRows.value.length === 0) {
-    ElMessage.warning('请填写其他保险金额')
-    throw new Error('请填写其他保险金额')
+    ElMessage.warning('请填写商业保险金额')
+    throw new Error('请填写商业保险金额')
   }
 
   const url = currentChange.value.change_type === 'decrease'
@@ -5146,12 +5454,12 @@ const saveProcessOtherInsuranceAmounts = async () => {
 
   for (const row of processOtherInsuranceAmountRows.value) {
     if (!row.policy_id) {
-      throw new Error(`无法获取"${row.name || '其他保险'}"的保单ID`)
+      throw new Error(`无法获取"${row.name || '商业保险'}"的保单ID`)
     }
 
     const amount = Number(row.amount)
     if (Number.isNaN(amount) || amount < 0) {
-      throw new Error(`请正确填写"${row.name || '其他保险'}"的${processOtherInsuranceAmountLabel.value}`)
+      throw new Error(`请正确填写"${row.name || '商业保险'}"的${processOtherInsuranceAmountLabel.value}`)
     }
 
     const response = await request({
@@ -5164,7 +5472,7 @@ const saveProcessOtherInsuranceAmounts = async () => {
     })
 
     if (!response.success) {
-      throw new Error(response.message || '其他保险金额保存失败')
+      throw new Error(response.message || '商业保险金额保存失败')
     }
 
     if (response.data) {
@@ -5258,7 +5566,7 @@ const submitProcess = async () => {
   }
 }
 
-// 其他保险确认处理（只处理其他保险）
+// 商业保险确认处理（只处理商业保险）
 const confirmOtherInsuranceOnly = async (change) => {
   // 防止重复点击
   if (processingOtherInsurance.value) {
@@ -5267,8 +5575,8 @@ const confirmOtherInsuranceOnly = async (change) => {
   
   try {
     await ElMessageBox.confirm(
-      `确定要处理"${change.employee.name}"的其他保险吗？\n\n处理后将：\n1. 只更新其他保险明细\n2. 不影响社保、医保、公积金等其他数据\n3. 确认处理按钮和上传文件功能不受影响`,
-      '其他保险确认处理',
+      `确定要处理"${change.employee.name}"的商业保险吗？\n\n处理后将：\n1. 只更新商业保险明细\n2. 不影响社保、医保、公积金等其他数据\n3. 确认处理按钮和上传文件功能不受影响`,
+      '商业保险确认处理',
       {
         confirmButtonText: '确定处理',
         cancelButtonText: '取消',
@@ -5278,11 +5586,11 @@ const confirmOtherInsuranceOnly = async (change) => {
 
     processingOtherInsurance.value = true
     
-    // 调用后端API只处理其他保险
+    // 调用后端API只处理商业保险
     const response = await request.put(`/insurance-changes/${change.id}/confirm-other-insurance-only`)
     
     if (response.success) {
-      ElMessage.success('其他保险已处理完成')
+      ElMessage.success('商业保险已处理完成')
       loadChanges()
       // 如果当前在明细页面，也刷新明细数据
       if (activeTab.value === 'details') {
@@ -5297,7 +5605,7 @@ const confirmOtherInsuranceOnly = async (change) => {
     }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('其他保险确认处理失败:', error)
+      console.error('商业保险确认处理失败:', error)
       ElMessage.error(error.response?.data?.message || error.message || '处理失败')
     }
   } finally {
@@ -5330,7 +5638,7 @@ const viewDetails = async (change) => {
       console.log('转换后的状态类型:', typeof currentChange.value.large_medical_insurance_enabled)
       console.log('变化摘要:', response.data.change_summary)
       console.log('解析的变化详情:', response.data.parsed_change_details)
-      console.log('=== 其他保险数据调试 ===')
+      console.log('=== 商业保险数据调试 ===')
       console.log('other_insurance_policies:', response.data.other_insurance_policies)
       console.log('other_insurance_policies 类型:', typeof response.data.other_insurance_policies)
       
@@ -5737,10 +6045,10 @@ const resolveOtherInsuranceTypeName = (policy = {}) => {
     }
   }
 
-  return '其他保险'
+  return '商业保险'
 }
 
-// 获取其他保险详情
+// 获取商业保险详情
 const getOtherInsuranceDetails = () => {
   console.log('=== getOtherInsuranceDetails 函数被调用 ===')
   
@@ -5766,7 +6074,7 @@ const getOtherInsuranceDetails = () => {
     }]
   }
   
-  // 使用快照数据中的其他保险配置
+  // 使用快照数据中的商业保险配置
   if (currentChange.value.other_insurance_policies) {
     console.log('找到other_insurance_policies字段')
     let policies = currentChange.value.other_insurance_policies
@@ -5784,7 +6092,7 @@ const getOtherInsuranceDetails = () => {
     }
     
     if (Array.isArray(policies)) {
-      console.log('=== 其他保险详情数据 ===')
+      console.log('=== 商业保险详情数据 ===')
       console.log('数组长度:', policies.length)
       
       // 映射字段名，确保前端模板能正确显示
@@ -5809,7 +6117,7 @@ const getOtherInsuranceDetails = () => {
     console.log('没有找到other_insurance_policies字段')
   }
   
-  console.log('没有找到其他保险数据')
+  console.log('没有找到商业保险数据')
   console.log('currentChange对象:', currentChange.value)
   console.log('other_insurance_policies字段:', currentChange.value.other_insurance_policies)
   return []
@@ -6111,7 +6419,7 @@ const getCategoryText = (category) => {
     'medical_insurance': '医保',
     'housing_fund': '公积金',
     'large_medical_insurance': '大额医疗',
-    'other_insurance': '其他保险'
+    'other_insurance': '商业保险'
   }
   return categoryMap[category] || category
 }
@@ -6437,16 +6745,16 @@ const getHousingFundSummary = (param) => {
 }
 
 
-// 处理其他保险费用变更
+// 处理商业保险费用变更
 const handleOtherInsuranceCostChange = (row) => {
   // 标记为正在编辑
   row._editing = true
 }
 
-// 保存其他保险费用 - 已禁用
+// 保存商业保险费用 - 已禁用
 const saveOtherInsuranceCost = async (row) => {
   // 功能已禁用，不再执行任何操作
-  console.log('保存其他保险费用功能已禁用')
+  console.log('保存商业保险费用功能已禁用')
   return
 }
 
@@ -6526,7 +6834,7 @@ const canEditOtherInsuranceSurrenderAmount = () => {
     && ['pending', 'submitted'].includes(currentChange.value.status)
 }
 
-// 保存减少参保时的其他保险退保金额
+// 保存减少参保时的商业保险退保金额
 const saveSurrenderAmount = async (row) => {
   if (!currentChange.value) {
     return
@@ -7167,6 +7475,30 @@ watch(showExportDialog, (newVal) => {
   color: #606266;
   font-weight: 600;
   text-align: center;
+  vertical-align: middle;
+}
+
+.detail-table .el-table__header .cell {
+  text-align: center !important;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.insurance-column-header {
+  display: flex;
+  min-height: 34px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.insurance-column-ratio {
+  color: #909399;
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .detail-table .el-table__body td {

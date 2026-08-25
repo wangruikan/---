@@ -68,6 +68,7 @@ class HousingFundRegionController extends Controller
         $request->validate([
             'region_name' => 'required|string|max:255',
             'account_set_id' => 'required|exists:account_sets,id',
+            'account_opening_month' => ['required', 'regex:/^\\d{4}-(?:0[1-9]|1[0-2])(?:-\\d{1,2})?$/'],
         ]);
 
         // 检查地区是否已存在
@@ -86,6 +87,7 @@ class HousingFundRegionController extends Controller
             'region_name' => $request->region_name,
             'account_number' => $request->account_number,
             'company_name' => $request->company_name,
+            'account_opening_month' => $this->normalizeAccountOpeningMonth($request->input('account_opening_month')),
             'account_set_id' => $request->account_set_id,
             'created_by' => $user->id,
         ]);
@@ -147,6 +149,7 @@ class HousingFundRegionController extends Controller
         
         $request->validate([
             'region_name' => 'required|string|max:255',
+            'account_opening_month' => ['sometimes', 'nullable', 'regex:/^\\d{4}-(?:0[1-9]|1[0-2])(?:-\\d{1,2})?$/'],
         ]);
 
         // 检查新名称是否与其他地区冲突
@@ -162,7 +165,11 @@ class HousingFundRegionController extends Controller
             ], 400);
         }
 
-        $region->update($request->only(['region_name', 'account_number', 'company_name']));
+        $updateData = $request->only(['region_name', 'account_number', 'company_name']);
+        if ($request->has('account_opening_month')) {
+            $updateData['account_opening_month'] = $this->normalizeAccountOpeningMonth($request->input('account_opening_month'));
+        }
+        $region->update($updateData);
 
         Log::info('公积金地区更新成功', [
             'region_id' => $region->id,
@@ -351,5 +358,21 @@ class HousingFundRegionController extends Controller
             'success' => true,
             'data' => $histories,
         ]);
+    }
+
+    private function normalizeAccountOpeningMonth($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (preg_match('/^(\\d{4})-(\\d{1,2})/', (string) $value, $matches)) {
+            $month = (int) $matches[2];
+            if ($month >= 1 && $month <= 12) {
+                return sprintf('%04d-%02d-01', (int) $matches[1], $month);
+            }
+        }
+
+        return null;
     }
 }

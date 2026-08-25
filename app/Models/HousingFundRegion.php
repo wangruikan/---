@@ -15,11 +15,13 @@ class HousingFundRegion extends Model
         'company_name',
         'account_set_id',
         'created_by',
+        'account_opening_month',
     ];
 
     protected $casts = [
         'created_at' => 'datetime:Y-m-d H:i:s',
         'updated_at' => 'datetime:Y-m-d H:i:s',
+        'account_opening_month' => 'date:Y-m-d',
     ];
 
     /**

@@ -263,24 +263,15 @@ import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
-import { useRouter } from 'vue-router'
 import request from '@/api/request'
 
-const router = useRouter()
 const userStore = useUserStore()
 const accountSetStore = useAccountSetStore()
 
-// 权限检查
-const isAdmin = computed(() => ['super_admin', 'admin'].includes(userStore.userInfo?.role))
 const currentUserId = computed(() => userStore.userInfo?.id)
 const currentAccountSetId = computed(() => accountSetStore.currentAccountSetId)
 
 onMounted(() => {
-  if (!isAdmin.value) {
-    ElMessage.error('只有管理员可以访问用户管理')
-    router.push('/')
-    return
-  }
   if (!currentAccountSetId.value) {
     ElMessage.warning('请先选择账套')
     return

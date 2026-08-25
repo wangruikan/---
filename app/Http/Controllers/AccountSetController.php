@@ -9,11 +9,6 @@ use Illuminate\Support\Facades\Validator;
 
 class AccountSetController extends Controller
 {
-    private function shouldSkipAdminValidation(): bool
-    {
-        return true;
-    }
-
     /**
      * 获取当前用户可访问的账套列表
      */
@@ -49,14 +44,6 @@ class AccountSetController extends Controller
      */
     public function index(Request $request)
     {
-        // 检查权限：只有管理员可以访问
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权访问，只有管理员可以管理套账'
-            ], 403);
-        }
-
         $query = AccountSet::with('creator');
         
         // 状态筛选
@@ -94,14 +81,6 @@ class AccountSetController extends Controller
      */
     public function store(Request $request)
     {
-        // 检查权限：只有管理员可以创建
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作，只有管理员可以创建套账'
-            ], 403);
-        }
-
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:191',
             'description' => 'nullable|string',
@@ -162,14 +141,6 @@ class AccountSetController extends Controller
      */
     public function show(Request $request, $id)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权访问'
-            ], 403);
-        }
-
         $accountSet = AccountSet::with(['creator', 'users'])->findOrFail($id);
         
         return response()->json([
@@ -183,14 +154,6 @@ class AccountSetController extends Controller
      */
     public function update(Request $request, $id)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $accountSet = AccountSet::findOrFail($id);
         
         $validator = Validator::make($request->all(), [
@@ -240,14 +203,6 @@ class AccountSetController extends Controller
      */
     public function destroy(Request $request, $id)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $accountSet = AccountSet::findOrFail($id);
         
         // 检查是否为默认套账
@@ -271,14 +226,6 @@ class AccountSetController extends Controller
      */
     public function setDefault(Request $request, $id)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $accountSet = AccountSet::findOrFail($id);
         
         if ($accountSet->status !== 'active') {
@@ -301,14 +248,6 @@ class AccountSetController extends Controller
      */
     public function archive(Request $request, $id)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $accountSet = AccountSet::findOrFail($id);
         
         try {
@@ -331,14 +270,6 @@ class AccountSetController extends Controller
      */
     public function getStatistics(Request $request)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权访问'
-            ], 403);
-        }
-
         $statistics = [
             'total' => AccountSet::count(),
             'active' => AccountSet::where('status', 'active')->count(),
@@ -357,14 +288,6 @@ class AccountSetController extends Controller
      */
     public function assignUsers(Request $request, $id)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $validator = \Validator::make($request->all(), [
             'user_ids' => 'required|array',
             'user_ids.*' => 'exists:users,id',
@@ -418,14 +341,6 @@ class AccountSetController extends Controller
      */
     public function removeUser(Request $request, $id, $userId)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         \DB::table('account_set_users')
             ->where('account_set_id', $id)
             ->where('user_id', $userId)
@@ -442,14 +357,6 @@ class AccountSetController extends Controller
      */
     public function setApprovalLevel(Request $request, $id, $userId)
     {
-        // 检查权限
-        if (!$this->shouldSkipAdminValidation() && $request->user() && $request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '无权操作'
-            ], 403);
-        }
-
         $validator = \Validator::make($request->all(), [
             'approval_level' => 'nullable|integer|between:' . ApprovalFlowConfig::MIN_APPROVAL_LEVEL . ',' . ApprovalFlowConfig::MAX_APPROVAL_LEVEL,
             'approval_level_name' => 'nullable|string|max:50'
@@ -524,8 +431,8 @@ class AccountSetController extends Controller
             ], 401);
         }
 
-        // 如果不是管理员，检查用户是否属于该账套
-        if (!$this->shouldSkipAdminValidation() && $user->role !== 'admin' && $user->role !== 'super_admin') {
+        // 非管理员仅可查看自己所属账套的人员。
+        if ($user->role !== 'admin' && $user->role !== 'super_admin') {
             $hasAccess = \DB::table('account_set_users')
                 ->where('account_set_id', $id)
                 ->where('user_id', $user->id)
@@ -598,7 +505,7 @@ class AccountSetController extends Controller
             ->where('account_set_id', $accountSetId)
             ->exists();
 
-        if (!$this->shouldSkipAdminValidation() && !$hasAccess && $request->user() && $request->user()->role !== 'admin') {
+        if (!$hasAccess && !in_array($request->user()->role, ['admin', 'super_admin'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => '您没有访问此账套的权限'

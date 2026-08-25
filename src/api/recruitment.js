@@ -112,3 +112,12 @@ export function deleteCandidateResume(id) {
     method: 'delete'
   })
 }
+
+// 获取招聘管理列表（后端按负责人过滤）
+export function getRecruitmentManagement(params) {
+  return request({
+    url: '/recruitment/management',
+    method: 'get',
+    params
+  })
+}

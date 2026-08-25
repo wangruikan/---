@@ -38,8 +38,9 @@
             <el-table-column prop="code" label="项目编号" min-width="140" />
             <el-table-column label="汇总类型" width="120" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.category === 'housing_fund'" type="warning">公积金汇总</el-tag>
-                <el-tag v-else type="primary">社保汇总</el-tag>
+                <el-tag :type="getProcessCategoryTagType(row.category)">
+                  {{ getProcessCategoryLabel(row.category) }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="month" label="汇总月份" width="120" />
@@ -67,6 +68,7 @@
               <el-select v-model="filterForm.category" placeholder="全部类型" clearable style="width: 120px;">
                 <el-option label="社保汇总" value="social_insurance" />
                 <el-option label="公积金汇总" value="housing_fund" />
+                <el-option label="社保明细修改" value="social_detail_edit" />
               </el-select>
             </el-form-item>
             <el-form-item label="月份">
@@ -100,8 +102,9 @@
             <el-table-column prop="id" label="流程ID" width="80" />
             <el-table-column label="汇总类型" width="110" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.category === 'housing_fund'" type="warning">公积金汇总</el-tag>
-                <el-tag v-else type="primary">社保汇总</el-tag>
+                <el-tag :type="getProcessCategoryTagType(row.category)">
+                  {{ getProcessCategoryLabel(row.category) }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="title" label="流程标题" min-width="200" />
@@ -164,7 +167,7 @@
                   提交
                 </el-button>
                 <el-button
-                  v-if="row.status === 'approved' && !row.has_payment_request"
+                  v-if="row.category !== 'social_detail_edit' && row.status === 'approved' && !row.has_payment_request"
                   link
                   type="warning"
                   @click="openPaymentRequestDialog(row.id)"
@@ -360,8 +363,9 @@
     >
       <el-descriptions :column="2" border>
         <el-descriptions-item label="汇总类型">
-          <el-tag v-if="detailData.category === 'housing_fund'" type="warning">公积金汇总</el-tag>
-          <el-tag v-else type="primary">社保汇总</el-tag>
+          <el-tag :type="getProcessCategoryTagType(detailData.category)">
+            {{ getProcessCategoryLabel(detailData.category) }}
+          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="月份">{{ detailData.month }}</el-descriptions-item>
         <el-descriptions-item label="流程标题" :span="2">{{ detailData.title }}</el-descriptions-item>
@@ -389,7 +393,20 @@
           <span v-if="!detailData.project_ids || detailData.project_ids.length === 0">-</span>
         </el-descriptions-item>
         <el-descriptions-item label="流程描述" :span="2">
-          {{ detailData.description || '-' }}
+          <template v-if="detailData.category === 'social_detail_edit'">
+            <div>修改原因：{{ parseSocialDetailEditDescription(detailData).reason || '-' }}</div>
+            <div>
+              社保基数：{{ formatEditBase(parseSocialDetailEditDescription(detailData).before?.social_security_base) }}
+              →
+              {{ formatEditBase(parseSocialDetailEditDescription(detailData).after?.social_security_base) }}
+            </div>
+            <div>
+              医保基数：{{ formatEditBase(parseSocialDetailEditDescription(detailData).before?.medical_insurance_base) }}
+              →
+              {{ formatEditBase(parseSocialDetailEditDescription(detailData).after?.medical_insurance_base) }}
+            </div>
+          </template>
+          <span v-else>{{ detailData.description || '-' }}</span>
         </el-descriptions-item>
       </el-descriptions>
 
@@ -467,8 +484,9 @@
     >
       <el-form label-width="100px">
         <el-form-item label="汇总类型">
-          <el-tag v-if="paymentRequestData.category === 'housing_fund'" type="warning" size="large">公积金汇总</el-tag>
-          <el-tag v-else type="primary" size="large">社保汇总</el-tag>
+          <el-tag :type="getProcessCategoryTagType(paymentRequestData.category)" size="large">
+            {{ getProcessCategoryLabel(paymentRequestData.category) }}
+          </el-tag>
         </el-form-item>
         
         <el-form-item label="流程信息">
@@ -978,7 +996,31 @@ const handleConfirmPreviewRegion = async () => {
 }
 
 const getProcessCategoryLabel = (category) => {
+  if (category === 'social_detail_edit') return '社保明细修改'
   return category === 'housing_fund' ? '公积金汇总' : '社保汇总'
+}
+
+const getProcessCategoryTagType = (category) => {
+  if (category === 'social_detail_edit') return 'warning'
+  return category === 'housing_fund' ? 'warning' : 'primary'
+}
+
+const parseSocialDetailEditDescription = (process) => {
+  if (!process || process.category !== 'social_detail_edit') return {}
+  try {
+    const parsed = typeof process.description === 'string'
+      ? JSON.parse(process.description)
+      : process.description
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+const formatEditBase = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(2) : '-'
 }
 
 const buildProcessTitle = (row) => {

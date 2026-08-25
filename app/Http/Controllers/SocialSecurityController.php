@@ -93,6 +93,7 @@ class SocialSecurityController extends Controller
             'account_set_id' => 'required|exists:account_sets,id',
             'min_base_amount' => 'nullable|numeric|min:0',
             'max_base_amount' => 'nullable|numeric|min:0',
+            'account_opening_month' => ['required', 'regex:/^\\d{4}-(?:0[1-9]|1[0-2])(?:-\\d{1,2})?$/'],
         ]);
 
         if ($validator->fails()) {
@@ -135,6 +136,7 @@ class SocialSecurityController extends Controller
             'company' => $request->company,
             'min_base_amount' => $request->min_base_amount,
             'max_base_amount' => $request->max_base_amount,
+            'account_opening_month' => $this->normalizeAccountOpeningMonth($request->input('account_opening_month')),
             'account_set_id' => $request->account_set_id,
         ]);
 
@@ -232,7 +234,8 @@ class SocialSecurityController extends Controller
             'max_base_amount' => 'nullable|numeric|min:0',
             'adjustment_base' => 'nullable|numeric|min:0',
             'effective_date' => 'nullable|date|after_or_equal:today',
-            'limit_effective_date' => 'nullable|date|after_or_equal:today',
+            'limit_effective_date' => 'nullable|date',
+            'account_opening_month' => ['sometimes', 'nullable', 'regex:/^\\d{4}-(?:0[1-9]|1[0-2])(?:-\\d{1,2})?$/'],
         ]);
 
         if ($validator->fails()) {
@@ -295,6 +298,9 @@ class SocialSecurityController extends Controller
         if ($request->has('effective_date')) {
             $updateData['effective_date'] = $request->effective_date;
         }
+        if ($request->has('account_opening_month')) {
+            $updateData['account_opening_month'] = $this->normalizeAccountOpeningMonth($request->input('account_opening_month'));
+        }
 
         // 记录接收到的数据（调试用）
         \Log::info('更新社保地区 - 接收到的数据', [
@@ -316,9 +322,11 @@ class SocialSecurityController extends Controller
         $hasLimitInput = $request->has('min_base_amount') || $request->has('max_base_amount');
         $hasLimitValueDiff = (string) $requestedMin !== (string) $region->min_base_amount || (string) $requestedMax !== (string) $region->max_base_amount;
         $hasLimitChange = $hasLimitInput && ($hasLimitValueDiff || $request->filled('limit_effective_date'));
+        $limitEffectiveNow = $request->filled('limit_effective_date')
+            && \Carbon\Carbon::parse($request->input('limit_effective_date'))->startOfDay()->lte(\Carbon\Carbon::today());
 
         if ($hasLimitChange) {
-            if ($request->filled('limit_effective_date')) {
+            if ($request->filled('limit_effective_date') && !$limitEffectiveNow) {
                 $pendingService = app(InsuranceLimitPendingService::class);
                 $pending = $pendingService->savePendingChange(
                     'social_security_region',
@@ -336,6 +344,13 @@ class SocialSecurityController extends Controller
                     'effective_date' => $pending->effective_date,
                 ]);
             } else {
+                if ($limitEffectiveNow) {
+                    app(InsuranceLimitPendingService::class)->cancelPendingChange(
+                        'social_security_region',
+                        $region->id
+                    );
+                }
+
                 $limitUpdateService = app(\App\Services\BaseLimitUpdateService::class);
                 $updateResult = $limitUpdateService->updateLimits($region, $requestedMin, $requestedMax);
 
@@ -690,5 +705,21 @@ class SocialSecurityController extends Controller
             'success' => true,
             'data' => $histories,
         ]);
+    }
+
+    private function normalizeAccountOpeningMonth($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (preg_match('/^(\\d{4})-(\\d{1,2})/', (string) $value, $matches)) {
+            $month = (int) $matches[2];
+            if ($month >= 1 && $month <= 12) {
+                return sprintf('%04d-%02d-01', (int) $matches[1], $month);
+            }
+        }
+
+        return null;
     }
 }

@@ -16,11 +16,13 @@ use App\Models\MedicalInsuranceRegion;
 use App\Models\HousingFund;
 use App\Models\OtherInsurancePolicy;
 use App\Models\InsuranceSurrenderRequest;
+use App\Models\ProcessApproval;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\ApprovalService;
 use App\Services\ProjectRoleUserService;
 use App\Traits\ChecksPermission;
 
@@ -493,6 +495,213 @@ class InsuranceChangeController extends ApiController
     }
 
     /**
+     * 提交社保明细修改审批。
+     * 只允许修改社保明细中的社保基数和医保基数，审批通过后才写回。
+     */
+    public function submitSocialDetailEdit(Request $request)
+    {
+        if ($response = $this->checkPermission('insurance_change.view')) {
+            return $response;
+        }
+
+        $validated = $request->validate([
+            'account_set_id' => 'required|integer',
+            'detail_id' => 'required|integer',
+            'source' => 'required|in:current,archive',
+            'month' => 'required|date_format:Y-m',
+            'project_id' => 'required|integer',
+            'social_security_base' => 'required|numeric|min:0',
+            'medical_insurance_base' => 'required|numeric|min:0',
+            'reason' => 'required|string|max:1000',
+        ]);
+
+        $accountSetId = (int) $validated['account_set_id'];
+        $detailId = (int) $validated['detail_id'];
+        $projectId = (int) $validated['project_id'];
+        $month = $validated['month'];
+
+        $target = $validated['source'] === 'archive'
+            ? InsuranceDetailRecord::with(['employee', 'project'])
+                ->where('id', $detailId)
+                ->where('account_set_id', $accountSetId)
+                ->where('project_id', $projectId)
+                ->where('record_year', substr($month, 0, 4))
+                ->where('record_month', (int) substr($month, 5, 2))
+                ->first()
+            : InsurancePersonnel::with(['employee', 'project'])
+                ->where('id', $detailId)
+                ->where('account_set_id', $accountSetId)
+                ->where('project_id', $projectId)
+                ->where('status', 'active')
+                ->first();
+
+        if (!$target) {
+            return response()->json([
+                'success' => false,
+                'message' => '社保明细不存在或已发生变化，请刷新后重试',
+            ], 404);
+        }
+
+        if ($validated['source'] === 'current' && $month !== now()->format('Y-m')) {
+            return response()->json([
+                'success' => false,
+                'message' => '当月实时明细只能修改当月数据',
+            ], 422);
+        }
+
+        if (!app(ProjectRoleUserService::class)->userCanAccessProject(
+            $request->user(),
+            $accountSetId,
+            $projectId,
+            ProjectRoleUserService::ROLE_INSURANCE
+        )) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权修改该项目的社保明细',
+            ], 403);
+        }
+
+        if ($this->isSocialSummaryApproved($accountSetId, $projectId, $month)) {
+            return response()->json([
+                'success' => false,
+                'message' => '该月份社保汇总已审批完成，不能再修改',
+            ], 422);
+        }
+
+        $employeeName = $target->employee_name ?: ($target->employee?->name ?? '未知员工');
+        $pendingEditExists = ProcessApproval::where('account_set_id', $accountSetId)
+            ->where('category', 'social_detail_edit')
+            ->whereIn('status', ['draft', 'pending'])
+            ->get(['description'])
+            ->contains(function (ProcessApproval $process) use ($detailId, $validated) {
+                $payload = json_decode((string) $process->description, true);
+
+                return is_array($payload)
+                    && (int) ($payload['detail_id'] ?? 0) === $detailId
+                    && ($payload['source'] ?? null) === $validated['source'];
+            });
+
+        if ($pendingEditExists) {
+            return response()->json([
+                'success' => false,
+                'message' => '该员工本月已有待审批的社保明细修改',
+            ], 422);
+        }
+
+        $before = [
+            'social_security_base' => (float) ($target->employee_social_security_base ?? 0),
+            'medical_insurance_base' => (float) ($target->employee_medical_insurance_base ?? 0),
+        ];
+        $after = [
+            'social_security_base' => round((float) $validated['social_security_base'], 2),
+            'medical_insurance_base' => round((float) $validated['medical_insurance_base'], 2),
+        ];
+
+        $payload = [
+            'type' => 'social_detail_edit',
+            'reason' => trim($validated['reason']),
+            'detail_id' => $detailId,
+            'source' => $validated['source'],
+            'month' => $month,
+            'project_id' => $projectId,
+            'employee_id' => $target->employee_id,
+            'employee_name' => $employeeName,
+            'before' => $before,
+            'after' => $after,
+        ];
+
+        DB::beginTransaction();
+        try {
+            $process = ProcessApproval::create([
+                'account_set_id' => $accountSetId,
+                'initiator_id' => $request->user()->id,
+                'title' => "社保明细修改 - {$employeeName} - {$month}",
+                'category' => 'social_detail_edit',
+                'month' => $month,
+                'project_ids' => [$projectId],
+                'description' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                'status' => 'draft',
+            ]);
+
+            $instance = app(ApprovalService::class)->createApprovalInstance(
+                $accountSetId,
+                '保险汇总',
+                $process->id,
+                $request->user()->id,
+                [],
+                true
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => '已提交审批，审批通过后生效',
+                'data' => [
+                    'process' => $process->fresh(['approvalInstance']),
+                    'approval_instance_id' => $instance->id,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('提交社保明细修改审批失败', [
+                'account_set_id' => $accountSetId,
+                'detail_id' => $detailId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => '提交审批失败：' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function isSocialSummaryApproved(int $accountSetId, int $projectId, string $month): bool
+    {
+        return ProcessApproval::where('account_set_id', $accountSetId)
+            ->where('category', 'social_insurance')
+            ->where('month', $month)
+            ->where('status', 'approved')
+            ->get(['project_ids'])
+            ->contains(function (ProcessApproval $process) use ($projectId) {
+                $projectIds = is_array($process->project_ids)
+                    ? $process->project_ids
+                    : (json_decode($process->project_ids ?? '[]', true) ?: []);
+
+                return in_array($projectId, array_map('intval', $projectIds), true);
+            });
+    }
+
+    private function markSocialDetailEditability(array $details, int $accountSetId, string $month): array
+    {
+        $approvedProjects = ProcessApproval::where('account_set_id', $accountSetId)
+            ->where('category', 'social_insurance')
+            ->where('month', $month)
+            ->where('status', 'approved')
+            ->get(['project_ids'])
+            ->flatMap(function (ProcessApproval $process) {
+                $projectIds = is_array($process->project_ids)
+                    ? $process->project_ids
+                    : (json_decode($process->project_ids ?? '[]', true) ?: []);
+
+                return array_map('intval', $projectIds);
+            })
+            ->unique()
+            ->all();
+
+        foreach ($details as &$detail) {
+            $projectId = (int) ($detail['project_id'] ?? 0);
+            $isNormal = ($detail['employee_type'] ?? '正常') === '正常';
+            $detail['can_edit_social_detail'] = $isNormal
+                && $projectId > 0
+                && !in_array($projectId, $approvedProjects, true);
+        }
+
+        return $details;
+    }
+
+    /**
      * 获取当月实时数据
      */
     private function getCurrentMonthDetails($request, $accountSetId, $regionName)
@@ -571,6 +780,12 @@ class InsuranceChangeController extends ApiController
             $details = array_merge($details, $supplementaryDetails);
         }
 
+        $details = $this->markSocialDetailEditability(
+            $details,
+            (int) $accountSetId,
+            now()->format('Y-m')
+        );
+
         return response()->json([
             'success' => true,
             'data' => $details,
@@ -645,6 +860,12 @@ class InsuranceChangeController extends ApiController
                 $details[] = $detail;
             }
         }
+
+        $details = $this->markSocialDetailEditability(
+            $details,
+            (int) $accountSetId,
+            $month
+        );
 
         return response()->json([
             'success' => true,

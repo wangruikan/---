@@ -514,46 +514,92 @@ class EmployeeController extends ApiController
     }
 
     /**
-     * 检查参保日期是否早于项目开始时间
+     * 检查参保月份是否早于地区开户月份或项目起始月份。
      */
     private function checkInsuranceDateVsProjectStart(array $projectIds, Request $request): ?string
     {
-        $insuranceDateFields = [
-            'social_insurance_enrollment_date' => '社保参保日期',
-            'provident_fund_enrollment_date' => '公积金参保日期',
-            'medical_insurance_enrollment_date' => '医保参保日期',
+        $insuranceFields = [
+            [
+                'date' => 'social_insurance_enrollment_date',
+                'region' => 'social_security_region_id',
+                'label' => '社保参保月份',
+                'region_label' => '社保开户年月',
+                'model' => \App\Models\SocialSecurityRegion::class,
+            ],
+            [
+                'date' => 'medical_insurance_enrollment_date',
+                'region' => 'medical_insurance_region_id',
+                'label' => '医保参保月份',
+                'region_label' => '医保开户年月',
+                'model' => \App\Models\MedicalInsuranceRegion::class,
+            ],
+            [
+                'date' => 'provident_fund_enrollment_date',
+                'region' => 'housing_fund_region_id',
+                'label' => '公积金参保月份',
+                'region_label' => '公积金开户年月',
+                'model' => \App\Models\HousingFundRegion::class,
+            ],
         ];
 
-        $hasInsuranceDate = false;
-        foreach (array_keys($insuranceDateFields) as $field) {
-            if ($request->filled($field)) {
-                $hasInsuranceDate = true;
-                break;
+        $projectIds = array_values(array_filter($projectIds, static fn ($id) => $id !== null && $id !== ''));
+        $earliestProjectStartMonth = null;
+        if (!empty($projectIds)) {
+            $earliestProjectStartMonth = $this->normalizeInsuranceMonth(
+                Project::whereIn('id', $projectIds)->min('start_date')
+            );
+        }
+
+        foreach ($insuranceFields as $field) {
+            if (!$request->filled($field['date'])) {
+                continue;
             }
-        }
 
-        if (!$hasInsuranceDate) {
-            return null;
-        }
+            $enrollmentMonth = $this->normalizeInsuranceMonth($request->input($field['date']));
+            if (!$enrollmentMonth) {
+                continue;
+            }
 
-        $earliestStartDate = Project::whereIn('id', $projectIds)->min('start_date');
+            $regionId = $request->input($field['region']);
+            if (is_numeric($regionId) && (int) $regionId > 0) {
+                $region = $field['model']::find((int) $regionId);
+                $openingMonth = $this->normalizeInsuranceMonth($region?->account_opening_month);
 
-        if (!$earliestStartDate) {
-            return null;
-        }
-
-        $earliestStartDate = date('Y-m-d', strtotime($earliestStartDate));
-
-        foreach ($insuranceDateFields as $field => $label) {
-            if ($request->filled($field)) {
-                $enrollmentDate = date('Y-m-d', strtotime($request->input($field)));
-                if ($enrollmentDate < $earliestStartDate) {
-                    return "{$label}({$enrollmentDate}) 不可早于项目开始时间({$earliestStartDate})";
+                if ($openingMonth && $enrollmentMonth < $openingMonth) {
+                    return "{$field['label']}({$enrollmentMonth})不能早于{$field['region_label']}({$openingMonth})";
                 }
+            }
+
+            if ($earliestProjectStartMonth && $enrollmentMonth < $earliestProjectStartMonth) {
+                return "{$field['label']}({$enrollmentMonth})不能早于项目起始月份({$earliestProjectStartMonth})";
             }
         }
 
         return null;
+    }
+
+    private function normalizeInsuranceMonth($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof Carbon) {
+            return $value->format('Y-m');
+        }
+
+        if (preg_match('/^(\\d{4})-(\\d{1,2})/', (string) $value, $matches)) {
+            $month = (int) $matches[2];
+            if ($month >= 1 && $month <= 12) {
+                return sprintf('%04d-%02d', (int) $matches[1], $month);
+            }
+        }
+
+        try {
+            return Carbon::parse($value)->format('Y-m');
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -1265,15 +1311,16 @@ class EmployeeController extends ApiController
             }
         }
 
-        // 检查参保时间不可早于项目开始时间
-        if ($request->has('project_ids') && is_array($request->project_ids)) {
-            $insuranceDateError = $this->checkInsuranceDateVsProjectStart($request->project_ids, $request);
-            if ($insuranceDateError) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $insuranceDateError
-                ], 422);
-            }
+        // 检查参保月份不可早于地区开户月份或项目起始月份
+        $insuranceDateError = $this->checkInsuranceDateVsProjectStart(
+            $request->has('project_ids') && is_array($request->project_ids) ? $request->project_ids : [],
+            $request
+        );
+        if ($insuranceDateError) {
+            return response()->json([
+                'success' => false,
+                'message' => $insuranceDateError
+            ], 422);
         }
 
         $resolvedDocumentSetId = null;
@@ -1643,13 +1690,15 @@ class EmployeeController extends ApiController
                 ], 422);
             }
 
-            $insuranceDateError = $this->checkInsuranceDateVsProjectStart($projectIdsForCheck, $request);
-            if ($insuranceDateError) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $insuranceDateError
-                ], 422);
-            }
+        }
+
+        // 即使没有提交项目列表，也要校验已选择地区的开户月份
+        $insuranceDateError = $this->checkInsuranceDateVsProjectStart($projectIdsForCheck ?: [], $request);
+        if ($insuranceDateError) {
+            return response()->json([
+                'success' => false,
+                'message' => $insuranceDateError
+            ], 422);
         }
 
         // 处理日期字段格式 - 包含所有新增字段
@@ -2879,6 +2928,7 @@ class EmployeeController extends ApiController
                 'region_name' => $region->name, // 将name映射为region_name
                 'name' => $region->name,
                 'account_set_id' => $region->account_set_id,
+                'account_opening_month' => optional($region->account_opening_month)->toDateString(),
                 'adjustment_base' => $region->adjustment_base,
                 'effective_date' => $region->effective_date,
                 'social_security_types' => $region->socialSecurityTypes
@@ -2924,6 +2974,7 @@ class EmployeeController extends ApiController
                 'region_name' => $region->region_name, // 使用正确的字段名
                 'name' => $region->region_name,
                 'account_set_id' => $region->account_set_id,
+                'account_opening_month' => optional($region->account_opening_month)->toDateString(),
                 'base_amount' => $region->base_amount,
                 'employee_ratio' => $region->employee_ratio,
                 'company_ratio' => $region->company_ratio
@@ -2999,6 +3050,7 @@ class EmployeeController extends ApiController
                 'region_name' => $region->name, // 将name映射为region_name
                 'name' => $region->name,
                 'account_set_id' => $region->account_set_id,
+                'account_opening_month' => optional($region->account_opening_month)->toDateString(),
                 'basic_medical_ratio' => $basicMedicalRatio,
                 'supplementary_medical_ratio' => $supplementaryMedicalRatio,
                 'medical_insurance_types' => $region->medicalInsuranceTypes
@@ -3534,6 +3586,7 @@ class EmployeeController extends ApiController
                                 'region_name' => $region->name,
                                 'name' => $region->name,
                                 'account_set_id' => $region->account_set_id,
+                                'account_opening_month' => optional($region->account_opening_month)->toDateString(),
                                 'adjustment_base' => $region->adjustment_base,
                                 'effective_date' => $region->effective_date,
                                 'social_security_types' => $region->socialSecurityTypes
@@ -3568,6 +3621,7 @@ class EmployeeController extends ApiController
                                 'region_name' => $region->name,
                                 'name' => $region->name,
                                 'account_set_id' => $region->account_set_id,
+                                'account_opening_month' => optional($region->account_opening_month)->toDateString(),
                                 'basic_medical_ratio' => $basicMedicalRatio,
                                 'supplementary_medical_ratio' => $supplementaryMedicalRatio,
                                 'medical_insurance_types' => $region->medicalInsuranceTypes
@@ -3587,6 +3641,7 @@ class EmployeeController extends ApiController
                                 'region_name' => $region->region_name,
                                 'name' => $region->region_name,
                                 'account_set_id' => $region->account_set_id,
+                                'account_opening_month' => optional($region->account_opening_month)->toDateString(),
                                 'base_amount' => $region->base_amount,
                                 'employee_ratio' => $region->employee_ratio,
                                 'company_ratio' => $region->company_ratio

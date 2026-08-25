@@ -60,14 +60,6 @@ class PermissionController extends Controller
      */
     public function getUserPermissions(Request $request, $userId)
     {
-        // 只有admin可以查看其他用户的权限
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '没有权限执行此操作'
-            ], 403);
-        }
-
         $user = User::findOrFail($userId);
         
         // 获取用户已有的权限ID列表
@@ -92,14 +84,6 @@ class PermissionController extends Controller
      */
     public function updateUserPermissions(Request $request, $userId)
     {
-        // 只有admin可以修改权限
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '没有权限执行此操作'
-            ], 403);
-        }
-
         $user = User::findOrFail($userId);
 
         // admin用户的权限不能修改
@@ -129,14 +113,6 @@ class PermissionController extends Controller
      */
     public function getUsersWithPermissions(Request $request)
     {
-        // 只有admin可以访问
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '没有权限执行此操作'
-            ], 403);
-        }
-
         $users = User::where('role', '!=', 'admin')
             ->with(['permissions'])
             ->get()
@@ -162,14 +138,6 @@ class PermissionController extends Controller
      */
     public function batchSetPermissions(Request $request)
     {
-        // 只有admin可以操作
-        if ($request->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => '没有权限执行此操作'
-            ], 403);
-        }
-
         $request->validate([
             'user_ids' => 'required|array',
             'user_ids.*' => 'exists:users,id',

@@ -103,22 +103,23 @@
             </el-select>
           </el-form-item>
         
-        <el-form-item label="业务员">
+        <el-form-item v-if="isManagementAdmin" label="业务员">
           <el-select
             v-model="searchForm.assigned_to"
             placeholder="请选择业务员"
             clearable
+            filterable
             style="width: 150px"
           >
             <el-option
               v-for="user in users"
               :key="user.id"
-              :label="user.name"
+              :label="user.name || user.nickname || user.email"
               :value="user.id"
             />
-            </el-select>
-          </el-form-item>
-          
+          </el-select>
+        </el-form-item>
+
           <el-form-item>
             <el-button type="primary" @click="handleSearch">
               <el-icon><Search /></el-icon>
@@ -142,6 +143,7 @@
         >
           <el-table-column prop="position" label="职位名称" width="150" />
           <el-table-column prop="project_name" label="项目名称" width="150" />
+          <el-table-column prop="assigned_to_name" label="业务员" width="120" />
           <el-table-column prop="department" label="部门" width="120" />
         <el-table-column label="招聘进度" width="250">
           <template #default="{ row }">
@@ -166,7 +168,11 @@
           </template>
         </el-table-column>
           <el-table-column prop="salary_range" label="薪资范围" width="150" />
-        <el-table-column prop="education_text" label="学历要求" width="100" />
+        <el-table-column label="学历要求" width="100">
+          <template #default="{ row }">
+            {{ getEducationText(row.education) }}
+          </template>
+        </el-table-column>
           <el-table-column prop="status" label="状态" width="100">
             <template #default="{ row }">
               <el-tag :type="getStatusType(row.status)">
@@ -824,12 +830,15 @@ import {
   updateCandidate,
   deleteCandidate,
   deleteCandidateResume,
-  getRecruitmentPermissions
+  getRecruitmentPermissions,
+  getRecruitmentManagement
 } from '@/api/recruitment'
 import { getProjects } from '@/api/projects'
 import { useUserStore } from '@/stores/user'
+import { useAccountSetStore } from '@/stores/accountSet'
 
 const userStore = useUserStore()
+const accountSetStore = useAccountSetStore()
 
 // 响应式数据
 const loading = ref(false)
@@ -989,6 +998,10 @@ const dialogTitle = computed(() => {
   return '新增招聘需求'
 })
 
+const isManagementAdmin = computed(() => {
+  return ['admin', 'super_admin'].includes(userStore.userInfo?.role)
+})
+
 // 加载数据
 const loadRecruitments = async () => {
   loading.value = true
@@ -999,7 +1012,7 @@ const loadRecruitments = async () => {
       ...searchForm
     }
     
-    const response = await getRecruitments(params)
+    const response = await getRecruitmentManagement(params)
     recruitments.value = response.data
     pagination.total = response.total
     
@@ -1032,19 +1045,26 @@ const loadProjects = async () => {
 }
 
 const loadUsers = async () => {
+  if (!isManagementAdmin.value) return
+
   try {
-    // 这里需要添加获取用户列表的API
-    // const response = await getUsers()
-    // users.value = response.data
-    
-    // 临时模拟数据
-    users.value = [
-      { id: 1, name: '张三' },
-      { id: 2, name: '李四' },
-      { id: 3, name: '王五' }
-    ]
+    const response = await request({
+      url: '/users',
+      method: 'get',
+      params: {
+        all: 'true',
+        current_account_set_only: true,
+        is_active: true,
+        current_account_set_id: accountSetStore.currentAccountSetId
+      }
+    })
+
+    if (response.success) {
+      users.value = Array.isArray(response.data) ? response.data : []
+    }
   } catch (error) {
-    console.error('加载用户列表失败:', error)
+    console.error('加载业务员列表失败:', error)
+    ElMessage.error('加载业务员列表失败')
   }
 }
 
@@ -1626,7 +1646,7 @@ const getEducationText = (education) => {
 const loadPermissions = async () => {
   try {
     const response = await getRecruitmentPermissions({
-      current_account_set_id: userStore.currentAccountSetId
+      current_account_set_id: accountSetStore.currentAccountSetId
     })
     
     if (response.success) {

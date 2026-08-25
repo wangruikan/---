@@ -198,22 +198,22 @@
           <el-table-column v-if="isColumnGroupVisible('insurance')" label="&#20844;&#31215;&#37329;&#22320;&#21306;" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ getHousingFundRegionsText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险类别" min-width="220" show-overflow-tooltip>
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="商业保险类别" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">{{ getOtherInsurancePoliciesSummaryText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('insurance')" label="其他保险细分数量" width="150" align="center">
+          <el-table-column v-if="isColumnGroupVisible('insurance')" label="商业保险细分数量" width="150" align="center">
             <template #default="{ row }">{{ getOtherInsurancePoliciesDetailCount(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('project_users')" label="负责人设置人" min-width="160" show-overflow-tooltip>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="项目负责人" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ getProjectRoleUserNames(row, 'role_manager') }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('project_users')" label="保险负责人" min-width="160" show-overflow-tooltip>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="保险核算员" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ getProjectRoleUserNames(row, 'insurance') }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('project_users')" label="薪资员" min-width="160" show-overflow-tooltip>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="薪酬核算员" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ getProjectRoleUserNames(row, 'salary') }}</template>
           </el-table-column>
-          <el-table-column v-if="isColumnGroupVisible('project_users')" label="交付员" min-width="160" show-overflow-tooltip>
+          <el-table-column v-if="isColumnGroupVisible('project_users')" label="结算员" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ getProjectRoleUserNames(row, 'delivery') }}</template>
           </el-table-column>
           <el-table-column v-if="isColumnGroupVisible('project_users')" label="项目人员" width="120" align="center">
@@ -525,8 +525,8 @@
           <div class="form-tip">选择项目支持的医保参保地区，员工只能从这些地区中选择参保，大额医疗将自动跟随这里的医保地区配置</div>
         </el-form-item>
 
-        <!-- 绑定其他保险保单 -->
-        <el-form-item label="绑定其他保险保单" prop="other_insurance_policies">
+        <!-- 绑定商业保险保单 -->
+        <el-form-item label="绑定商业保险保单" prop="other_insurance_policies">
           <div style="display: flex; align-items: center; gap: 10px;">
             <el-switch
               v-model="otherInsuranceNoSelection"
@@ -549,7 +549,7 @@
               不选择任何保单
             </div>
           </div>
-          <div class="form-tip">点击按钮选择项目绑定的其他保险保单，每种保险类型只能绑定一个保单，员工将自动享受这些保险</div>
+          <div class="form-tip">点击按钮选择项目绑定的商业保险保单，每种保险类型只能绑定一个保单，员工将自动享受这些保险</div>
         </el-form-item>
 
         </div>
@@ -1235,7 +1235,7 @@
     <!-- 保单选择对话框 -->
     <el-dialog
       v-model="showPolicySelectionDialog"
-      title="选择其他保险保单"
+      title="选择商业保险保单"
       width="800px"
       :close-on-click-modal="false"
     >
@@ -1688,7 +1688,7 @@ const availableHousingFundRegions = ref([])
 const loadingSocialSecurityRegions = ref(false)
 const loadingHousingFundRegions = ref(false)
 
-// 医保和其他保险相关
+// 医保和商业保险相关
 const availableMedicalInsuranceRegions = ref([])
 const availableOtherInsurancePolicies = ref([])
 const loadingMedicalInsuranceRegions = ref(false)
@@ -1698,7 +1698,7 @@ const loadingOtherInsurancePolicies = ref(false)
 const showPolicySelectionDialog = ref(false)
 const selectedPoliciesByType = ref({})
 const expandedTypes = ref({})  // 记录哪些保险类型已展开
-const otherInsuranceNoSelection = ref(false)  // 其他保险-无选择模式
+const otherInsuranceNoSelection = ref(false)  // 商业保险-无选择模式
 
 // 占位符设置相关
 const showPlaceholderSetupDialog = ref(false)
@@ -2252,7 +2252,7 @@ const form = reactive({
   social_security_regions: [],  // 社保地区ID列表
   housing_fund_regions: [],  // 公积金地区ID列表
   medical_insurance_regions: [],  // 医保地区ID列表
-  other_insurance_policies: []  // 其他保险保单ID列表
+  other_insurance_policies: []  // 商业保险保单ID列表
 })
 
 // 新增项目表单草稿暂存（仅新建模式生效，编辑/查看不污染）
@@ -2377,7 +2377,7 @@ const projectFormFieldLabelMap = {
   social_security_regions: '社保地区',
   housing_fund_regions: '公积金地区',
   medical_insurance_regions: '医保参保地区',
-  other_insurance_policies: '绑定其他保险保单'
+  other_insurance_policies: '绑定商业保险保单'
 }
 
 const showProjectFormValidationMessage = (invalidFields) => {
@@ -2610,7 +2610,7 @@ const loadAvailableMedicalInsuranceRegions = async () => {
   }
 }
 
-// 加载可用的其他保险保单
+// 加载可用的商业保险保单
 const loadAvailableOtherInsurancePolicies = async () => {
   if (!currentAccountSetId.value) {
     console.warn('No current account set ID available')
@@ -2626,8 +2626,8 @@ const loadAvailableOtherInsurancePolicies = async () => {
       availableOtherInsurancePolicies.value = response.data
     }
   } catch (error) {
-    console.error('加载其他保险保单失败:', error)
-    ElMessage.error('加载其他保险保单失败')
+    console.error('加载商业保险保单失败:', error)
+    ElMessage.error('加载商业保险保单失败')
   } finally {
     loadingOtherInsurancePolicies.value = false
   }
@@ -2999,7 +2999,7 @@ const handleView = async (row) => {
   })
   syncLegacyInvoiceFieldsFromInvoiceInfos(form.invoice_infos)
 
-  // 设置其他保险"无"选择模式
+  // 设置商业保险"无"选择模式
   otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
 
   console.log('查看项目 - 地区数据加载完成:', {
@@ -3039,7 +3039,7 @@ const handleEdit = async (row) => {
     housing_fund_regions: row.housing_fund_regions && row.housing_fund_regions.length > 0
       ? row.housing_fund_regions
       : [NO_HOUSING_FUND_OPTION],
-    // 医保和其他保险使用关系，需要提取ID
+    // 医保和商业保险使用关系，需要提取ID
     medical_insurance_regions: row.medical_insurance_regions && row.medical_insurance_regions.length > 0
       ? row.medical_insurance_regions.map(r => r.id)
       : [NO_MEDICAL_INSURANCE_OPTION],
@@ -3047,7 +3047,7 @@ const handleEdit = async (row) => {
   })
   syncLegacyInvoiceFieldsFromInvoiceInfos(form.invoice_infos)
 
-  // 设置其他保险"无"选择模式
+  // 设置商业保险"无"选择模式
   otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
   
   console.log('编辑项目 - 地区数据加载完成:', {
@@ -3514,7 +3514,7 @@ const handleSubmit = async () => {
       }
     }
 
-    // 保存其他保险保单（即使为空也要同步，以便清除之前的绑定）
+    // 保存商业保险保单（即使为空也要同步，以便清除之前的绑定）
     await setProjectOtherInsurancePolicies(projectId, {
       policy_ids: form.other_insurance_policies || []
     })
@@ -3845,7 +3845,7 @@ watch(() => accountSetStore.currentAccountSetId, (newAccountSetId, oldAccountSet
   }
 })
 
-// 监听其他保险"无"选择模式
+// 监听商业保险"无"选择模式
 watch(visibleColumnGroups, (groups) => {
   if (!Array.isArray(groups) || groups.length === 0) {
     visibleColumnGroups.value = ['basic']

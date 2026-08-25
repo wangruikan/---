@@ -277,7 +277,22 @@
                   <p><strong>{{ currentDetail.business_type === '文件盖章' ? '文件名称' : '流程标题' }}：</strong>{{ currentDetail.business_data.title || '-' }}</p>
                   <p v-if="currentDetail.business_type !== '文件盖章'"><strong>月份：</strong>{{ currentDetail.business_data.month || '-' }}</p>
                   <p><strong>发起人：</strong>{{ currentDetail.business_data.initiator?.name || '-' }}</p>
-                  <p><strong>描述：</strong>{{ currentDetail.business_data.description || '-' }}</p>
+                  <template v-if="currentDetail.business_data.category === 'social_detail_edit'">
+                    <p><strong>修改原因：</strong>{{ currentDetail.business_data.social_detail_edit_data?.reason || '-' }}</p>
+                    <p>
+                      <strong>社保基数：</strong>
+                      {{ formatApprovalEditBase(currentDetail.business_data.social_detail_edit_data?.before?.social_security_base) }}
+                      →
+                      {{ formatApprovalEditBase(currentDetail.business_data.social_detail_edit_data?.after?.social_security_base) }}
+                    </p>
+                    <p>
+                      <strong>医保基数：</strong>
+                      {{ formatApprovalEditBase(currentDetail.business_data.social_detail_edit_data?.before?.medical_insurance_base) }}
+                      →
+                      {{ formatApprovalEditBase(currentDetail.business_data.social_detail_edit_data?.after?.medical_insurance_base) }}
+                    </p>
+                  </template>
+                  <p v-else><strong>描述：</strong>{{ currentDetail.business_data.description || '-' }}</p>
                   <p v-if="currentDetail.business_data.attachments && currentDetail.business_data.attachments.length > 0">
                     <strong>附件数量：</strong>{{ currentDetail.business_data.attachments.length }} 个
                   </p>
@@ -1695,6 +1710,10 @@ const closeSingleStampAdjust = () => {
 // 辅助函数
 const getBusinessTypeText = (row) => {
   const instance = row.instance || row
+  const businessData = row.business_data || instance.business_data
+  if (businessData?.category === 'social_detail_edit') {
+    return '社保明细修改'
+  }
   const type = instance.business_type
   const texts = {
     'employee_contract': '员工合同审批',
@@ -1711,6 +1730,7 @@ const getBusinessTypeText = (row) => {
     'payment_application': '付款申请',
     '工资表审批': '工资表审批',
     '保险汇总': '保险汇总',
+    'social_detail_edit': '社保明细修改',
     '文件盖章': '文件盖章',
     '付款申请': '付款申请',
     '考勤申请': '考勤审批',
@@ -1722,6 +1742,12 @@ const getBusinessTypeText = (row) => {
     'material_request': '资料申请'
   }
   return texts[type] || type
+}
+
+const formatApprovalEditBase = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(2) : '-'
 }
 
 const getContractTypeText = (type) => {

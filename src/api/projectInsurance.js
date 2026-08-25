@@ -18,7 +18,7 @@ export function setProjectMedicalInsuranceRegions(projectId, data) {
   })
 }
 
-// 获取项目的其他保险保单
+// 获取项目的商业保险保单
 export function getProjectOtherInsurancePolicies(projectId, params) {
   return request({
     url: `/projects/${projectId}/other-insurance-policies`,
@@ -27,7 +27,7 @@ export function getProjectOtherInsurancePolicies(projectId, params) {
   })
 }
 
-// 设置项目的其他保险保单
+// 设置项目的商业保险保单
 export function setProjectOtherInsurancePolicies(projectId, data) {
   return request({
     url: `/projects/${projectId}/other-insurance-policies`,
@@ -45,7 +45,7 @@ export function getAvailableMedicalInsuranceRegions(params) {
   })
 }
 
-// 获取可用的其他保险保单列表
+// 获取可用的商业保险保单列表
 export function getAvailableOtherInsurancePolicies(params) {
   return request({
     url: '/projects/available/other-insurance-policies',
@@ -63,7 +63,7 @@ export function getEmployeeProjectMedicalInsuranceRegions(projectId, params) {
   })
 }
 
-// 获取员工项目的其他保险保单
+// 获取员工项目的商业保险保单
 export function getEmployeeProjectOtherInsurancePolicies(projectId, params) {
   return request({
     url: `/employees/projects/${projectId}/other-insurance-policies`,

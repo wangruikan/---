@@ -35,6 +35,26 @@
             </el-form-item>
           </el-col>
         </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="业务员" prop="assigned_to">
+              <el-select
+                v-model="form.assigned_to"
+                placeholder="请选择业务员"
+                filterable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="user in users"
+                  :key="user.id"
+                  :label="user.name || user.nickname || user.email"
+                  :value="user.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
         
         <el-row :gutter="20">
           <el-col :span="12">
@@ -173,10 +193,12 @@ const accountSetStore = useAccountSetStore()
 const formRef = ref(null)
 const submitting = ref(false)
 const projects = ref([])
+const users = ref([])
 
 const form = reactive({
   position: '',
   project_id: null,
+  assigned_to: null,
   department: '',
   required_count: 1,
   salary_range: '',
@@ -196,6 +218,9 @@ const formRules = {
   ],
   project_id: [
     { required: true, message: '请选择项目', trigger: 'change' }
+  ],
+  assigned_to: [
+    { required: true, message: '请选择业务员', trigger: 'change' }
   ],
   department: [
     { required: true, message: '请输入部门', trigger: 'blur' }
@@ -234,6 +259,28 @@ const loadProjects = async () => {
   }
 }
 
+const loadUsers = async () => {
+  try {
+    const response = await request({
+      url: '/users',
+      method: 'get',
+      params: {
+        all: 'true',
+        current_account_set_only: true,
+        is_active: true,
+        current_account_set_id: accountSetStore.currentAccountSetId
+      }
+    })
+
+    if (response.success) {
+      users.value = Array.isArray(response.data) ? response.data : []
+    }
+  } catch (error) {
+    console.error('Load users error:', error)
+    ElMessage.error('加载业务员列表失败')
+  }
+}
+
 const handleSubmit = async () => {
   try {
     await formRef.value.validate()
@@ -267,6 +314,7 @@ const handleSubmit = async () => {
 
 onMounted(() => {
   loadProjects()
+  loadUsers()
 })
 </script>
 

@@ -2171,10 +2171,10 @@
           </el-table>
         </div>
         
-        <!-- 其他保险信息显示 -->
+        <!-- 商业保险信息显示 -->
         <div v-if="projectOtherInsurancePolicies && projectOtherInsurancePolicies.length > 0" class="insurance-details">
-          <h4>其他保险信息</h4>
-          <el-form-item label="其他保险保单">
+          <h4>商业保险信息</h4>
+          <el-form-item label="商业保险保单">
             <el-checkbox-group
               v-model="form.other_insurance_policy_ids"
               :disabled="isViewMode"
@@ -2188,7 +2188,7 @@
                 {{ policy.name }}
               </el-checkbox>
             </el-checkbox-group>
-            <div class="form-tip">按员工实际参保的其他保险保单进行选择</div>
+            <div class="form-tip">按员工实际参保的商业保险保单进行选择</div>
           </el-form-item>
           <el-table :data="projectOtherInsurancePolicies" size="small" border>
             <el-table-column prop="name" label="保险名称" />
@@ -2215,7 +2215,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="form-tip">该项目绑定的其他保险，无需选择地区</div>
+          <div class="form-tip">该项目绑定的商业保险，无需选择地区</div>
         </div>
           </el-form>
         </el-tab-pane>
@@ -3990,10 +3990,10 @@
           </el-table>
         </div>
         
-        <!-- 其他保险信息显示 -->
+        <!-- 商业保险信息显示 -->
         <div v-if="projectOtherInsurancePolicies && projectOtherInsurancePolicies.length > 0" class="insurance-details">
-          <h4>其他保险信息</h4>
-          <el-form-item label="其他保险保单">
+          <h4>商业保险信息</h4>
+          <el-form-item label="商业保险保单">
             <el-checkbox-group
               v-model="form.other_insurance_policy_ids"
               class="other-insurance-checkbox-group"
@@ -4006,7 +4006,7 @@
                 {{ policy.name }}
               </el-checkbox>
             </el-checkbox-group>
-            <div class="form-tip">按员工实际参保的其他保险保单进行选择</div>
+            <div class="form-tip">按员工实际参保的商业保险保单进行选择</div>
           </el-form-item>
           <el-table :data="projectOtherInsurancePolicies" size="small" border>
             <el-table-column prop="name" label="保险名称" />
@@ -4033,7 +4033,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="form-tip">该项目绑定的其他保险，无需选择地区</div>
+          <div class="form-tip">该项目绑定的商业保险，无需选择地区</div>
         </div>
         
       </el-form>
@@ -6616,6 +6616,65 @@ const validateDateNotBeforeSelectedProjectStart = (rule, value, callback) => {
   callback()
 }
 
+const insuranceEnrollmentMonthMeta = {
+  social_insurance_enrollment_date: {
+    regionField: 'social_security_region_id',
+    regions: () => availableSocialSecurityRegions.value,
+    label: '社保参保月份'
+  },
+  medical_insurance_enrollment_date: {
+    regionField: 'medical_insurance_region_id',
+    regions: () => availableMedicalInsuranceRegions.value,
+    label: '医保参保月份'
+  },
+  provident_fund_enrollment_date: {
+    regionField: 'housing_fund_region_id',
+    regions: () => availableHousingFundRegions.value,
+    label: '公积金参保月份'
+  }
+}
+
+const normalizeMonthKey = (value) => {
+  const normalized = normalizeDateKey(value)
+  const match = normalized.match(/^(\d{4})-(\d{1,2})/)
+  return match ? `${match[1]}-${String(match[2]).padStart(2, '0')}` : ''
+}
+
+const validateInsuranceEnrollmentMonth = (rule, value, callback) => {
+  if (!value) {
+    callback()
+    return
+  }
+
+  const meta = insuranceEnrollmentMonthMeta[rule.field]
+  if (!meta) {
+    callback()
+    return
+  }
+
+  const enrollmentMonth = normalizeMonthKey(value)
+  if (!enrollmentMonth) {
+    callback()
+    return
+  }
+
+  const regionId = form[meta.regionField]
+  const region = meta.regions().find(item => Number(item.id) === Number(regionId))
+  const openingMonth = normalizeMonthKey(region?.account_opening_month)
+  if (openingMonth && enrollmentMonth < openingMonth) {
+    callback(new Error(`${meta.label}不能早于地区开户年月(${openingMonth})`))
+    return
+  }
+
+  const projectStartMonth = normalizeMonthKey(getSelectedProjectStartDate())
+  if (projectStartMonth && enrollmentMonth < projectStartMonth) {
+    callback(new Error(`${meta.label}不能早于项目起始月份(${projectStartMonth})`))
+    return
+  }
+
+  callback()
+}
+
 const insurancePairFieldMeta = {
   social_security_region_id: { pairedField: 'social_insurance_enrollment_date', regionLabel: '社保地区', dateLabel: '社保参保日期', fieldType: 'region' },
   social_insurance_enrollment_date: { pairedField: 'social_security_region_id', regionLabel: '社保地区', dateLabel: '社保参保日期', fieldType: 'date' },
@@ -7516,7 +7575,8 @@ const formRules = {
   ],
   social_insurance_enrollment_date: [
     { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
-    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+    { validator: validateInsurancePairCompleteness, trigger: 'change' },
+    { validator: validateInsuranceEnrollmentMonth, trigger: 'change' }
   ],
   medical_insurance_region_id: [
     { validator: validateRequiredInsuranceRegion, trigger: 'change' },
@@ -7524,7 +7584,8 @@ const formRules = {
   ],
   medical_insurance_enrollment_date: [
     { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
-    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+    { validator: validateInsurancePairCompleteness, trigger: 'change' },
+    { validator: validateInsuranceEnrollmentMonth, trigger: 'change' }
   ],
   housing_fund_region_id: [
     { validator: validateRequiredInsuranceRegion, trigger: 'change' },
@@ -7535,7 +7596,8 @@ const formRules = {
   ],
   provident_fund_enrollment_date: [
     { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
-    { validator: validateInsurancePairCompleteness, trigger: 'change' }
+    { validator: validateInsurancePairCompleteness, trigger: 'change' },
+    { validator: validateInsuranceEnrollmentMonth, trigger: 'change' }
   ]
 }
 
@@ -8846,7 +8908,7 @@ const handleProjectIdsChange = async (
   await triggerDateAndInsuranceValidation()
 }
 
-// 加载项目的其他保险信息
+// 加载项目的商业保险信息
 const loadProjectOtherInsurancePolicies = async (projectIds) => {
   if (!projectIds || projectIds.length === 0) {
     projectOtherInsurancePolicies.value = []
@@ -8867,7 +8929,7 @@ const loadProjectOtherInsurancePolicies = async (projectIds) => {
       applyOtherInsuranceSelectionByPolicies([])
     }
   } catch (error) {
-    console.error('加载其他保险信息失败:', error)
+    console.error('加载商业保险信息失败:', error)
     projectOtherInsurancePolicies.value = []
     applyOtherInsuranceSelectionByPolicies([])
   }
@@ -9106,7 +9168,7 @@ const handleView = async (row) => {
         }
       }
       
-      // 4. 设置其他保险政策
+      // 4. 设置商业保险政策
       if (data.other_insurance_policies) {
         projectOtherInsurancePolicies.value = data.other_insurance_policies
         applyOtherInsuranceSelectionByPolicies(employeeData.other_insurance_policy_ids)
@@ -9265,7 +9327,7 @@ const handleEdit = async (row) => {
         }
       }
       
-      // 4. 设置其他保险政策
+      // 4. 设置商业保险政策
       if (data.other_insurance_policies) {
         projectOtherInsurancePolicies.value = data.other_insurance_policies
         applyOtherInsuranceSelectionByPolicies(employeeData.other_insurance_policy_ids)

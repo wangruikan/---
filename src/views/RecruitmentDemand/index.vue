@@ -79,6 +79,7 @@
         <el-table-column type="index" label="序号" width="60" />
         <el-table-column prop="position" label="职位名称" width="150" />
         <el-table-column prop="project_name" label="项目名称" width="150" />
+        <el-table-column prop="assigned_to_name" label="业务员" width="120" />
         <el-table-column prop="department" label="所属部门" width="120" />
         <el-table-column prop="required_count" label="需求人数" width="100" align="center">
           <template #default="{ row }">
@@ -140,6 +141,7 @@
       <el-descriptions :column="2" border v-if="currentDemand">
         <el-descriptions-item label="职位名称">{{ currentDemand.position }}</el-descriptions-item>
         <el-descriptions-item label="项目名称">{{ currentDemand.project_name }}</el-descriptions-item>
+        <el-descriptions-item label="业务员">{{ currentDemand.assigned_to_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="所属部门">{{ currentDemand.department }}</el-descriptions-item>
         <el-descriptions-item label="需求人数">{{ currentDemand.required_count }}人</el-descriptions-item>
         <el-descriptions-item label="薪资范围">{{ currentDemand.salary_range || '-' }}</el-descriptions-item>
@@ -198,6 +200,26 @@
                   :key="project.id"
                   :label="project.name"
                   :value="project.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="业务员" prop="assigned_to">
+              <el-select
+                v-model="editForm.assigned_to"
+                placeholder="请选择业务员"
+                filterable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="user in users"
+                  :key="user.id"
+                  :label="user.name || user.nickname || user.email"
+                  :value="user.id"
                 />
               </el-select>
             </el-form-item>
@@ -340,6 +362,7 @@ const userStore = useUserStore()
 const loading = ref(false)
 const demands = ref([])
 const projects = ref([])
+const users = ref([])
 const showDetailDialog = ref(false)
 const showEditDialog = ref(false)
 const currentDemand = ref(null)
@@ -350,6 +373,7 @@ const editForm = reactive({
   id: null,
   position: '',
   project_id: null,
+  assigned_to: null,
   department: '',
   required_count: 1,
   salary_range: '',
@@ -369,6 +393,9 @@ const formRules = {
   ],
   project_id: [
     { required: true, message: '请选择项目', trigger: 'change' }
+  ],
+  assigned_to: [
+    { required: true, message: '请选择业务员', trigger: 'change' }
   ],
   department: [
     { required: true, message: '请输入部门', trigger: 'blur' }
@@ -411,6 +438,7 @@ const handleEdit = (row) => {
     id: row.id,
     position: row.position,
     project_id: row.project_id,
+    assigned_to: row.assigned_to,
     department: row.department,
     required_count: row.required_count,
     salary_range: row.salary_range,
@@ -559,6 +587,28 @@ const loadProjects = async () => {
   }
 }
 
+const loadUsers = async () => {
+  try {
+    const response = await request({
+      url: '/users',
+      method: 'get',
+      params: {
+        all: 'true',
+        current_account_set_only: true,
+        is_active: true,
+        current_account_set_id: accountSetStore.currentAccountSetId
+      }
+    })
+
+    if (response.success) {
+      users.value = Array.isArray(response.data) ? response.data : []
+    }
+  } catch (error) {
+    console.error('Load users error:', error)
+    ElMessage.error('加载业务员列表失败')
+  }
+}
+
 const getStatusType = (status) => {
   const typeMap = {
     pending: 'info',
@@ -601,6 +651,7 @@ const getEducationText = (education) => {
 onMounted(() => {
   loadDemands()
   loadProjects()
+  loadUsers()
 })
 </script>
 

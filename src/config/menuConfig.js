@@ -92,7 +92,7 @@ export const menuConfig = [
       { title: '投标项目管理', path: '/bid-projects', icon: 'Document' },
       { title: '社保管理', path: '/social-security', icon: 'UserFilled' },
       { title: '公积金管理', path: '/housing-fund', icon: 'House' },
-      { title: '其他保险管理', path: '/other-insurance', icon: 'Document' },
+      { title: '商业保险管理', path: '/other-insurance', icon: 'Document' },
       { title: '基数调差管理', path: '/base-adjustment', icon: 'Edit' },
       { title: '专项扣除管理', path: '/special-deductions', icon: 'DocumentChecked' },
       { title: '人员专项管理', path: '/employee-special-deductions', icon: 'UserFilled', permission: 'special_deductions.view' },

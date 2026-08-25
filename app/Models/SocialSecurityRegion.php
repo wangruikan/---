@@ -19,6 +19,7 @@ class SocialSecurityRegion extends Model
         'min_base_amount' => '最低基数',
         'max_base_amount' => '最高基数',
         'effective_date' => '生效时间',
+        'account_opening_month' => '开户年月',
     ];
 
     public function getAuditIdentifier()
@@ -42,12 +43,14 @@ class SocialSecurityRegion extends Model
         'created_by',
         'adjustment_base',
         'effective_date',
+        'account_opening_month',
     ];
 
     protected $casts = [
         'created_at' => 'datetime:Y-m-d H:i:s',
         'updated_at' => 'datetime:Y-m-d H:i:s',
         'effective_date' => 'date',
+        'account_opening_month' => 'date:Y-m-d',
         'adjustment_base' => 'decimal:2',
         'min_base_amount' => 'decimal:2',
         'max_base_amount' => 'decimal:2',

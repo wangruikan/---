@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Recruitment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Traits\ChecksPermission;
@@ -12,6 +13,19 @@ class RecruitmentController extends Controller
     use ChecksPermission;
     public function index(Request $request)
     {
+        return $this->listRecruitments($request, false);
+    }
+
+    /**
+     * 获取招聘管理列表：非管理员只能查看分配给自己的任务。
+     */
+    public function managementIndex(Request $request)
+    {
+        return $this->listRecruitments($request, true);
+    }
+
+    private function listRecruitments(Request $request, bool $managementOnly)
+    {
         if ($response = $this->checkPermission('recruitment.view')) {
             return $response;
         }
@@ -19,11 +33,21 @@ class RecruitmentController extends Controller
         $query = Recruitment::with(['project', 'assignedTo']);
         
         // 【账套过滤】
-        $currentAccountSetId = $request->input('current_account_set_id');
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
         if ($currentAccountSetId) {
             $query->where('account_set_id', $currentAccountSetId);
-        } elseif ($request->user()->role !== 'admin') {
+        } elseif (!$this->isManagementAdmin($request->user())) {
             $query->whereRaw('1 = 0');
+        }
+
+        if ($managementOnly) {
+            if ($this->isManagementAdmin($request->user())) {
+                if ($request->filled('assigned_to')) {
+                    $query->where('assigned_to', (int) $request->input('assigned_to'));
+                }
+            } else {
+                $query->where('assigned_to', $request->user()->id);
+            }
         }
         
         // 只有当参数有值时才进行过滤
@@ -45,15 +69,22 @@ class RecruitmentController extends Controller
         // 格式化返回数据，添加前端需要的字段
         $recruitments->getCollection()->transform(function ($recruitment) {
             $recruitment->project_name = $recruitment->project ? $recruitment->project->name : '-';
-            $recruitment->assigned_to_name = $recruitment->assignedTo ? $recruitment->assignedTo->name : '-';
+            $recruitment->assigned_to_name = $recruitment->assignedTo
+                ? ($recruitment->assignedTo->name ?: ($recruitment->assignedTo->nickname ?: $recruitment->assignedTo->email))
+                : '-';
 
             // 添加前端需要的字段（如果数据库中没有这些字段，使用默认值）
             $recruitment->department = $recruitment->department ?? '技术部';
             $recruitment->recruitment_count = $recruitment->required_count ?? 1;
             // 注意：不要重置 applied_count 和 interviewed_count，让它们使用数据库中的实际值
-            $recruitment->salary_range = $recruitment->salary_min && $recruitment->salary_max
-                ? $recruitment->salary_min . '-' . $recruitment->salary_max . '元'
-                : '面议';
+            $manualSalaryRange = trim((string) ($recruitment->salary_range ?? ''));
+            if ($manualSalaryRange !== '') {
+                $recruitment->salary_range = $manualSalaryRange;
+            } elseif ($recruitment->salary_min !== null && $recruitment->salary_max !== null) {
+                $recruitment->salary_range = $recruitment->salary_min . '-' . $recruitment->salary_max . '元';
+            } else {
+                $recruitment->salary_range = '面议';
+            }
 
             return $recruitment;
         });
@@ -68,6 +99,35 @@ class RecruitmentController extends Controller
         ]);
     }
 
+    private function getCurrentAccountSetId(Request $request)
+    {
+        return $request->header('X-Account-Set-Id')
+            ?: $request->input('current_account_set_id')
+            ?: $request->user()?->current_account_set_id
+            ?: $request->user()?->account_set_id;
+    }
+
+    private function isManagementAdmin(?User $user): bool
+    {
+        return $user && in_array($user->role, ['admin', 'super_admin'], true);
+    }
+
+    private function findAssignableUser($userId, $accountSetId): ?User
+    {
+        if (!$userId || !$accountSetId) {
+            return null;
+        }
+
+        return User::query()
+            ->whereKey($userId)
+            ->where('is_active', true)
+            ->where('role', '!=', 'super_admin')
+            ->whereHas('accountSets', function ($query) use ($accountSetId) {
+                $query->where('account_sets.id', $accountSetId);
+            })
+            ->first();
+    }
+
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -78,6 +138,7 @@ class RecruitmentController extends Controller
             'salary_min' => 'nullable|numeric|min:0',
             'salary_max' => 'nullable|numeric|min:0|gte:salary_min',
             'deadline' => 'nullable|date|after:today',
+            'assigned_to' => 'required|integer',
             // 添加前端表单中的其他字段验证
             'department' => 'nullable|string',
             'salary_range' => 'nullable|string',
@@ -98,7 +159,14 @@ class RecruitmentController extends Controller
         }
 
         // 【账套关联】
-        $currentAccountSetId = $request->input('current_account_set_id');
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
+        $assignedUser = $this->findAssignableUser($request->input('assigned_to'), $currentAccountSetId);
+        if (!$assignedUser) {
+            return response()->json([
+                'success' => false,
+                'message' => '请选择当前账套中有效的负责人'
+            ], 422);
+        }
         
         $recruitment = Recruitment::create([
             'project_id' => $request->project_id,
@@ -110,7 +178,7 @@ class RecruitmentController extends Controller
             'salary_max' => $request->salary_max,
             'deadline' => $request->deadline,
             'status' => 'active',
-            'assigned_to' => null,
+            'assigned_to' => $assignedUser->id,
             'progress_notes' => null,
             'candidates' => [],
             'hired_count' => 0,
@@ -154,6 +222,7 @@ class RecruitmentController extends Controller
             'salary_min' => 'nullable|numeric|min:0',
             'salary_max' => 'nullable|numeric|min:0|gte:salary_min',
             'deadline' => 'nullable|date|after:today',
+            'assigned_to' => 'sometimes|required|integer',
             // 添加前端表单中的其他字段验证
             'department' => 'nullable|string',
             'salary_range' => 'nullable|string',
@@ -191,6 +260,19 @@ class RecruitmentController extends Controller
             'start_date',
             'end_date',
         ]);
+
+        if ($request->has('assigned_to')) {
+            $currentAccountSetId = $this->getCurrentAccountSetId($request) ?: $recruitment->account_set_id;
+            $assignedUser = $this->findAssignableUser($request->input('assigned_to'), $currentAccountSetId);
+            if (!$assignedUser) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '请选择当前账套中有效的负责人'
+                ], 422);
+            }
+
+            $updateData['assigned_to'] = $assignedUser->id;
+        }
 
         if ($request->has('education')) {
             $updateData['education'] = $this->normalizeRecruitmentEducation($request->input('education'));
@@ -242,8 +324,6 @@ class RecruitmentController extends Controller
         // 更新招聘记录
         $recruitment->update([
             'assigned_to' => $handler->id,
-            'assigned_user_name' => $handler->name,
-            'assigned_at' => now(),
             'status' => 'active' // 分配后状态变为进行中
         ]);
 
@@ -312,7 +392,7 @@ class RecruitmentController extends Controller
     public function getPermissions()
     {
         $user = auth()->user();
-        $accountSetId = request()->input('current_account_set_id');
+        $accountSetId = $this->getCurrentAccountSetId(request());
         
         if (!$accountSetId) {
             return response()->json([

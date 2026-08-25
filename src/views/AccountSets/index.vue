@@ -386,13 +386,11 @@ import {
   getAccountSetUsers,
   removeAccountSetUser
 } from '@/api/accountSets'
-import { useUserStore } from '@/stores/user'
 import { useRouter, useRoute } from 'vue-router'
 import request from '@/api/request'
 
 const router = useRouter()
 const route = useRoute()
-const userStore = useUserStore()
 
 const MAX_APPROVAL_LEVEL = 10
 const approvalLevelNames = {
@@ -409,16 +407,7 @@ const approvalLevelOptions = Array.from({ length: MAX_APPROVAL_LEVEL }, (_, inde
   }
 })
 
-// 权限检查
-const isAdmin = computed(() => userStore.userInfo?.role === 'admin')
-
-// 如果不是管理员，跳转到首页
 onMounted(() => {
-  if (!isAdmin.value) {
-    ElMessage.error('只有管理员可以访问套账管理')
-    router.push('/')
-    return
-  }
   loadAccountSets()
   loadStatistics()
 

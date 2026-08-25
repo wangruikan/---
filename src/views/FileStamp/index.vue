@@ -106,7 +106,18 @@
           </el-upload>
         </el-form-item>
 
+        <el-form-item label="盖章方式" required>
+          <el-radio-group v-model="stampMethod">
+            <el-radio value="online">线上盖章</el-radio>
+            <el-radio value="offline">线下盖章</el-radio>
+          </el-radio-group>
+          <div class="stamp-method-tip">
+            线上盖章：审批通过后由系统自动加盖印章；线下盖章：审批通过后由工作人员线下盖章。
+          </div>
+        </el-form-item>
+
         <ApprovalStampSelector
+          v-if="stampMethod === 'online'"
           ref="stampSelectorRef"
           v-model="stampSelection"
           :allow-none="false"
@@ -152,6 +163,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const createDialogVisible = ref(false)
 const stampSelectorRef = ref(null)
+const stampMethod = ref('online')
 const stampSelection = ref({})
 const pagination = reactive({
   current: 1,
@@ -172,6 +184,14 @@ const stampTypeTexts = {
 
 const getDefaultStampSelection = () => ({
   stamp_selection_mode: 'stamp',
+  stamp_company: '',
+  stamp_type: '',
+  stamp_id: null,
+  stamp_name: ''
+})
+
+const getOfflineStampSelection = () => ({
+  stamp_selection_mode: 'none',
   stamp_company: '',
   stamp_type: '',
   stamp_id: null,
@@ -202,6 +222,7 @@ const openCreateDialog = () => {
 
 const resetCreateForm = () => {
   fileList.value = []
+  stampMethod.value = 'online'
   stampSelection.value = getDefaultStampSelection()
 }
 
@@ -316,11 +337,18 @@ const handleSubmit = async () => {
     return
   }
 
-  const stampResult = stampSelectorRef.value?.validate?.()
-  if (stampResult && !stampResult.valid) {
-    ElMessage.warning(stampResult.message)
-    return
+  let stampResult = null
+  if (stampMethod.value === 'online') {
+    stampResult = stampSelectorRef.value?.validate?.()
+    if (stampResult && !stampResult.valid) {
+      ElMessage.warning(stampResult.message)
+      return
+    }
   }
+
+  const stampValue = stampMethod.value === 'online'
+    ? (stampResult?.value || stampSelection.value)
+    : getOfflineStampSelection()
 
   submitting.value = true
   let processId = null
@@ -343,8 +371,8 @@ const handleSubmit = async () => {
     await uploadAttachment(processId, formData)
 
     await submitProcess(processId, {
-      stamp_method: 'online',
-      ...(stampResult?.value || stampSelection.value)
+      stamp_method: stampMethod.value,
+      ...stampValue
     })
 
     ElMessage.success('文件盖章审批已提交')
@@ -433,6 +461,13 @@ onMounted(() => {
 
 .file-uploader :deep(.el-upload-dragger) {
   width: 100%;
+}
+
+.stamp-method-tip {
+  margin-top: 8px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .pagination {

@@ -6,7 +6,7 @@
     <!-- 正常内容 -->
     <div v-else>
       <div class="page-header">
-        <h1>其他保险管理</h1>
+        <h1>商业保险管理</h1>
         <el-button type="primary" @click="handleCreateType">
           <el-icon><Plus /></el-icon>
           新增保险种类

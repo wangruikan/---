@@ -10,6 +10,11 @@ export const getInsuranceChangeDetails = (params) => {
   return request.get('/insurance-changes/details', { params })
 }
 
+// 提交社保明细修改审批
+export const submitSocialDetailEdit = (data) => {
+  return request.post('/insurance-changes/social-detail-edit', data)
+}
+
 // 获取汇总数据
 export const getInsuranceChangeSummaries = (params) => {
   return request.get('/insurance-changes/summaries', { params })
@@ -61,7 +66,7 @@ export const updateEndorsementNumber = (id, data) => {
   return request.put(`/insurance-changes/${id}/update-endorsement-number`, data)
 }
 
-// 更新其他保险费用
+// 更新商业保险费用
 export const updateOtherInsuranceCost = (id, data) => {
   return request.put(`/insurance-changes/${id}/update-other-insurance-cost`, data)
 }
@@ -71,7 +76,7 @@ export const confirmProcess = (id, data = {}) => {
   return request.put(`/insurance-changes/${id}/confirm-process`, data)
 }
 
-// 其他保险确认处理
+// 商业保险确认处理
 export const confirmOtherInsuranceOnly = (id) => {
   return request.put(`/insurance-changes/${id}/confirm-other-insurance-only`)
 }

@@ -153,6 +153,101 @@ class MiniController extends Controller
         return '';
     }
 
+    private function findMiniLoginEmployee(string $phone, string $password): ?Employee
+    {
+        return Employee::where('phone', $phone)
+            ->orderByDesc('id')
+            ->get()
+            ->first(function (Employee $employee) use ($password) {
+                return hash_equals((string) substr((string) $employee->id_number, -6), $password);
+            });
+    }
+
+    private function markMiniEmployeeSelected(Employee $employee): void
+    {
+        Employee::where('phone', $employee->phone)
+            ->where('id_number', $employee->id_number)
+            ->where('id', '!=', $employee->id)
+            ->update(['mini_selected_at' => null]);
+
+        $employee->forceFill(['mini_selected_at' => now()])->save();
+    }
+
+    private function getMiniRegistrationFormType(Employee $employee): string
+    {
+        $employee->loadMissing('projects');
+
+        $project = $employee->getCurrentProject();
+        if ($project) {
+            return $project->registration_form_type ?? 'onboarding';
+        }
+
+        if (!empty($employee->project_ids)) {
+            $projectId = is_array($employee->project_ids)
+                ? ($employee->project_ids[0] ?? null)
+                : $employee->project_ids;
+            if ($projectId) {
+                $project = \App\Models\Project::find($projectId);
+                if ($project) {
+                    return $project->registration_form_type ?? 'onboarding';
+                }
+            }
+        }
+
+        return 'onboarding';
+    }
+
+    private function getMiniEmployeePayload(Employee $employee): array
+    {
+        $employee->loadMissing('projects');
+        $project = $employee->getCurrentProject();
+        $accountSetName = $employee->account_set_id
+            ? \App\Models\AccountSet::whereKey($employee->account_set_id)->value('name')
+            : null;
+
+        return [
+            'id' => $employee->id,
+            'name' => $employee->name,
+            'phone' => $employee->phone,
+            'id_number' => $employee->id_number,
+            'account_set_id' => $employee->account_set_id,
+            'account_set_name' => $accountSetName ?: '默认账套',
+            'project_name' => $project?->name,
+            'registration_form_type' => $this->getMiniRegistrationFormType($employee),
+            'contract_status' => $employee->contract_status,
+            'skip_form_filling' => $employee->skip_form_filling ?? false,
+        ];
+    }
+
+    private function getMiniSwitchableAccounts(Employee $employee): array
+    {
+        $employees = Employee::where('phone', $employee->phone)
+            ->where('id_number', $employee->id_number)
+            ->with('projects')
+            ->orderByRaw('mini_selected_at IS NULL')
+            ->orderByDesc('mini_selected_at')
+            ->orderByDesc('id')
+            ->get();
+
+        $accountSetNames = \App\Models\AccountSet::whereIn(
+            'id',
+            $employees->pluck('account_set_id')->filter()->unique()->values()
+        )->pluck('name', 'id');
+
+        return $employees->map(function (Employee $candidate) use ($employee, $accountSetNames) {
+            $project = $candidate->getCurrentProject();
+
+            return [
+                'employee_id' => $candidate->id,
+                'account_set_id' => $candidate->account_set_id,
+                'account_set_name' => $accountSetNames->get($candidate->account_set_id) ?: '默认账套',
+                'project_name' => $project?->name,
+                'employee_number' => $candidate->employee_number,
+                'is_current' => $candidate->id === $employee->id,
+            ];
+        })->values()->all();
+    }
+
     /**
      * 小程序登录（简化版）
      */
@@ -174,9 +269,7 @@ class MiniController extends Controller
             ], 422);
         }
 
-        // 查询员工
-        $employee = Employee::where('phone', $request->phone)->first();
-
+        $employee = $this->findMiniLoginEmployee($request->phone, $request->password);
         if (!$employee) {
             return response()->json([
                 'success' => false,
@@ -184,57 +277,68 @@ class MiniController extends Controller
             ], 401);
         }
 
-        // 验证密码（身份证后6位）
-        $last6 = substr($employee->id_number, -6);
-        if ($request->password !== $last6) {
-            return response()->json([
-                'success' => false,
-                'message' => '手机号或密码错误'
-            ], 401);
-        }
-
-        // 生成 token（7天有效期）
         $token = $employee->createToken('mini-app')->plainTextToken;
-        
-        // 获取员工所属项目的登记表类型设置（优先使用活跃项目）
-        $registrationFormType = 'onboarding';  // 默认入职登记表
-        $employee->load('projects');
-        
-        // 优先获取活跃项目
-        $activeProject = $employee->projects()->wherePivot('status', 'active')->first();
-        if ($activeProject) {
-            $registrationFormType = $activeProject->registration_form_type ?? 'onboarding';
-        } elseif (!empty($employee->project_ids)) {
-            // 如果没有活跃项目，使用 project_ids 字段
-            $projectId = is_array($employee->project_ids) ? ($employee->project_ids[0] ?? null) : $employee->project_ids;
-            if ($projectId) {
-                $project = \App\Models\Project::find($projectId);
-                if ($project) {
-                    $registrationFormType = $project->registration_form_type ?? 'onboarding';
-                }
-            }
-        } elseif ($employee->projects && $employee->projects->count() > 0) {
-            // 兜底：使用第一个关联项目
-            $project = $employee->projects->first();
-            $registrationFormType = $project->registration_form_type ?? 'onboarding';
-        }
 
         return response()->json([
             'success' => true,
             'message' => '登录成功',
             'data' => [
                 'token' => $token,
-                'employee' => [
-                    'id' => $employee->id,
-                    'name' => $employee->name,
-                    'phone' => $employee->phone,
-                    'id_number' => $employee->id_number,
-                    'account_set_id' => $employee->account_set_id,
-                    'registration_form_type' => $registrationFormType,
-                    'contract_status' => $employee->contract_status,
-                    'skip_form_filling' => $employee->skip_form_filling ?? false,
-                ],
+                'employee' => $this->getMiniEmployeePayload($employee),
+                'available_accounts' => $this->getMiniSwitchableAccounts($employee),
             ]
+        ]);
+    }
+
+    public function switchAccount(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'employee_id' => 'required|integer|exists:employees,id',
+        ], [
+            'employee_id.required' => '请选择要切换的项目',
+            'employee_id.exists' => '要切换的员工档案不存在',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $currentEmployee = $request->user();
+        if (!$currentEmployee instanceof Employee) {
+            return response()->json([
+                'success' => false,
+                'message' => '员工信息不存在',
+            ], 401);
+        }
+
+        $targetEmployee = Employee::whereKey($request->integer('employee_id'))
+            ->where('phone', $currentEmployee->phone)
+            ->where('id_number', $currentEmployee->id_number)
+            ->first();
+
+        if (!$targetEmployee) {
+            return response()->json([
+                'success' => false,
+                'message' => '只能切换到本人其他账套的员工档案',
+            ], 403);
+        }
+
+        $this->markMiniEmployeeSelected($targetEmployee);
+        $currentEmployee->currentAccessToken()?->delete();
+        $token = $targetEmployee->createToken('mini-app')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => '项目切换成功',
+            'data' => [
+                'token' => $token,
+                'employee' => $this->getMiniEmployeePayload($targetEmployee),
+                'available_accounts' => $this->getMiniSwitchableAccounts($targetEmployee),
+            ],
         ]);
     }
 
@@ -1089,19 +1193,26 @@ class MiniController extends Controller
     {
         $employee = Employee::find($request->user()->id);
 
+        if (!$employee) {
+            return response()->json([
+                'success' => false,
+                'message' => '员工信息不存在',
+            ], 404);
+        }
+
+        $employeeData = $this->getMiniEmployeePayload($employee);
+
         return response()->json([
             'success' => true,
-            'data' => [
-                'id' => $employee->id,
-                'name' => $employee->name,
-                'phone' => $employee->phone,
+            'data' => array_merge($employeeData, [
                 'id_number' => substr($employee->id_number, 0, 6) . '********' . substr($employee->id_number, -4),
                 'gender' => $employee->gender,
                 'hire_date' => $employee->hire_date,
                 'contract_status' => $employee->contract_status,
                 'last_login_at' => $employee->last_login_at,
                 'password_changed_at' => $employee->password_changed_at,
-            ]
+                'available_accounts' => $this->getMiniSwitchableAccounts($employee),
+            ])
         ]);
     }
 

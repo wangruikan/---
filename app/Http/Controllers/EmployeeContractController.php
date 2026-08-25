@@ -1850,7 +1850,8 @@ class EmployeeContractController extends Controller
         }
 
         $resignationDate = $this->normalizeResignationDate($request->input('resignation_date'));
-        if ($resignationDate === null) {
+        $terminationReason = $this->normalizeTerminationReason($request->input('termination_reason'));
+        if ($resignationDate === null && $terminationReason === null) {
             return;
         }
 
@@ -1859,7 +1860,12 @@ class EmployeeContractController extends Controller
             return;
         }
 
-        $employee->resignation_date = $resignationDate;
+        if ($resignationDate !== null) {
+            $employee->resignation_date = $resignationDate;
+        }
+        if ($terminationReason !== null) {
+            $employee->termination_reason = $terminationReason;
+        }
         $employee->save();
     }
 }

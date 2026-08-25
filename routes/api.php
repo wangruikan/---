@@ -843,6 +843,7 @@ Route::prefix('mini')->group(function () {
 Route::prefix('mini')->middleware('auth:sanctum')->group(function () {
     // 用户相关
     Route::get('/my-info', [App\Http\Controllers\MiniController::class, 'getMyInfo']);
+    Route::post('/switch-account', [App\Http\Controllers\MiniController::class, 'switchAccount']);
     
     // 合同相关
     Route::get('/pending-contracts', [App\Http\Controllers\MiniController::class, 'getPendingContracts']);

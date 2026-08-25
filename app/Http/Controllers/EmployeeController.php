@@ -666,6 +666,155 @@ class EmployeeController extends ApiController
         return null;
     }
 
+    private function isResignationOrRetirementStatus($status): bool
+    {
+        return in_array($status, ['resigned', '离职', 'retired', '退休'], true);
+    }
+
+    private function normalizeInsuranceDecreaseMonth($value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+        if ($value === '') {
+            return null;
+        }
+
+        if (!preg_match('/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/', $value, $matches)) {
+            return null;
+        }
+
+        $month = (int) $matches[2];
+        if ($month < 1 || $month > 12) {
+            return null;
+        }
+
+        return $matches[1] . '-' . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+    }
+
+    private function normalizeInsuranceDecreaseMonths($value): array
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            $value = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $months = [];
+        foreach (['social_security', 'medical_insurance', 'housing_fund'] as $category) {
+            $month = $this->normalizeInsuranceDecreaseMonth($value[$category] ?? null);
+            if ($month !== null) {
+                $months[$category] = $month;
+            }
+        }
+
+        return $months;
+    }
+
+    private function hasInsuranceSnapshotValue($value): bool
+    {
+        if (is_array($value)) {
+            return !empty($value);
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            return $value !== '' && !in_array($value, ['[]', '{}', 'null'], true);
+        }
+
+        return !empty($value);
+    }
+
+    private function getActiveInsuranceDecreaseCategories(Employee $employee): array
+    {
+        $categories = [
+            'social_security' => false,
+            'medical_insurance' => false,
+            'housing_fund' => false,
+            'large_medical_insurance' => false,
+        ];
+
+        $project = $employee->getCurrentProject();
+        if (!$project) {
+            return $categories;
+        }
+
+        $personnel = \App\Models\InsurancePersonnel::query()
+            ->where('employee_id', $employee->id)
+            ->where('project_id', $project->id)
+            ->where('account_set_id', $employee->account_set_id)
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('is_compensation')->orWhere('is_compensation', 0);
+            })
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$personnel) {
+            return $categories;
+        }
+
+        $categories['social_security'] = $this->hasInsuranceSnapshotValue($personnel->social_security_types);
+        $categories['medical_insurance'] = $this->hasInsuranceSnapshotValue($personnel->medical_insurance_types);
+        $categories['housing_fund'] = $this->hasInsuranceSnapshotValue($personnel->housing_fund_params);
+        $categories['large_medical_insurance'] = $categories['medical_insurance']
+            && (bool) $personnel->large_medical_insurance_enabled
+            && (
+                !empty($personnel->large_medical_insurance_config_id)
+                || $this->hasInsuranceSnapshotValue($personnel->large_medical_insurance_config)
+            );
+
+        return $categories;
+    }
+
+    private function validateDepartureInsuranceInformation(Request $request, Employee $employee): ?string
+    {
+        $status = $request->input('personnel_status', $employee->personnel_status);
+        if (!$this->isResignationOrRetirementStatus($status)) {
+            return null;
+        }
+
+        $hasDepartureInput = $request->has('personnel_status')
+            || $request->has('termination_reason')
+            || $request->has('resignation_date')
+            || $request->has('insurance_decrease_months');
+        if (!$hasDepartureInput) {
+            return null;
+        }
+
+        $reason = trim((string) $request->input('termination_reason', $employee->termination_reason));
+        if ($reason === '') {
+            return '离职或退休时必须选择离职原因';
+        }
+
+        if (!$request->input('resignation_date', $employee->resignation_date)) {
+            return '离职或退休时必须选择离职日期';
+        }
+
+        $months = $this->normalizeInsuranceDecreaseMonths(
+            $request->input('insurance_decrease_months', $employee->insurance_decrease_months)
+        );
+        $labels = [
+            'social_security' => '社保',
+            'medical_insurance' => '医保',
+            'housing_fund' => '公积金',
+        ];
+
+        foreach ($this->getActiveInsuranceDecreaseCategories($employee) as $category => $active) {
+            if (!$active || $category === 'large_medical_insurance') {
+                continue;
+            }
+
+            if (empty($months[$category])) {
+                return "{$labels[$category]}仍在参保，请选择{$labels[$category]}减员月份";
+            }
+        }
+
+        return null;
+    }
+
     private function normalizeInsuranceBindingId($value): ?int
     {
         if ($value === null || $value === '') {
@@ -1009,6 +1158,12 @@ class EmployeeController extends ApiController
             'social_insurance_enrollment_date' => 'nullable|date',
             'medical_insurance_enrollment_date' => 'nullable|date',
             'provident_fund_enrollment_date' => 'nullable|date',
+            'termination_reason' => 'nullable|string|max:255',
+            'resignation_date' => 'nullable|date',
+            'insurance_decrease_months' => 'nullable|array',
+            'insurance_decrease_months.social_security' => 'nullable|string',
+            'insurance_decrease_months.medical_insurance' => 'nullable|string',
+            'insurance_decrease_months.housing_fund' => 'nullable|string',
             'other_insurance_policy_ids' => 'nullable|array',
             'other_insurance_policy_ids.*' => 'integer|exists:other_insurance_policies,id',
         ], [
@@ -1166,7 +1321,7 @@ class EmployeeController extends ApiController
             'country_region', 'chinese_name', 'birth_country', 'other_id_type', 'other_id_number',
             
             // 二、从业任职信息
-            'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 
+            'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 'termination_reason', 'insurance_decrease_months',
             'signing_location', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
@@ -1250,6 +1405,9 @@ class EmployeeController extends ApiController
         }
 
         $this->syncLargeMedicalWithMedical($employeeData);
+        if (array_key_exists('insurance_decrease_months', $employeeData)) {
+            $employeeData['insurance_decrease_months'] = $this->normalizeInsuranceDecreaseMonths($employeeData['insurance_decrease_months']);
+        }
         $this->syncEmployeeOtherInsuranceSelection(
             $employeeData,
             $request->has('project_ids') && is_array($request->project_ids)
@@ -1415,6 +1573,11 @@ class EmployeeController extends ApiController
             'social_insurance_enrollment_date' => 'nullable|date',
             'medical_insurance_enrollment_date' => 'nullable|date',
             'provident_fund_enrollment_date' => 'nullable|date',
+            'resignation_date' => 'nullable|date',
+            'insurance_decrease_months' => 'nullable|array',
+            'insurance_decrease_months.social_security' => 'nullable|string',
+            'insurance_decrease_months.medical_insurance' => 'nullable|string',
+            'insurance_decrease_months.housing_fund' => 'nullable|string',
             'other_insurance_policy_ids' => 'nullable|array',
             'other_insurance_policy_ids.*' => 'integer|exists:other_insurance_policies,id',
         ], [
@@ -1441,6 +1604,13 @@ class EmployeeController extends ApiController
                 'success' => false,
                 'message' => '验证失败',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        if ($departureValidationError = $this->validateDepartureInsuranceInformation($request, $employee)) {
+            return response()->json([
+                'success' => false,
+                'message' => $departureValidationError,
             ], 422);
         }
 
@@ -1511,7 +1681,7 @@ class EmployeeController extends ApiController
             'country_region', 'chinese_name', 'birth_country', 'other_id_type', 'other_id_number',
             
             // 二、从业任职信息
-            'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 'termination_reason',
+            'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 'termination_reason', 'insurance_decrease_months',
             'signing_location', 'household_type', 'annual_employment_status', 'job_title',
             
             // 三、特殊身份信息
@@ -1589,6 +1759,9 @@ class EmployeeController extends ApiController
         }
 
         $this->syncLargeMedicalWithMedical($updateData, $employee);
+        if (array_key_exists('insurance_decrease_months', $updateData)) {
+            $updateData['insurance_decrease_months'] = $this->normalizeInsuranceDecreaseMonths($updateData['insurance_decrease_months']);
+        }
         $this->syncEmployeeOtherInsuranceSelection(
             $updateData,
             $request->has('project_ids') && is_array($request->project_ids)
@@ -1612,6 +1785,18 @@ class EmployeeController extends ApiController
             'large_medical_base',
             'large_medical_company_base',
         ]);
+        $shouldSyncDecreaseInsuranceTask = $this->isResignationOrRetirementStatus(
+            $updateData['personnel_status'] ?? $employee->personnel_status
+        ) && (
+            (array_key_exists('personnel_status', $updateData)
+                && $updateData['personnel_status'] !== $employee->personnel_status)
+            || (array_key_exists('termination_reason', $updateData)
+                && trim((string) $updateData['termination_reason']) !== trim((string) $employee->termination_reason))
+            || (array_key_exists('resignation_date', $updateData)
+                && (string) ($updateData['resignation_date'] ?? '') !== (string) ($employee->resignation_date ?? ''))
+            || (array_key_exists('insurance_decrease_months', $updateData)
+                && $updateData['insurance_decrease_months'] !== $this->normalizeInsuranceDecreaseMonths($employee->insurance_decrease_months))
+        );
         $oldActiveProjectId = $employee->activeProjects()->pluck('projects.id')->first();
         $newProjectId = null;
         if ($request->has('project_ids') && is_array($request->project_ids)) {
@@ -1733,14 +1918,10 @@ class EmployeeController extends ApiController
             $employee->load('projects');
             $this->detectInsuranceRegionChanges($employee, $originalInsuranceData, $updateData);
 
-            $shouldCreateResignationInsuranceTask = array_key_exists('personnel_status', $updateData)
-                && in_array($updateData['personnel_status'], ['resigned', '离职'], true)
-                && !in_array($originalPersonnelStatus, ['resigned', 'retired'], true);
-
-            if ($shouldCreateResignationInsuranceTask) {
+            if ($shouldSyncDecreaseInsuranceTask) {
                 app(\App\Services\ApprovalService::class)->createDecreaseInsuranceRecordForEmployee(
                     $employee,
-                    'terminated',
+                    $this->resolveEmployeePersonnelStatus($employee) === 'retired' ? 'retired' : 'terminated',
                     $request->user()?->id,
                     $employee->termination_reason
                 );
@@ -3300,6 +3481,7 @@ class EmployeeController extends ApiController
                 'housing_fund_configs' => [],
                 'other_insurance_policies' => [],
                 'large_medical_insurance_configs' => [],
+                'active_insurance_categories' => $this->getActiveInsuranceDecreaseCategories($employee),
                 'onboarding_form' => null,
                 'registration_form_type' => 'onboarding'  // 默认入职登记表
             ];

@@ -2287,24 +2287,31 @@ class ApprovalService
             $accountSetId = (int) $employee->account_set_id;
             $createdBy = $createdBy ?: (auth()->id() ?: 1);
 
-            // 查找该员工当前的参保记录
+            $employee->loadMissing('projects');
+            $project = $employee->getCurrentProject();
+            if (!$project) {
+                Log::warning('员工未关联项目，无法创建参保减少记录', ['employee_id' => $employee->id]);
+                return;
+            }
+
+            // 只以当前项目仍处于参保状态的快照作为减员依据，避免把已经处理完成的险种重新生成任务。
             $personnelRecord = \App\Models\InsurancePersonnel::where('employee_id', $employee->id)
+                ->where('project_id', $project->id)
                 ->where('account_set_id', $accountSetId)
                 ->where('status', 'active')
+                ->where(function ($query) {
+                    $query->whereNull('is_compensation')->orWhere('is_compensation', 0);
+                })
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
                 ->first();
 
             if (!$personnelRecord) {
                 Log::warning('员工没有活跃的参保记录，无需创建减少记录', [
                     'employee_id' => $employee->id,
+                    'project_id' => $project->id,
                     'account_set_id' => $accountSetId,
                 ]);
-                return;
-            }
-
-            // 获取项目信息
-            $project = $employee->projects->first();
-            if (!$project) {
-                Log::warning('员工未关联项目，无法创建参保减少记录', ['employee_id' => $employee->id]);
                 return;
             }
 
@@ -2334,103 +2341,57 @@ class ApprovalService
             $decreaseReasonNote = $decreaseReasonNote
                 ?: ($employee->termination_reason ?: ($employeeStatus === 'terminated' ? '员工离职，停止参保' : '员工退休，停止参保'));
 
-            $existingOpenChange = \App\Models\InsuranceChange::findLatestOpenChange(
-                (int) $employee->id,
-                (int) $project->id,
-                $accountSetId
+            $categoriesByMonth = $this->buildDecreaseCategoriesByMonth($employee, $personnelRecord);
+            if (empty($categoriesByMonth)) {
+                Log::info('员工当前没有需要减少的参保险种', [
+                    'employee_id' => $employee->id,
+                    'project_id' => $project->id,
+                ]);
+                return;
+            }
+
+            if (!$this->hasInsuranceChangeItemsTable()) {
+                Log::warning('缺少参保增减子任务表，无法按险种拆分减员任务', [
+                    'employee_id' => $employee->id,
+                    'project_id' => $project->id,
+                ]);
+                return;
+            }
+
+            $taskAttributes = $this->buildDecreaseTaskAttributes(
+                $employee,
+                $personnelRecord,
+                $employeeStatusValue,
+                $createdBy,
+                $decreaseReasonNote
             );
 
-            if ($existingOpenChange) {
-                $existingOpenChange->fill([
-                    'employee_name' => $employee->name,
-                    'employee_id_number' => $employee->id_number,
-                    'employee_gender' => $genderValue,
-                    'employee_birth_date' => $employee->birth_date,
-                    'employee_phone' => $employee->phone,
-                    'employee_status' => $employeeStatusValue,
-                    'change_type' => 'decrease',
-                    'created_by' => $existingOpenChange->created_by ?: $createdBy,
-                    'notes' => $decreaseReasonNote,
-                    'social_security_types' => $personnelRecord->social_security_types,
-                    'medical_insurance_types' => $personnelRecord->medical_insurance_types,
-                    'housing_fund_params' => $personnelRecord->housing_fund_params,
-                    'other_insurance_policies' => $personnelRecord->other_insurance_policies,
-                    'large_medical_insurance_config' => $personnelRecord->large_medical_insurance_config,
-                    'large_medical_insurance_config_id' => $personnelRecord->large_medical_insurance_config_id,
-                    'large_medical_insurance_enabled' => $personnelRecord->large_medical_insurance_enabled,
-                    'employee_social_security_base' => $personnelRecord->employee_social_security_base,
-                    'employee_medical_insurance_base' => $personnelRecord->employee_medical_insurance_base,
-                    'employee_housing_fund_base' => $personnelRecord->employee_housing_fund_base,
-                    'employee_large_medical_base' => $personnelRecord->employee_large_medical_base,
-                    'used_quotas' => $personnelRecord->used_quotas,
-                ])->save();
+            DB::transaction(function () use ($employee, $project, $accountSetId, $categoriesByMonth, $taskAttributes) {
+                $existingChanges = $this->getEmployeeDecreaseChanges($employee, $project, $accountSetId);
+                foreach ($existingChanges as $change) {
+                    $this->materializeLegacyDecreaseChangeItems($change);
+                }
 
-                $existingOpenChange->reopenForReprocessing(null, true);
+                foreach ($categoriesByMonth as $taskMonth => $categories) {
+                    foreach ($categories as $category) {
+                        $this->syncDecreaseCategoryToTask(
+                            $employee,
+                            $project,
+                            $accountSetId,
+                            $taskMonth,
+                            $category,
+                            $taskAttributes
+                        );
+                    }
+                }
+            });
 
-                Log::info('复用未完成参保变更记录（减少）', [
-                    'insurance_change_id' => $existingOpenChange->id,
-                    'employee_id' => $employee->id,
-                    'project_id' => $project->id,
-                    'employee_status' => $employeeStatus,
-                ]);
-
-                return;
-            }
-
-            // 人员档案已经触发并完成离职减少后，后续签解除协议不能再次生成同一类任务。
-            $completedResignationChangeExists = \App\Models\InsuranceChange::where('employee_id', $employee->id)
-                ->where('project_id', $project->id)
-                ->where('account_set_id', $accountSetId)
-                ->where('change_type', 'decrease')
-                ->where('employee_status', 2)
-                ->where('status', 'completed')
-                ->where('fully_confirmed', true)
-                ->exists();
-
-            if ($completedResignationChangeExists) {
-                Log::info('离职减少任务已完成，跳过重复创建', [
-                    'employee_id' => $employee->id,
-                    'project_id' => $project->id,
-                    'account_set_id' => $accountSetId,
-                ]);
-                return;
-            }
-
-            // 创建参保减少记录
-            $insuranceChange = \App\Models\InsuranceChange::create([
+            Log::info('参保减少任务已按险种和月份同步', [
                 'employee_id' => $employee->id,
                 'employee_name' => $employee->name,
-                'employee_id_number' => $employee->id_number,
-                'employee_gender' => $genderValue,
-                'employee_birth_date' => $employee->birth_date,
-                'employee_phone' => $employee->phone,
-                'employee_status' => $employeeStatusValue,
                 'project_id' => $project->id,
-                'account_set_id' => $accountSetId,
-                'change_type' => 'decrease',
-                'status' => 'pending',
-                'created_by' => $createdBy,
-                'notes' => $decreaseReasonNote,
-                // 复制当前参保记录的保险配置
-                'social_security_types' => $personnelRecord->social_security_types,
-                'medical_insurance_types' => $personnelRecord->medical_insurance_types,
-                'housing_fund_params' => $personnelRecord->housing_fund_params,
-                'other_insurance_policies' => $personnelRecord->other_insurance_policies,
-                'large_medical_insurance_config' => $personnelRecord->large_medical_insurance_config,
-                'large_medical_insurance_config_id' => $personnelRecord->large_medical_insurance_config_id,
-                'large_medical_insurance_enabled' => $personnelRecord->large_medical_insurance_enabled,
-                'employee_social_security_base' => $personnelRecord->employee_social_security_base,
-                'employee_medical_insurance_base' => $personnelRecord->employee_medical_insurance_base,
-                'employee_housing_fund_base' => $personnelRecord->employee_housing_fund_base,
-                'employee_large_medical_base' => $personnelRecord->employee_large_medical_base,
-                'used_quotas' => $personnelRecord->used_quotas,
-            ]);
-
-            Log::info('参保减少记录创建成功', [
-                'insurance_change_id' => $insuranceChange->id,
-                'employee_id' => $employee->id,
-                'employee_name' => $employee->name,
                 'employee_status' => $employeeStatus,
+                'categories_by_month' => $categoriesByMonth,
             ]);
         } catch (\Exception $e) {
             Log::error('创建参保减少记录失败', [
@@ -2438,6 +2399,516 @@ class ApprovalService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function hasInsuranceChangeItemsTable(): bool
+    {
+        try {
+            return Schema::hasTable('insurance_change_items');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function buildDecreaseCategoriesByMonth($employee, $personnelRecord): array
+    {
+        $months = $this->normalizeInsuranceDecreaseMonths($employee->insurance_decrease_months ?? []);
+        $fallbackMonth = $this->normalizeInsuranceDecreaseMonth($employee->resignation_date ?? null)
+            ?: now()->format('Y-m');
+        $categoriesByMonth = [];
+
+        $addCategory = function (string $month, string $category) use (&$categoriesByMonth): void {
+            if (!isset($categoriesByMonth[$month])) {
+                $categoriesByMonth[$month] = [];
+            }
+
+            if (!in_array($category, $categoriesByMonth[$month], true)) {
+                $categoriesByMonth[$month][] = $category;
+            }
+        };
+
+        if ($this->hasNonEmptyInsuranceSnapshot($personnelRecord->social_security_types ?? null)) {
+            $addCategory($months['social_security'] ?? $fallbackMonth, 'social_security');
+        }
+
+        $hasMedicalInsurance = $this->hasNonEmptyInsuranceSnapshot($personnelRecord->medical_insurance_types ?? null);
+        if ($hasMedicalInsurance) {
+            $medicalMonth = $months['medical_insurance'] ?? $fallbackMonth;
+            $addCategory($medicalMonth, 'medical_insurance');
+
+            if ($this->hasActiveLargeMedicalInsurance($personnelRecord)) {
+                // 大额医疗不单独选择减员月份，始终跟随医保。
+                $addCategory($medicalMonth, 'large_medical_insurance');
+            }
+        }
+
+        if ($this->hasNonEmptyInsuranceSnapshot($personnelRecord->housing_fund_params ?? null)) {
+            $addCategory($months['housing_fund'] ?? $fallbackMonth, 'housing_fund');
+        }
+
+        // 其他保险沿用原有退保逻辑，不新增减员月份配置，仍在当前月生成对应细分任务。
+        foreach ($this->getOtherInsurancePolicyCategories($personnelRecord->other_insurance_policies ?? null) as $category) {
+            $addCategory(now()->format('Y-m'), $category);
+        }
+
+        ksort($categoriesByMonth);
+        return $categoriesByMonth;
+    }
+
+    private function normalizeInsuranceDecreaseMonths($value): array
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            $value = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach (['social_security', 'medical_insurance', 'housing_fund'] as $category) {
+            $month = $this->normalizeInsuranceDecreaseMonth($value[$category] ?? null);
+            if ($month !== null) {
+                $normalized[$category] = $month;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeInsuranceDecreaseMonth($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $value = trim((string) $value);
+        if (!preg_match('/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/', $value, $matches)) {
+            return null;
+        }
+
+        $month = (int) $matches[2];
+        if ($month < 1 || $month > 12) {
+            return null;
+        }
+
+        return $matches[1] . '-' . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+    }
+
+    private function hasNonEmptyInsuranceSnapshot($value): bool
+    {
+        if (is_array($value)) {
+            return !empty($value);
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            return $value !== '' && !in_array($value, ['[]', '{}', 'null'], true);
+        }
+
+        return !empty($value);
+    }
+
+    private function hasActiveLargeMedicalInsurance($personnelRecord): bool
+    {
+        return (bool) ($personnelRecord->large_medical_insurance_enabled ?? false)
+            && (
+                !empty($personnelRecord->large_medical_insurance_config_id)
+                || $this->hasNonEmptyInsuranceSnapshot($personnelRecord->large_medical_insurance_config ?? null)
+            );
+    }
+
+    private function getOtherInsurancePolicyCategories($policies): array
+    {
+        if (is_string($policies)) {
+            $decoded = json_decode($policies, true);
+            $policies = is_array($decoded) ? $decoded : [];
+        }
+
+        if (!is_array($policies)) {
+            return [];
+        }
+
+        $categories = [];
+        foreach ($policies as $index => $policy) {
+            if (!is_array($policy) || empty($policy)) {
+                continue;
+            }
+
+            $policyId = $policy['id'] ?? $policy['policy_id'] ?? null;
+            $key = $policyId !== null && $policyId !== '' ? (string) $policyId : 'idx' . $index;
+            $categories[] = 'other_policy:' . $key;
+        }
+
+        return array_values(array_unique($categories));
+    }
+
+    private function buildDecreaseTaskAttributes($employee, $personnelRecord, ?int $employeeStatusValue, int $createdBy, string $notes): array
+    {
+        return [
+            'employee_name' => $employee->name,
+            'employee_id_number' => $employee->id_number,
+            'employee_gender' => $this->normalizeEmployeeGender($employee->gender),
+            'employee_birth_date' => $employee->birth_date,
+            'employee_phone' => $employee->phone,
+            'employee_status' => $employeeStatusValue,
+            'created_by' => $createdBy,
+            'notes' => $notes,
+            'social_security_region_id' => $personnelRecord->social_security_region_id,
+            'medical_insurance_region_id' => $personnelRecord->medical_insurance_region_id,
+            'housing_fund_region_id' => $personnelRecord->housing_fund_region_id,
+            'housing_fund_config_id' => $personnelRecord->housing_fund_config_id,
+            'large_medical_insurance_config_id' => $personnelRecord->large_medical_insurance_config_id,
+            'large_medical_insurance_enabled' => $personnelRecord->large_medical_insurance_enabled,
+            'employee_social_security_base' => $personnelRecord->employee_social_security_base,
+            'employee_medical_insurance_base' => $personnelRecord->employee_medical_insurance_base,
+            'employee_housing_fund_base' => $personnelRecord->employee_housing_fund_base,
+            'employee_large_medical_base' => $personnelRecord->employee_large_medical_base,
+            'employee_large_medical_company_base' => $personnelRecord->employee_large_medical_company_base,
+            'social_security_types' => $personnelRecord->social_security_types,
+            'medical_insurance_types' => $personnelRecord->medical_insurance_types,
+            'housing_fund_params' => $personnelRecord->housing_fund_params,
+            'other_insurance_policies' => $personnelRecord->other_insurance_policies,
+            'large_medical_insurance_config' => $personnelRecord->large_medical_insurance_config,
+            'used_quotas' => $personnelRecord->used_quotas,
+        ];
+    }
+
+    private function normalizeEmployeeGender($gender): ?int
+    {
+        if (is_numeric($gender)) {
+            return (int) $gender;
+        }
+
+        return match (strtolower((string) $gender)) {
+            'male', '男', '1' => 1,
+            'female', '女', '2' => 2,
+            default => null,
+        };
+    }
+
+    private function getEmployeeDecreaseChanges($employee, $project, int $accountSetId)
+    {
+        return \App\Models\InsuranceChange::query()
+            ->where('employee_id', $employee->id)
+            ->where('project_id', $project->id)
+            ->where('account_set_id', $accountSetId)
+            ->where('change_type', 'decrease')
+            ->with('items')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    private function materializeLegacyDecreaseChangeItems($change): void
+    {
+        if ($change->items()->exists()) {
+            return;
+        }
+
+        $categories = $this->getDecreaseChangeCategories($change);
+        if (empty($categories)) {
+            return;
+        }
+
+        $status = $this->getDecreaseItemStatusFromChange($change);
+        foreach ($categories as $category) {
+            \App\Models\InsuranceChangeItem::create([
+                'insurance_change_id' => $change->id,
+                'category' => $category,
+                'change_type' => 'decrease',
+                'status' => $status,
+                'category_snapshot' => $this->serializeDecreaseCategorySnapshot($change, $category),
+                'change_details' => $change->change_details,
+                'processed_by' => in_array($status, ['completed', 'failed', 'terminated'], true) ? $change->processed_by : null,
+                'processed_at' => in_array($status, ['completed', 'failed', 'terminated'], true) ? $change->processed_at : null,
+            ]);
+        }
+
+        $this->syncDecreaseTaskState($change);
+    }
+
+    private function getDecreaseChangeCategories($change): array
+    {
+        $categories = [];
+        foreach ($change->parseChangeDetails() as $detail) {
+            $category = trim((string) ($detail['category'] ?? ''));
+            if ($category === 'other_insurance') {
+                array_push($categories, ...$this->getOtherInsurancePolicyCategories($change->other_insurance_policies));
+            } elseif ($this->isSupportedDecreaseCategory($category)) {
+                $categories[] = $category;
+            }
+        }
+
+        if (!empty($categories)) {
+            return array_values(array_unique($categories));
+        }
+
+        if ($this->hasNonEmptyInsuranceSnapshot($change->social_security_types)) {
+            $categories[] = 'social_security';
+        }
+        if ($this->hasNonEmptyInsuranceSnapshot($change->medical_insurance_types)) {
+            $categories[] = 'medical_insurance';
+        }
+        if ($this->hasNonEmptyInsuranceSnapshot($change->housing_fund_params)) {
+            $categories[] = 'housing_fund';
+        }
+        if ((bool) $change->large_medical_insurance_enabled && $this->hasNonEmptyInsuranceSnapshot($change->large_medical_insurance_config)) {
+            $categories[] = 'large_medical_insurance';
+        }
+        array_push($categories, ...$this->getOtherInsurancePolicyCategories($change->other_insurance_policies));
+
+        return array_values(array_unique($categories));
+    }
+
+    private function isSupportedDecreaseCategory(string $category): bool
+    {
+        return in_array($category, [
+            'social_security',
+            'medical_insurance',
+            'housing_fund',
+            'large_medical_insurance',
+        ], true) || str_starts_with($category, 'other_policy:');
+    }
+
+    private function getDecreaseItemStatusFromChange($change): string
+    {
+        return match ($change->status) {
+            'completed' => 'completed',
+            'failed' => 'failed',
+            'terminated' => 'terminated',
+            'submitted' => 'submitted',
+            default => 'pending',
+        };
+    }
+
+    private function syncDecreaseCategoryToTask($employee, $project, int $accountSetId, string $taskMonth, string $category, array $taskAttributes): void
+    {
+        $changes = $this->getEmployeeDecreaseChanges($employee, $project, $accountSetId);
+        foreach ($changes as $change) {
+            $this->materializeLegacyDecreaseChangeItems($change);
+        }
+
+        $changes = $this->getEmployeeDecreaseChanges($employee, $project, $accountSetId);
+        $categoryItems = $changes->flatMap(function ($change) use ($category) {
+            return $change->items->where('category', $category)->map(function ($item) use ($change) {
+                return ['change' => $change, 'item' => $item];
+            });
+        });
+
+        // 成功、失败、终结均视为已落定，后续编辑月份不得重新打开该险种。
+        if ($categoryItems->contains(function ($entry) {
+            return in_array($entry['item']->status, ['completed', 'failed', 'terminated'], true);
+        })) {
+            return;
+        }
+
+        $targetChange = $this->findOrCreateDecreaseTaskForMonth(
+            $employee,
+            $project,
+            $accountSetId,
+            $taskMonth,
+            $taskAttributes
+        );
+
+        $targetItem = $targetChange->items()->where('category', $category)->first();
+
+        foreach ($categoryItems as $entry) {
+            $change = $entry['change'];
+            $item = $entry['item'];
+
+            if ($targetItem && (int) $item->id === (int) $targetItem->id) {
+                continue;
+            }
+
+            // 仅移除未完成子项；已完成状态已在上方直接跳过。
+            if (in_array($item->status, ['pending', 'submitted'], true)) {
+                $item->delete();
+                $this->syncDecreaseTaskState($change);
+            }
+        }
+
+        $targetChange = $targetChange->fresh();
+        $targetChange->fill($taskAttributes);
+        if (!$targetChange->created_by) {
+            $targetChange->created_by = $taskAttributes['created_by'];
+        }
+        $targetChange->save();
+
+        $targetItem = $targetChange->items()->where('category', $category)->first();
+        if (!$targetItem) {
+            \App\Models\InsuranceChangeItem::create([
+                'insurance_change_id' => $targetChange->id,
+                'category' => $category,
+                'change_type' => 'decrease',
+                'status' => 'pending',
+                'category_snapshot' => $this->serializeDecreaseCategorySnapshot($targetChange, $category),
+                'change_details' => $targetChange->change_details,
+            ]);
+        } else {
+            $targetItem->update([
+                'change_type' => 'decrease',
+                'category_snapshot' => $this->serializeDecreaseCategorySnapshot($targetChange, $category),
+            ]);
+        }
+
+        $this->syncDecreaseTaskState($targetChange);
+    }
+
+    private function findOrCreateDecreaseTaskForMonth($employee, $project, int $accountSetId, string $taskMonth, array $taskAttributes)
+    {
+        $query = \App\Models\InsuranceChange::query()
+            ->where('employee_id', $employee->id)
+            ->where('project_id', $project->id)
+            ->where('account_set_id', $accountSetId)
+            ->where('change_type', 'decrease');
+
+        if (\App\Models\InsuranceChange::supportsTaskMonth()) {
+            $query->where('task_month', $taskMonth);
+        } else {
+            [$year, $month] = array_map('intval', explode('-', $taskMonth, 2));
+            $query->whereYear('created_at', $year)->whereMonth('created_at', $month);
+        }
+
+        $change = $query->orderByDesc('id')->first();
+        if ($change) {
+            return $change;
+        }
+
+        $payload = array_merge($taskAttributes, [
+            'employee_id' => $employee->id,
+            'project_id' => $project->id,
+            'account_set_id' => $accountSetId,
+            'change_type' => 'decrease',
+            'status' => 'pending',
+            'fully_confirmed' => false,
+        ]);
+        if (\App\Models\InsuranceChange::supportsTaskMonth()) {
+            $payload['task_month'] = $taskMonth;
+        }
+
+        return \App\Models\InsuranceChange::create($payload);
+    }
+
+    private function serializeDecreaseCategorySnapshot($change, string $category): ?string
+    {
+        if (str_starts_with($category, 'other_policy:')) {
+            $categoryKey = substr($category, strlen('other_policy:'));
+            $policies = $change->other_insurance_policies;
+            if (is_string($policies)) {
+                $decoded = json_decode($policies, true);
+                $policies = is_array($decoded) ? $decoded : [];
+            }
+
+            foreach ((array) $policies as $index => $policy) {
+                if (!is_array($policy)) {
+                    continue;
+                }
+
+                $policyId = $policy['id'] ?? $policy['policy_id'] ?? null;
+                $policyKey = $policyId !== null && $policyId !== '' ? (string) $policyId : 'idx' . $index;
+                if ($policyKey === $categoryKey) {
+                    return json_encode($policy, JSON_UNESCAPED_UNICODE);
+                }
+            }
+
+            return null;
+        }
+
+        $snapshotMap = [
+            'social_security' => $change->social_security_types,
+            'medical_insurance' => $change->medical_insurance_types,
+            'housing_fund' => $change->housing_fund_params,
+            'large_medical_insurance' => $change->large_medical_insurance_config,
+        ];
+        $snapshot = $snapshotMap[$category] ?? null;
+
+        if ($snapshot === null) {
+            return null;
+        }
+
+        return is_string($snapshot) ? $snapshot : json_encode($snapshot, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function syncDecreaseTaskState($change): void
+    {
+        $items = $change->items()->get();
+        if ($items->isEmpty()) {
+            if (in_array($change->status, ['pending', 'processing', 'submitted'], true)) {
+                $change->delete();
+            }
+            return;
+        }
+
+        $details = $items->map(function ($item) {
+            return [
+                'category' => $item->category,
+                'action' => 'removed',
+                'item' => $this->getDecreaseCategoryName($item->category),
+                'description' => '减少' . $this->getDecreaseCategoryName($item->category),
+            ];
+        })->values()->all();
+
+        $hasPending = $items->contains(fn ($item) => in_array($item->status, ['pending', 'submitted'], true));
+        $hasFailed = $items->contains(fn ($item) => $item->status === 'failed');
+        $hasTerminated = $items->contains(fn ($item) => $item->status === 'terminated');
+        $allCompleted = $items->every(fn ($item) => $item->status === 'completed');
+
+        $statusPayload = [
+            'change_summary' => '员工减员：' . implode('、', array_values(array_unique(array_map(
+                fn ($item) => $this->getDecreaseCategoryName($item->category),
+                $items->all()
+            )))),
+            'change_details' => json_encode([
+                'change_type' => 'decrease',
+                'change_time' => now()->format('Y-m-d H:i:s'),
+                'auto_import' => true,
+                'source' => 'employee_decrease_sync',
+                'changes' => $details,
+            ], JSON_UNESCAPED_UNICODE),
+        ];
+
+        if ($allCompleted) {
+            $statusPayload += [
+                'status' => 'completed',
+                'fully_confirmed' => true,
+                'processed_at' => $change->processed_at ?: now(),
+                'completed_at' => $change->completed_at ?: now(),
+            ];
+        } elseif ($hasPending) {
+            $statusPayload += [
+                'status' => 'pending',
+                'fully_confirmed' => false,
+                'processed_at' => null,
+                'completed_at' => null,
+            ];
+        } else {
+            $statusPayload += [
+                'status' => $hasFailed ? 'failed' : ($hasTerminated ? 'terminated' : 'pending'),
+                'fully_confirmed' => false,
+                'processed_at' => null,
+                'completed_at' => null,
+            ];
+        }
+
+        $change->update($statusPayload);
+
+        $serializedDetails = $statusPayload['change_details'];
+        $change->items()->update([
+            'change_details' => $serializedDetails,
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function getDecreaseCategoryName(string $category): string
+    {
+        return match ($category) {
+            'social_security' => '社保',
+            'medical_insurance' => '医保',
+            'housing_fund' => '公积金',
+            'large_medical_insurance' => '大额医疗',
+            default => str_starts_with($category, 'other_policy:') ? '其他保险' : $category,
+        };
     }
 
     private function autoCreateDecreaseInsuranceRecord($contract, $employeeStatus)

@@ -40,6 +40,7 @@ class Employee extends Model
         'contract_status' => '合同状态',
         'termination_date' => '离职日期',
         'termination_reason' => '离职原因',
+        'insurance_decrease_months' => '减员月份',
         'retirement_date' => '退休日期',
         'retirement_category' => '退休类别',
         'bank_name' => '开户行',
@@ -136,9 +137,10 @@ class Employee extends Model
         'locked_until',
         'last_login_at',
         'last_login_ip',
+        'mini_selected_at',
         // 新增详细字段
         'country_region', 'chinese_name', 'birth_country', 'other_id_type', 'other_id_number',
-        'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 
+        'personnel_status', 'employment_type', 'employment_date', 'resignation_date', 'insurance_decrease_months',
         'signing_location', // 签署地
         'household_type', // 户口类型：agricultural-农业, non_agricultural-非农业
         'annual_employment_status', 'job_title',
@@ -193,6 +195,7 @@ class Employee extends Model
         'has_employer_insurance' => 'boolean',
         'other_insurance_enabled' => 'boolean',
         'other_insurance_policy_ids' => 'array',
+        'insurance_decrease_months' => 'array',
         'is_retired' => 'boolean',
         'is_disabled' => 'boolean',
         'is_martyr_family' => 'boolean',
@@ -204,6 +207,7 @@ class Employee extends Model
         'is_offline_onboarding' => 'boolean',
         'contract_uploaded' => 'boolean',
         'skip_form_filling' => 'boolean',
+        'mini_selected_at' => 'datetime:Y-m-d H:i:s',
         'created_at' => 'datetime:Y-m-d H:i:s',
         'updated_at' => 'datetime:Y-m-d H:i:s',
     ];

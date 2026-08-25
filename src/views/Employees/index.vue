@@ -788,21 +788,37 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col v-if="isDeparturePersonnelStatus" :span="12">
+            <el-form-item label="离职原因" prop="termination_reason" required>
+              <el-select
+                v-model="form.termination_reason"
+                placeholder="请选择离职原因"
+                style="width: 100%"
+                filterable
+                :disabled="isViewMode"
+              >
+                <el-option
+                  v-for="reason in terminationReasonOptions"
+                  :key="reason"
+                  :label="reason"
+                  :value="reason"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
         </el-row>
 
-        <el-row :gutter="30">
+        <el-row v-if="isDeparturePersonnelStatus" :gutter="30">
           <el-col :span="12">
-            <el-form-item label="离职日期">
+            <el-form-item label="离职日期" prop="resignation_date" required>
               <el-date-picker
                 v-model="form.resignation_date"
                 type="date"
-                placeholder="由解除/退休合同自动引用"
+                value-format="YYYY-MM-DD"
+                placeholder="请选择离职日期"
                 style="width: 100%"
-                disabled
+                :disabled="isViewMode"
               />
-              <div class="form-tip" style="color: #909399; font-size: 12px; margin-top: 4px;">
-                由解除协议合同或退休解除协议合同中的离职日期自动引用
-              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -1776,6 +1792,64 @@
           >
         <!-- 参保地区选择 -->
         <el-divider content-position="left">保险信息</el-divider>
+        <template v-if="isDeparturePersonnelStatus">
+          <el-alert
+            title="离职或退休后，请为仍在参保的险种选择减员月份；大额医疗始终跟随医保减员月份。"
+            type="warning"
+            :closable="false"
+            style="margin-bottom: 16px"
+          />
+          <el-row :gutter="30">
+            <el-col v-if="hasActiveInsuranceDecreaseCategory('social_security')" :span="8">
+              <el-form-item label="社保减员月份" required>
+                <el-date-picker
+                  v-model="form.insurance_decrease_months.social_security"
+                  type="month"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  placeholder="请选择社保减员月份"
+                  style="width: 100%"
+                  :disabled="isViewMode"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="hasActiveInsuranceDecreaseCategory('medical_insurance')" :span="8">
+              <el-form-item label="医保减员月份" required>
+                <el-date-picker
+                  v-model="form.insurance_decrease_months.medical_insurance"
+                  type="month"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  placeholder="请选择医保减员月份"
+                  style="width: 100%"
+                  :disabled="isViewMode"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="hasActiveInsuranceDecreaseCategory('housing_fund')" :span="8">
+              <el-form-item label="公积金减员月份" required>
+                <el-date-picker
+                  v-model="form.insurance_decrease_months.housing_fund"
+                  type="month"
+                  format="YYYY-MM"
+                  value-format="YYYY-MM"
+                  placeholder="请选择公积金减员月份"
+                  style="width: 100%"
+                  :disabled="isViewMode"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="hasActiveInsuranceDecreaseCategory('large_medical_insurance')" :span="8">
+              <el-form-item label="大额医疗减员月份">
+                <el-input
+                  :model-value="form.insurance_decrease_months.medical_insurance || '-'"
+                  disabled
+                />
+                <div class="form-tip">跟随医保减员月份</div>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </template>
         <el-row :gutter="30">
           <el-col :span="8">
             <el-form-item label="社保参保地区" prop="social_security_region_id">
@@ -6775,6 +6849,46 @@ const insuranceEnrollmentMonthFields = [
   'large_medical_enrollment_date'
 ]
 
+const createEmptyInsuranceDecreaseMonths = () => ({
+  social_security: '',
+  medical_insurance: '',
+  housing_fund: ''
+})
+
+const normalizeInsuranceDecreaseMonthValue = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return ''
+  }
+
+  const match = String(value).trim().match(/^(\d{4})-(\d{1,2})/)
+  if (!match) {
+    return ''
+  }
+
+  return `${match[1]}-${String(match[2]).padStart(2, '0')}`
+}
+
+const normalizeInsuranceDecreaseMonths = (value) => {
+  let source = value
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source)
+    } catch {
+      source = {}
+    }
+  }
+
+  const normalized = createEmptyInsuranceDecreaseMonths()
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return normalized
+  }
+
+  Object.keys(normalized).forEach((category) => {
+    normalized[category] = normalizeInsuranceDecreaseMonthValue(source[category])
+  })
+  return normalized
+}
+
 const normalizeInsuranceEnrollmentMonthValue = (value) => {
   if (value === undefined || value === null || value === '') {
     return null
@@ -6805,6 +6919,7 @@ const normalizeInsuranceEnrollmentMonthFields = (source) => {
   insuranceEnrollmentMonthFields.forEach((field) => {
     normalized[field] = normalizeInsuranceEnrollmentMonthValue(source?.[field])
   })
+  normalized.insurance_decrease_months = normalizeInsuranceDecreaseMonths(source?.insurance_decrease_months)
   return normalized
 }
 
@@ -6833,6 +6948,7 @@ const buildEmployeeSubmitPayload = (source) => {
     project_document_set_id: normalizeNullableId(normalizedSource.project_document_set_id),
     skip_form_filling: !!normalizedSource.skip_form_filling,
     other_insurance_policy_ids: normalizeOtherInsurancePolicyIds(normalizedSource.other_insurance_policy_ids),
+    insurance_decrease_months: normalizeInsuranceDecreaseMonths(normalizedSource.insurance_decrease_months),
     social_security_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.social_security_region_id),
     medical_insurance_region_id: medicalInsuranceRegionId,
     housing_fund_region_id: normalizeInsuranceRegionIdForSubmit(normalizedSource.housing_fund_region_id),
@@ -7185,6 +7301,8 @@ const form = reactive({
   employment_type: '雇员',
   employment_date: '',
   resignation_date: '',
+  termination_reason: '',
+  insurance_decrease_months: createEmptyInsuranceDecreaseMonths(),
   signing_location: '', // 签署地
   household_type: '', // 户口类型
   annual_employment_status: '',
@@ -7278,6 +7396,66 @@ const isInsuranceFieldsLocked = computed(() => {
   return isViewMode.value
 })
 
+const isDeparturePersonnelStatus = computed(() => {
+  return ['resigned', '离职', 'retired', '退休'].includes(form.personnel_status)
+    || form.contract_status === 'terminated'
+    || form.is_retired === true
+    || form.is_retired === 1
+})
+
+const activeInsuranceDecreaseCategories = ref({
+  social_security: false,
+  medical_insurance: false,
+  housing_fund: false,
+  large_medical_insurance: false
+})
+
+const setActiveInsuranceDecreaseCategories = (value) => {
+  activeInsuranceDecreaseCategories.value = {
+    social_security: !!value?.social_security,
+    medical_insurance: !!value?.medical_insurance,
+    housing_fund: !!value?.housing_fund,
+    large_medical_insurance: !!value?.large_medical_insurance
+  }
+}
+
+const hasActiveInsuranceDecreaseCategory = (category) => {
+  return !!activeInsuranceDecreaseCategories.value[category]
+}
+
+const validateDepartureInsuranceForm = () => {
+  if (!isDeparturePersonnelStatus.value) {
+    return true
+  }
+
+  if (!String(form.termination_reason || '').trim()) {
+    activeTab.value = 'employee'
+    ElMessage.warning('请选择离职原因')
+    return false
+  }
+
+  if (!form.resignation_date) {
+    activeTab.value = 'employee'
+    ElMessage.warning('请选择离职日期')
+    return false
+  }
+
+  const labels = {
+    social_security: '社保',
+    medical_insurance: '医保',
+    housing_fund: '公积金'
+  }
+  for (const category of Object.keys(labels)) {
+    if (hasActiveInsuranceDecreaseCategory(category) && !form.insurance_decrease_months?.[category]) {
+      activeTab.value = 'insurance'
+      ElMessage.warning(`请选择${labels[category]}减员月份`)
+      return false
+    }
+  }
+
+  return true
+}
+
 const formRules = {
   name: [
     { required: true, message: '请输入姓名', trigger: 'blur' }
@@ -7312,6 +7490,12 @@ const formRules = {
   ],
   contract_end_date: [
     { required: true, message: '请选择合同结束日期', trigger: 'change' }
+  ],
+  termination_reason: [
+    { required: true, message: '请选择离职原因', trigger: 'change' }
+  ],
+  resignation_date: [
+    { required: true, message: '请选择离职日期', trigger: 'change' }
   ],
   medical_insurance_base: [
     { validator: validateRequiredByInsuranceRegion, trigger: 'change' },
@@ -8880,6 +9064,7 @@ const handleView = async (row) => {
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      setActiveInsuranceDecreaseCategories(data.active_insurance_categories)
       syncBankAccountHolderWithName(form)
       ensureEmploymentTypeDefault(form)
       availableProjectDocumentSets.value = data.document_sets || []
@@ -8990,6 +9175,7 @@ const handleView = async (row) => {
       salary_items: []
     })
     ensureEmploymentTypeDefault(form)
+    setActiveInsuranceDecreaseCategories({})
     availableProjectDocumentSets.value = []
     projectOtherInsurancePolicies.value = []
     form.project_document_set_id = null
@@ -9037,6 +9223,7 @@ const handleEdit = async (row) => {
         project_ids: data.employee.project_ids || data.employee.projects?.map(p => p.id) || [],
         salary_items: []
       })
+      setActiveInsuranceDecreaseCategories(data.active_insurance_categories)
       syncBankAccountHolderWithName(form)
       ensureEmploymentTypeDefault(form)
       availableProjectDocumentSets.value = data.document_sets || []
@@ -9152,6 +9339,7 @@ const handleEdit = async (row) => {
       salary_items: []
     })
     ensureEmploymentTypeDefault(form)
+    setActiveInsuranceDecreaseCategories({})
     availableProjectDocumentSets.value = []
     form.project_document_set_id = null
     applySalaryStateToForm(rowData)
@@ -10009,6 +10197,8 @@ const confirmTransfer = async () => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
+
+  if (!validateDepartureInsuranceForm()) return
   
   await formRef.value.validate(async (valid, invalidFields) => {
     if (valid) {
@@ -10377,6 +10567,8 @@ const resetDialogState = ({ closeDialog = true } = {}) => {
     employment_type: '雇员',
     employment_date: '',
     resignation_date: '',
+    termination_reason: '',
+    insurance_decrease_months: createEmptyInsuranceDecreaseMonths(),
     signing_location: '', // 签署地
     household_type: '', // 户口类型
     annual_employment_status: '',
@@ -10589,6 +10781,7 @@ const uploadForm = reactive({
 const availableTemplates = ref([])
 
 const terminationReasonOptions = [
+  '退休',
   '人员调转(转出)',
   '被辞退',
   '参军',
@@ -10893,6 +11086,19 @@ const needsTerminationReason = (contractType) => {
   return ['termination', 'retirement'].includes(contractType)
 }
 
+const applyDepartureDefaultsToContractForm = (target, contractType) => {
+  if (!needsTerminationReason(contractType) || !currentEmployee.value) {
+    return
+  }
+
+  if (!target.termination_reason) {
+    target.termination_reason = currentEmployee.value.termination_reason || ''
+  }
+  if (!target.resignation_date) {
+    target.resignation_date = normalizeDateKey(currentEmployee.value.resignation_date)
+  }
+}
+
 // 选择合同类型
 const handleContractTypeSelect = async (contractType) => {
   console.log('=== 开始选择合同类型 ===')
@@ -10903,8 +11109,8 @@ const handleContractTypeSelect = async (contractType) => {
   // 重置表单（参考 SharedFiles 的实现，不在 reactive 对象中存储 File）
   uploadForm.contract_type = contractType
   uploadForm.employee_id = currentEmployee.value?.id || null
-  uploadForm.termination_reason = ''
-  uploadForm.resignation_date = ''
+  uploadForm.termination_reason = currentEmployee.value?.termination_reason || ''
+  uploadForm.resignation_date = normalizeDateKey(currentEmployee.value?.resignation_date)
   uploadForm.stamp_method = 'online'
   uploadForm.template_id = null
   uploadForm.notes = ''
@@ -10965,6 +11171,8 @@ const handleContractTypeChange = async (contractType) => {
   if (!needsTerminationReason(contractType)) {
     uploadForm.termination_reason = ''
     uploadForm.resignation_date = ''
+  } else {
+    applyDepartureDefaultsToContractForm(uploadForm, contractType)
   }
   
   if (!contractType || !currentEmployee.value) return
@@ -11218,7 +11426,10 @@ const handleUploadSignedContractTypeChange = (contractType) => {
   if (!needsTerminationReason(contractType)) {
     uploadSignedForm.termination_reason = ''
     uploadSignedForm.resignation_date = ''
+    return
   }
+
+  applyDepartureDefaultsToContractForm(uploadSignedForm, contractType)
 }
 
 const submitContractApproval = async (contract, stampData = null) => {
@@ -12378,6 +12589,8 @@ const handleNewEmployee = async () => {
     form.employment_type = '雇员'
   }
   form.other_insurance_policy_ids = normalizeOtherInsurancePolicyIds(form.other_insurance_policy_ids)
+  form.insurance_decrease_months = normalizeInsuranceDecreaseMonths(form.insurance_decrease_months)
+  setActiveInsuranceDecreaseCategories({})
 
   // 工号字段清空，由后端根据项目自动生成（如：AA001, AB001）
   form.employee_number = ''

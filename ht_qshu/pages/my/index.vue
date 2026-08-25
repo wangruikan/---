@@ -47,6 +47,7 @@
 
 <script>
 import { getMyDocuments } from '@/api/document.js'
+import { getMyInfo } from '@/api/contract.js'
 
 export default {
 	data() {
@@ -65,19 +66,30 @@ export default {
 	},
 	
 	methods: {
-		loadUserInfo() {
-			const employeeInfo = uni.getStorageSync('employeeInfo')
-			if (employeeInfo) {
-				this.employeeName = employeeInfo.name
-				this.employeePhone = employeeInfo.phone
-				// 获取项目的登记表类型设置
-				this.registrationFormType = employeeInfo.registration_form_type || 'onboarding'
-				// 检查是否显示离职证明入口（离职或退休员工）
-				const contractStatus = employeeInfo.contract_status
-				this.showResignationCertificate = ['terminated', 'retired'].includes(contractStatus)
+		async loadUserInfo() {
+			const cachedEmployeeInfo = uni.getStorageSync('employeeInfo')
+			if (cachedEmployeeInfo) {
+				this.applyEmployeeInfo(cachedEmployeeInfo)
+			}
+
+			try {
+				const res = await getMyInfo()
+				if (res.success) {
+					this.applyEmployeeInfo(res.data)
+					uni.setStorageSync('employeeInfo', res.data)
+				}
+			} catch (error) {
+				console.error('加载员工信息失败:', error)
 			}
 		},
-		
+
+		applyEmployeeInfo(employeeInfo) {
+			this.employeeName = employeeInfo.name || ''
+			this.employeePhone = employeeInfo.phone || ''
+			this.registrationFormType = employeeInfo.registration_form_type || 'onboarding'
+			this.showResignationCertificate = ['terminated', 'retired'].includes(employeeInfo.contract_status)
+		},
+
 		async loadPendingDocumentsCount() {
 			try {
 				const res = await getMyDocuments()

@@ -1464,6 +1464,10 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       current_account_set_id: ctx.accountSetId,
       personnel_status: 'resigned',
       termination_reason: '个人原因离职',
+      resignation_date: '2026-07-15',
+      insurance_decrease_months: {
+        social_security: '2026-07',
+      },
     });
 
     let changes = queryRows(`
@@ -1491,6 +1495,10 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       current_account_set_id: ctx.accountSetId,
       personnel_status: 'resigned',
       termination_reason: '个人原因离职',
+      resignation_date: '2026-07-15',
+      insurance_decrease_months: {
+        social_security: '2026-07',
+      },
     });
     changes = queryRows(`
       SELECT id, change_type
@@ -1551,6 +1559,144 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
     const bootstrapAfterBody = await bootstrapAfterAgreement.json();
     expect(bootstrapAfterAgreement.status(), JSON.stringify(bootstrapAfterBody)).toBe(200);
     expect(bootstrapAfterBody.data.archive_reminder_counts.pending_resignation_agreement).toBe(0);
+  });
+
+  test('离职减员按月份合并拆分，大额跟随医保且已完成险种不重置', async ({ request }) => {
+    const employeeName = `${PREFIX}-减员月份拆分`;
+    const employeeId = await createEmployee(request, baseEmployeePayload(19, employeeName));
+
+    const socialSecurityTypes = JSON.stringify([
+      { name: `${PREFIX}-养老`, company_ratio: 0.16, employee_ratio: 0.08 },
+    ]);
+    const medicalInsuranceTypes = JSON.stringify([
+      { name: `${PREFIX}-基本医保`, company_ratio: 0.08, employee_ratio: 0.02 },
+    ]);
+    const housingFundParams = JSON.stringify({
+      config_name: `${PREFIX}-公积金配置`,
+      company_ratio: 0.07,
+      employee_ratio: 0.07,
+    });
+    const largeMedicalConfig = JSON.stringify({
+      id: ctx.largeMedicalConfigId,
+      region_name: `${PREFIX}-医保地区`,
+    });
+
+    runSql(`
+      INSERT INTO insurance_personnel (
+        employee_id, employee_name, employee_id_number, employee_gender, employee_birth_date,
+        employee_status, project_id, account_set_id,
+        social_security_region_id, medical_insurance_region_id, housing_fund_region_id, housing_fund_config_id,
+        large_medical_insurance_config_id, large_medical_insurance_enabled,
+        employee_social_security_base, employee_medical_insurance_base, employee_housing_fund_base,
+        social_security_types, medical_insurance_types, housing_fund_params, large_medical_insurance_config,
+        status, first_confirmation_date, last_updated_at, created_at, updated_at
+      ) VALUES (
+        ${employeeId},
+        ${sqlValue(employeeName)},
+        ${sqlValue(idNumber(19))},
+        1,
+        '1990-01-01',
+        1,
+        ${ctx.projectId},
+        ${ctx.accountSetId},
+        ${ctx.socialRegionId},
+        ${ctx.medicalRegionId},
+        ${ctx.housingRegionId},
+        ${ctx.housingConfigId},
+        ${ctx.largeMedicalConfigId},
+        1,
+        6000,
+        6000,
+        6000,
+        ${sqlValue(socialSecurityTypes)},
+        ${sqlValue(medicalInsuranceTypes)},
+        ${sqlValue(housingFundParams)},
+        ${sqlValue(largeMedicalConfig)},
+        'active',
+        '2026-07-01',
+        NOW(),
+        NOW(),
+        NOW()
+      )
+    `);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      personnel_status: 'resigned',
+      termination_reason: '辞职',
+      resignation_date: '2026-08-15',
+      insurance_decrease_months: {
+        social_security: '2026-08',
+        medical_insurance: '2026-09',
+        housing_fund: '2026-08',
+      },
+    });
+
+    let changes = queryRows(`
+      SELECT id, task_month
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+        AND change_type = 'decrease'
+      ORDER BY task_month
+    `);
+    expect(changes).toEqual([
+      [expect.any(String), '2026-08'],
+      [expect.any(String), '2026-09'],
+    ]);
+
+    const augustChangeId = Number(changes[0][0]);
+    const septemberChangeId = Number(changes[1][0]);
+    expect(getDbItemRows(augustChangeId)).toEqual([
+      ['housing_fund', 'pending'],
+      ['social_security', 'pending'],
+    ]);
+    expect(getDbItemRows(septemberChangeId)).toEqual([
+      ['large_medical_insurance', 'pending'],
+      ['medical_insurance', 'pending'],
+    ]);
+
+    runSql(`
+      UPDATE insurance_change_items
+      SET status = 'completed', processed_at = NOW()
+      WHERE insurance_change_id = ${augustChangeId}
+        AND category = 'social_security'
+    `);
+
+    await updateEmployee(request, employeeId, {
+      current_account_set_id: ctx.accountSetId,
+      personnel_status: 'resigned',
+      termination_reason: '辞职',
+      resignation_date: '2026-08-15',
+      insurance_decrease_months: {
+        social_security: '2026-10',
+        medical_insurance: '2026-10',
+        housing_fund: '2026-08',
+      },
+    });
+
+    changes = queryRows(`
+      SELECT id, task_month
+      FROM insurance_changes
+      WHERE employee_id = ${employeeId}
+        AND project_id = ${ctx.projectId}
+        AND account_set_id = ${ctx.accountSetId}
+        AND change_type = 'decrease'
+      ORDER BY task_month
+    `);
+    expect(changes).toEqual([
+      [String(augustChangeId), '2026-08'],
+      [expect.any(String), '2026-10'],
+    ]);
+    expect(getDbItemRows(augustChangeId)).toEqual([
+      ['housing_fund', 'pending'],
+      ['social_security', 'completed'],
+    ]);
+    expect(getDbItemRows(Number(changes[1][0]))).toEqual([
+      ['large_medical_insurance', 'pending'],
+      ['medical_insurance', 'pending'],
+    ]);
   });
 
   test('创建解除合同应立即生成减少任务，审批完成后不得再次触发', async ({ request }) => {

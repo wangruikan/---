@@ -72,6 +72,15 @@ class InsuranceChangeDetectionService
                 $project = $this->resolveProjectForEmployee($employee, $projectId);
                 $personnel = $project ? $this->findCurrentPersonnel($employee, $project) : null;
                 $mode = $this->resolveEmployeeEventMode($changeType, $oldData, $newData, $source);
+                $taskMonth = $this->resolveEmployeeTaskMonth(
+                    $changeType,
+                    $oldData,
+                    $newData,
+                    $employee,
+                    $mode,
+                    (int) $year,
+                    (int) $month
+                );
 
                 if (
                     $source === 'employee_insurance_profile_change'
@@ -83,7 +92,7 @@ class InsuranceChangeDetectionService
                         ? $this->cancelPendingSocialSecurityIncreaseTask(
                             $employee,
                             $project,
-                            sprintf('%04d-%02d', (int) $year, (int) $month)
+                            $taskMonth
                         )
                         : false;
 
@@ -105,6 +114,7 @@ class InsuranceChangeDetectionService
                         $newData,
                         [
                             'project_id' => $project ? $project->id : $projectId,
+                            'task_month' => $taskMonth,
                         ]
                     );
 
@@ -146,7 +156,7 @@ class InsuranceChangeDetectionService
                     [
                         'project_id' => $projectId,
                         'source' => $source,
-                        'task_month' => sprintf('%04d-%02d', (int) $year, (int) $month),
+                        'task_month' => $taskMonth,
                     ]
                 );
 
@@ -237,21 +247,27 @@ class InsuranceChangeDetectionService
         switch ($changeType) {
             case 'social_security':
             case 'medical_insurance':
-                return $this->resolveBindingMode(
+                return $this->resolveBindingModeWithEnrollmentDate(
                     $oldData['region_id'] ?? null,
-                    $newData['region_id'] ?? null
+                    $newData['region_id'] ?? null,
+                    $oldData,
+                    $newData
                 );
 
             case 'housing_fund':
-                return $this->resolveBindingMode(
+                return $this->resolveBindingModeWithEnrollmentDate(
                     $oldData['config_id'] ?? ($oldData['region_id'] ?? null),
-                    $newData['config_id'] ?? ($newData['region_id'] ?? null)
+                    $newData['config_id'] ?? ($newData['region_id'] ?? null),
+                    $oldData,
+                    $newData
                 );
 
             case 'large_medical_insurance':
-                return $this->resolveBindingMode(
+                return $this->resolveBindingModeWithEnrollmentDate(
                     $oldData['config_id'] ?? null,
-                    $newData['config_id'] ?? null
+                    $newData['config_id'] ?? null,
+                    $oldData,
+                    $newData
                 );
 
             case 'other_insurance':
@@ -260,6 +276,102 @@ class InsuranceChangeDetectionService
             default:
                 return 'sync';
         }
+    }
+
+    private function resolveBindingModeWithEnrollmentDate(
+        $oldBinding,
+        $newBinding,
+        array $oldData,
+        array $newData
+    ): string {
+        $mode = $this->resolveBindingMode($oldBinding, $newBinding);
+
+        if ($mode === 'sync' && $this->hasEnrollmentDateChanged($oldData, $newData)) {
+            return 'increase';
+        }
+
+        return $mode;
+    }
+
+    private function hasEnrollmentDateChanged(array $oldData, array $newData): bool
+    {
+        if (!array_key_exists('enrollment_date', $oldData) && !array_key_exists('enrollment_date', $newData)) {
+            return false;
+        }
+
+        return $this->normalizeEnrollmentDate($oldData['enrollment_date'] ?? null)
+            !== $this->normalizeEnrollmentDate($newData['enrollment_date'] ?? null);
+    }
+
+    private function normalizeEnrollmentDate($value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return substr((string) $value, 0, 10);
+        }
+    }
+
+    private function resolveEmployeeTaskMonth(
+        string $changeType,
+        array $oldData,
+        array $newData,
+        Employee $employee,
+        string $taskAction,
+        int $fallbackYear,
+        int $fallbackMonth
+    ): string {
+        $dateFieldMap = [
+            'social_security' => 'social_insurance_enrollment_date',
+            'medical_insurance' => 'medical_insurance_enrollment_date',
+            'housing_fund' => 'provident_fund_enrollment_date',
+            'large_medical_insurance' => 'large_medical_enrollment_date',
+        ];
+        $dateField = $dateFieldMap[$changeType] ?? null;
+        $data = $taskAction === 'decrease' ? $oldData : $newData;
+        $enrollmentDate = $data['enrollment_date'] ?? null;
+
+        if (!$enrollmentDate && $dateField) {
+            $enrollmentDate = $employee->{$dateField} ?? null;
+        }
+
+        // 大额参保日期由医保日期同步，历史数据为空时按医保日期兜底。
+        if (!$enrollmentDate && $changeType === 'large_medical_insurance') {
+            $enrollmentDate = $employee->medical_insurance_enrollment_date ?? null;
+        }
+
+        // 商业保险没有独立参保日期，优先跟随本次员工已有的参保月份，保持同批任务合并。
+        if (!$enrollmentDate && $changeType === 'other_insurance') {
+            foreach ([
+                'social_insurance_enrollment_date',
+                'medical_insurance_enrollment_date',
+                'provident_fund_enrollment_date',
+                'large_medical_enrollment_date',
+            ] as $fallbackField) {
+                if (!empty($employee->{$fallbackField})) {
+                    $enrollmentDate = $employee->{$fallbackField};
+                    break;
+                }
+            }
+        }
+
+        if ($enrollmentDate) {
+            try {
+                return \Carbon\Carbon::parse($enrollmentDate)->format('Y-m');
+            } catch (\Throwable $e) {
+                // 非法日期沿用事件传入的月份，避免阻断员工保存。
+            }
+        }
+
+        return sprintf('%04d-%02d', $fallbackYear, $fallbackMonth);
     }
 
     private function resolveBindingMode($oldBinding, $newBinding): string
@@ -955,7 +1067,7 @@ class InsuranceChangeDetectionService
                 return null;
             }
 
-            $taskMonth = sprintf('%04d-%02d', (int) $year, (int) $month);
+            $taskMonth = $options['task_month'] ?? sprintf('%04d-%02d', (int) $year, (int) $month);
             $existingRecord = $this->findReusableMonthlyTask($employee, $project, 'increase', $taskMonth);
 
             if ($existingRecord) {

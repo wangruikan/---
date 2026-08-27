@@ -36,6 +36,12 @@ class MedicalInsuranceController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // 大额医疗配置通过账套和地区名称关联，批量加载后挂到地区列表，避免逐条查询。
+        $largeMedicalConfigMap = LargeMedicalInsuranceConfig::where('account_set_id', $accountSetId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy(fn ($config) => trim((string) $config->region_name));
+
         $pendingMap = InsuranceLimitPendingChange::where('target_type', 'medical_insurance_region')
             ->where('account_set_id', $accountSetId)
             ->where('status', 'pending')
@@ -43,7 +49,12 @@ class MedicalInsuranceController extends Controller
             ->keyBy('target_id');
 
         // 为每个地区添加 has_template 字段
-        $regions->each(function ($region) use ($accountSetId, $pendingMap) {
+        $regions->each(function ($region) use ($accountSetId, $pendingMap, $largeMedicalConfigMap) {
+            $region->setAttribute(
+                'large_medical_insurance_configs',
+                ($largeMedicalConfigMap->get(trim((string) $region->name)) ?? collect())->values()->all()
+            );
+
             $region->has_template = \App\Models\ReportTemplate::where('region_id', $region->id)
                 ->where('region_type', 'medical_insurance')
                 ->where('account_set_id', $accountSetId)

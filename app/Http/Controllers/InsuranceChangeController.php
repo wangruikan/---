@@ -6045,13 +6045,8 @@ class InsuranceChangeController extends ApiController
 
     private function shouldAutoCompleteLargeMedicalChangeItem(InsuranceChange $change, string $category, $snapshot = null): bool
     {
-        if ($category !== 'large_medical_insurance') {
-            return false;
-        }
-
-        $calculationType = $this->resolveLargeMedicalCalculationType($change, $snapshot);
-
-        return $calculationType !== null && $calculationType !== 'fixed';
+        // 大额医疗统一由业务处理人员单独确认。
+        return false;
     }
 
     private function resolveLargeMedicalCalculationType(InsuranceChange $change, $snapshot = null): ?string

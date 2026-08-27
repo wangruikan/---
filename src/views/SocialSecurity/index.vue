@@ -407,6 +407,20 @@
                 {{ row.medical_insurance_types?.length || 0 }} 种
               </template>
             </el-table-column>
+            <el-table-column label="大额医疗" min-width="330">
+              <template #default="{ row }">
+                <div v-if="getLargeMedicalConfigs(row).length" class="large-medical-summary">
+                  <div
+                    v-for="(config, index) in getLargeMedicalConfigs(row)"
+                    :key="config.id || index"
+                    class="large-medical-summary-item"
+                  >
+                    {{ formatLargeMedicalConfig(config) }}
+                  </div>
+                </div>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="530">
               <template #default="{ row }">
                 <el-button type="info" size="small" @click="showMedicalRegionHistory(row)">
@@ -1495,6 +1509,36 @@ const getMedicalTypeNamesText = (types) => {
   return types.map(type => type.name).filter(Boolean).join('、') || '-'
 }
 
+const getLargeMedicalConfigs = (region) => {
+  return region?.large_medical_insurance_configs || region?.largeMedicalInsuranceConfigs || []
+}
+
+const formatLargeMedicalAmount = (value) => {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00'
+}
+
+const formatLargeMedicalRatio = (value) => {
+  const ratio = Number(value)
+  return `${(Number.isFinite(ratio) ? ratio * 100 : 0).toFixed(2)}%`
+}
+
+const formatLargeMedicalConfig = (config) => {
+  const calculationType = config.calculation_type === 'base' ? '按基数' : '按固定金额'
+  const paymentCycle = config.payment_cycle === 'year'
+    ? `按年${config.annual_payment_month ? `（${config.annual_payment_month}月）` : ''}`
+    : '按月'
+
+  if (config.calculation_type === 'base') {
+    const baseText = config.base_source === 'config'
+      ? `统一基数（单位¥${formatLargeMedicalAmount(config.base_amount)}，个人¥${formatLargeMedicalAmount(config.employee_base_amount)})`
+      : '员工基数'
+    return `${calculationType} · ${paymentCycle} · ${baseText} · 单位${formatLargeMedicalRatio(config.company_ratio)} · 个人${formatLargeMedicalRatio(config.employee_ratio)}`
+  }
+
+  return `${calculationType} · ${paymentCycle} · 单位¥${formatLargeMedicalAmount(config.company_amount)} · 个人¥${formatLargeMedicalAmount(config.employee_amount)}`
+}
+
 const openCreateMedicalRegionDialog = async () => {
   resetMedicalRegionForm()
   showCreateMedicalDialog.value = true
@@ -1528,6 +1572,7 @@ const openLargeMedicalDialog = (region) => {
 
 const handleLargeMedicalDialogClose = () => {
   currentLargeMedicalRegion.value = null
+  loadMedicalRegions()
 }
 
 const openCreateMedicalTypeDialog = async () => {
@@ -2955,6 +3000,18 @@ const saveTemplate = async () => {
 
 .region-list-card {
   margin-bottom: 20px;
+}
+
+.large-medical-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.5;
+}
+
+.large-medical-summary-item {
+  white-space: normal;
+  word-break: break-word;
 }
 
 :deep(.sticky-region-table.el-table) {

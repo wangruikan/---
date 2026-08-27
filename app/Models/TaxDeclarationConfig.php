@@ -17,6 +17,7 @@ class TaxDeclarationConfig extends Model
         'company_name',
         'tax_category_ids',
         'period_type',
+        'declaration_type',
         'declaration_date',
         'created_by',
     ];
@@ -30,8 +31,17 @@ class TaxDeclarationConfig extends Model
     protected $auditableFields = [
         'company_name' => '公司名称',
         'period_type' => '申报周期',
+        'declaration_type' => '申报类型',
         'declaration_date' => '申报月份',
     ];
+
+    /**
+     * 旧配置没有申报类型时，沿用原申报周期作为默认值。
+     */
+    public function getDeclarationTypeAttribute($value)
+    {
+        return $value ?: ($this->attributes['period_type'] ?? null);
+    }
 
     public function getAuditIdentifier()
     {

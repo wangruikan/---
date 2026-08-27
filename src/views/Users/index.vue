@@ -153,22 +153,36 @@
         :disabled="isViewMode"
       >
         <el-form-item label="用户名" prop="name">
-          <el-input v-model="form.name" placeholder="请输入用户名（用于登录）" />
+          <el-input
+            v-model="form.name"
+            placeholder="请输入用户名（用于登录）"
+            @input="clearExistingUser"
+            @blur="checkExistingUser"
+          />
         </el-form-item>
 
-        <el-form-item label="昵称" prop="nickname">
+        <el-alert
+          v-if="isExistingUser"
+          :title="existingUser.already_assigned ? '该账号已在当前账套的用户列表中' : '该账号已存在，提交后会关联到当前账套，不会重新创建账号'"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin: -8px 0 18px 0"
+        />
+
+        <el-form-item v-if="isEdit || !isExistingUser" label="昵称" prop="nickname">
           <el-input v-model="form.nickname" placeholder="请输入昵称（用于显示）" />
         </el-form-item>
 
-        <el-form-item label="邮箱" prop="email">
+        <el-form-item v-if="isEdit || !isExistingUser" label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
 
-        <el-form-item label="手机号" prop="phone">
+        <el-form-item v-if="isEdit || !isExistingUser" label="手机号" prop="phone">
           <el-input v-model="form.phone" placeholder="请输入手机号" />
         </el-form-item>
 
-        <el-form-item label="密码" prop="password" v-if="!isEdit">
+        <el-form-item label="密码" prop="password" v-if="!isEdit && !isExistingUser">
           <el-input
             v-model="form.password"
             type="password"
@@ -177,7 +191,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="角色" prop="role">
+        <el-form-item v-if="isEdit || !isExistingUser" label="角色" prop="role">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
             <el-option label="管理员" value="admin" />
             <el-option label="业务人员" value="employee" />
@@ -217,8 +231,13 @@
 
       <template #footer v-if="!isViewMode">
         <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ isEdit ? '保存' : '创建' }}
+        <el-button
+          v-if="!(isExistingUser && existingUser.already_assigned)"
+          type="primary"
+          @click="handleSubmit"
+          :loading="submitting"
+        >
+          {{ isEdit ? '保存' : (isExistingUser ? '关联到当前账套' : '创建') }}
         </el-button>
       </template>
     </el-dialog>
@@ -259,7 +278,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { useAccountSetStore } from '@/stores/accountSet'
@@ -290,6 +309,8 @@ const passwordFormRef = ref()
 
 const users = ref([])
 const currentResetUserId = ref(null)
+const existingUser = ref(null)
+const isExistingUser = computed(() => !isEdit.value && existingUser.value?.can_attach === true)
 
 const searchForm = reactive({
   search: '',
@@ -432,6 +453,38 @@ const handleEdit = (row) => {
   showCreateDialog.value = true
 }
 
+const clearExistingUser = () => {
+  if (!isEdit.value) {
+    existingUser.value = null
+  }
+}
+
+const checkExistingUser = async () => {
+  if (isEdit.value || !currentAccountSetId.value) return
+
+  const name = form.name.trim()
+  if (!name) {
+    existingUser.value = null
+    return
+  }
+
+  try {
+    const response = await request({
+      url: '/users/lookup',
+      method: 'get',
+      params: {
+        name,
+        current_account_set_id: currentAccountSetId.value
+      }
+    })
+
+    existingUser.value = response.success && response.data?.exists ? response.data : null
+  } catch (error) {
+    existingUser.value = null
+    console.error('Check existing user error:', error)
+  }
+}
+
 const handleSubmit = async () => {
   if (!formRef.value) return
   if (!isEdit.value && !currentAccountSetId.value) {
@@ -439,6 +492,11 @@ const handleSubmit = async () => {
     return
   }
   
+  if (!isEdit.value) {
+    await checkExistingUser()
+    await nextTick()
+  }
+
   await formRef.value.validate(async (valid) => {
     if (!valid) return
     
@@ -452,15 +510,20 @@ const handleSubmit = async () => {
         })
         ElMessage.success('用户更新成功')
       } else {
-        await request({
+        const response = await request({
           url: '/users',
           method: 'post',
-          data: {
-            ...form,
-            current_account_set_id: currentAccountSetId.value
-          }
+          data: isExistingUser.value
+            ? {
+                name: form.name.trim(),
+                current_account_set_id: currentAccountSetId.value
+              }
+            : {
+                ...form,
+                current_account_set_id: currentAccountSetId.value
+              }
         })
-        ElMessage.success('用户创建成功')
+        ElMessage.success(response.message || '用户创建成功')
       }
       
       showCreateDialog.value = false
@@ -564,6 +627,7 @@ const resetForm = () => {
     is_active: 1,
     can_view_operation_barrage: 0
   })
+  existingUser.value = null
   isEdit.value = false
   isViewMode.value = false
 }

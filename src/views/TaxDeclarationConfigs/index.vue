@@ -62,6 +62,13 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getPeriodTypeTag(row.declaration_type || row.period_type)">
+                  {{ getPeriodTypeText(row.declaration_type || row.period_type) }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="申报月份" width="150">
               <template #default="{ row }">
                 {{ formatDeclarationRule(row) }}
@@ -138,6 +145,17 @@
             placeholder="请选择申报周期"
             style="width: 100%"
             @change="handlePeriodTypeChange"
+          >
+            <el-option label="月度" value="monthly" />
+            <el-option label="季度" value="quarterly" />
+            <el-option label="年度" value="yearly" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型" prop="declaration_type">
+          <el-select
+            v-model="configForm.declaration_type"
+            placeholder="请选择类型"
+            style="width: 100%"
           >
             <el-option label="月度" value="monthly" />
             <el-option label="季度" value="quarterly" />
@@ -228,6 +246,7 @@ const configForm = reactive({
   company_name: '',
   tax_category_ids: [],
   period_type: '',
+  declaration_type: '',
   declaration_date: ''
 })
 
@@ -240,6 +259,7 @@ const configRules = {
   company_name: [{ required: true, message: '请输入公司名称', trigger: 'blur' }],
   tax_category_ids: [{ required: true, message: '请选择税种', trigger: 'change' }],
   period_type: [{ required: true, message: '请选择申报周期', trigger: 'change' }],
+  declaration_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
   declaration_date: [
     { required: true, message: '请选择申报月份', trigger: 'change' }
   ]
@@ -352,6 +372,7 @@ const handleCreateConfig = () => {
     company_name: '',
     tax_category_ids: [],
     period_type: '',
+    declaration_type: '',
     declaration_date: ''
   })
   configDialogVisible.value = true
@@ -380,6 +401,7 @@ const handleEditConfig = (row) => {
     company_name: row.company_name,
     tax_category_ids: row.tax_category_ids,
     period_type: row.period_type,
+    declaration_type: row.declaration_type || row.period_type,
     declaration_date: row.period_type === 'monthly'
       ? ''
       : row.period_type === 'quarterly'
@@ -400,6 +422,7 @@ const handleSubmitConfig = async () => {
       company_name: configForm.company_name,
       tax_category_ids: configForm.tax_category_ids,
       period_type: configForm.period_type,
+      declaration_type: configForm.declaration_type || configForm.period_type,
       declaration_date: configForm.period_type === 'monthly'
         ? ''
         : configForm.period_type === 'quarterly'

@@ -1073,7 +1073,7 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
 
     items = await syncAndGetItems(request, changeId);
     expect(Object.fromEntries(items.map((item: any) => [item.category, item.status]))).toEqual({
-      large_medical_insurance: 'completed',
+      large_medical_insurance: 'pending',
       medical_insurance: 'pending',
       social_security: 'completed',
     });
@@ -1175,6 +1175,7 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
         'social_security',
         'medical_insurance',
         'housing_fund',
+        'large_medical_insurance',
         `other_policy:${ctx.policyIds[0]}`,
         `other_policy:${ctx.policyIds[1]}`,
       ]
@@ -1232,7 +1233,7 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
     expect(statusByCategory.social_security).toBe('pending');
     expect(statusByCategory.medical_insurance).toBe('pending');
     expect(statusByCategory.housing_fund).toBe('pending');
-    expect(statusByCategory.large_medical_insurance).toBe('completed');
+    expect(statusByCategory.large_medical_insurance).toBe('pending');
     expect(statusByCategory[`other_policy:${ctx.policyIds[0]}`]).toBe('pending');
     expect(statusByCategory[`other_policy:${ctx.policyIds[1]}`]).toBe('pending');
 
@@ -1409,6 +1410,7 @@ test.describe.serial('人员档案保险信息触发增减任务 API 回归', ()
       WHERE id = ${changeId}
       LIMIT 1
     `)[0][0];
+    expect(currentTaskMonth).toBe('2026-07');
     const wrongMonth = currentTaskMonth === '2026-06' ? '2026-05' : '2026-06';
 
     const wrongResponse = await request.get(apiUrl('insurance-changes'), {

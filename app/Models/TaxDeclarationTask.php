@@ -15,6 +15,7 @@ class TaxDeclarationTask extends Model
     protected $fillable = [
         'account_set_id',
         'config_id',
+        'declaration_type',
         'company_name',
         'tax_category_ids',
         'completed_tax_category_ids',
@@ -38,8 +39,22 @@ class TaxDeclarationTask extends Model
 
     protected $auditableFields = [
         'company_name' => '公司名称',
+        'declaration_type' => '申报类型',
         'status' => '状态',
     ];
+
+    /**
+     * 历史任务没有单独保存类型时，从关联配置读取，保证任务列表仍能显示。
+     */
+    public function getDeclarationTypeAttribute($value)
+    {
+        if ($value) {
+            return $value;
+        }
+
+        $config = $this->relationLoaded('config') ? $this->getRelation('config') : null;
+        return $config?->declaration_type ?: $config?->period_type;
+    }
 
     public function getAuditIdentifier()
     {

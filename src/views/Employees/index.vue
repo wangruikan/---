@@ -6572,8 +6572,13 @@ const normalizeDateKey = (value) => {
     const day = String(value.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }
-  const normalized = String(value)
-  return normalized.includes('T') || normalized.includes(' ') ? normalized.slice(0, 10) : normalized.slice(0, 10)
+  const normalized = String(value).trim()
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (match) {
+    return `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`
+  }
+
+  return normalized.slice(0, 10)
 }
 
 const getSelectedProjectStartDate = () => {
@@ -6604,7 +6609,11 @@ const validateDateNotBeforeSelectedProjectStart = (rule, value, callback) => {
   }
 
   const currentDate = normalizeDateKey(value)
-  if (currentDate && currentDate < projectStartDate) {
+  const isBeforeProjectStart = currentDate !== ''
+    && projectStartDate !== ''
+    && currentDate < projectStartDate
+
+  if (isBeforeProjectStart) {
     const fieldLabels = {
       hire_date: '入职日期',
       contract_start_date: '合同开始日期'

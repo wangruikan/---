@@ -73,6 +73,61 @@ class UserController extends Controller
      */
     public function store(Request $request)
     {
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
+
+        $accountSetValidator = Validator::make([
+            'current_account_set_id' => $currentAccountSetId,
+        ], [
+            'current_account_set_id' => 'required|exists:account_sets,id',
+        ], [
+            'current_account_set_id.required' => '请先选择账套',
+            'current_account_set_id.exists' => '账套不存在',
+        ]);
+
+        if ($accountSetValidator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $accountSetValidator->errors()->first(),
+                'errors' => $accountSetValidator->errors(),
+            ], 422);
+        }
+
+        $name = trim((string) $request->input('name'));
+        $existingUser = $name !== '' ? User::where('name', $name)->first() : null;
+
+        if ($existingUser) {
+            if ($existingUser->role === 'super_admin') {
+                return response()->json([
+                    'success' => false,
+                    'message' => '超级管理员账号不能关联到账套用户列表',
+                ], 422);
+            }
+
+            $alreadyAssigned = DB::table('account_set_users')
+                ->where('account_set_id', $currentAccountSetId)
+                ->where('user_id', $existingUser->id)
+                ->exists();
+
+            if (!$alreadyAssigned) {
+                DB::table('account_set_users')->insert([
+                    'account_set_id' => $currentAccountSetId,
+                    'user_id' => $existingUser->id,
+                    'role' => 'viewer',
+                    'is_default' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $alreadyAssigned ? '该用户已在当前账套中' : '已将已有用户关联到当前账套',
+                'data' => $existingUser,
+                'existing_user' => true,
+                'already_assigned' => $alreadyAssigned,
+            ]);
+        }
+
         // 从角色表获取所有有效角色
         $validRoles = \App\Models\Role::where('name', '!=', 'super_admin')->pluck('name')->toArray();
         $validRolesStr = implode(',', $validRoles);
@@ -108,10 +163,8 @@ class UserController extends Controller
             ], 422);
         }
 
-        $currentAccountSetId = $this->getCurrentAccountSetId($request);
-
         $user = User::create([
-            'name' => $request->name,
+            'name' => $name,
             'nickname' => $request->nickname,
             'email' => $request->email,
             'password' => Hash::make($request->password),
@@ -139,6 +192,54 @@ class UserController extends Controller
             'success' => true,
             'message' => '用户创建成功',
             'data' => $user
+        ]);
+    }
+
+    /**
+     * 查询用户名是否已存在，用于将已有账号关联到当前账套。
+     */
+    public function lookup(Request $request)
+    {
+        $currentAccountSetId = $this->getCurrentAccountSetId($request);
+        $validator = Validator::make([
+            'name' => $request->input('name'),
+            'current_account_set_id' => $currentAccountSetId,
+        ], [
+            'name' => 'required|string|max:191',
+            'current_account_set_id' => 'required|exists:account_sets,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $user = User::where('name', trim((string) $request->input('name')))->first();
+        if (!$user) {
+            return response()->json([
+                'success' => true,
+                'data' => ['exists' => false],
+            ]);
+        }
+
+        $canAttach = $user->role !== 'super_admin';
+        $alreadyAssigned = $canAttach && DB::table('account_set_users')
+            ->where('account_set_id', $currentAccountSetId)
+            ->where('user_id', $user->id)
+            ->exists();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'exists' => true,
+                'can_attach' => $canAttach,
+                'already_assigned' => $alreadyAssigned,
+                'name' => $user->name,
+                'nickname' => $user->nickname,
+            ],
         ]);
     }
 

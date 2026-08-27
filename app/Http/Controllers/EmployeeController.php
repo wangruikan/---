@@ -629,13 +629,13 @@ class EmployeeController extends ApiController
             return null;
         }
 
-        $earliestStartDate = date('Y-m-d', strtotime($earliestStartDate));
+        $earliestStartDate = Carbon::parse($earliestStartDate)->startOfDay();
 
         foreach ($dateFields as $field => $label) {
             if ($request->filled($field)) {
-                $dateValue = date('Y-m-d', strtotime($request->input($field)));
-                if ($dateValue < $earliestStartDate) {
-                    return "{$label}({$dateValue}) 不可早于项目开始时间({$earliestStartDate})";
+                $dateValue = Carbon::parse($request->input($field))->startOfDay();
+                if ($dateValue->lt($earliestStartDate)) {
+                    return "{$label}({$dateValue->toDateString()}) 不可早于项目开始时间({$earliestStartDate->toDateString()})";
                 }
             }
         }
@@ -1552,6 +1552,10 @@ class EmployeeController extends ApiController
             'housing_fund_base' => null,
             'large_medical_base' => null,
             'large_medical_company_base' => null,
+            'social_insurance_enrollment_date' => null,
+            'medical_insurance_enrollment_date' => null,
+            'provident_fund_enrollment_date' => null,
+            'large_medical_enrollment_date' => null,
         ], $employeeData);
 
         return response()->json([
@@ -1833,6 +1837,10 @@ class EmployeeController extends ApiController
             'housing_fund_base',
             'large_medical_base',
             'large_medical_company_base',
+            'social_insurance_enrollment_date',
+            'medical_insurance_enrollment_date',
+            'provident_fund_enrollment_date',
+            'large_medical_enrollment_date',
         ]);
         $shouldSyncDecreaseInsuranceTask = $this->isResignationOrRetirementStatus(
             $updateData['personnel_status'] ?? $employee->personnel_status
@@ -3215,19 +3223,23 @@ class EmployeeController extends ApiController
             $categoryMap = [
                 'social_security' => [
                     'social_security_region_id' => 'region_id',
+                    'social_insurance_enrollment_date' => 'enrollment_date',
                     'social_security_base' => 'employee_social_security_base',
                 ],
                 'medical_insurance' => [
                     'medical_insurance_region_id' => 'region_id',
+                    'medical_insurance_enrollment_date' => 'enrollment_date',
                     'medical_insurance_base' => 'employee_medical_insurance_base',
                 ],
                 'housing_fund' => [
                     'housing_fund_region_id' => 'region_id',
                     'housing_fund_config_id' => 'config_id',
+                    'provident_fund_enrollment_date' => 'enrollment_date',
                     'housing_fund_base' => 'employee_housing_fund_base',
                 ],
                 'large_medical_insurance' => [
                     'large_medical_insurance_config_id' => 'config_id',
+                    'large_medical_enrollment_date' => 'enrollment_date',
                     'large_medical_base' => 'employee_large_medical_base',
                     'large_medical_company_base' => 'employee_large_medical_company_base',
                 ],
@@ -3244,6 +3256,8 @@ class EmployeeController extends ApiController
                     $newPayload = $this->buildOtherInsuranceChangePayload(
                         $employee->other_insurance_policy_ids ?? []
                     );
+                    $oldPayload['enrollment_date'] = $this->firstInsuranceEnrollmentDate($originalData);
+                    $newPayload['enrollment_date'] = $this->firstInsuranceEnrollmentDate($employee);
 
                     if ($this->isSameInsuranceChangeValue($oldPayload['policies'] ?? [], $newPayload['policies'] ?? [])) {
                         continue;
@@ -3276,6 +3290,10 @@ class EmployeeController extends ApiController
 
                     $oldValue = $originalData[$field] ?? null;
                     $newValue = $employee->{$field};
+                    if ($payloadKey === 'enrollment_date') {
+                        $oldValue = $this->normalizeInsuranceEnrollmentDate($oldValue);
+                        $newValue = $this->normalizeInsuranceEnrollmentDate($newValue);
+                    }
                     if (!$this->isSameInsuranceChangeValue($oldValue, $newValue)) {
                         $hasChangedField = true;
                         break;
@@ -3291,6 +3309,10 @@ class EmployeeController extends ApiController
                 foreach ($fieldMap as $field => $payloadKey) {
                     $oldPayload[$payloadKey] = $originalData[$field] ?? null;
                     $newPayload[$payloadKey] = $employee->{$field};
+                    if ($payloadKey === 'enrollment_date') {
+                        $oldPayload[$payloadKey] = $this->normalizeInsuranceEnrollmentDate($oldPayload[$payloadKey]);
+                        $newPayload[$payloadKey] = $this->normalizeInsuranceEnrollmentDate($newPayload[$payloadKey]);
+                    }
                 }
 
                 \Log::info('检测到员工保险信息变更', [
@@ -3318,6 +3340,38 @@ class EmployeeController extends ApiController
                 'trace' => $e->getTraceAsString()
             ]);
         }
+    }
+
+    private function normalizeInsuranceEnrollmentDate($value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return substr((string) $value, 0, 10);
+    }
+
+    private function firstInsuranceEnrollmentDate($source): ?string
+    {
+        foreach ([
+            'social_insurance_enrollment_date',
+            'medical_insurance_enrollment_date',
+            'provident_fund_enrollment_date',
+            'large_medical_enrollment_date',
+        ] as $field) {
+            $value = is_array($source)
+                ? ($source[$field] ?? null)
+                : ($source->{$field} ?? null);
+            if ($value) {
+                return $this->normalizeInsuranceEnrollmentDate($value);
+            }
+        }
+
+        return null;
     }
 
     private function isSameInsuranceChangeValue($oldValue, $newValue): bool

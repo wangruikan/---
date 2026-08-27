@@ -107,6 +107,26 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="付款方">
+              <el-autocomplete
+                v-model="paymentForm.payer"
+                :fetch-suggestions="queryPaymentPayees"
+                placeholder="请选择付款方"
+                style="width: 100%"
+                clearable
+                @select="handleSelectPayer"
+                @clear="clearPayer"
+              >
+                <template #default="{ item }">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 500;">{{ item.value }}</span>
+                    <span style="font-size: 12px; color: #999; margin-left: 10px;">{{ item.bank_name }}</span>
+                  </div>
+                </template>
+              </el-autocomplete>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="小写金额" prop="amountSmall">
               <el-input v-model="paymentForm.amountSmall" />
             </el-form-item>
@@ -133,6 +153,16 @@
           <el-col :span="12">
             <el-form-item label="账号" prop="bankAccount">
               <el-input v-model="paymentForm.bankAccount" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="付款开户行">
+              <el-input v-model="paymentForm.payerBank" readonly placeholder="选择付款方后自动带出" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="付款账号">
+              <el-input v-model="paymentForm.payerAccount" readonly placeholder="选择付款方后自动带出" />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -376,6 +406,8 @@
         <table class="print-table">
           <tr><td>部门</td><td>{{ paymentForm.department }}</td><td>申请日期</td><td>{{ paymentForm.applyDate }}</td></tr>
           <tr><td>支付对象</td><td>{{ paymentForm.payee }}</td><td>付款方式</td><td>{{ paymentForm.paymentMethod }}</td></tr>
+          <tr><td>付款方</td><td>{{ paymentForm.payer }}</td><td>付款开户行</td><td>{{ paymentForm.payerBank }}</td></tr>
+          <tr><td>付款账号</td><td colspan="3">{{ paymentForm.payerAccount }}</td></tr>
           <tr><td>小写金额</td><td>{{ paymentForm.amountSmall }}</td><td>大写金额</td><td>{{ paymentForm.amountLarge }}</td></tr>
           <tr><td>开户行</td><td>{{ paymentForm.bank }}</td><td>账号</td><td>{{ paymentForm.bankAccount }}</td></tr>
           <tr><td>用途</td><td colspan="3" style="white-space: pre-wrap">{{ paymentForm.purpose }}</td></tr>
@@ -478,6 +510,9 @@ const paymentForm = reactive({
   department: '',
   applyDate: new Date().toISOString().slice(0, 7),
   payee: '',
+  payer: '',
+  payerBank: '',
+  payerAccount: '',
   amountSmall: '',
   amountLarge: '',
   paymentMethod: '',
@@ -619,6 +654,19 @@ const handleSelectPaymentPayee = (item) => {
   paymentForm.payee = item.value || ''
   paymentForm.bank = item.bank_name || ''
   paymentForm.bankAccount = item.bank_account || ''
+}
+
+const handleSelectPayer = (item) => {
+  if (!item) return
+
+  paymentForm.payer = item.value || ''
+  paymentForm.payerBank = item.bank_name || ''
+  paymentForm.payerAccount = item.bank_account || ''
+}
+
+const clearPayer = () => {
+  paymentForm.payerBank = ''
+  paymentForm.payerAccount = ''
 }
 
 const convertToChinese = (money) => {
@@ -830,6 +878,9 @@ const reset = () => {
     department: '',
     applyDate: new Date().toISOString().slice(0, 7),
     payee: '',
+    payer: '',
+    payerBank: '',
+    payerAccount: '',
     amountSmall: '',
     amountLarge: '',
     paymentMethod: '',

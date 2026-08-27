@@ -62,6 +62,7 @@ class CheckTaxDeclarationReminders extends Command
                     $task = TaxDeclarationTask::create([
                         'account_set_id' => $config->account_set_id,
                         'config_id' => $config->id,
+                        'declaration_type' => $config->declaration_type ?: $config->period_type,
                         'company_name' => $config->company_name,
                         'tax_category_ids' => $config->tax_category_ids,
                         'completed_tax_category_ids' => [],

@@ -269,6 +269,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // 用户当前账套选择（必须放在 {id} 路由之前）
         Route::put('/current-account-set', [UserController::class, 'updateCurrentAccountSet']);
         Route::get('/current-account-set', [UserController::class, 'getCurrentAccountSet']);
+        Route::get('/lookup', [UserController::class, 'lookup']);
         
         Route::get('/', [UserController::class, 'index']);
         Route::post('/', [UserController::class, 'store']);

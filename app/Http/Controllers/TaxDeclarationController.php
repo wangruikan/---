@@ -197,6 +197,7 @@ class TaxDeclarationController extends Controller
             'tax_category_ids' => 'required|array|min:1',
             'tax_category_ids.*' => 'integer|exists:tax_categories,id',
             'period_type' => 'required|in:monthly,quarterly,yearly',
+            'declaration_type' => 'nullable|in:monthly,quarterly,yearly',
             'declaration_date' => 'nullable|string|max:5',
         ]);
         $validator->after(function ($validator) use ($request) {
@@ -219,12 +220,14 @@ class TaxDeclarationController extends Controller
                 $request->period_type,
                 $request->declaration_date
             );
+            $declarationType = $request->input('declaration_type') ?: $request->input('period_type');
 
             $config = TaxDeclarationConfig::create([
                 'account_set_id' => $request->account_set_id,
                 'company_name' => $request->company_name,
                 'tax_category_ids' => $request->tax_category_ids,
                 'period_type' => $request->period_type,
+                'declaration_type' => $declarationType,
                 'declaration_date' => $declarationDate,
                 'created_by' => $request->user()?->id ?? Auth::id(),
             ]);
@@ -259,6 +262,7 @@ class TaxDeclarationController extends Controller
             'tax_category_ids' => 'required|array|min:1',
             'tax_category_ids.*' => 'integer|exists:tax_categories,id',
             'period_type' => 'required|in:monthly,quarterly,yearly',
+            'declaration_type' => 'nullable|in:monthly,quarterly,yearly',
             'declaration_date' => 'nullable|string|max:5',
         ]);
         $validator->after(function ($validator) use ($request) {
@@ -281,6 +285,7 @@ class TaxDeclarationController extends Controller
                 $request->period_type,
                 $request->declaration_date
             );
+            $declarationType = $request->input('declaration_type') ?: $request->input('period_type');
 
             $config = TaxDeclarationConfig::findOrFail($id);
             
@@ -288,6 +293,7 @@ class TaxDeclarationController extends Controller
                 'company_name' => $request->company_name,
                 'tax_category_ids' => $request->tax_category_ids,
                 'period_type' => $request->period_type,
+                'declaration_type' => $declarationType,
                 'declaration_date' => $declarationDate,
             ]);
 
@@ -362,7 +368,7 @@ class TaxDeclarationController extends Controller
         
         $query = TaxDeclarationTask::where('account_set_id', $accountSetId)
             ->whereIn('config_id', $configIds)
-            ->with(['handler', 'completedBy', 'attachments']);
+            ->with(['config', 'handler', 'completedBy', 'attachments']);
         
         // 筛选条件
         if ($request->has('status') && $request->status) {
@@ -494,6 +500,7 @@ class TaxDeclarationController extends Controller
                         ? $previousCategoryIds
                         : $task->getCompletedTaxCategoryIdsList();
                     $currentCategoryIds = $this->normalizeTaxCategoryIds($config->tax_category_ids);
+                    $declarationType = $config->declaration_type ?: $config->period_type;
                     $completedCategoryIds = array_values(array_intersect($currentCategoryIds, $completedCategoryIds));
                     $isCompleted = !empty($currentCategoryIds)
                         && empty(array_diff($currentCategoryIds, $completedCategoryIds));
@@ -501,6 +508,7 @@ class TaxDeclarationController extends Controller
                     $task->update([
                         'account_set_id' => $config->account_set_id,
                         'company_name' => $config->company_name,
+                        'declaration_type' => $declarationType,
                         'tax_category_ids' => $config->tax_category_ids,
                         'declaration_date' => $declarationDate,
                         'completed_tax_category_ids' => $completedCategoryIds,
@@ -533,6 +541,7 @@ class TaxDeclarationController extends Controller
                     $task = TaxDeclarationTask::create([
                         'account_set_id' => $config->account_set_id,
                         'config_id' => $config->id,
+                        'declaration_type' => $config->declaration_type ?: $config->period_type,
                         'company_name' => $config->company_name,
                         'tax_category_ids' => $config->tax_category_ids,
                         'completed_tax_category_ids' => [],
@@ -780,7 +789,7 @@ class TaxDeclarationController extends Controller
     public function getTaskDetail($id)
     {
         try {
-            $task = TaxDeclarationTask::with(['handler', 'completedBy', 'attachments.uploader'])
+            $task = TaxDeclarationTask::with(['config', 'handler', 'completedBy', 'attachments.uploader'])
                 ->findOrFail($id);
             
             $this->appendTaskTaxCategoryState($task);

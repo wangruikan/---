@@ -55,6 +55,13 @@
             {{ formatMonth(row.declaration_date) }}
           </template>
         </el-table-column>
+        <el-table-column label="类型" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getDeclarationTypeTag(resolveDeclarationType(row))">
+              {{ getDeclarationTypeText(resolveDeclarationType(row)) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'completed' ? 'success' : 'warning'">
@@ -108,6 +115,9 @@
         <el-descriptions-item label="公司名称">{{ currentTask.company_name }}</el-descriptions-item>
         <el-descriptions-item label="操作员">{{ currentTask.handler_name }}</el-descriptions-item>
         <el-descriptions-item label="申报月份">{{ formatMonth(currentTask.declaration_date) }}</el-descriptions-item>
+        <el-descriptions-item label="类型">
+          {{ getDeclarationTypeText(resolveDeclarationType(currentTask)) }}
+        </el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="currentTask.status === 'completed' ? 'success' : 'warning'">
             {{ currentTask.status === 'completed' ? '已完成' : '待处理' }}
@@ -506,6 +516,28 @@ const formatMonth = (dateStr) => {
   if (!dateStr) return '-'
   const value = String(dateStr).split(' ')[0]
   return value.slice(0, 7)
+}
+
+const getDeclarationTypeText = (type) => {
+  const types = {
+    monthly: '月度',
+    quarterly: '季度',
+    yearly: '年度'
+  }
+  return types[type] || type || '-'
+}
+
+const resolveDeclarationType = (task) => {
+  return task?.declaration_type || task?.config?.declaration_type || task?.config?.period_type || ''
+}
+
+const getDeclarationTypeTag = (type) => {
+  const tags = {
+    monthly: 'primary',
+    quarterly: 'success',
+    yearly: 'warning'
+  }
+  return tags[type] || 'info'
 }
 
 const formatDateTime = (dateStr) => {

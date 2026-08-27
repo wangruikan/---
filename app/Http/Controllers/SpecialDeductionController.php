@@ -513,7 +513,7 @@ class SpecialDeductionController extends Controller
         }
     }
 
-    // 获取员工专项扣除列表（显示所有在职员工）
+    // 获取员工专项扣除列表（显示当前账套内所有已登记员工）
     public function getEmployeeDeductions(Request $request)
     {
         if ($response = $this->checkPermission('special_deductions.view')) {
@@ -528,7 +528,7 @@ class SpecialDeductionController extends Controller
                 : $this->normalizeDeductionType($request->input('deduction_type'));
 
             // 以员工为分页单位，项目只用于筛选和展示，避免多项目员工重复占行。
-            $query = $this->activeEmployeesQuery($accountSetId)
+            $query = Employee::where('employees.account_set_id', $accountSetId)
                 ->select(
                     'employees.id as employee_id',
                     'employees.name as employee_name',

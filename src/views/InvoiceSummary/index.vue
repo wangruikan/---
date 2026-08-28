@@ -145,15 +145,6 @@
             <el-button type="primary" link size="small" @click="handleEdit(row)">
               编辑
             </el-button>
-            <el-button 
-              v-if="!row.is_completed" 
-              type="success" 
-              link 
-              size="small" 
-              @click="handleMarkCompleted(row)"
-            >
-              标记完成
-            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -178,8 +169,8 @@
       title="编辑发票汇总"
       width="600px"
     >
-      <el-form :model="editForm" label-width="120px">
-        <el-form-item label="开票日期">
+      <el-form ref="editFormRef" :model="editForm" :rules="editFormRules" label-width="120px">
+        <el-form-item label="开票日期" prop="invoice_date">
           <el-date-picker
             v-model="editForm.invoice_date"
             type="date"
@@ -188,20 +179,20 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="开票人">
+        <el-form-item label="开票人" prop="invoicer">
           <el-input v-model="editForm.invoicer" placeholder="请输入开票人" />
         </el-form-item>
-        <el-form-item label="发票号码">
+        <el-form-item label="发票号码" prop="invoice_number">
           <el-input v-model="editForm.invoice_number" placeholder="请输入发票号码" />
         </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="editForm.status" style="width: 100%">
+        <el-form-item label="状态" prop="status">
+          <el-select v-model="editForm.status" style="width: 100%" @change="handleEditStatusChange">
             <el-option label="待开票" value="pending" />
             <el-option label="已完成" value="completed" />
           </el-select>
         </el-form-item>
         <el-form-item label="是否完成">
-          <el-switch v-model="editForm.is_completed" />
+          <el-switch v-model="editForm.is_completed" @change="handleEditCompletionChange" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input
@@ -222,7 +213,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Search, Refresh, Download } from '@element-plus/icons-vue'
 import request from '@/api/request'
 import * as XLSX from 'xlsx'
@@ -249,6 +240,7 @@ const pagination = reactive({
 })
 
 const editDialogVisible = ref(false)
+const editFormRef = ref(null)
 const editForm = reactive({
   id: null,
   invoice_date: '',
@@ -258,6 +250,21 @@ const editForm = reactive({
   is_completed: false,
   remarks: ''
 })
+
+const editFormRules = {
+  invoice_date: [
+    { required: true, message: '请选择开票日期', trigger: 'change' }
+  ],
+  invoicer: [
+    { required: true, message: '请输入开票人', trigger: 'blur' }
+  ],
+  invoice_number: [
+    { required: true, message: '请输入发票号码', trigger: 'blur' }
+  ],
+  status: [
+    { required: true, message: '请选择状态', trigger: 'change' }
+  ]
+}
 
 const summaryAmountFields = new Set([
   'invoice_amount',
@@ -478,19 +485,40 @@ const handleEdit = (row) => {
   editForm.invoice_date = row.invoice_date
   editForm.invoicer = row.invoicer
   editForm.invoice_number = row.invoice_number
-  editForm.status = row.status
-  editForm.is_completed = row.is_completed
+  editForm.status = row.status === 'completed' ? 'completed' : 'pending'
+  editForm.is_completed = editForm.status === 'completed'
   editForm.remarks = row.remarks
   editDialogVisible.value = true
+}
+
+const handleEditStatusChange = (status) => {
+  editForm.is_completed = status === 'completed'
+}
+
+const handleEditCompletionChange = (isCompleted) => {
+  editForm.status = isCompleted ? 'completed' : 'pending'
 }
 
 // 保存编辑
 const handleSaveEdit = async () => {
   try {
+    const valid = await editFormRef.value?.validate().catch(() => false)
+    if (!valid) {
+      return
+    }
+
+    const isCompleted = editForm.status === 'completed'
     await request({
       url: `/invoice-summaries/${editForm.id}`,
       method: 'put',
-      data: editForm
+      data: {
+        invoice_date: editForm.invoice_date,
+        invoicer: editForm.invoicer,
+        invoice_number: editForm.invoice_number,
+        status: editForm.status,
+        is_completed: isCompleted,
+        remarks: editForm.remarks
+      }
     })
     
     ElMessage.success('保存成功')
@@ -499,35 +527,6 @@ const handleSaveEdit = async () => {
   } catch (error) {
     console.error('保存失败:', error)
     ElMessage.error('保存失败')
-  }
-}
-
-// 标记为已完成
-const handleMarkCompleted = async (row) => {
-  try {
-    await ElMessageBox.prompt('请输入发票号码', '标记为已完成', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputPattern: /.+/,
-      inputErrorMessage: '请输入发票号码'
-    }).then(async ({ value }) => {
-      await request({
-        url: `/invoice-summaries/${row.id}/mark-completed`,
-        method: 'post',
-        data: {
-          invoice_number: value,
-          invoice_date: new Date().toISOString().split('T')[0]
-        }
-      })
-      
-      ElMessage.success('已标记为完成')
-      loadData()
-    })
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('操作失败:', error)
-      ElMessage.error('操作失败')
-    }
   }
 }
 

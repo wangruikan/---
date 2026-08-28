@@ -92,12 +92,18 @@ class InvoiceSummaryController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'invoice_date' => 'nullable|date',
-            'invoicer' => 'nullable|string|max:100',
-            'invoice_number' => 'nullable|string|max:100',
-            'is_completed' => 'nullable|boolean',
-            'status' => 'nullable|in:pending,completed',
+            'invoice_date' => 'required|date',
+            'invoicer' => 'required|string|max:100',
+            'invoice_number' => 'required|string|max:100',
+            'is_completed' => 'required|boolean',
+            'status' => 'required|in:pending,completed',
             'remarks' => 'nullable|string',
+        ], [
+            'invoice_date.required' => '请选择开票日期',
+            'invoicer.required' => '请输入开票人',
+            'invoice_number.required' => '请输入发票号码',
+            'is_completed.required' => '请选择是否完成',
+            'status.required' => '请选择状态',
         ]);
 
         if ($validator->fails()) {
@@ -110,15 +116,17 @@ class InvoiceSummaryController extends Controller
 
         try {
             $summary = InvoiceSummary::findOrFail($id);
-            
+            $status = $request->input('status');
+
             $summary->update($request->only([
                 'invoice_date',
                 'invoicer',
                 'invoice_number',
-                'is_completed',
-                'status',
                 'remarks',
-            ]));
+            ]) + [
+                'status' => $status,
+                'is_completed' => $status === 'completed',
+            ]);
 
             return response()->json([
                 'success' => true,

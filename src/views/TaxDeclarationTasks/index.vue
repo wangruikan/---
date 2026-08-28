@@ -34,21 +34,35 @@
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="company_name" label="公司名称" min-width="200" />
         <el-table-column prop="handler_name" label="操作员" width="120" />
-        <el-table-column label="税种" min-width="250">
-          <template #default="{ row }">
-            <div class="tax-category-list">
-              <div
-                v-for="category in row.tax_categories_list"
-                :key="category.id"
-                class="tax-category-item"
+        <el-table-column
+          v-for="group in taxCategoryGroups"
+          :key="group.id"
+          :label="group.name"
+          align="center"
+          header-align="center"
+        >
+          <el-table-column
+            v-for="category in group.children"
+            :key="category.id"
+            :label="category.name"
+            :min-width="120"
+            align="center"
+            header-align="center"
+          >
+            <template #default="{ row }">
+              <span
+                :class="['tax-status-cell', `tax-status-${getTaxCategoryState(row, category.id)}`]"
+                :title="getTaxCategoryStateText(row, category.id)"
               >
-                <span>{{ category.name }}</span>
-                <el-icon v-if="category.completed" class="tax-category-completed">
-                  <circle-check-filled />
-                </el-icon>
-              </div>
-            </div>
-          </template>
+                <template v-if="getTaxCategoryState(row, category.id) === 'completed'">
+                  <el-icon><circle-check-filled /></el-icon>
+                </template>
+                <template v-else-if="getTaxCategoryState(row, category.id) === 'not_required'">
+                  -
+                </template>
+              </span>
+            </template>
+          </el-table-column>
         </el-table-column>
         <el-table-column label="申报月份" width="120">
           <template #default="{ row }">
@@ -133,7 +147,7 @@
             :key="category.id"
             class="tax-category-item"
             >
-              <span>{{ category.name }}</span>
+                <span>{{ formatCategoryLabel(category) }}</span>
               <el-icon v-if="category.completed" class="tax-category-completed">
                 <circle-check-filled />
               </el-icon>
@@ -150,7 +164,7 @@
             :key="category.id"
             :label="category.id"
           >
-            {{ category.name }}
+            {{ formatCategoryLabel(category) }}
           </el-checkbox>
         </el-checkbox-group>
       </template>
@@ -255,6 +269,7 @@ function getCurrentMonth() {
 // 申报任务相关
 const tasks = ref([])
 const tasksLoading = ref(false)
+const taxCategoryGroups = ref([])
 const searchForm = reactive({
   status: '',
   month: getCurrentMonth()
@@ -288,6 +303,7 @@ const loadTasks = async () => {
       per_page: pagination.pageSize
     })
     tasks.value = response.data
+    taxCategoryGroups.value = response.tax_category_groups || []
     pagination.total = response.total
   } catch (error) {
     console.error('加载任务失败:', error)
@@ -371,6 +387,33 @@ const submitSelectedTaxCategories = async () => {
       ElMessage.error(error.response?.data?.message || '申报失败')
     }
   }
+}
+
+const getTaxCategoryState = (row, categoryId) => {
+  const states = row?.tax_category_states || {}
+  const state = states[String(categoryId)] ?? states[categoryId]
+  if (state) return state
+
+  const category = (row?.tax_categories_list || []).find(
+    item => Number(item.id) === Number(categoryId)
+  )
+  if (!category) return 'not_required'
+  return category.completed ? 'completed' : 'pending'
+}
+
+const getTaxCategoryStateText = (row, categoryId) => {
+  const texts = {
+    not_required: '无需申报',
+    pending: '待申报',
+    completed: '已完成'
+  }
+  return texts[getTaxCategoryState(row, categoryId)] || '待申报'
+}
+
+const formatCategoryLabel = (category) => {
+  return category.parent?.name
+    ? `${category.parent.name} / ${category.name}`
+    : category.name
 }
 
 // 自定义上传
@@ -613,6 +656,32 @@ onMounted(() => {
 .tax-category-completed {
   color: #67c23a;
   font-size: 16px;
+}
+
+.tax-status-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: 2px;
+}
+
+.tax-status-pending {
+  background: #fde2e2;
+}
+
+.tax-status-completed {
+  background: #fff;
+  color: #67c23a;
+}
+
+.tax-status-not_required {
+  background: transparent;
+  color: #909399;
 }
 
 .tax-category-checkbox-group {

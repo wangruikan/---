@@ -14,7 +14,16 @@
 
           <el-table :data="categories" v-loading="categoriesLoading" border stripe>
             <el-table-column prop="id" label="ID" width="80" />
-            <el-table-column prop="name" label="税种名称" min-width="200" />
+            <el-table-column label="税种大类" min-width="180">
+              <template #default="{ row }">
+                {{ row.parent?.name || row.name }}
+              </template>
+            </el-table-column>
+            <el-table-column label="细分税种" min-width="180">
+              <template #default="{ row }">
+                {{ row.parent ? row.name : '-' }}
+              </template>
+            </el-table-column>
             <el-table-column label="创建人" width="120">
               <template #default="{ row }">
                 {{ row.creator?.name || row.creator_name || '-' }}
@@ -51,7 +60,7 @@
                   size="small"
                   style="margin-right: 5px"
                 >
-                  {{ category.name }}
+                  {{ formatCategoryLabel(category) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -105,6 +114,21 @@
         <el-form-item label="税种名称" prop="name">
           <el-input v-model="categoryForm.name" placeholder="请输入税种名称" />
         </el-form-item>
+        <el-form-item label="所属大类">
+          <el-select
+            v-model="categoryForm.parent_id"
+            placeholder="不选择则创建大类"
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="category in topLevelCategories"
+              :key="category.id"
+              :label="category.name"
+              :value="category.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="categoryDialogVisible = false">取消</el-button>
@@ -125,19 +149,19 @@
           <el-input v-model="configForm.company_name" placeholder="请输入公司名称" />
         </el-form-item>
         <el-form-item label="选择税种" prop="tax_category_ids">
-          <el-select
+          <el-tree-select
             v-model="configForm.tax_category_ids"
             multiple
-            placeholder="请选择税种（可多选）"
+            show-checkbox
+            :check-strictly="false"
+            node-key="id"
+            :data="categoryTree"
+            :render-after-expand="false"
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择大类或细分税种（可多选）"
             style="width: 100%"
-          >
-            <el-option
-              v-for="category in categories"
-              :key="category.id"
-              :label="category.name"
-              :value="category.id"
-            />
-          </el-select>
+          />
         </el-form-item>
         <el-form-item label="申报周期" prop="period_type">
           <el-select
@@ -200,7 +224,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getCategories,
@@ -227,7 +251,29 @@ const categorySubmitting = ref(false)
 const categoryFormRef = ref()
 
 const categoryForm = reactive({
-  name: ''
+  name: '',
+  parent_id: null
+})
+
+const topLevelCategories = computed(() => {
+  return categories.value.filter(category => !category.parent_id)
+})
+
+const categoryTree = computed(() => {
+  return topLevelCategories.value.map(parent => {
+    const children = categories.value
+      .filter(category => Number(category.parent_id) === Number(parent.id))
+      .map(category => ({
+        id: category.id,
+        label: category.name
+      }))
+
+    return {
+      id: parent.id,
+      label: parent.name,
+      ...(children.length ? { children } : {})
+    }
+  })
 })
 
 const categoryRules = {
@@ -285,7 +331,8 @@ const loadCategories = async () => {
 const handleCreateCategory = () => {
   categoryDialogMode.value = 'create'
   Object.assign(categoryForm, {
-    name: ''
+    name: '',
+    parent_id: null
   })
   categoryDialogVisible.value = true
 }
@@ -295,7 +342,8 @@ const handleEditCategory = (row) => {
   categoryDialogMode.value = 'edit'
   Object.assign(categoryForm, {
     id: row.id,
-    name: row.name
+    name: row.name,
+    parent_id: row.parent_id || null
   })
   categoryDialogVisible.value = true
 }
@@ -308,7 +356,8 @@ const handleSubmitCategory = async () => {
   try {
     const data = {
       account_set_id: accountSetStore.currentAccountSetId,
-      name: categoryForm.name
+      name: categoryForm.name,
+      parent_id: categoryForm.parent_id || null
     }
     
     if (categoryDialogMode.value === 'create') {
@@ -399,7 +448,7 @@ const handleEditConfig = (row) => {
   Object.assign(configForm, {
     id: row.id,
     company_name: row.company_name,
-    tax_category_ids: row.tax_category_ids,
+    tax_category_ids: (row.tax_category_ids || []).map(Number),
     period_type: row.period_type,
     declaration_type: row.declaration_type || row.period_type,
     declaration_date: row.period_type === 'monthly'
@@ -510,6 +559,12 @@ const formatDeclarationRule = (row) => {
   }
 
   return row.declaration_date || '-'
+}
+
+const formatCategoryLabel = (category) => {
+  return category.parent?.name
+    ? `${category.parent.name} / ${category.name}`
+    : category.name
 }
 
 onMounted(() => {

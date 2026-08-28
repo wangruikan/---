@@ -15,6 +15,7 @@ class TaxCategory extends Model
     protected $fillable = [
         'account_set_id',
         'name',
+        'parent_id',
         'created_by',
     ];
 
@@ -25,6 +26,7 @@ class TaxCategory extends Model
 
     protected $auditableFields = [
         'name' => '税种名称',
+        'parent_id' => '所属税种大类',
     ];
 
     public function getAuditIdentifier()
@@ -38,6 +40,22 @@ class TaxCategory extends Model
     public function accountSet()
     {
         return $this->belongsTo(AccountSet::class);
+    }
+
+    /**
+     * 所属税种大类。
+     */
+    public function parent()
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /**
+     * 大类下的细分税种。
+     */
+    public function children()
+    {
+        return $this->hasMany(self::class, 'parent_id');
     }
 
     /**

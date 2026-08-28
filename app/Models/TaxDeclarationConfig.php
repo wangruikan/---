@@ -78,10 +78,66 @@ class TaxDeclarationConfig extends Model
      */
     public function getTaxCategoriesAttribute()
     {
-        if (empty($this->tax_category_ids)) {
+        $categoryIds = $this->getConfiguredTaxCategoryIds();
+
+        if (empty($categoryIds)) {
             return collect();
         }
-        
-        return TaxCategory::whereIn('id', $this->tax_category_ids)->get();
+
+        $categories = TaxCategory::with('parent')
+            ->whereIn('id', $categoryIds)
+            ->get()
+            ->keyBy('id');
+
+        return collect($categoryIds)
+            ->map(fn ($categoryId) => $categories->get($categoryId))
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * 配置只保存真正的细分税种 ID；选择大类时展开为该大类的全部细分。
+     */
+    public function getConfiguredTaxCategoryIds(): array
+    {
+        $ids = $this->normalizeTaxCategoryIds($this->tax_category_ids);
+
+        if (empty($ids)) {
+            return [];
+        }
+
+        $categories = TaxCategory::where('account_set_id', $this->account_set_id)
+            ->get(['id', 'parent_id'])
+            ->keyBy('id');
+        $childrenByParent = $categories->filter(fn ($category) => $category->parent_id !== null)
+            ->groupBy('parent_id');
+
+        $expandedIds = [];
+        foreach ($ids as $id) {
+            $category = $categories->get($id);
+            if (!$category) {
+                continue;
+            }
+
+            $children = $childrenByParent->get($id, collect());
+            if ($category->parent_id === null && $children->isNotEmpty()) {
+                foreach ($children as $child) {
+                    $expandedIds[] = (int) $child->id;
+                }
+            } else {
+                $expandedIds[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($expandedIds));
+    }
+
+    private function normalizeTaxCategoryIds($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $value)));
     }
 }

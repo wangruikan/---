@@ -26,8 +26,8 @@ class TaxDeclarationController extends Controller
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('account_set_id');
         
         $categories = TaxCategory::where('account_set_id', $accountSetId)
-            ->with('creator')
-            ->orderBy('name')
+            ->with(['creator', 'parent'])
+            ->orderBy('id')
             ->get();
         
         return response()->json([
@@ -44,6 +44,7 @@ class TaxDeclarationController extends Controller
         $validator = Validator::make($request->all(), [
             'account_set_id' => 'required|integer',
             'name' => 'required|string|max:100',
+            'parent_id' => 'nullable|integer|exists:tax_categories,id',
         ]);
 
         if ($validator->fails()) {
@@ -53,10 +54,23 @@ class TaxDeclarationController extends Controller
             ], 400);
         }
 
+        [$parentId, $parentError] = $this->resolveCategoryParent(
+            $request->input('account_set_id'),
+            $request->input('parent_id')
+        );
+
+        if ($parentError) {
+            return response()->json([
+                'success' => false,
+                'message' => $parentError,
+            ], 400);
+        }
+
         try {
             $category = TaxCategory::create([
                 'account_set_id' => $request->account_set_id,
                 'name' => $request->name,
+                'parent_id' => $parentId,
                 'created_by' => Auth::id(),
             ]);
 
@@ -85,6 +99,7 @@ class TaxDeclarationController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:100',
+            'parent_id' => 'nullable|integer|exists:tax_categories,id',
         ]);
 
         if ($validator->fails()) {
@@ -96,9 +111,23 @@ class TaxDeclarationController extends Controller
 
         try {
             $category = TaxCategory::findOrFail($id);
+
+            [$parentId, $parentError] = $this->resolveCategoryParent(
+                $category->account_set_id,
+                $request->input('parent_id'),
+                $category->id
+            );
+
+            if ($parentError) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $parentError,
+                ], 400);
+            }
             
             $category->update([
                 'name' => $request->name,
+                'parent_id' => $parentId,
             ]);
 
             return response()->json([
@@ -140,6 +169,13 @@ class TaxDeclarationController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => '该税种已被申报配置使用，无法删除'
+                ], 400);
+            }
+
+            if ($category->children()->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => '该税种大类下还有细分税种，无法删除',
                 ], 400);
             }
             
@@ -206,6 +242,11 @@ class TaxDeclarationController extends Controller
                 $request->input('period_type'),
                 $request->input('declaration_date')
             );
+            $this->validateTaxCategorySelection(
+                $validator,
+                $request->input('account_set_id'),
+                $request->input('tax_category_ids')
+            );
         });
 
         if ($validator->fails()) {
@@ -221,11 +262,15 @@ class TaxDeclarationController extends Controller
                 $request->declaration_date
             );
             $declarationType = $request->input('declaration_type') ?: $request->input('period_type');
+            $taxCategoryIds = $this->normalizeConfiguredTaxCategoryIds(
+                $request->input('account_set_id'),
+                $request->input('tax_category_ids')
+            );
 
             $config = TaxDeclarationConfig::create([
                 'account_set_id' => $request->account_set_id,
                 'company_name' => $request->company_name,
-                'tax_category_ids' => $request->tax_category_ids,
+                'tax_category_ids' => $taxCategoryIds,
                 'period_type' => $request->period_type,
                 'declaration_type' => $declarationType,
                 'declaration_date' => $declarationDate,
@@ -271,6 +316,11 @@ class TaxDeclarationController extends Controller
                 $request->input('period_type'),
                 $request->input('declaration_date')
             );
+            $this->validateTaxCategorySelection(
+                $validator,
+                $request->input('account_set_id'),
+                $request->input('tax_category_ids')
+            );
         });
 
         if ($validator->fails()) {
@@ -288,10 +338,14 @@ class TaxDeclarationController extends Controller
             $declarationType = $request->input('declaration_type') ?: $request->input('period_type');
 
             $config = TaxDeclarationConfig::findOrFail($id);
+            $taxCategoryIds = $this->normalizeConfiguredTaxCategoryIds(
+                $config->account_set_id,
+                $request->input('tax_category_ids')
+            );
             
             $config->update([
                 'company_name' => $request->company_name,
-                'tax_category_ids' => $request->tax_category_ids,
+                'tax_category_ids' => $taxCategoryIds,
                 'period_type' => $request->period_type,
                 'declaration_type' => $declarationType,
                 'declaration_date' => $declarationDate,
@@ -349,6 +403,7 @@ class TaxDeclarationController extends Controller
     public function getTasks(Request $request)
     {
         $accountSetId = $request->header('X-Account-Set-Id') ?: $request->input('account_set_id');
+        $taxCategoryGroups = $this->getTaxCategoryGroups($accountSetId);
         [$targetMonth, $year, $month] = $this->resolveTaskMonth($request);
         $targetStartDate = sprintf('%s-01', $targetMonth);
         $targetEndDate = now()->copy()->setDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
@@ -361,6 +416,7 @@ class TaxDeclarationController extends Controller
                 'total' => 0,
                 'current_page' => 1,
                 'per_page' => 20,
+                'tax_category_groups' => $taxCategoryGroups,
             ]);
         }
 
@@ -381,9 +437,9 @@ class TaxDeclarationController extends Controller
         $tasks = $query->orderBy('declaration_date', 'desc')
             ->paginate(20);
         
-        // 加载税种信息
+        // 加载固定的两层税种表头，以及每个任务对应的逐项状态
         foreach ($tasks as $task) {
-            $this->appendTaskTaxCategoryState($task);
+            $this->appendTaskTaxCategoryState($task, $taxCategoryGroups);
         }
         
         return response()->json([
@@ -392,15 +448,17 @@ class TaxDeclarationController extends Controller
             'total' => $tasks->total(),
             'current_page' => $tasks->currentPage(),
             'per_page' => $tasks->perPage(),
+            'tax_category_groups' => $taxCategoryGroups,
         ]);
     }
 
     /**
      * 为任务税种附加逐项完成状态，供列表和详情页统一使用。
      */
-    private function appendTaskTaxCategoryState(TaxDeclarationTask $task): void
+    private function appendTaskTaxCategoryState(TaxDeclarationTask $task, ?array $taxCategoryGroups = null): void
     {
         $completedIds = $task->getCompletedTaxCategoryIdsList();
+        $configuredIds = $task->getConfiguredTaxCategoryIds();
 
         $task->tax_categories_list = $task->taxCategories->map(function ($category) use ($completedIds) {
             $category->completed = in_array((int) $category->id, $completedIds, true);
@@ -408,6 +466,20 @@ class TaxDeclarationController extends Controller
         })->values();
         $task->completed_tax_category_ids = $completedIds;
         $task->pending_tax_category_ids = $task->getPendingTaxCategoryIds();
+
+        $groups = $taxCategoryGroups ?? $this->getTaxCategoryGroups($task->account_set_id);
+        $states = [];
+        foreach ($groups as $group) {
+            foreach ($group['children'] as $category) {
+                $categoryId = (int) $category['id'];
+                $states[(string) $categoryId] = in_array($categoryId, $configuredIds, true)
+                    ? (in_array($categoryId, $completedIds, true) ? 'completed' : 'pending')
+                    : 'not_required';
+            }
+        }
+
+        $task->tax_category_states = $states;
+        $task->tax_category_groups = $groups;
     }
 
     private function normalizeTaxCategoryIds($value): array
@@ -417,6 +489,135 @@ class TaxDeclarationController extends Controller
         }
 
         return array_values(array_unique(array_map('intval', $value)));
+    }
+
+    /**
+     * 验证所选税种属于当前账套。大类允许直接选择，保存时会展开成细分税种。
+     */
+    private function validateTaxCategorySelection($validator, $accountSetId, $value): void
+    {
+        $accountSetId = $accountSetId ?: request()->input('current_account_set_id');
+        $ids = $this->normalizeTaxCategoryIds($value);
+        if (!$accountSetId || empty($ids)) {
+            return;
+        }
+
+        $availableCount = TaxCategory::where('account_set_id', $accountSetId)
+            ->whereIn('id', $ids)
+            ->count();
+
+        if ($availableCount !== count($ids)) {
+            $validator->errors()->add('tax_category_ids', '选择的税种不属于当前账套');
+        }
+
+        if (empty($this->normalizeConfiguredTaxCategoryIds($accountSetId, $ids))) {
+            $validator->errors()->add('tax_category_ids', '请选择有效的税种或细分税种');
+        }
+    }
+
+    /**
+     * 将大类选择转换为细分税种 ID，只有两级结构，避免出现多级嵌套。
+     */
+    private function normalizeConfiguredTaxCategoryIds($accountSetId, $value): array
+    {
+        $ids = $this->normalizeTaxCategoryIds($value);
+        if (!$accountSetId || empty($ids)) {
+            return [];
+        }
+
+        $categories = TaxCategory::where('account_set_id', $accountSetId)
+            ->get(['id', 'parent_id'])
+            ->keyBy('id');
+        $childrenByParent = $categories->filter(fn ($category) => $category->parent_id !== null)
+            ->groupBy('parent_id');
+
+        $expandedIds = [];
+        foreach ($ids as $id) {
+            $category = $categories->get($id);
+            if (!$category) {
+                continue;
+            }
+
+            $children = $childrenByParent->get($id, collect());
+            if ($category->parent_id === null && $children->isNotEmpty()) {
+                foreach ($children as $child) {
+                    $expandedIds[] = (int) $child->id;
+                }
+            } else {
+                $expandedIds[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($expandedIds));
+    }
+
+    /**
+     * 返回任务表固定使用的两层表头。没有细分的大类自身作为一列。
+     */
+    private function getTaxCategoryGroups($accountSetId): array
+    {
+        if (!$accountSetId) {
+            return [];
+        }
+
+        $categories = TaxCategory::where('account_set_id', $accountSetId)
+            ->orderBy('id')
+            ->get(['id', 'name', 'parent_id']);
+        $parents = $categories->filter(fn ($category) => $category->parent_id === null);
+
+        return $parents->map(function ($parent) use ($categories) {
+            $children = $categories->filter(
+                fn ($category) => (int) $category->parent_id === (int) $parent->id
+            );
+
+            if ($children->isEmpty()) {
+                $children = collect([$parent]);
+            }
+
+            return [
+                'id' => (int) $parent->id,
+                'name' => $parent->name,
+                'children' => $children->map(function ($category) use ($parent) {
+                    return [
+                        'id' => (int) $category->id,
+                        'name' => $category->name,
+                        'parent_id' => (int) $parent->id,
+                    ];
+                })->values()->all(),
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * 校验并限制税种细分的所属大类。
+     */
+    private function resolveCategoryParent($accountSetId, $parentId, $ignoreId = null): array
+    {
+        if ($parentId === null || $parentId === '') {
+            return [null, null];
+        }
+
+        $parent = TaxCategory::where('account_set_id', $accountSetId)
+            ->whereKey((int) $parentId)
+            ->first();
+
+        if (!$parent) {
+            return [null, '所属税种大类不存在或不属于当前账套'];
+        }
+
+        if ($ignoreId !== null && (int) $parent->id === (int) $ignoreId) {
+            return [null, '细分税种不能将自己设为所属大类'];
+        }
+
+        if ($ignoreId !== null && TaxCategory::where('parent_id', $ignoreId)->exists()) {
+            return [null, '已有细分税种的大类不能再设置所属大类'];
+        }
+
+        if ($parent->parent_id !== null) {
+            return [null, '只支持大类和细分税种两级结构'];
+        }
+
+        return [(int) $parent->id, null];
     }
 
     /**
@@ -454,6 +655,10 @@ class TaxDeclarationController extends Controller
         $visibleConfigIds = [];
 
         foreach ($configs as $config) {
+            $currentCategoryIds = $this->normalizeConfiguredTaxCategoryIds(
+                $config->account_set_id,
+                $config->tax_category_ids
+            );
             $declarationDates = $this->buildDeclarationDates($year, $config);
             $forceCurrentTask = $targetMonth !== null && (
                 (int) $config->id === $forceCurrentTaskConfigId
@@ -499,7 +704,6 @@ class TaxDeclarationController extends Controller
                     $completedCategoryIds = $storedCompletedIds === null && $task->status === 'completed'
                         ? $previousCategoryIds
                         : $task->getCompletedTaxCategoryIdsList();
-                    $currentCategoryIds = $this->normalizeTaxCategoryIds($config->tax_category_ids);
                     $declarationType = $config->declaration_type ?: $config->period_type;
                     $completedCategoryIds = array_values(array_intersect($currentCategoryIds, $completedCategoryIds));
                     $isCompleted = !empty($currentCategoryIds)
@@ -509,7 +713,7 @@ class TaxDeclarationController extends Controller
                         'account_set_id' => $config->account_set_id,
                         'company_name' => $config->company_name,
                         'declaration_type' => $declarationType,
-                        'tax_category_ids' => $config->tax_category_ids,
+                        'tax_category_ids' => $currentCategoryIds,
                         'declaration_date' => $declarationDate,
                         'completed_tax_category_ids' => $completedCategoryIds,
                         'status' => $isCompleted ? 'completed' : 'pending',
@@ -543,7 +747,7 @@ class TaxDeclarationController extends Controller
                         'config_id' => $config->id,
                         'declaration_type' => $config->declaration_type ?: $config->period_type,
                         'company_name' => $config->company_name,
-                        'tax_category_ids' => $config->tax_category_ids,
+                        'tax_category_ids' => $currentCategoryIds,
                         'completed_tax_category_ids' => [],
                         'declaration_date' => $declarationDate,
                         'year' => $year,
@@ -792,7 +996,7 @@ class TaxDeclarationController extends Controller
             $task = TaxDeclarationTask::with(['config', 'handler', 'completedBy', 'attachments.uploader'])
                 ->findOrFail($id);
             
-            $this->appendTaskTaxCategoryState($task);
+            $this->appendTaskTaxCategoryState($task, $this->getTaxCategoryGroups($task->account_set_id));
             
             return response()->json([
                 'success' => true,
@@ -927,6 +1131,10 @@ class TaxDeclarationController extends Controller
             $task = TaxDeclarationTask::findOrFail($id);
 
             $selectedIds = $this->normalizeTaxCategoryIds($request->input('tax_category_ids'));
+            $selectedIds = $this->normalizeConfiguredTaxCategoryIds(
+                $task->account_set_id,
+                $selectedIds
+            );
             $configuredIds = $task->getConfiguredTaxCategoryIds();
             $completedIds = $task->getCompletedTaxCategoryIdsList();
             $invalidIds = array_diff($selectedIds, $configuredIds);

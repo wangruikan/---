@@ -112,7 +112,10 @@ class TaxDeclarationTask extends Model
             return collect();
         }
 
-        $categories = TaxCategory::whereIn('id', $categoryIds)->get()->keyBy('id');
+        $categories = TaxCategory::with('parent')
+            ->whereIn('id', $categoryIds)
+            ->get()
+            ->keyBy('id');
 
         return collect($categoryIds)
             ->map(fn ($categoryId) => $categories->get($categoryId))
@@ -125,7 +128,36 @@ class TaxDeclarationTask extends Model
      */
     public function getConfiguredTaxCategoryIds(): array
     {
-        return $this->normalizeTaxCategoryIds($this->tax_category_ids);
+        $ids = $this->normalizeTaxCategoryIds($this->tax_category_ids);
+
+        if (empty($ids)) {
+            return [];
+        }
+
+        $categories = TaxCategory::where('account_set_id', $this->account_set_id)
+            ->get(['id', 'parent_id'])
+            ->keyBy('id');
+        $childrenByParent = $categories->filter(fn ($category) => $category->parent_id !== null)
+            ->groupBy('parent_id');
+
+        $expandedIds = [];
+        foreach ($ids as $id) {
+            $category = $categories->get($id);
+            if (!$category) {
+                continue;
+            }
+
+            $children = $childrenByParent->get($id, collect());
+            if ($category->parent_id === null && $children->isNotEmpty()) {
+                foreach ($children as $child) {
+                    $expandedIds[] = (int) $child->id;
+                }
+            } else {
+                $expandedIds[] = (int) $id;
+            }
+        }
+
+        return array_values(array_unique($expandedIds));
     }
 
     /**

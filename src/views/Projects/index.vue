@@ -118,6 +118,7 @@
           stripe
           border
           height="max(280px, calc(100vh - 390px))"
+          :row-class-name="getProjectRowClassName"
         >
           <el-table-column prop="code" label="&#39033;&#30446;&#32534;&#21495;" width="100" fixed="left" />
           <el-table-column prop="name" label="&#39033;&#30446;&#21517;&#31216;" width="200" fixed="left" />
@@ -3773,6 +3774,10 @@ const getProjectStatusText = (row) => {
   return texts[getProjectStatusValue(row)] || '未知'
 }
 
+const getProjectRowClassName = ({ row }) => {
+  return getProjectStatusValue(row) === 'completed' ? 'project-row-completed' : ''
+}
+
 const getDeliveryFrequencyText = (frequency) => {
   const texts = {
     monthly: '月度',
@@ -4096,6 +4101,12 @@ watch(otherInsuranceNoSelection, (newVal) => {
 .table-section :deep(.el-table__header-wrapper th),
 .table-section :deep(.el-table__fixed-header-wrapper th) {
   background: #fff;
+}
+
+.table-section :deep(.el-table__body tr.project-row-completed > td),
+.table-section :deep(.el-table__fixed-body-wrapper tr.project-row-completed > td),
+.table-section :deep(.el-table__fixed-right tr.project-row-completed > td) {
+  color: #909399;
 }
 
 .project-form-tabs {

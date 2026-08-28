@@ -29,8 +29,8 @@
               clearable
               style="width: 150px"
             >
-              <el-option label="超级管理员" value="super_admin" />
-              <el-option label="管理员" value="admin" />
+              <el-option label="管理员" value="super_admin" />
+              <el-option label="超级管理员" value="admin" />
               <el-option label="业务人员" value="employee" />
               <el-option label="薪资核算" value="payroll" />
               <el-option label="财务" value="finance" />
@@ -193,7 +193,7 @@
 
         <el-form-item v-if="isEdit || !isExistingUser" label="角色" prop="role">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
-            <el-option label="管理员" value="admin" />
+            <el-option label="管理员" value="super_admin" />
             <el-option label="业务人员" value="employee" />
             <el-option label="薪资核算" value="payroll" />
             <el-option label="财务" value="finance" />
@@ -648,8 +648,8 @@ const getRoleType = (role) => {
 
 const getRoleText = (role) => {
   const texts = {
-    super_admin: '超级管理员',
-    admin: '管理员',
+    super_admin: '管理员',
+    admin: '超级管理员',
     manager: '管理员',
     employee: '业务人员',
     payroll: '薪资核算',

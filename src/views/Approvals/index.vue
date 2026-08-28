@@ -189,19 +189,16 @@
             <el-descriptions-item label="员工姓名" v-if="currentDetail.business_type === 'employee_contract' && currentDetail.business_data?.employee">
               {{ currentDetail.business_data.employee.name }}
             </el-descriptions-item>
-            <el-descriptions-item label="项目名称" v-if="currentDetail.business_type === 'employee_contract' && getEmployeeContractProjectNames(currentDetail.business_data)">
-              {{ getEmployeeContractProjectNames(currentDetail.business_data) }}
+            <el-descriptions-item label="项目名称" v-if="getApprovalProjectName(currentDetail)">
+              {{ getApprovalProjectName(currentDetail) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="所属期" v-if="getApprovalPeriod(currentDetail)">
+              {{ getApprovalPeriod(currentDetail) }}
             </el-descriptions-item>
             <el-descriptions-item label="合同类型" v-if="currentDetail.business_type === 'employee_contract' && currentDetail.business_data?.contract_type">
               {{ getContractTypeText(currentDetail.business_data.contract_type) }}
             </el-descriptions-item>
-            <el-descriptions-item label="项目名称" v-if="currentDetail.business_type === '工资表审批' && currentDetail.business_data?.project">
-              {{ currentDetail.business_data.project.name }}
-            </el-descriptions-item>
-            <el-descriptions-item label="工资月份" v-if="currentDetail.business_type === '工资表审批' && currentDetail.business_data?.month">
-              {{ currentDetail.business_data.month }}
-            </el-descriptions-item>
-            <el-descriptions-item label="盖章方式" v-if="currentDetail.business_type === '工资表审批' && currentDetail.business_data?.approval_type">
+            <el-descriptions-item label="盖章方式" v-if="!isInvoiceApproval(currentDetail) && currentDetail.business_type === '工资表审批' && currentDetail.business_data?.approval_type">
               <el-tag :type="currentDetail.business_data.approval_type === 'online' ? 'success' : 'warning'" size="small">
                 {{ currentDetail.business_data.approval_type === 'online' ? '线上' : '线下' }}
               </el-tag>
@@ -214,12 +211,12 @@
                 {{ getStatusText(currentDetail.status) }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="盖章方式" v-if="currentDetail.instance?.stamp_method || currentDetail.stamp_method">
+            <el-descriptions-item label="盖章方式" v-if="!isInvoiceApproval(currentDetail) && (currentDetail.instance?.stamp_method || currentDetail.stamp_method)">
               <el-tag :type="(currentDetail.instance?.stamp_method || currentDetail.stamp_method) === 'online' ? 'success' : 'warning'" size="small">
                 {{ getStampMethodText(currentDetail.instance?.stamp_method || currentDetail.stamp_method) }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="审批用章" :span="2" v-if="currentDetail.stamp_selection_mode">
+            <el-descriptions-item label="审批用章" :span="2" v-if="!isInvoiceApproval(currentDetail) && currentDetail.stamp_selection_mode">
               <span v-if="currentDetail.stamp_selection_mode === 'none'">无</span>
               <span v-else>
                 {{ currentDetail.stamp_company || '-' }} / {{ getSelectedStampTypeText(currentDetail.stamp_type) }}
@@ -1732,19 +1729,127 @@ const getContractTypeText = (type) => {
   return texts[type] || type
 }
 
-const getEmployeeContractProjectNames = (businessData) => {
-  const projects = businessData?.employee?.projects || []
+const getApprovalType = (detail) => {
+  const instance = detail?.instance || detail
+  return instance?.business_type || ''
+}
+
+const getApprovalBusinessData = (detail) => {
+  const instance = detail?.instance || detail
+  return detail?.business_data || instance?.business_data || {}
+}
+
+const isInvoiceApproval = (detail) => {
+  return ['发票申请', '发票申请（重新提交）', 'invoice_application'].includes(getApprovalType(detail))
+}
+
+const normalizeProjectNames = (value) => {
+  if (!value) {
+    return []
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(item => normalizeProjectNames(item))
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.projects)) {
+      return normalizeProjectNames(value.projects)
+    }
+
+    return [value.name || value.project_name].filter(Boolean).map(name => String(name).trim())
+  }
+
+  const name = String(value).trim()
+  return name ? [name] : []
+}
+
+const getEmployeeProjectNames = (employee) => {
+  const projects = employee?.projects
   if (!Array.isArray(projects) || projects.length === 0) {
-    return ''
+    return []
   }
 
   const activeProjects = projects.filter(project => project?.pivot?.status === 'active')
   const displayProjects = activeProjects.length > 0 ? activeProjects : projects
+  return normalizeProjectNames(displayProjects)
+}
 
-  return displayProjects
-    .map(project => project?.name)
-    .filter(Boolean)
-    .join('、')
+const getApprovalProjectName = (detail) => {
+  const data = getApprovalBusinessData(detail)
+  const nestedData = [
+    data.salaryApproval,
+    data.insuranceSummary,
+    data.reimbursement,
+    data.reimbursement_form,
+    data.payment_summary
+  ].filter(Boolean)
+
+  const names = [
+    normalizeProjectNames(data.project_names),
+    normalizeProjectNames(data.project_name),
+    normalizeProjectNames(data.project),
+    normalizeProjectNames(data.projects),
+    getEmployeeProjectNames(data.employee),
+    ...nestedData.map(item => [
+      normalizeProjectNames(item.project_names),
+      normalizeProjectNames(item.project_name),
+      normalizeProjectNames(item.project),
+      normalizeProjectNames(item.projects)
+    ])
+  ].flat()
+
+  return [...new Set(names.filter(Boolean))].join('、')
+}
+
+const getPeriodValue = (data) => {
+  if (!data || typeof data !== 'object') {
+    return ''
+  }
+
+  if (data.period_year !== null && data.period_year !== undefined && data.period_year !== ''
+    && data.period_month !== null && data.period_month !== undefined && data.period_month !== '') {
+    return `${data.period_year}-${String(data.period_month).padStart(2, '0')}`
+  }
+
+  if (data.year !== null && data.year !== undefined && data.year !== ''
+    && data.month !== null && data.month !== undefined && data.month !== '') {
+    return `${data.year}-${String(data.month).padStart(2, '0')}`
+  }
+
+  for (const key of ['period', 'selected_month', 'month']) {
+    const value = data[key]
+    if (value !== null && value !== undefined && String(value).trim() !== '') {
+      return String(value).trim()
+    }
+  }
+
+  return ''
+}
+
+const getApprovalPeriod = (detail) => {
+  const data = getApprovalBusinessData(detail)
+  const directPeriod = getPeriodValue(data)
+  if (directPeriod) {
+    return directPeriod
+  }
+
+  const nestedData = [
+    data.salaryApproval,
+    data.insuranceSummary,
+    data.reimbursement,
+    data.reimbursement_form,
+    data.payment_summary
+  ].filter(Boolean)
+
+  for (const item of nestedData) {
+    const period = getPeriodValue(item)
+    if (period) {
+      return period
+    }
+  }
+
+  return ''
 }
 
 const getInitiatorName = (row) => {

@@ -274,6 +274,7 @@
           <el-tab-pane label="&#22522;&#30784;&#37197;&#32622;" name="basic" />
           <el-tab-pane label="&#24320;&#31080;&#20449;&#24687;" name="invoice" />
           <el-tab-pane label="&#20445;&#38505;&#35774;&#32622;" name="insurance" />
+          <el-tab-pane label="人员设置" name="project_users" />
           <el-tab-pane label="&#21512;&#21516;&#27169;&#26495;" name="contract" />
         </el-tabs>
 
@@ -552,6 +553,92 @@
           <div class="form-tip">点击按钮选择项目绑定的商业保险保单，每种保险类型只能绑定一个保单，员工将自动享受这些保险</div>
         </el-form-item>
 
+        </div>
+
+        <div
+          v-show="projectFormActiveTab === 'project_users'"
+          v-loading="projectFormRoleUsersLoading"
+          class="project-form-role-users"
+        >
+          <el-form-item label="负责人设置人">
+            <el-select
+              v-model="roleUsersForm.role_manager_user_ids"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="请选择负责人设置人"
+              style="width: 100%"
+              :disabled="(form.id && !isEdit) || !canManageRoleUsers(form)"
+            >
+              <el-option
+                v-for="user in roleUserOptions"
+                :key="`form-manager-${user.id}`"
+                :label="user.name"
+                :value="user.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="保险负责人">
+            <el-select
+              v-model="roleUsersForm.insurance_user_ids"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="请选择保险负责人"
+              style="width: 100%"
+              :disabled="(form.id && !isEdit) || !canManageRoleUsers(form)"
+            >
+              <el-option
+                v-for="user in roleUserOptions"
+                :key="`form-insurance-${user.id}`"
+                :label="user.name"
+                :value="user.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="薪资员">
+            <el-select
+              v-model="roleUsersForm.salary_user_ids"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="请选择薪资员"
+              style="width: 100%"
+              :disabled="(form.id && !isEdit) || !canManageRoleUsers(form)"
+            >
+              <el-option
+                v-for="user in roleUserOptions"
+                :key="`form-salary-${user.id}`"
+                :label="user.name"
+                :value="user.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="交付员">
+            <el-select
+              v-model="roleUsersForm.delivery_user_ids"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="请选择交付员"
+              style="width: 100%"
+              :disabled="(form.id && !isEdit) || !canManageRoleUsers(form)"
+            >
+              <el-option
+                v-for="user in roleUserOptions"
+                :key="`form-delivery-${user.id}`"
+                :label="user.name"
+                :value="user.id"
+              />
+            </el-select>
+          </el-form-item>
         </div>
 
         <div v-show="projectFormActiveTab === 'basic'">
@@ -1625,6 +1712,7 @@ const medicalInsuranceRegionsSelectRef = ref()
 let projectStickyPanelResizeObserver = null
 const roleUsersLoading = ref(false)
 const savingRoleUsers = ref(false)
+const projectFormRoleUsersLoading = ref(false)
 const roleUsersProject = ref(null)
 const roleUserOptions = ref([])
 const roleUsersForm = reactive({
@@ -2847,8 +2935,11 @@ const handleCreate = async () => {
     other: []
   }
 
-  // 加载所有地区和保险数据
-  await loadAvailableRegions()
+  // 加载所有地区、保险和项目人员数据
+  await Promise.all([
+    loadAvailableRegions(),
+    loadProjectRoleUsersForForm()
+  ])
   formRef.value?.clearValidate?.()
 
   showCreateDialog.value = true
@@ -2867,7 +2958,7 @@ const handleReset = () => {
 }
 
 const canManageRoleUsers = (row) => {
-  if (isAdmin.value) {
+  if (['admin', 'super_admin'].includes(userStore.userInfo?.role)) {
     return true
   }
 
@@ -2895,6 +2986,63 @@ const resetRoleUsersForm = () => {
   roleUsersForm.salary_user_ids = []
   roleUsersForm.delivery_user_ids = []
 }
+
+const applyRoleUsersForm = (roles = {}) => {
+  const normalizeIds = (ids) => (Array.isArray(ids) ? ids : [])
+    .map(id => Number(id))
+    .filter(id => Number.isFinite(id) && id > 0)
+
+  roleUsersForm.role_manager_user_ids = normalizeIds(roles.role_manager?.user_ids)
+  roleUsersForm.insurance_user_ids = normalizeIds(roles.insurance?.user_ids)
+  roleUsersForm.salary_user_ids = normalizeIds(roles.salary?.user_ids)
+  roleUsersForm.delivery_user_ids = normalizeIds(roles.delivery?.user_ids)
+}
+
+const mergeProjectRoleUserOptions = (project) => {
+  const projectUsers = Object.values(project?.role_users || {})
+    .flatMap(role => Array.isArray(role?.users) ? role.users : [])
+    .filter(user => user?.id)
+    .map(user => ({
+      id: Number(user.id),
+      name: user.name || user.nickname || user.email || `用户${user.id}`
+    }))
+
+  const options = [...roleUserOptions.value, ...projectUsers]
+  roleUserOptions.value = Array.from(
+    new Map(options.map(user => [Number(user.id), user])).values()
+  )
+}
+
+const loadProjectRoleUsersForForm = async (project = null) => {
+  projectFormRoleUsersLoading.value = true
+  resetRoleUsersForm()
+
+  try {
+    await loadRoleUserOptions()
+    mergeProjectRoleUserOptions(project)
+
+    if (project?.role_users) {
+      applyRoleUsersForm(project.role_users)
+    }
+
+    if (project?.id && canManageRoleUsers(project)) {
+      const response = await getProjectRoleUsers(project.id)
+      mergeProjectRoleUserOptions({ role_users: response?.data?.roles || {} })
+      applyRoleUsersForm(response?.data?.roles || {})
+    }
+  } catch (error) {
+    console.warn('加载项目表单人员设置失败，使用列表中的人员配置:', error)
+  } finally {
+    projectFormRoleUsersLoading.value = false
+  }
+}
+
+const getRoleUsersPayload = () => ({
+  role_manager_user_ids: roleUsersForm.role_manager_user_ids,
+  insurance_user_ids: roleUsersForm.insurance_user_ids,
+  salary_user_ids: roleUsersForm.salary_user_ids,
+  delivery_user_ids: roleUsersForm.delivery_user_ids
+})
 
 const loadRoleUserOptions = async () => {
   if (!currentAccountSetId.value) {
@@ -2952,12 +3100,7 @@ const submitRoleUsersForm = async () => {
 
   savingRoleUsers.value = true
   try {
-    await saveProjectRoleUsers(roleUsersProject.value.id, {
-      role_manager_user_ids: roleUsersForm.role_manager_user_ids,
-      insurance_user_ids: roleUsersForm.insurance_user_ids,
-      salary_user_ids: roleUsersForm.salary_user_ids,
-      delivery_user_ids: roleUsersForm.delivery_user_ids
-    })
+    await saveProjectRoleUsers(roleUsersProject.value.id, getRoleUsersPayload())
 
     ElMessage.success('项目人员保存成功')
     showRoleUsersDialog.value = false
@@ -3001,6 +3144,9 @@ const handleView = async (row) => {
 
   // 设置商业保险"无"选择模式
   otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
+
+  // 加载项目人员配置
+  await loadProjectRoleUsersForForm(row)
 
   console.log('查看项目 - 地区数据加载完成:', {
     socialSecurity: availableSocialSecurityRegions.value.length,
@@ -3049,6 +3195,9 @@ const handleEdit = async (row) => {
 
   // 设置商业保险"无"选择模式
   otherInsuranceNoSelection.value = !row.other_insurance_policies || row.other_insurance_policies.length === 0
+
+  // 加载项目人员配置
+  await loadProjectRoleUsersForForm(row)
   
   console.log('编辑项目 - 地区数据加载完成:', {
     socialSecurity: availableSocialSecurityRegions.value.length,
@@ -3472,6 +3621,11 @@ const handleSubmit = async () => {
       projectCreateDraft.clear()
     }
 
+    // 项目创建/更新后同步保存项目人员配置
+    if (canManageRoleUsers(form)) {
+      await saveProjectRoleUsers(projectId, getRoleUsersPayload())
+    }
+
     // 保存社保地区（过滤空值和无效值）
     if (form.social_security_regions && form.social_security_regions.length > 0) {
       const validRegions = form.social_security_regions.filter(id => id !== null && id !== undefined && id !== '' && id !== NO_SOCIAL_SECURITY_OPTION)
@@ -3559,6 +3713,7 @@ const handleDialogClose = () => {
   }
   currentProject.value = null
   isEdit.value = false
+  resetRoleUsersForm()
   resetForm()
   formRef.value?.clearValidate?.()
 }

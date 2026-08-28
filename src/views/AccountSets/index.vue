@@ -855,8 +855,8 @@ const handleRemoveUser = async (userId) => {
 
 const getRoleText = (role) => {
   const texts = {
-    super_admin: '超级管理员',
-    admin: '管理员',
+    super_admin: '管理员',
+    admin: '创建管理员',
     manager: '经理',
     employee: '员工',
     finance: '财务'

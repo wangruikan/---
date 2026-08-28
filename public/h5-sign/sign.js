@@ -152,6 +152,22 @@ createApp({
             return positions.filter(pos => pos?.type === 'previous_company')
         },
 
+        getContractSignDatePlaceholderPositions() {
+            const positions = Array.isArray(this.contract?.signature_positions)
+                ? this.contract.signature_positions
+                : []
+
+            return positions.filter(pos => pos?.type === 'contract_sign_date')
+        },
+
+        getContractSignDate() {
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const day = String(now.getDate()).padStart(2, '0')
+            return `${year}-${month}-${day}`
+        },
+
         requiresPreviousCompany() {
             return this.getPreviousCompanyPlaceholderPositions().length > 0
         },
@@ -705,7 +721,8 @@ createApp({
                 if (confirm('正在合成签名到PDF，可能需要10-30秒，请耐心等待...')) {
                     
                     // 1. 使用pdf-lib合成PDF
-                    const signedPdfBytes = await this.mergePDFWithSignature(signatureDataUrl)
+                    const contractSignDate = this.getContractSignDate()
+                    const signedPdfBytes = await this.mergePDFWithSignature(signatureDataUrl, contractSignDate)
                     
                     // 2. 鍚堟垚椤荤煡鏂囦欢绛惧悕鍓湰
                     const noticeSignedPdfs = await this.mergeNoticePDFsWithSignature(signatureDataUrl)
@@ -721,7 +738,7 @@ createApp({
         },
         
         // 鍚堟垚PDF鍜岀鍚嶏紙鑷姩鍚堟垚鍒版墍鏈夐璁句綅缃級
-        async mergePDFWithSignature(signatureDataUrl) {
+        async mergePDFWithSignature(signatureDataUrl, contractSignDate) {
             try {
                 console.log('寮€濮嬪悎鎴怭DF...')
                 console.log('鍘熷PDF澶у皬:', this.pdfBytes.byteLength, 'bytes')
@@ -800,6 +817,11 @@ createApp({
                 if (this.requiresPreviousCompany() && previousCompanyPositions.length > 0) {
                     console.log('姝ラ4: 鍚堟垚涓婁釜鍏徃瀛楁')
                     await this.mergeTextValueToPDF(pdfDoc, this.previousCompany, previousCompanyPositions)
+                }
+
+                const contractSignDatePositions = this.getContractSignDatePlaceholderPositions()
+                if (contractSignDatePositions.length > 0) {
+                    await this.mergeTextValueToPDF(pdfDoc, contractSignDate, contractSignDatePositions)
                 }
 
                 // 保存PDF

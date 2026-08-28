@@ -121,6 +121,11 @@ export class PdfFillService {
 
       for (const position of positionsArray) {
         const fieldName = position.type
+
+        // 签订日期必须在员工小程序实际签署时再写入合同。
+        if (fieldName === 'contract_sign_date') {
+          continue
+        }
         const pageIndex = position.page || 0
         
         // 获取对应页面

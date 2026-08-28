@@ -16,21 +16,23 @@ class AccountSetController extends Controller
     {
         $user = $request->user();
         
-        // 管理员可以访问所有账套
+        // 创建管理员可以访问所有账套
         if ($user && $user->role === 'admin') {
             $accountSets = AccountSet::where('status', 'active')
                 ->orderBy('is_default', 'desc')
                 ->orderBy('created_at', 'desc')
                 ->get();
         } else {
-            // 非管理员只能访问自己所属的账套
-            $accountSets = AccountSet::whereHas('users', function($query) use ($user) {
-                $query->where('user_id', $user->id);
-            })
-            ->where('status', 'active')
-            ->orderBy('is_default', 'desc')
-            ->orderBy('created_at', 'desc')
-            ->get();
+            // 管理员（super_admin）及其他用户只能访问自己所属的账套
+            $accountSets = AccountSet::where('status', 'active')
+                ->where(function ($query) use ($user) {
+                    $query->whereHas('users', function($userQuery) use ($user) {
+                        $userQuery->where('user_id', $user->id);
+                    })->orWhere('account_sets.id', $user->account_set_id ?? null);
+                })
+                ->orderBy('is_default', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->get();
         }
         
         return response()->json([
@@ -431,8 +433,8 @@ class AccountSetController extends Controller
             ], 401);
         }
 
-        // 非管理员仅可查看自己所属账套的人员。
-        if ($user->role !== 'admin' && $user->role !== 'super_admin') {
+        // 管理员（super_admin）及普通用户仅可查看自己所属账套的人员。
+        if ($user->role !== 'admin') {
             $hasAccess = \DB::table('account_set_users')
                 ->where('account_set_id', $id)
                 ->where('user_id', $user->id)
@@ -505,7 +507,7 @@ class AccountSetController extends Controller
             ->where('account_set_id', $accountSetId)
             ->exists();
 
-        if (!$hasAccess && !in_array($request->user()->role, ['admin', 'super_admin'], true)) {
+        if (!$hasAccess && $request->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
                 'message' => '您没有访问此账套的权限'

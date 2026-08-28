@@ -14,9 +14,9 @@
             {{ $index + 1 }}
           </template>
         </el-table-column>
-        <el-table-column prop="payee_name" label="支付对象" min-width="220" />
-        <el-table-column prop="bank_name" label="开户行" min-width="260" />
-        <el-table-column prop="bank_account" label="账号" min-width="220" />
+        <el-table-column prop="payee_name" label="收款单位" min-width="220" />
+        <el-table-column prop="bank_name" label="开户银行" min-width="260" />
+        <el-table-column prop="bank_account" label="银行账号" min-width="220" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
@@ -33,26 +33,26 @@
       :close-on-click-modal="false"
     >
       <el-form ref="formRef" :model="formData" :rules="formRules" label-width="90px">
-        <el-form-item label="支付对象" prop="payee_name">
+        <el-form-item label="收款单位" prop="payee_name">
           <el-input
             v-model="formData.payee_name"
-            placeholder="请输入支付对象"
+            placeholder="请输入收款单位"
             maxlength="100"
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="开户行" prop="bank_name">
+        <el-form-item label="开户银行" prop="bank_name">
           <el-input
             v-model="formData.bank_name"
-            placeholder="请输入开户行"
+            placeholder="请输入开户银行"
             maxlength="255"
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="账号" prop="bank_account">
+        <el-form-item label="银行账号" prop="bank_account">
           <el-input
             v-model="formData.bank_account"
-            placeholder="请输入账号"
+            placeholder="请输入银行账号"
             maxlength="100"
             show-word-limit
           />
@@ -94,9 +94,9 @@ const formData = reactive({
 })
 
 const formRules = {
-  payee_name: [{ required: true, message: '请输入支付对象', trigger: 'blur' }],
-  bank_name: [{ required: true, message: '请输入开户行', trigger: 'blur' }],
-  bank_account: [{ required: true, message: '请输入账号', trigger: 'blur' }]
+  payee_name: [{ required: true, message: '请输入收款单位', trigger: 'blur' }],
+  bank_name: [{ required: true, message: '请输入开户银行', trigger: 'blur' }],
+  bank_account: [{ required: true, message: '请输入银行账号', trigger: 'blur' }]
 }
 
 const loadPayeeList = async () => {

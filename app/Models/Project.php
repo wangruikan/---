@@ -348,6 +348,7 @@ class Project extends Model
             'household_agricultural_check' => '户籍-农业（打勾）',
             'household_non_agricultural_check' => '户籍-非农业（打勾）',
             'hire_date' => '入职日期',
+            'contract_sign_date' => '签订日期',
             'contract_sign_year' => '签订年',
             'contract_sign_month' => '签订月',
             'contract_sign_day' => '签订日',

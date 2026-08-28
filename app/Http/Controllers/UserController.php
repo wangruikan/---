@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\AccountSet;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -23,7 +24,7 @@ class UserController extends Controller
         $query = User::query();
         $currentAccountSetId = $this->getCurrentAccountSetId($request);
 
-        $query->where('role', '!=', 'super_admin');
+        $query->where('role', '!=', 'admin');
 
         if ($request->boolean('current_account_set_only')) {
             if ($currentAccountSetId) {
@@ -96,10 +97,10 @@ class UserController extends Controller
         $existingUser = $name !== '' ? User::where('name', $name)->first() : null;
 
         if ($existingUser) {
-            if ($existingUser->role === 'super_admin') {
+            if ($existingUser->role === 'admin') {
                 return response()->json([
                     'success' => false,
-                    'message' => '超级管理员账号不能关联到账套用户列表',
+                    'message' => '创建管理员账号不能关联到账套用户列表',
                 ], 422);
             }
 
@@ -129,7 +130,7 @@ class UserController extends Controller
         }
 
         // 从角色表获取所有有效角色
-        $validRoles = \App\Models\Role::where('name', '!=', 'super_admin')->pluck('name')->toArray();
+        $validRoles = \App\Models\Role::where('name', '!=', 'admin')->pluck('name')->toArray();
         $validRolesStr = implode(',', $validRoles);
 
         $validator = Validator::make($request->all(), [
@@ -225,7 +226,7 @@ class UserController extends Controller
             ]);
         }
 
-        $canAttach = $user->role !== 'super_admin';
+        $canAttach = $user->role !== 'admin';
         $alreadyAssigned = $canAttach && DB::table('account_set_users')
             ->where('account_set_id', $currentAccountSetId)
             ->where('user_id', $user->id)
@@ -387,6 +388,24 @@ class UserController extends Controller
         ]);
 
         $user = $request->user();
+        $accountSetQuery = AccountSet::where('id', $request->account_set_id)
+            ->where('status', 'active');
+
+        if ($user->role !== 'admin') {
+            $accountSetQuery->where(function ($query) use ($user) {
+                $query->whereHas('users', function ($userQuery) use ($user) {
+                    $userQuery->where('users.id', $user->id);
+                })->orWhere('id', $user->account_set_id ?? null);
+            });
+        }
+
+        if (!$accountSetQuery->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => '无权切换到该账套'
+            ], 403);
+        }
+
         $user->current_account_set_id = $request->account_set_id;
         $user->save();
 

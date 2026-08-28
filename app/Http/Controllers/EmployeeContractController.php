@@ -1115,7 +1115,6 @@ class EmployeeContractController extends Controller
                         'household_agricultural_check' => $this->isAgriculturalHousehold($employee->household_type) ? '√' : '',
                         'household_non_agricultural_check' => $this->isNonAgriculturalHousehold($employee->household_type) ? '√' : '',
                         'hire_date' => $employee->hire_date?->format('Y-m-d'),
-                        'contract_sign_date' => now()->format('Y-m-d'),
                         'contract_start_date' => $employee->contract_start_date?->format('Y-m-d'),
                         'contract_end_date' => $employee->contract_end_date?->format('Y-m-d'),
                         'contract_months' => $employee->contract_months,
@@ -1203,7 +1202,7 @@ class EmployeeContractController extends Controller
 
     /**
      * 提取小程序签约阶段需要保留的占位符坐标
-     * 当前支持：employee_signature、previous_company、company_stamp
+     * 当前支持：employee_signature、previous_company、company_stamp、contract_sign_date
      */
     private function extractContractPlaceholderPositions($rawPlaceholderPositions): array
     {
@@ -1219,7 +1218,7 @@ class EmployeeContractController extends Controller
             return [];
         }
 
-        $allowedTypes = ['employee_signature', 'previous_company', 'company_stamp'];
+        $allowedTypes = ['employee_signature', 'previous_company', 'company_stamp', 'contract_sign_date'];
         $result = [];
 
         foreach ($positions as $pos) {

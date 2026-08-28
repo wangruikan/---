@@ -126,6 +126,8 @@ class ApprovalInstance extends Model
                 return \App\Models\Employee::with(['projects'])->find($this->business_id);
             case '保险汇总':
             case '文件盖章':
+            case 'insurance_summary':
+            case 'file_stamp':
                 $process = \App\Models\ProcessApproval::with(['initiator', 'attachments'])
                     ->find($this->business_id);
 
@@ -137,27 +139,58 @@ class ApprovalInstance extends Model
                     );
                 }
 
-                return $process;
-            case '付款申请':
-                return \App\Models\PaymentRequest::with(['submitter', 'attachments'])
+                return $this->attachProjectNames($process, $process?->project_ids);
+            case '发票申请':
+            case '发票申请（重新提交）':
+            case 'invoice_application':
+                return \App\Models\InvoiceApplication::with(['creator'])
                     ->find($this->business_id);
+            case '付款申请':
+            case 'payment_application':
+                $paymentRequest = \App\Models\PaymentRequest::with(['submitter', 'attachments'])
+                    ->find($this->business_id);
+
+                return $this->attachProjectNames($paymentRequest, $paymentRequest?->project_ids);
             case '考勤申请':
+            case 'attendance_sheet':
                 return \App\Models\AttendanceSheet::with(['project', 'creator'])
                     ->find($this->business_id);
             case '工资表审批':
+            case 'salary_approval':
                 return \App\Models\SalaryApproval::with(['project', 'submitter', 'attachments'])
                     ->find($this->business_id);
             case '工资付款申请':
-                return \App\Models\PaymentRequest::with(['salaryApproval.project', 'submitter', 'attachments'])
+                $salaryPaymentRequest = \App\Models\PaymentRequest::with(['salaryApproval.project', 'submitter', 'attachments'])
                     ->find($this->business_id);
+
+                return $this->attachProjectNames(
+                    $salaryPaymentRequest,
+                    $salaryPaymentRequest?->salaryApproval?->project_id
+                        ? [$salaryPaymentRequest->salaryApproval->project_id]
+                        : $salaryPaymentRequest?->project_ids
+                );
             case '保险汇总付款申请':
-                return \App\Models\PaymentRequest::with(['insuranceSummary', 'submitter', 'attachments'])
+                $insurancePaymentRequest = \App\Models\PaymentRequest::with(['insuranceSummary', 'submitter', 'attachments'])
                     ->find($this->business_id);
+
+                if ($insurancePaymentRequest?->insuranceSummary) {
+                    $insurancePaymentRequest->setRelation('insuranceSummary', $this->attachProjectNames(
+                        $insurancePaymentRequest->insuranceSummary,
+                        $insurancePaymentRequest->insuranceSummary->project_ids
+                    ));
+                }
+
+                return $this->attachProjectNames($insurancePaymentRequest, $insurancePaymentRequest?->project_ids);
             case '报销付款申请':
-                return \App\Models\PaymentRequest::with(['reimbursement', 'submitter', 'attachments'])
+                $reimbursementPaymentRequest = \App\Models\PaymentRequest::with(['reimbursement', 'submitter', 'attachments'])
                     ->find($this->business_id);
+
+                return $this->attachProjectNames($reimbursementPaymentRequest, $reimbursementPaymentRequest?->project_ids);
             case '报销申请':
                 return \App\Models\Reimbursement::with(['creator', 'attachments'])
+                    ->find($this->business_id);
+            case 'personnel_change':
+                return \App\Models\PersonnelChangeRequest::with(['project', 'creator', 'attachments'])
                     ->find($this->business_id);
             case 'material_request':
                 return \App\Models\MaterialRequest::with(['applicant', 'items.material'])
@@ -184,5 +217,41 @@ class ApprovalInstance extends Model
             default:
                 return null;
         }
+    }
+
+    /**
+     * 为使用项目 ID 列表的业务数据补充项目名称，供审批详情展示。
+     */
+    private function attachProjectNames($model, $projectIds)
+    {
+        if (!$model) {
+            return $model;
+        }
+
+        $ids = is_string($projectIds) ? json_decode($projectIds, true) : $projectIds;
+        if (!is_array($ids) && is_string($projectIds) && str_contains($projectIds, ',')) {
+            $ids = explode(',', $projectIds);
+        }
+        $ids = collect(is_array($ids) ? $ids : [$ids])
+            ->filter(fn ($id) => is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $names = \App\Models\Project::query()
+            ->where('account_set_id', $this->account_set_id)
+            ->whereIn('id', $ids)
+            ->get(['id', 'name'])
+            ->keyBy('id');
+
+        $model->setAttribute(
+            'project_names',
+            $ids->map(fn ($id) => $names->get($id)?->name)
+                ->filter()
+                ->values()
+                ->all()
+        );
+
+        return $model;
     }
 }

@@ -7465,10 +7465,16 @@ const isInsuranceFieldsLocked = computed(() => {
 })
 
 const isDeparturePersonnelStatus = computed(() => {
-  return ['resigned', '离职', 'retired', '退休'].includes(form.personnel_status)
-    || form.contract_status === 'terminated'
-    || form.is_retired === true
-    || form.is_retired === 1
+  if (['resigned', '离职', 'retired', '退休'].includes(form.personnel_status)) {
+    return true
+  }
+
+  if (form.is_retired === true || form.is_retired === 1) {
+    return true
+  }
+
+  // 仅对没有明确人员状态的历史数据保留合同状态兜底，避免在职人员被误判为离职。
+  return !form.personnel_status && form.contract_status === 'terminated'
 })
 
 const activeInsuranceDecreaseCategories = ref({
@@ -7524,6 +7530,15 @@ const validateDepartureInsuranceForm = () => {
   return true
 }
 
+const validateResignationDate = (_rule, value, callback) => {
+  if (isDeparturePersonnelStatus.value && !value) {
+    callback(new Error('请选择离职日期'))
+    return
+  }
+
+  callback()
+}
+
 const formRules = {
   name: [
     { required: true, message: '请输入姓名', trigger: 'blur' }
@@ -7563,7 +7578,7 @@ const formRules = {
     { required: true, message: '请选择离职原因', trigger: 'change' }
   ],
   resignation_date: [
-    { required: true, message: '请选择离职日期', trigger: 'change' }
+    { validator: validateResignationDate, trigger: 'change' }
   ],
   medical_insurance_base: [
     { validator: validateRequiredByInsuranceRegion, trigger: 'change' },

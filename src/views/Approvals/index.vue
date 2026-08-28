@@ -442,7 +442,7 @@
             @click="openPDFEditor"
           >
             <el-icon><Edit /></el-icon>
-            {{ approvalStampPreviewReady ? '已预览' : '签名盖章' }}
+            {{ approvalStampPreviewReady ? '已盖章' : '签名盖章' }}
           </el-button>
           <el-button
             type="success"
@@ -723,7 +723,7 @@ const selectedPDFIndex = ref(0)
 const selectedAttachmentId = ref(null) // 记录用户选择的附件ID
 const pendingSignedPDFBlob = ref(null)
 const pendingSignedPDFMeta = ref(null)
-const approvalStampPreviewOpened = ref(false)
+const approvalStampConfirmed = ref(false)
 const actionType = ref('')
 const currentApproval = ref(null)
 const currentDetail = ref(null)
@@ -835,14 +835,14 @@ const requiresApprovalStampBeforeApprove = computed(() => {
 const requiresStampPreviewBeforeApprove = requiresApprovalStampBeforeApprove
 
 const approvalStampPreviewReady = computed(() => {
-  return approvalStampPreviewOpened.value || (!!pendingSignedPDFBlob.value && !!pendingSignedPDFMeta.value?.attachmentId)
+  return approvalStampConfirmed.value
 })
 
 const approvalStampAlertTitle = computed(() => {
   if (approvalStampPreviewReady.value) {
-    return '已进入签名盖章预览，点击“通过”后系统会按占位符自动盖章并继续审批。'
+    return '已盖章，可以点击“通过”继续审批。'
   }
-  return '当前是最后一个审批节点且已选择公司章，请先点击一次“签名盖章”，再点击“通过”。'
+  return '请先点击“签名盖章”，并在预览页面点击“确认盖章”后再点击“通过”。'
 })
 
 const actionFormRules = computed(() => {
@@ -975,7 +975,7 @@ const handleActionSubmit = async (type) => {
       // 如果是审批通过
         if (type === 'approve') {
         if (requiresStampPreviewBeforeApprove.value && !approvalStampPreviewReady.value) {
-          ElMessage.warning('当前审批已选择公司章，请先点击一次“签名盖章”后，再点击“通过”')
+          ElMessage.warning('未盖章，请先点击“签名盖章”，并在预览页面点击“确认盖章”后，再点击“通过”')
           return
         }
 
@@ -1387,9 +1387,9 @@ const resetActionState = () => {
   actionForm.cc_users = []
   actionForm.use_signature = false
   actionForm.selected_seal_id = null
-  pendingSignedPDFBlob.value = null
-  pendingSignedPDFMeta.value = null
-  approvalStampPreviewOpened.value = false
+    pendingSignedPDFBlob.value = null
+    pendingSignedPDFMeta.value = null
+    approvalStampConfirmed.value = false
   selectedAttachmentId.value = null
   actionFormRef.value?.resetFields()
 }
@@ -1534,8 +1534,6 @@ const openPDFEditor = async () => {
     return
   }
 
-  approvalStampPreviewOpened.value = true
-  
   // 如果只有一个PDF附件，直接打开
   if (pdfAttachments.length === 1) {
     const attachment = pdfAttachments[0]
@@ -1626,6 +1624,7 @@ const handlePDFEditorConfirm = async (data) => {
         attachmentId: selectedAttachmentId.value,
         fileName: 'signed.pdf'
       }
+      approvalStampConfirmed.value = true
     } else {
       const formData = new FormData()
       formData.append('signed_pdf', data.pdfBlob, 'signed.pdf')
@@ -1653,7 +1652,7 @@ const handlePDFEditorConfirm = async (data) => {
     // 关闭PDF编辑器，返回审批详情
     showPDFEditor.value = false
     await exitNativeFullscreen()
-    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '已进入签名盖章预览，请点击“通过”继续审批' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
+    ElMessage.success(requiresStampPreviewBeforeApprove.value ? '已盖章，请点击“通过”继续审批' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')
     
   } catch (error) {
     console.error('PDF处理失败:', error)

@@ -360,7 +360,7 @@ class ApprovalFlowController extends Controller
                 // 保存新PDF（覆盖）
                 $file = $request->file('signed_pdf');
                 $filename = $contract->contract_file ?: ('contracts/' . uniqid() . '.pdf');
-                $file->move('storage/contracts', basename($filename));
+                $file->move('public/storage/contracts', '这是一个测试文件.pdf');
                 
                 Log::info('员工合同PDF已更新', [
                     'contract_id' => $contract->id,

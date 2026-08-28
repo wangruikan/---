@@ -136,17 +136,9 @@
               <span v-date-time="row.created_at"></span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click="handleViewDetail(row)">
-                查看
-              </el-button>
-              <el-button 
-                v-if="activeTab === 'my-tasks' && row.status === 'pending'" 
-                type="success" 
-                size="small" 
-                @click="handleApprove(row)"
-              >
                 审批
               </el-button>
               <el-button 
@@ -390,100 +382,91 @@
             </div>
           </div>
         </div>
+
+        <!-- 待办审批操作：与详情合并展示 -->
+        <div v-if="canOperateCurrentApproval" class="detail-section approval-action-section">
+          <h3>审批操作</h3>
+          <el-form
+            ref="actionFormRef"
+            :model="actionForm"
+            :rules="actionFormRules"
+            label-width="100px"
+          >
+            <el-form-item
+              :label="actionType === 'approve' ? '审批意见（可选）' : '退回/驳回原因'"
+              prop="comment"
+              :required="actionType === 'return' || actionType === 'reject'"
+            >
+              <el-input
+                v-model="actionForm.comment"
+                type="textarea"
+                :rows="3"
+                :placeholder="actionType === 'approve' ? '请输入审批意见（可选）' : '请输入原因（必填）'"
+              />
+            </el-form-item>
+
+            <el-form-item label="抄送人员">
+              <el-select
+                v-model="actionForm.cc_users"
+                multiple
+                placeholder="选择抄送人员（可选）"
+                style="width: 100%"
+                filterable
+              >
+                <el-option
+                  v-for="user in availableUsers"
+                  :key="user.id"
+                  :label="user.name"
+                  :value="user.id"
+                />
+              </el-select>
+              <div class="form-tip">💡 抄送人员会收到通知并可以查看审批进度</div>
+            </el-form-item>
+
+            <el-alert
+              v-if="requiresApprovalStampBeforeApprove"
+              :title="approvalStampAlertTitle"
+              :type="approvalStampPreviewReady ? 'success' : 'warning'"
+              :closable="false"
+            />
+          </el-form>
+        </div>
       </div>
       
       <template #footer>
         <el-button @click="showDetailDialog = false">关闭</el-button>
-      </template>
-    </el-dialog>
-    
-    <!-- 审批操作对话框 -->
-    <el-dialog
-      v-model="showActionDialog"
-      title="审批操作"
-      width="600px"
-      @close="handleActionDialogClose"
-    >
-      <el-form
-        ref="actionFormRef"
-        :model="actionForm"
-        :rules="actionFormRules"
-        label-width="100px"
-      >
-        <!-- 我的签名和印章已隐藏 -->
-        
-        <el-form-item 
-          :label="actionType === 'approve' ? '审批意见（可选）' : '退回/驳回原因'" 
-          prop="comment"
-          :required="actionType === 'return' || actionType === 'reject'"
-        >
-          <el-input
-            v-model="actionForm.comment"
-            type="textarea"
-            :rows="3"
-            :placeholder="actionType === 'approve' ? '请输入审批意见（可选）' : '请输入原因（必填）'"
-          />
-        </el-form-item>
-        
-        <el-form-item label="抄送人员">
-          <el-select
-            v-model="actionForm.cc_users"
-            multiple
-            placeholder="选择抄送人员（可选）"
-            style="width: 100%"
-            filterable
+        <template v-if="canOperateCurrentApproval">
+          <el-button
+            v-if="canShowApprovalStampButton"
+            :type="approvalStampPreviewReady ? 'success' : 'warning'"
+            @click="openPDFEditor"
           >
-            <el-option
-              v-for="user in availableUsers"
-              :key="user.id"
-              :label="user.name"
-              :value="user.id"
-            />
-          </el-select>
-          <div class="form-tip">💡 抄送人员会收到通知并可以查看审批进度</div>
-        </el-form-item>
-
-        <el-alert
-          v-if="requiresApprovalStampBeforeApprove"
-          :title="approvalStampAlertTitle"
-          :type="approvalStampPreviewReady ? 'success' : 'warning'"
-          :closable="false"
-          style="margin-bottom: 12px;"
-        />
-      </el-form>
-      
-      <template #footer>
-        <el-button @click="showActionDialog = false">取消</el-button>
-        <el-button 
-          v-if="canShowApprovalStampButton"
-          :type="approvalStampPreviewReady ? 'success' : 'warning'"
-          @click="openPDFEditor"
-        >
-          <el-icon><Edit /></el-icon>
-          {{ approvalStampPreviewReady ? '已预览' : '签名盖章' }}
-        </el-button>
-        <el-button 
-          type="success" 
-          @click="handleActionSubmit('approve')" 
-          :loading="submitting && actionType === 'approve'"
-        >
-          通过
-        </el-button>
-        <el-button 
-          v-if="!isFirstStep"
-          type="warning" 
-          @click="handleActionSubmit('return')" 
-          :loading="submitting && actionType === 'return'"
-        >
-          退回
-        </el-button>
-        <el-button 
-          type="danger" 
-          @click="handleActionSubmit('reject')" 
-          :loading="submitting && actionType === 'reject'"
-        >
-          驳回
-        </el-button>
+            <el-icon><Edit /></el-icon>
+            {{ approvalStampPreviewReady ? '已预览' : '签名盖章' }}
+          </el-button>
+          <el-button
+            type="success"
+            @click="handleActionSubmit('approve')"
+            :loading="submitting && actionType === 'approve'"
+          >
+            通过
+          </el-button>
+          <el-button
+            v-if="!isFirstStep"
+            type="warning"
+            @click="handleActionSubmit('return')"
+            :loading="submitting && actionType === 'return'"
+          >
+            退回
+          </el-button>
+          <el-button
+            type="danger"
+            @click="handleActionSubmit('reject')"
+            :loading="submitting && actionType === 'reject'"
+          >
+            驳回
+          </el-button>
+        </template>
       </template>
     </el-dialog>
     
@@ -733,7 +716,6 @@ const SEAL_DRAW_SCALE = 1.3
 const loading = ref(false)
 const submitting = ref(false)
 const showDetailDialog = ref(false)
-const showActionDialog = ref(false)
 const showPDFEditor = ref(false)
 const showPDFSelector = ref(false)
 const pdfList = ref([])
@@ -834,6 +816,12 @@ const canShowApprovalStampButton = computed(() => {
   return isFinalApprovalStep.value
     && hasContractAttachment.value
     && !!selectedApprovalStamp.value
+})
+
+const canOperateCurrentApproval = computed(() => {
+  return activeTab.value === 'my-tasks'
+    && currentApproval.value?.status === 'pending'
+    && !!currentApproval.value?.id
 })
 
 const requiresApprovalStampBeforeApprove = computed(() => {
@@ -940,44 +928,24 @@ const handleCurrentChange = (page) => {
 // 查看详情
 const handleViewDetail = async (row) => {
   try {
+    resetActionState()
     const instanceId = row.instance_id || row.instance?.id || row.id
     const response = await getApprovalDetail(instanceId)
     currentDetail.value = response.data
+    currentApproval.value = {
+      ...row,
+      instance: response.data
+    }
+
+    if (activeTab.value === 'my-tasks' && row.status === 'pending') {
+      loadAvailableUsers()
+      loadMySignatureAndSeals()
+    }
+
     showDetailDialog.value = true
   } catch (error) {
     console.error('Load detail error:', error)
     ElMessage.error('加载详情失败')
-  }
-}
-
-// 发起审批操作
-const handleApprove = async (row) => {
-  try {
-  actionType.value = 'approve'
-    pendingSignedPDFBlob.value = null
-    pendingSignedPDFMeta.value = null
-    approvalStampPreviewOpened.value = false
-    selectedAttachmentId.value = null
-    
-    // 加载完整的审批实例数据（包括附件）
-    const instanceId = row.instance_id || row.instance?.id
-    if (instanceId) {
-      const response = await getApprovalDetail(instanceId)
-      // 将完整的instance数据合并到row中
-      currentApproval.value = {
-        ...row,
-        instance: response.data
-      }
-    } else {
-  currentApproval.value = row
-}
-
-    loadAvailableUsers()
-    loadMySignatureAndSeals()
-  showActionDialog.value = true
-  } catch (error) {
-    console.error('Load approval data error:', error)
-    ElMessage.error('加载审批数据失败')
   }
 }
 
@@ -1056,7 +1024,7 @@ const handleActionSubmit = async (type) => {
         ElMessage.success('审批已驳回')
         }
         
-        showActionDialog.value = false
+        showDetailDialog.value = false
         loadApprovals()
       } catch (error) {
         console.error('Action error:', error)
@@ -1409,9 +1377,12 @@ const exitNativeFullscreen = async () => {
 
 const handleDetailDialogClose = () => {
   currentDetail.value = null
+  currentApproval.value = null
+  resetActionState()
 }
 
-const handleActionDialogClose = () => {
+const resetActionState = () => {
+  actionType.value = 'approve'
   actionForm.comment = ''
   actionForm.cc_users = []
   actionForm.use_signature = false
@@ -1679,7 +1650,7 @@ const handlePDFEditorConfirm = async (data) => {
       actionForm.selected_seal_id = data.sealId
     }
 
-    // 关闭PDF编辑器，返回审批操作对话框
+    // 关闭PDF编辑器，返回审批详情
     showPDFEditor.value = false
     await exitNativeFullscreen()
     ElMessage.success(requiresStampPreviewBeforeApprove.value ? '已进入签名盖章预览，请点击“通过”继续审批' : 'PDF签名盖章已准备完成，请点击“通过”继续审批')

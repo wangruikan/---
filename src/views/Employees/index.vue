@@ -434,6 +434,11 @@
 
           <!-- 工资卡视图的列 -->
           <template v-if="selectedModules.includes('salary-card')">
+            <el-table-column prop="bank_account_holder" label="户名" width="120">
+              <template #default="{ row }">
+                {{ row.bank_account_holder || '-' }}
+              </template>
+            </el-table-column>
             <el-table-column prop="bank_account" label="银行账号" width="200">
               <template #default="{ row }">
                 {{ row.bank_account || '-' }}
@@ -6257,10 +6262,10 @@ const onboardingFormUpdateSections = [
   {
     title: '工资卡信息',
     fields: [
-      { prop: 'bank_account', label: '银行账号' },
       { prop: 'bank_account_holder', label: '户名' },
-      { prop: 'bank_name', label: '开户行' },
-      { prop: 'bank_branch', label: '开户地/支行' }
+      { prop: 'bank_account', label: '银行账号' },
+      { prop: 'bank_name', label: '开户银行' },
+      { prop: 'bank_branch', label: '开户行' }
     ]
   },
   {
@@ -6321,10 +6326,10 @@ const employeeRegistrationFormUpdateSections = [
       { prop: 'department', label: '部门' },
       { prop: 'job_title', label: '职务' },
       { prop: 'housing_fund_account', label: '公积金账户' },
-      { prop: 'bank_account', label: '银行账号' },
       { prop: 'bank_account_holder', label: '户名' },
-      { prop: 'bank_name', label: '开户行' },
-      { prop: 'bank_branch', label: '开户地/支行' }
+      { prop: 'bank_account', label: '银行账号' },
+      { prop: 'bank_name', label: '开户银行' },
+      { prop: 'bank_branch', label: '开户行' }
     ]
   },
   {

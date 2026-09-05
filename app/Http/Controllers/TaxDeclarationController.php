@@ -232,14 +232,15 @@ class TaxDeclarationController extends Controller
             'company_name' => 'required|string|max:200',
             'tax_category_ids' => 'required|array|min:1',
             'tax_category_ids.*' => 'integer|exists:tax_categories,id',
-            'period_type' => 'required|in:monthly,quarterly,yearly',
-            'declaration_type' => 'nullable|in:monthly,quarterly,yearly',
+            'period_types' => 'required|array|min:1',
+            'period_types.*' => 'in:monthly,quarterly,yearly',
             'declaration_date' => 'nullable|string|max:5',
         ]);
         $validator->after(function ($validator) use ($request) {
+            $periodTypes = $this->normalizePeriodTypes($request->input('period_types'));
             $this->validateDeclarationMonth(
                 $validator,
-                $request->input('period_type'),
+                $periodTypes,
                 $request->input('declaration_date')
             );
             $this->validateTaxCategorySelection(
@@ -257,11 +258,8 @@ class TaxDeclarationController extends Controller
         }
 
         try {
-            $declarationDate = $this->normalizeDeclarationDate(
-                $request->period_type,
-                $request->declaration_date
-            );
-            $declarationType = $request->input('declaration_type') ?: $request->input('period_type');
+            $periodTypes = $this->normalizePeriodTypes($request->input('period_types'));
+            $declarationDate = $this->normalizeDeclarationDate($periodTypes, $request->declaration_date);
             $taxCategoryIds = $this->normalizeConfiguredTaxCategoryIds(
                 $request->input('account_set_id'),
                 $request->input('tax_category_ids')
@@ -271,8 +269,7 @@ class TaxDeclarationController extends Controller
                 'account_set_id' => $request->account_set_id,
                 'company_name' => $request->company_name,
                 'tax_category_ids' => $taxCategoryIds,
-                'period_type' => $request->period_type,
-                'declaration_type' => $declarationType,
+                'period_types' => $periodTypes,
                 'declaration_date' => $declarationDate,
                 'created_by' => $request->user()?->id ?? Auth::id(),
             ]);
@@ -306,14 +303,15 @@ class TaxDeclarationController extends Controller
             'company_name' => 'required|string|max:200',
             'tax_category_ids' => 'required|array|min:1',
             'tax_category_ids.*' => 'integer|exists:tax_categories,id',
-            'period_type' => 'required|in:monthly,quarterly,yearly',
-            'declaration_type' => 'nullable|in:monthly,quarterly,yearly',
+            'period_types' => 'required|array|min:1',
+            'period_types.*' => 'in:monthly,quarterly,yearly',
             'declaration_date' => 'nullable|string|max:5',
         ]);
         $validator->after(function ($validator) use ($request) {
+            $periodTypes = $this->normalizePeriodTypes($request->input('period_types'));
             $this->validateDeclarationMonth(
                 $validator,
-                $request->input('period_type'),
+                $periodTypes,
                 $request->input('declaration_date')
             );
             $this->validateTaxCategorySelection(
@@ -331,13 +329,12 @@ class TaxDeclarationController extends Controller
         }
 
         try {
+            $config = TaxDeclarationConfig::findOrFail($id);
+            $periodTypes = $this->normalizePeriodTypes($request->input('period_types'));
             $declarationDate = $this->normalizeDeclarationDate(
-                $request->period_type,
+                $periodTypes,
                 $request->declaration_date
             );
-            $declarationType = $request->input('declaration_type') ?: $request->input('period_type');
-
-            $config = TaxDeclarationConfig::findOrFail($id);
             $taxCategoryIds = $this->normalizeConfiguredTaxCategoryIds(
                 $config->account_set_id,
                 $request->input('tax_category_ids')
@@ -346,8 +343,7 @@ class TaxDeclarationController extends Controller
             $config->update([
                 'company_name' => $request->company_name,
                 'tax_category_ids' => $taxCategoryIds,
-                'period_type' => $request->period_type,
-                'declaration_type' => $declarationType,
+                'period_types' => $periodTypes,
                 'declaration_date' => $declarationDate,
             ]);
 
@@ -659,7 +655,7 @@ class TaxDeclarationController extends Controller
                 $config->account_set_id,
                 $config->tax_category_ids
             );
-            $declarationDates = $this->buildDeclarationDates($year, $config);
+            $declarationEntries = $this->buildDeclarationDates($year, $config);
             $forceCurrentTask = $targetMonth !== null && (
                 (int) $config->id === $forceCurrentTaskConfigId
                 || $this->wasConfigChangedInMonth($config, $targetMonth)
@@ -667,25 +663,41 @@ class TaxDeclarationController extends Controller
 
             if ($forceCurrentTask) {
                 $currentMonthDate = $targetMonth . '-01';
-                if (!in_array($currentMonthDate, $declarationDates, true)) {
-                    $declarationDates[] = $currentMonthDate;
+                foreach ($config->getPeriodTypes() as $periodType) {
+                    if ($periodType !== 'monthly') {
+                        continue;
+                    }
+
+                    $hasCurrentTypeTask = collect($declarationEntries)->contains(
+                        fn ($entry) => $entry['type'] === $periodType && $entry['date'] === $currentMonthDate
+                    );
+                    if (!$hasCurrentTypeTask) {
+                        $declarationEntries[] = [
+                            'date' => $currentMonthDate,
+                            'type' => $periodType,
+                        ];
+                    }
                 }
             }
 
-            if (empty($declarationDates)) {
+            if (empty($declarationEntries)) {
                 continue;
             }
 
             $hasVisibleTargetMonth = false;
 
-            foreach ($declarationDates as $declarationDate) {
+            foreach ($declarationEntries as $entry) {
+                $declarationDate = $entry['date'];
+                $declarationType = $entry['type'];
                 if ($visibleUntilDate !== null && $declarationDate > $visibleUntilDate) {
                     continue;
                 }
 
-                $isForcedCurrentTask = $forceCurrentTask && substr($declarationDate, 0, 7) === $targetMonth;
+                $isForcedCurrentTask = $forceCurrentTask
+                    && $declarationType === 'monthly'
+                    && substr($declarationDate, 0, 7) === $targetMonth;
 
-                if (!$isForcedCurrentTask && !$this->isDeclarationDateAvailable($config, $declarationDate)) {
+                if (!$isForcedCurrentTask && !$this->isDeclarationDateAvailable($config, $declarationDate, $declarationType)) {
                     continue;
                 }
 
@@ -695,7 +707,12 @@ class TaxDeclarationController extends Controller
 
                 $hasVisibleTargetMonth = true;
 
-                $task = $this->findExistingTaskForMonth($config->id, $year, $declarationDate);
+                $task = $this->findExistingTaskForMonth(
+                    $config->id,
+                    $year,
+                    $declarationDate,
+                    $declarationType
+                );
 
                 if ($task) {
                     // 配置调整后保留仍然存在的已完成税种；新增税种自动回到待处理。
@@ -704,7 +721,6 @@ class TaxDeclarationController extends Controller
                     $completedCategoryIds = $storedCompletedIds === null && $task->status === 'completed'
                         ? $previousCategoryIds
                         : $task->getCompletedTaxCategoryIdsList();
-                    $declarationType = $config->declaration_type ?: $config->period_type;
                     $completedCategoryIds = array_values(array_intersect($currentCategoryIds, $completedCategoryIds));
                     $isCompleted = !empty($currentCategoryIds)
                         && empty(array_diff($currentCategoryIds, $completedCategoryIds));
@@ -745,7 +761,7 @@ class TaxDeclarationController extends Controller
                     $task = TaxDeclarationTask::create([
                         'account_set_id' => $config->account_set_id,
                         'config_id' => $config->id,
-                        'declaration_type' => $config->declaration_type ?: $config->period_type,
+                        'declaration_type' => $declarationType,
                         'company_name' => $config->company_name,
                         'tax_category_ids' => $currentCategoryIds,
                         'completed_tax_category_ids' => [],
@@ -817,39 +833,39 @@ class TaxDeclarationController extends Controller
         return $now->copy()->endOfMonth()->format('Y-m-d');
     }
 
-    private function validateDeclarationMonth($validator, ?string $periodType, ?string $value): void
+    private function normalizePeriodTypes($value): array
     {
-        if (!is_string($periodType)) {
-            return;
-        }
+        $values = is_array($value) ? $value : [$value];
 
-        if ($periodType === 'monthly') {
+        $allowed = ['monthly', 'quarterly', 'yearly'];
+
+        return array_values(array_unique(array_filter(
+            array_map('strval', $values),
+            fn ($type) => in_array($type, $allowed, true)
+        )));
+    }
+
+    private function validateDeclarationMonth($validator, array $periodTypes, ?string $value): void
+    {
+        if (!in_array('yearly', $periodTypes, true)) {
             return;
         }
 
         if (!is_string($value) || $value === '') {
-            $validator->errors()->add('declaration_date', '请选择申报月份');
+            $validator->errors()->add('declaration_date', '选择年度申报时请选择申报月份');
             return;
         }
 
         $month = $this->extractMonth($value);
 
-        if ($periodType === 'quarterly' && ($month < 1 || $month > 3)) {
-            $validator->errors()->add('declaration_date', '季度申报月份只能选择第1、2、3个月');
-        }
-
-        if ($periodType === 'yearly' && ($month < 1 || $month > 12)) {
+        if ($month < 1 || $month > 12) {
             $validator->errors()->add('declaration_date', '年度申报月份只能选择1-12月');
         }
     }
 
-    private function normalizeDeclarationDate(string $periodType, ?string $value): string
+    private function normalizeDeclarationDate(array $periodTypes, ?string $value): string
     {
-        if ($periodType === 'monthly') {
-            return '01-01';
-        }
-
-        if ($periodType === 'quarterly') {
+        if (!in_array('yearly', $periodTypes, true)) {
             return '01-01';
         }
 
@@ -860,33 +876,47 @@ class TaxDeclarationController extends Controller
     private function buildDeclarationDates(int $year, TaxDeclarationConfig $config): array
     {
         $month = $this->extractMonth($config->declaration_date);
+        $entries = [];
 
-        if ($config->period_type === 'monthly') {
-            if ($month < 1 || $month > 12) {
-                return [];
+        foreach ($config->getPeriodTypes() as $periodType) {
+            if ($periodType === 'monthly') {
+                foreach (range(1, 12) as $currentMonth) {
+                    $entries[] = [
+                        'date' => sprintf('%d-%02d-01', $year, $currentMonth),
+                        'type' => $periodType,
+                    ];
+                }
+                continue;
             }
 
-            return array_map(function ($currentMonth) use ($year) {
-                return sprintf('%d-%02d-01', $year, $currentMonth);
-            }, range(1, 12));
+            if ($periodType === 'quarterly') {
+                foreach ([1, 4, 7, 10] as $quarterStartMonth) {
+                    $entries[] = [
+                        'date' => sprintf('%d-%02d-01', $year, $quarterStartMonth),
+                        'type' => $periodType,
+                    ];
+                }
+                continue;
+            }
+
+            if ($month >= 1 && $month <= 12) {
+                $entries[] = [
+                    'date' => sprintf('%d-%02d-01', $year, $month),
+                    'type' => $periodType,
+                ];
+            }
         }
 
-        if ($config->period_type === 'quarterly') {
-            return array_map(function ($quarterStartMonth) use ($year) {
-                return sprintf('%d-%02d-01', $year, $quarterStartMonth);
-            }, [1, 4, 7, 10]);
-        }
-
-        if ($month < 1 || $month > 12) {
-            return [];
-        }
-
-        return [sprintf('%d-%02d-01', $year, $month)];
+        return $entries;
     }
 
-    private function isDeclarationDateAvailable(TaxDeclarationConfig $config, string $declarationDate): bool
+    private function isDeclarationDateAvailable(
+        TaxDeclarationConfig $config,
+        string $declarationDate,
+        string $periodType
+    ): bool
     {
-        $firstAvailableDate = $this->getFirstAvailableDeclarationDate($config);
+        $firstAvailableDate = $this->getFirstAvailableDeclarationDate($config, $periodType);
 
         if ($firstAvailableDate === null) {
             return true;
@@ -895,17 +925,20 @@ class TaxDeclarationController extends Controller
         return $declarationDate >= $firstAvailableDate;
     }
 
-    private function getFirstAvailableDeclarationDate(TaxDeclarationConfig $config): ?string
+    private function getFirstAvailableDeclarationDate(
+        TaxDeclarationConfig $config,
+        string $periodType
+    ): ?string
     {
         if (!$config->created_at) {
             return null;
         }
 
-        if ($config->period_type === 'monthly') {
+        if ($periodType === 'monthly') {
             return $config->created_at->copy()->startOfMonth()->addMonth()->format('Y-m-01');
         }
 
-        if ($config->period_type === 'quarterly') {
+        if ($periodType === 'quarterly') {
             return $config->created_at->copy()->startOfQuarter()->addQuarter()->format('Y-m-01');
         }
 
@@ -913,7 +946,7 @@ class TaxDeclarationController extends Controller
     }
 
     /**
-     * 当前月创建或修改的配置必须立即拥有当期任务。
+     * 当前月创建或修改的配置只立即拥有月度当期任务；其他周期按自身周期生成。
      */
     private function wasConfigChangedInMonth(TaxDeclarationConfig $config, string $targetMonth): bool
     {
@@ -960,7 +993,12 @@ class TaxDeclarationController extends Controller
         return (int) substr($value, 0, 2);
     }
 
-    private function findExistingTaskForMonth($configId, int $year, string $declarationDate): ?TaxDeclarationTask
+    private function findExistingTaskForMonth(
+        $configId,
+        int $year,
+        string $declarationDate,
+        string $declarationType
+    ): ?TaxDeclarationTask
     {
         $month = substr($declarationDate, 5, 2);
 
@@ -968,6 +1006,7 @@ class TaxDeclarationController extends Controller
             ->where('year', $year)
             ->whereYear('declaration_date', $year)
             ->whereMonth('declaration_date', (int) $month)
+            ->where('declaration_type', $declarationType)
             ->orderByDesc('id')
             ->first();
     }

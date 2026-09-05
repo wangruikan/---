@@ -53,7 +53,7 @@ class TaxDeclarationTask extends Model
         }
 
         $config = $this->relationLoaded('config') ? $this->getRelation('config') : null;
-        return $config?->declaration_type ?: $config?->period_type;
+        return $config?->getPeriodTypes()[0] ?? null;
     }
 
     public function getAuditIdentifier()

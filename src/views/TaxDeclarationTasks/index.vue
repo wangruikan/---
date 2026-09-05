@@ -571,7 +571,7 @@ const getDeclarationTypeText = (type) => {
 }
 
 const resolveDeclarationType = (task) => {
-  return task?.declaration_type || task?.config?.declaration_type || task?.config?.period_type || ''
+  return task?.declaration_type || task?.config?.period_types?.[0] || ''
 }
 
 const getDeclarationTypeTag = (type) => {

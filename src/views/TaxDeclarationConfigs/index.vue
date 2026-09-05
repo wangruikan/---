@@ -9,29 +9,50 @@
         <!-- Tab1: 税种类目管理 -->
         <el-tab-pane label="税种类目" name="categories">
           <div class="tab-header">
-            <el-button type="primary" @click="handleCreateCategory">添加税种</el-button>
+            <el-button type="primary" @click="handleCreateCategory">添加大类</el-button>
           </div>
 
-          <el-table :data="categories" v-loading="categoriesLoading" border stripe>
+          <el-table :data="topLevelCategories" v-loading="categoriesLoading" row-key="id" border stripe>
+            <el-table-column type="expand" width="50">
+              <template #default="{ row }">
+                <div v-if="getChildCategories(row).length" class="child-category-table">
+                  <el-table :data="getChildCategories(row)" border size="small">
+                    <el-table-column prop="id" label="ID" width="80" />
+                    <el-table-column prop="name" label="细分税种" min-width="180" />
+                    <el-table-column label="创建人" width="120">
+                      <template #default="{ row: child }">
+                        {{ child.creator?.name || child.creator_name || '-' }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="created_at" label="创建时间" width="180" />
+                    <el-table-column label="操作" width="120" fixed="right">
+                      <template #default="{ row: child }">
+                        <el-button type="primary" size="small" link @click="handleEditCategory(child)">
+                          编辑
+                        </el-button>
+                        <el-button type="danger" size="small" link @click="handleDeleteCategory(child)">
+                          删除
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="暂无细分税种" :image-size="60" />
+              </template>
+            </el-table-column>
             <el-table-column prop="id" label="ID" width="80" />
-            <el-table-column label="税种大类" min-width="180">
-              <template #default="{ row }">
-                {{ row.parent?.name || row.name }}
-              </template>
-            </el-table-column>
-            <el-table-column label="细分税种" min-width="180">
-              <template #default="{ row }">
-                {{ row.parent ? row.name : '-' }}
-              </template>
-            </el-table-column>
+            <el-table-column prop="name" label="税种大类" min-width="180" />
             <el-table-column label="创建人" width="120">
               <template #default="{ row }">
                 {{ row.creator?.name || row.creator_name || '-' }}
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="创建时间" width="180" />
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
+                <el-button type="success" size="small" link @click="handleCreateChildCategory(row)">
+                  添加细分
+                </el-button>
                 <el-button type="primary" size="small" link @click="handleEditCategory(row)">
                   编辑
                 </el-button>
@@ -64,17 +85,15 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="period_type" label="申报周期" width="100">
+            <el-table-column label="申报周期" min-width="180">
               <template #default="{ row }">
-                <el-tag :type="getPeriodTypeTag(row.period_type)">
-                  {{ getPeriodTypeText(row.period_type) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="类型" width="100">
-              <template #default="{ row }">
-                <el-tag :type="getPeriodTypeTag(row.declaration_type || row.period_type)">
-                  {{ getPeriodTypeText(row.declaration_type || row.period_type) }}
+                <el-tag
+                  v-for="periodType in getConfigPeriodTypes(row)"
+                  :key="periodType"
+                  :type="getPeriodTypeTag(periodType)"
+                  style="margin-right: 5px"
+                >
+                  {{ getPeriodTypeText(periodType) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -107,28 +126,41 @@
     <!-- 税种类目对话框 -->
     <el-dialog
       v-model="categoryDialogVisible"
-      :title="categoryDialogMode === 'create' ? '添加税种' : '编辑税种'"
+      :title="categoryDialogMode === 'create' ? '添加大类' : categoryDialogMode === 'child' ? '添加细分税种' : '编辑税种'"
       width="500px"
     >
       <el-form :model="categoryForm" :rules="categoryRules" ref="categoryFormRef" label-width="100px">
-        <el-form-item label="税种名称" prop="name">
-          <el-input v-model="categoryForm.name" placeholder="请输入税种名称" />
-        </el-form-item>
-        <el-form-item label="所属大类">
-          <el-select
-            v-model="categoryForm.parent_id"
-            placeholder="不选择则创建大类"
-            clearable
-            style="width: 100%"
+        <template v-if="categoryDialogMode === 'child'">
+          <el-form-item label="所属大类">
+            <el-input :model-value="categoryForm.parent_name" disabled />
+          </el-form-item>
+          <el-form-item
+            v-for="(_, index) in categoryForm.childNames"
+            :key="index"
+            :label="`细分${index + 1}`"
           >
-            <el-option
-              v-for="category in topLevelCategories"
-              :key="category.id"
-              :label="category.name"
-              :value="category.id"
-            />
-          </el-select>
-        </el-form-item>
+            <div class="child-name-row">
+              <el-input
+                v-model="categoryForm.childNames[index]"
+                placeholder="请输入细分税种名称"
+              />
+              <el-button
+                v-if="categoryForm.childNames.length > 1"
+                type="danger"
+                link
+                @click="removeChildName(index)"
+              >
+                删除
+              </el-button>
+            </div>
+          </el-form-item>
+          <el-button type="success" plain @click="addChildName">添加一行</el-button>
+        </template>
+        <template v-else>
+          <el-form-item label="税种名称" prop="name">
+            <el-input v-model="categoryForm.name" placeholder="请输入税种名称" />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="categoryDialogVisible = false">取消</el-button>
@@ -163,23 +195,15 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="申报周期" prop="period_type">
+        <el-form-item label="申报周期" prop="period_types">
           <el-select
-            v-model="configForm.period_type"
-            placeholder="请选择申报周期"
+            v-model="configForm.period_types"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择申报周期（可多选）"
             style="width: 100%"
-            @change="handlePeriodTypeChange"
-          >
-            <el-option label="月度" value="monthly" />
-            <el-option label="季度" value="quarterly" />
-            <el-option label="年度" value="yearly" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="类型" prop="declaration_type">
-          <el-select
-            v-model="configForm.declaration_type"
-            placeholder="请选择类型"
-            style="width: 100%"
+            @change="handlePeriodTypesChange"
           >
             <el-option label="月度" value="monthly" />
             <el-option label="季度" value="quarterly" />
@@ -187,13 +211,7 @@
           </el-select>
         </el-form-item>
         <el-form-item
-          v-if="configForm.period_type === 'quarterly'"
-          label="申报月份"
-        >
-          <div class="form-tip">季度固定按第1个月生成任务，不需要选择。</div>
-        </el-form-item>
-        <el-form-item
-          v-else-if="configForm.period_type === 'yearly'"
+          v-if="configForm.period_types.includes('yearly')"
           label="申报月份"
           prop="declaration_date"
         >
@@ -206,11 +224,8 @@
             />
           </el-select>
           <div style="color: #909399; font-size: 12px; margin-top: 5px">
-            只按月份生成任务，例如选择6月表示每年6月生成
+            年度任务按此月份生成，月度和季度任务不需要选择月份
           </div>
-        </el-form-item>
-        <el-form-item v-else-if="configForm.period_type === 'monthly'" label="申报月份">
-          <div class="form-tip">月度会每个月生成一条任务，不需要再选择具体日期。</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -252,12 +267,18 @@ const categoryFormRef = ref()
 
 const categoryForm = reactive({
   name: '',
-  parent_id: null
+  parent_id: null,
+  parent_name: '',
+  childNames: ['']
 })
 
 const topLevelCategories = computed(() => {
   return categories.value.filter(category => !category.parent_id)
 })
+
+const getChildCategories = (parent) => {
+  return categories.value.filter(category => Number(category.parent_id) === Number(parent.id))
+}
 
 const categoryTree = computed(() => {
   return topLevelCategories.value.map(parent => {
@@ -291,8 +312,7 @@ const configFormRef = ref()
 const configForm = reactive({
   company_name: '',
   tax_category_ids: [],
-  period_type: '',
-  declaration_type: '',
+  period_types: [],
   declaration_date: ''
 })
 
@@ -304,8 +324,7 @@ const monthOptions = Array.from({ length: 12 }, (_, index) => {
 const configRules = {
   company_name: [{ required: true, message: '请输入公司名称', trigger: 'blur' }],
   tax_category_ids: [{ required: true, message: '请选择税种', trigger: 'change' }],
-  period_type: [{ required: true, message: '请选择申报周期', trigger: 'change' }],
-  declaration_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
+  period_types: [{ required: true, message: '请选择申报周期', trigger: 'change' }],
   declaration_date: [
     { required: true, message: '请选择申报月份', trigger: 'change' }
   ]
@@ -332,7 +351,21 @@ const handleCreateCategory = () => {
   categoryDialogMode.value = 'create'
   Object.assign(categoryForm, {
     name: '',
-    parent_id: null
+    parent_id: null,
+    parent_name: '',
+    childNames: ['']
+  })
+  categoryDialogVisible.value = true
+}
+
+// 在指定大类下创建细分税种
+const handleCreateChildCategory = (parent) => {
+  categoryDialogMode.value = 'child'
+  Object.assign(categoryForm, {
+    name: '',
+    parent_id: parent.id,
+    parent_name: parent.name,
+    childNames: ['']
   })
   categoryDialogVisible.value = true
 }
@@ -343,13 +376,55 @@ const handleEditCategory = (row) => {
   Object.assign(categoryForm, {
     id: row.id,
     name: row.name,
-    parent_id: row.parent_id || null
+    parent_id: row.parent_id || null,
+    parent_name: row.parent?.name || '',
+    childNames: ['']
   })
   categoryDialogVisible.value = true
 }
 
+const addChildName = () => {
+  categoryForm.childNames.push('')
+}
+
+const removeChildName = (index) => {
+  categoryForm.childNames.splice(index, 1)
+}
+
 // 提交税种类目
 const handleSubmitCategory = async () => {
+  if (categoryDialogMode.value === 'child') {
+    const childNames = categoryForm.childNames
+      .map(name => name.trim())
+      .filter(Boolean)
+
+    if (!childNames.length) {
+      ElMessage.warning('请至少填写一个细分税种')
+      return
+    }
+
+    categorySubmitting.value = true
+    try {
+      for (const name of childNames) {
+        await createCategory({
+          account_set_id: accountSetStore.currentAccountSetId,
+          name,
+          parent_id: categoryForm.parent_id
+        })
+      }
+
+      ElMessage.success(`成功创建${childNames.length}个细分税种`)
+      categoryDialogVisible.value = false
+      loadCategories()
+    } catch (error) {
+      console.error('提交失败:', error)
+      ElMessage.error(error.response?.data?.message || '操作失败')
+    } finally {
+      categorySubmitting.value = false
+    }
+    return
+  }
+
   await categoryFormRef.value?.validate()
   
   categorySubmitting.value = true
@@ -360,7 +435,7 @@ const handleSubmitCategory = async () => {
       parent_id: categoryForm.parent_id || null
     }
     
-    if (categoryDialogMode.value === 'create') {
+    if (categoryDialogMode.value !== 'edit') {
       await createCategory(data)
       ElMessage.success('创建成功')
     } else {
@@ -420,21 +495,15 @@ const handleCreateConfig = () => {
   Object.assign(configForm, {
     company_name: '',
     tax_category_ids: [],
-    period_type: '',
-    declaration_type: '',
+    period_types: [],
     declaration_date: ''
   })
   configDialogVisible.value = true
 }
 
-const handlePeriodTypeChange = () => {
-  if (configForm.period_type === 'monthly') {
+const handlePeriodTypesChange = () => {
+  if (!configForm.period_types.includes('yearly')) {
     configForm.declaration_date = ''
-    return
-  }
-
-  if (configForm.period_type === 'quarterly') {
-    configForm.declaration_date = '01'
     return
   }
 
@@ -444,18 +513,16 @@ const handlePeriodTypeChange = () => {
 
 // 编辑配置
 const handleEditConfig = (row) => {
+  const periodTypes = getConfigPeriodTypes(row)
   configDialogMode.value = 'edit'
   Object.assign(configForm, {
     id: row.id,
     company_name: row.company_name,
     tax_category_ids: (row.tax_category_ids || []).map(Number),
-    period_type: row.period_type,
-    declaration_type: row.declaration_type || row.period_type,
-    declaration_date: row.period_type === 'monthly'
-      ? ''
-      : row.period_type === 'quarterly'
-        ? '01'
-        : normalizeConfigMonth(row.declaration_date)
+    period_types: periodTypes,
+    declaration_date: periodTypes.includes('yearly')
+      ? normalizeConfigMonth(row.declaration_date)
+      : ''
   })
   configDialogVisible.value = true
 }
@@ -470,13 +537,10 @@ const handleSubmitConfig = async () => {
       account_set_id: accountSetStore.currentAccountSetId,
       company_name: configForm.company_name,
       tax_category_ids: configForm.tax_category_ids,
-      period_type: configForm.period_type,
-      declaration_type: configForm.declaration_type || configForm.period_type,
-      declaration_date: configForm.period_type === 'monthly'
-        ? ''
-        : configForm.period_type === 'quarterly'
-          ? '01'
-          : configForm.declaration_date
+      period_types: configForm.period_types,
+      declaration_date: configForm.period_types.includes('yearly')
+        ? configForm.declaration_date
+        : ''
     }
     
     if (configDialogMode.value === 'create') {
@@ -536,6 +600,12 @@ const getPeriodTypeTag = (type) => {
   return tags[type] || 'info'
 }
 
+const getConfigPeriodTypes = (row) => {
+  return Array.isArray(row?.period_types)
+    ? row.period_types.filter(type => ['monthly', 'quarterly', 'yearly'].includes(type))
+    : []
+}
+
 const normalizeConfigMonth = (value) => {
   if (!value) return ''
   const month = String(value).slice(0, 2)
@@ -543,22 +613,14 @@ const normalizeConfigMonth = (value) => {
 }
 
 const formatDeclarationRule = (row) => {
-  if (row.period_type === 'monthly') {
-    return '每月'
-  }
-
+  const periodTypes = getConfigPeriodTypes(row)
   const month = Number(normalizeConfigMonth(row.declaration_date))
-  if (!month) return '-'
-
-  if (row.period_type === 'quarterly') {
-    return '每季度第1个月'
-  }
-
-  if (row.period_type === 'yearly') {
-    return `每年${month}月`
-  }
-
-  return row.declaration_date || '-'
+  return periodTypes.map(periodType => {
+    if (periodType === 'monthly') return '每月'
+    if (periodType === 'quarterly') return '每季度第1个月'
+    if (periodType === 'yearly') return month ? `每年${month}月` : '每年-'
+    return '-'
+  }).join('、') || '-'
 }
 
 const formatCategoryLabel = (category) => {
@@ -595,5 +657,20 @@ onMounted(() => {
 .form-tip {
   color: #909399;
   font-size: 12px;
+}
+
+.child-category-table {
+  padding: 8px 48px 8px 48px;
+}
+
+.child-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.child-name-row .el-input {
+  flex: 1;
 }
 </style>
